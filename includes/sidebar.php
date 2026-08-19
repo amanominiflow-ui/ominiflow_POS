@@ -497,6 +497,17 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                 </div>
 
+                <div class="drawer-section-title" style="margin-top: 10px;">E-COMMERCE & ONLINE CHANNELS</div>
+
+                <a href="<?= asset('integrations-cart.php') ?>" class="nav-item <?= $currentPage === 'integrations-cart.php' ? 'active' : '' ?>">
+                    <span class="nav-item-icon" style="color: #95BF47;">
+                        <svg width="17" height="17" viewBox="0 0 109 124" fill="currentColor">
+                            <path d="M72.5 19.3L64.3 16.9C64.3 13.5 63 10.3 60.5 7.9C58.1 5.5 54.8 4.2 51.4 4.2C48 4.2 44.8 5.5 42.3 7.9C39.8 10.3 38.5 13.5 38.5 16.9L30.6 19.3L20.8 113.8L82.1 119.8L72.5 19.3Z"/>
+                        </svg>
+                    </span>
+                    <span>Shopify / Online Store</span>
+                </a>
+
                 <div class="drawer-section-title" style="margin-top: 10px;">MULTI-STORE / WAREHOUSES</div>
 
                 <a href="<?= asset('outlets.php') ?>" class="nav-item <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">
