@@ -24,10 +24,43 @@ try {
     // Select database
     $pdo->exec(sprintf('USE `%s`', DB_NAME));
 
+    // 0. Businesses / Organizations Table (Multi-Tenant SaaS Support)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `businesses` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `name` VARCHAR(191) NOT NULL,
+            `legal_name` VARCHAR(191) NULL,
+            `email` VARCHAR(191) NULL,
+            `phone` VARCHAR(50) NULL,
+            `currency` VARCHAR(10) NOT NULL DEFAULT 'INR',
+            `currency_symbol` VARCHAR(10) NOT NULL DEFAULT '₹',
+            `tax_id` VARCHAR(50) NULL,
+            `address` TEXT NULL,
+            `city` VARCHAR(100) NULL,
+            `state` VARCHAR(100) NULL,
+            `pincode` VARCHAR(20) NULL,
+            `country` VARCHAR(100) NOT NULL DEFAULT 'India',
+            `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_businesses_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // Seed default Business ID 1 if empty
+    $stmtB = $pdo->query("SELECT id FROM businesses WHERE id = 1 LIMIT 1");
+    if (!$stmtB->fetch()) {
+        $pdo->exec("
+            INSERT INTO `businesses` (`id`, `name`, `legal_name`, `email`, `currency`, `currency_symbol`, `country`, `status`, `created_at`, `updated_at`)
+            VALUES (1, 'OminiFlow Retail', 'OminiFlow POS Inc.', 'admin@ominiflow.com', 'INR', '₹', 'India', 'active', NOW(), NOW())
+        ");
+    }
+
     // 1. Users Table
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `users` (
             `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
             `name` VARCHAR(191) NOT NULL,
             `email` VARCHAR(191) NOT NULL UNIQUE,
             `phone` VARCHAR(50) NULL,
@@ -37,6 +70,7 @@ try {
             `status` VARCHAR(20) NOT NULL DEFAULT 'active',
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_users_business` (`business_id`),
             INDEX `idx_users_email` (`email`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
@@ -983,15 +1017,26 @@ try {
     ");
 
     /* =========================================================================
-       ADDITIVE COLUMN EXTENSIONS FOR EXISTING TABLES (SAFE & NON-BREAKING)
+       ADDITIVE MULTI-TENANT & BUSINESS_ID COLUMNS (SAFE & NON-BREAKING)
        ========================================================================= */
 
-    function add_column_if_not_exists(PDO $pdo, string $table, string $column, string $typeSql): void {
-        $stmt = $pdo->prepare("SHOW COLUMNS FROM `{$table}` LIKE :col");
-        $stmt->execute(['col' => $column]);
-        if (!$stmt->fetch()) {
-            $pdo->exec("ALTER TABLE `{$table}` ADD `{$column}` {$typeSql}");
-        }
+    $tenantTables = [
+        'users', 'categories', 'products', 'inventory_movements', 'customers',
+        'registers', 'register_sessions', 'orders', 'invoices', 'held_sales',
+        'returns', 'credit_notes', 'vendors', 'purchase_orders', 'stock_counts',
+        'store_settings', 'outlets', 'warehouses', 'stock_transfers', 'product_variants',
+        'price_lists', 'customer_groups', 'promotions', 'coupons', 'loyalty_transactions',
+        'role_permissions', 'purchase_returns', 'vendor_payments', 'product_serials',
+        'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
+        'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations'
+    ];
+
+    foreach ($tenantTables as $tTable) {
+        add_column_if_not_exists($pdo, $tTable, 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");
+        // Ensure index on business_id
+        try {
+            $pdo->exec("ALTER TABLE `{$tTable}` ADD INDEX `idx_{$tTable}_business` (`business_id`)");
+        } catch (Exception $ign) {}
     }
 
     add_column_if_not_exists($pdo, 'users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Admin' AFTER `password`");

@@ -7,26 +7,50 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/products_db.php';
 
 /* =========================================================================
    1. STORE BUSINESS SETTINGS
    ========================================================================= */
 
-function get_store_settings(): array {
+function get_store_settings(?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     try {
-        $stmt = $db->query('SELECT * FROM store_settings WHERE id = 1 LIMIT 1');
+        $stmt = $db->prepare('SELECT * FROM store_settings WHERE business_id = :bid LIMIT 1');
+        $stmt->execute(['bid' => $bid]);
         $settings = $stmt->fetch();
         if ($settings) {
             return $settings;
+        }
+
+        // Check if business profile exists
+        $stmtBiz = $db->prepare('SELECT * FROM businesses WHERE id = :id LIMIT 1');
+        $stmtBiz->execute(['id' => $bid]);
+        $biz = $stmtBiz->fetch();
+        if ($biz) {
+            return [
+                'id' => $biz['id'],
+                'business_id' => $biz['id'],
+                'store_name' => $biz['name'] ?? 'My POS Store',
+                'tagline' => 'Official Retail Store & POS Terminal',
+                'logo_path' => 'assets/images/logo.jpg',
+                'address' => $biz['address'] ?? 'Retail Store Counter',
+                'phone' => $biz['phone'] ?? '',
+                'email' => $biz['email'] ?? '',
+                'gstin' => $biz['tax_id'] ?? '',
+                'currency_symbol' => $biz['currency_symbol'] ?? '₹',
+                'tax_type' => 'GST',
+            ];
         }
     } catch (PDOException $e) {
         // Fallback defaults
     }
 
     return [
-        'id' => 1,
+        'id' => $bid,
+        'business_id' => $bid,
         'store_name' => 'OminiFlow Retail POS',
         'tagline' => 'Official Retail Store & POS Terminal',
         'logo_path' => 'assets/images/logo.jpg',
@@ -39,32 +63,64 @@ function get_store_settings(): array {
     ];
 }
 
-function update_store_settings(array $data): bool {
+function update_store_settings(array $data, ?int $businessId = null): bool {
     $db = get_db();
-    $stmt = $db->prepare('
-        UPDATE store_settings
-        SET store_name = :store_name, tagline = :tagline, address = :address,
-            phone = :phone, email = :email, gstin = :gstin, updated_at = NOW()
-        WHERE id = 1
-    ');
-    return $stmt->execute([
-        'store_name' => trim((string)($data['store_name'] ?? 'OminiFlow Retail POS')),
-        'tagline' => trim((string)($data['tagline'] ?? '')),
-        'address' => trim((string)($data['address'] ?? '')),
-        'phone' => trim((string)($data['phone'] ?? '')),
-        'email' => trim((string)($data['email'] ?? '')),
-        'gstin' => trim((string)($data['gstin'] ?? '')),
-    ]);
+    $bid = $businessId ?: current_business_id();
+    
+    // Check if store_settings row exists for this business
+    $stmtCheck = $db->prepare('SELECT id FROM store_settings WHERE business_id = :bid LIMIT 1');
+    $stmtCheck->execute(['bid' => $bid]);
+    $existing = $stmtCheck->fetch();
+
+    $storeName = trim((string)($data['store_name'] ?? 'My POS Store'));
+    $tagline = trim((string)($data['tagline'] ?? ''));
+    $address = trim((string)($data['address'] ?? ''));
+    $phone = trim((string)($data['phone'] ?? ''));
+    $email = trim((string)($data['email'] ?? ''));
+    $gstin = trim((string)($data['gstin'] ?? ''));
+
+    if ($existing) {
+        $stmt = $db->prepare('
+            UPDATE store_settings
+            SET store_name = :store_name, tagline = :tagline, address = :address,
+                phone = :phone, email = :email, gstin = :gstin, updated_at = NOW()
+            WHERE business_id = :bid
+        ');
+        return $stmt->execute([
+            'store_name' => $storeName,
+            'tagline' => $tagline,
+            'address' => $address,
+            'phone' => $phone,
+            'email' => $email,
+            'gstin' => $gstin,
+            'bid' => $bid,
+        ]);
+    } else {
+        $stmt = $db->prepare('
+            INSERT INTO store_settings (business_id, store_name, tagline, address, phone, email, gstin, created_at, updated_at)
+            VALUES (:bid, :store_name, :tagline, :address, :phone, :email, :gstin, NOW(), NOW())
+        ');
+        return $stmt->execute([
+            'bid' => $bid,
+            'store_name' => $storeName,
+            'tagline' => $tagline,
+            'address' => $address,
+            'phone' => $phone,
+            'email' => $email,
+            'gstin' => $gstin,
+        ]);
+    }
 }
 
 /* =========================================================================
    2. CUSTOMER OPERATIONS
    ========================================================================= */
 
-function get_customers(string $search = ''): array {
+function get_customers(string $search = '', ?int $businessId = null): array {
     $db = get_db();
-    $sql = 'SELECT * FROM customers WHERE 1=1';
-    $params = [];
+    $bid = $businessId ?: current_business_id();
+    $sql = 'SELECT * FROM customers WHERE business_id = :bid';
+    $params = ['bid' => $bid];
 
     if ($search !== '') {
         $sql .= ' AND (name LIKE :search1 OR phone LIKE :search2 OR email LIKE :search3)';
@@ -80,16 +136,18 @@ function get_customers(string $search = ''): array {
     return $stmt->fetchAll();
 }
 
-function get_customer_by_id(int $id): ?array {
+function get_customer_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM customers WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM customers WHERE id = :id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['id' => $id, 'bid' => $bid]);
     $cust = $stmt->fetch();
     return $cust ?: null;
 }
 
-function save_customer(array $data): array {
+function save_customer(array $data, ?int $businessId = null): array {
     $errors = [];
+    $bid = $businessId ?: current_business_id();
     $name = trim((string) ($data['name'] ?? ''));
     $phone = trim((string) ($data['phone'] ?? ''));
     $email = trim((string) ($data['email'] ?? ''));
@@ -110,10 +168,11 @@ function save_customer(array $data): array {
     $db = get_db();
     try {
         $stmt = $db->prepare('
-            INSERT INTO customers (name, phone, email, address, created_at, updated_at)
-            VALUES (:name, :phone, :email, :address, NOW(), NOW())
+            INSERT INTO customers (business_id, name, phone, email, address, created_at, updated_at)
+            VALUES (:biz_id, :name, :phone, :email, :address, NOW(), NOW())
         ');
         $stmt->execute([
+            'biz_id' => $bid,
             'name' => $name,
             'phone' => $phone ?: null,
             'email' => $email ?: null,
@@ -146,13 +205,15 @@ function process_pos_order(
     ?string $couponCode = null,
     int $loyaltyPointsUsed = 0,
     float $loyaltyDiscountAmount = 0.00,
-    ?int $priceListId = null
+    ?int $priceListId = null,
+    ?int $businessId = null
 ): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
     if (empty($cartItems)) {
         return ['success' => false, 'errors' => ['cart' => 'Cannot checkout an empty cart. Please add items.']];
     }
-
-    $db = get_db();
 
     // Idempotency check for offline POS synchronization
     if ($clientOrderUuid !== null && trim($clientOrderUuid) !== '') {
@@ -160,10 +221,10 @@ function process_pos_order(
             SELECT o.id AS order_id, o.order_number, i.id AS invoice_id, i.invoice_number, o.total_amount
             FROM orders o
             LEFT JOIN invoices i ON i.order_id = o.id
-            WHERE o.client_order_uuid = :uuid
+            WHERE o.client_order_uuid = :uuid AND o.business_id = :bid
             LIMIT 1
         ');
-        $stmtCheckUuid->execute(['uuid' => trim($clientOrderUuid)]);
+        $stmtCheckUuid->execute(['uuid' => trim($clientOrderUuid), 'bid' => $bid]);
         $existingOrder = $stmtCheckUuid->fetch();
         if ($existingOrder) {
             return [
@@ -199,10 +260,10 @@ function process_pos_order(
             $stmtProd = $db->prepare('
                 SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status, product_type, hsn_code
                 FROM products
-                WHERE id = :id
+                WHERE id = :id AND business_id = :bid
                 FOR UPDATE
             ');
-            $stmtProd->execute(['id' => $productId]);
+            $stmtProd->execute(['id' => $productId, 'bid' => $bid]);
             $product = $stmtProd->fetch();
 
             if (!$product) {
@@ -299,18 +360,19 @@ function process_pos_order(
         // 5. Insert Order Record
         $stmtOrder = $db->prepare('
             INSERT INTO orders (
-                order_number, outlet_id, customer_id, user_id, subtotal, discount_amount, discount_type,
+                business_id, order_number, outlet_id, customer_id, user_id, subtotal, discount_amount, discount_type,
                 price_list_id, coupon_id, coupon_code, loyalty_points_used, loyalty_discount_amount,
                 tax_amount, total_amount, payment_method, payment_status, order_status, fulfillment_status,
                 client_order_uuid, notes, created_at, updated_at
             ) VALUES (
-                :order_number, :outlet_id, :customer_id, :user_id, :subtotal, :discount_amount, :discount_type,
+                :biz_id, :order_number, :outlet_id, :customer_id, :user_id, :subtotal, :discount_amount, :discount_type,
                 :price_list_id, :coupon_id, :coupon_code, :loyalty_points_used, :loyalty_discount_amount,
                 :tax_amount, :total_amount, :payment_method, :payment_status, :order_status, "delivered",
                 :client_order_uuid, :notes, NOW(), NOW()
             )
         ');
         $stmtOrder->execute([
+            'biz_id' => $bid,
             'order_number' => $orderNumber,
             'outlet_id' => $outletId ?: 1,
             'customer_id' => $customerId ?: 1, // Default to Walk-in customer
@@ -347,14 +409,14 @@ function process_pos_order(
         $stmtStockDec = $db->prepare('
             UPDATE products
             SET stock_quantity = stock_quantity - :qty, updated_at = NOW()
-            WHERE id = :id
+            WHERE id = :id AND business_id = :biz_id
         ');
 
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
 
@@ -384,12 +446,13 @@ function process_pos_order(
                     $compPid = (int)$comp['component_product_id'];
                     $compDeduct = (int)$comp['quantity'] * $pItem['quantity'];
 
-                    $stmtCompCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id FOR UPDATE');
-                    $stmtCompCur->execute(['id' => $compPid]);
+                    $stmtCompCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :biz_id FOR UPDATE');
+                    $stmtCompCur->execute(['id' => $compPid, 'biz_id' => $bid]);
                     $beforeCompStock = (int)$stmtCompCur->fetchColumn();
 
-                    $stmtStockDec->execute(['qty' => $compDeduct, 'id' => $compPid]);
+                    $stmtStockDec->execute(['qty' => $compDeduct, 'id' => $compPid, 'biz_id' => $bid]);
                     $stmtMoveLog->execute([
+                        'biz_id' => $bid,
                         'product_id' => $compPid,
                         'user_id' => $userId,
                         'movement_type' => 'out',
@@ -404,10 +467,12 @@ function process_pos_order(
                 $stmtStockDec->execute([
                     'qty' => $pItem['quantity'],
                     'id' => $pItem['product_id'],
+                    'biz_id' => $bid,
                 ]);
 
                 // Log inventory movement
                 $stmtMoveLog->execute([
+                    'biz_id' => $bid,
                     'product_id' => $pItem['product_id'],
                     'user_id' => $userId,
                     'movement_type' => 'out',
@@ -425,24 +490,26 @@ function process_pos_order(
         $igstAmount = 0.00;
 
         // Count existing invoices today for sequential numbering
-        $stmtInvCount = $db->query("SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE()");
+        $stmtInvCount = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtInvCount->execute(['bid' => $bid]);
         $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
         $invoiceNumber = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
-                invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
+                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
         $stmtInvoice->execute([
+            'biz_id' => $bid,
             'invoice_number' => $invoiceNumber,
             'order_id' => $orderId,
             'customer_id' => $customerId ?: 1,
@@ -466,25 +533,27 @@ function process_pos_order(
         $invoiceId = (int) $db->lastInsertId();
 
         // 8. Record in Centralized Payments table
-        $stmtPayCount = $db->query("SELECT COUNT(*) FROM payments WHERE DATE(created_at) = CURDATE()");
+        $stmtPayCount = $db->prepare("SELECT COUNT(*) FROM payments WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtPayCount->execute(['bid' => $bid]);
         $paySeq = (int) $stmtPayCount->fetchColumn() + 1;
         $paymentNumber = 'PAY-' . date('Ymd') . '-' . str_pad((string)$paySeq, 4, '0', STR_PAD_LEFT);
 
         // Check for active open register session
-        $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND status = "open" ORDER BY id DESC LIMIT 1');
-        $stmtSession->execute(['uid' => $userId]);
+        $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
+        $stmtSession->execute(['uid' => $userId, 'bid' => $bid]);
         $activeSessionId = $stmtSession->fetchColumn() ?: null;
 
         $stmtPay = $db->prepare('
             INSERT INTO payments (
-                payment_number, order_id, invoice_id, customer_id, user_id, session_id,
+                business_id, payment_number, order_id, invoice_id, customer_id, user_id, session_id,
                 payment_type, payment_method, amount, status, created_at
             ) VALUES (
-                :pay_num, :order_id, :inv_id, :cust_id, :user_id, :session_id,
+                :biz_id, :pay_num, :order_id, :inv_id, :cust_id, :user_id, :session_id,
                 "sale", :method, :amount, "paid", NOW()
             )
         ');
         $stmtPay->execute([
+            'biz_id' => $bid,
             'pay_num' => $paymentNumber,
             'order_id' => $orderId,
             'inv_id' => $invoiceId,
@@ -643,18 +712,23 @@ function bill_generate_pos(int $orderId, array $options = []): array {
    5. INVOICES LISTING & DETAILS
    ========================================================================= */
 
-function get_invoices(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50): array {
+function get_invoices(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT inv.*, o.order_number, c.name AS customer_name, c.phone AS customer_phone, u.name AS cashier_name,
                (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = inv.order_id) AS items_count
         FROM invoices inv
-        LEFT JOIN orders o ON o.id = inv.order_id
-        LEFT JOIN customers c ON c.id = inv.customer_id
+        LEFT JOIN orders o ON o.id = inv.order_id AND o.business_id = :bid_o
+        LEFT JOIN customers c ON c.id = inv.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = inv.user_id
-        WHERE 1=1
+        WHERE inv.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_o' => $bid,
+        'bid_c' => $bid,
+    ];
 
     if ($search !== '') {
         $sql .= ' AND (inv.invoice_number LIKE :search1 OR o.order_number LIKE :search2 OR c.name LIKE :search3 OR c.phone LIKE :search4)';
@@ -686,19 +760,20 @@ function get_invoices(string $search = '', string $status = '', string $dateFrom
     return $stmt->fetchAll();
 }
 
-function get_invoice_by_id(int $id): ?array {
+function get_invoice_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT inv.*, o.order_number, o.notes AS order_notes, c.name AS customer_name, c.phone AS customer_phone,
                c.email AS customer_email, c.address AS customer_address, u.name AS cashier_name
         FROM invoices inv
-        LEFT JOIN orders o ON o.id = inv.order_id
-        LEFT JOIN customers c ON c.id = inv.customer_id
+        LEFT JOIN orders o ON o.id = inv.order_id AND o.business_id = :bid_o
+        LEFT JOIN customers c ON c.id = inv.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = inv.user_id
-        WHERE inv.id = :id
+        WHERE inv.id = :id AND inv.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_o' => $bid, 'bid_c' => $bid]);
     $invoice = $stmt->fetch();
 
     if (!$invoice) return null;
@@ -706,30 +781,32 @@ function get_invoice_by_id(int $id): ?array {
     $stmtItems = $db->prepare('SELECT * FROM order_items WHERE order_id = :order_id ORDER BY id ASC');
     $stmtItems->execute(['order_id' => $invoice['order_id']]);
     $invoice['items'] = $stmtItems->fetchAll();
-    $invoice['store'] = get_store_settings();
+    $invoice['store'] = get_store_settings($bid);
 
     return $invoice;
 }
 
-function get_invoice_by_order_id(int $orderId): ?array {
+function get_invoice_by_order_id(int $orderId, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id LIMIT 1');
-    $stmt->execute(['order_id' => $orderId]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['order_id' => $orderId, 'bid' => $bid]);
     $id = $stmt->fetchColumn();
-    return $id ? get_invoice_by_id((int)$id) : null;
+    return $id ? get_invoice_by_id((int)$id, $bid) : null;
 }
 
 /* =========================================================================
    6. SAFE INVOICE CANCELLATION & INVENTORY STOCK REVERSAL
    ========================================================================= */
 
-function cancel_invoice(int $invoiceId, ?int $userId, string $reason = ''): array {
+function cancel_invoice(int $invoiceId, ?int $userId, string $reason = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     try {
         $db->beginTransaction();
 
-        $invoice = get_invoice_by_id($invoiceId);
+        $invoice = get_invoice_by_id($invoiceId, $bid);
         if (!$invoice) {
             throw new Exception('Invoice #' . $invoiceId . ' not found.');
         }
@@ -742,25 +819,25 @@ function cancel_invoice(int $invoiceId, ?int $userId, string $reason = ''): arra
         $cleanReason = trim($reason) ?: 'POS Invoice Cancellation';
 
         // 1. Mark invoice as cancelled
-        $stmtInv = $db->prepare('UPDATE invoices SET invoice_status = "cancelled", updated_at = NOW() WHERE id = :id');
-        $stmtInv->execute(['id' => $invoiceId]);
+        $stmtInv = $db->prepare('UPDATE invoices SET invoice_status = "cancelled", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+        $stmtInv->execute(['id' => $invoiceId, 'bid' => $bid]);
 
         // 2. Mark linked order as cancelled
-        $stmtOrd = $db->prepare('UPDATE orders SET order_status = "cancelled", updated_at = NOW() WHERE id = :id');
-        $stmtOrd->execute(['id' => $orderId]);
+        $stmtOrd = $db->prepare('UPDATE orders SET order_status = "cancelled", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+        $stmtOrd->execute(['id' => $orderId, 'bid' => $bid]);
 
         // 3. Restore inventory stock & record reversal movement for each item
         $stmtStockInc = $db->prepare('
             UPDATE products
             SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
-            WHERE id = :id
+            WHERE id = :id AND business_id = :bid
         ');
 
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
 
@@ -770,15 +847,16 @@ function cancel_invoice(int $invoiceId, ?int $userId, string $reason = ''): arra
 
             if ($prodId > 0) {
                 // Get current stock
-                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id FOR UPDATE');
-                $stmtCur->execute(['id' => $prodId]);
+                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+                $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
                 $currStock = (int) $stmtCur->fetchColumn();
 
                 // Increment stock
-                $stmtStockInc->execute(['qty' => $qty, 'id' => $prodId]);
+                $stmtStockInc->execute(['qty' => $qty, 'id' => $prodId, 'bid' => $bid]);
 
                 // Record inventory movement reversal
                 $stmtMoveLog->execute([
+                    'biz_id' => $bid,
                     'product_id' => $prodId,
                     'user_id' => $userId,
                     'quantity_change' => $qty,
@@ -804,11 +882,12 @@ function cancel_invoice(int $invoiceId, ?int $userId, string $reason = ''): arra
    7. HELD SALES (HOLD & RESUME)
    ========================================================================= */
 
-function save_held_sale(string $referenceNote, ?int $customerId, ?int $userId, array $cartItems, float $subtotal, float $totalAmount): array {
+function save_held_sale(string $referenceNote, ?int $customerId, ?int $userId, array $cartItems, float $subtotal, float $totalAmount, ?int $businessId = null): array {
     if (empty($cartItems)) {
         return ['success' => false, 'error' => 'Cannot hold an empty cart.'];
     }
 
+    $bid = $businessId ?: current_business_id();
     $ref = trim($referenceNote);
     if ($ref === '') {
         $ref = 'Hold #' . date('h:i A');
@@ -817,10 +896,11 @@ function save_held_sale(string $referenceNote, ?int $customerId, ?int $userId, a
     $db = get_db();
     try {
         $stmt = $db->prepare('
-            INSERT INTO held_sales (reference_note, customer_id, user_id, cart_json, subtotal, total_amount, created_at)
-            VALUES (:reference_note, :customer_id, :user_id, :cart_json, :subtotal, :total_amount, NOW())
+            INSERT INTO held_sales (business_id, reference_note, customer_id, user_id, cart_json, subtotal, total_amount, created_at)
+            VALUES (:biz_id, :reference_note, :customer_id, :user_id, :cart_json, :subtotal, :total_amount, NOW())
         ');
         $stmt->execute([
+            'biz_id' => $bid,
             'reference_note' => $ref,
             'customer_id' => $customerId,
             'user_id' => $userId,
@@ -834,48 +914,58 @@ function save_held_sale(string $referenceNote, ?int $customerId, ?int $userId, a
     }
 }
 
-function get_held_sales(): array {
+function get_held_sales(?int $businessId = null): array {
     $db = get_db();
-    $stmt = $db->query('
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('
         SELECT h.*, c.name AS customer_name, u.name AS user_name
         FROM held_sales h
-        LEFT JOIN customers c ON c.id = h.customer_id
+        LEFT JOIN customers c ON c.id = h.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = h.user_id
+        WHERE h.business_id = :bid
         ORDER BY h.id DESC
     ');
+    $stmt->execute(['bid' => $bid, 'bid_c' => $bid]);
     return $stmt->fetchAll();
 }
 
-function get_held_sale_by_id(int $id): ?array {
+function get_held_sale_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM held_sales WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM held_sales WHERE id = :id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['id' => $id, 'bid' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }
 
-function delete_held_sale(int $id): bool {
+function delete_held_sale(int $id, ?int $businessId = null): bool {
     $db = get_db();
-    $stmt = $db->prepare('DELETE FROM held_sales WHERE id = :id');
-    return $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('DELETE FROM held_sales WHERE id = :id AND business_id = :bid');
+    return $stmt->execute(['id' => $id, 'bid' => $bid]);
 }
 
 /* =========================================================================
    8. ORDERS LISTING & SALES STATS
    ========================================================================= */
 
-function get_orders(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50): array {
+function get_orders(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT o.*, inv.id AS invoice_id, inv.invoice_number, c.name AS customer_name, c.phone AS customer_phone, u.name AS cashier_name,
                (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS items_count
         FROM orders o
-        LEFT JOIN invoices inv ON inv.order_id = o.id
-        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = o.user_id
-        WHERE 1=1
+        WHERE o.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_inv' => $bid,
+        'bid_c' => $bid,
+    ];
 
     if ($search !== '') {
         $sql .= ' AND (o.order_number LIKE :search1 OR inv.invoice_number LIKE :search2 OR c.name LIKE :search3 OR c.phone LIKE :search4)';
@@ -907,19 +997,20 @@ function get_orders(string $search = '', string $status = '', string $dateFrom =
     return $stmt->fetchAll();
 }
 
-function get_order_by_id(int $id): ?array {
+function get_order_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT o.*, inv.id AS invoice_id, inv.invoice_number, c.name AS customer_name, c.phone AS customer_phone,
                c.email AS customer_email, c.address AS customer_address, u.name AS cashier_name
         FROM orders o
-        LEFT JOIN invoices inv ON inv.order_id = o.id
-        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = o.user_id
-        WHERE o.id = :id
+        WHERE o.id = :id AND o.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_inv' => $bid, 'bid_c' => $bid]);
     $order = $stmt->fetch();
 
     if (!$order) return null;
@@ -931,48 +1022,54 @@ function get_order_by_id(int $id): ?array {
     return $order;
 }
 
-function get_sales_stats(): array {
+function get_sales_stats(?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
-    // Active/completed sales stats (exclude cancelled)
-    $stmtAll = $db->query('
+    // Active/completed sales stats (exclude cancelled) scoped to current business
+    $stmtAll = $db->prepare('
         SELECT 
             COALESCE(SUM(total_amount), 0) AS total_revenue,
             COUNT(*) AS total_orders,
             COUNT(DISTINCT customer_id) AS total_customers
         FROM orders
-        WHERE order_status = "completed"
+        WHERE order_status = "completed" AND business_id = :bid
     ');
+    $stmtAll->execute(['bid' => $bid]);
     $all = $stmtAll->fetch();
 
-    // Today's active stats
-    $stmtToday = $db->query('
+    // Today's active stats scoped to current business
+    $stmtToday = $db->prepare('
         SELECT 
             COALESCE(SUM(total_amount), 0) AS today_revenue,
             COUNT(*) AS today_orders
         FROM orders
-        WHERE order_status = "completed" AND DATE(created_at) = CURDATE()
+        WHERE order_status = "completed" AND DATE(created_at) = CURDATE() AND business_id = :bid
     ');
+    $stmtToday->execute(['bid' => $bid]);
     $today = $stmtToday->fetch();
 
-    // Invoice counts
-    $stmtInvoices = $db->query('
+    // Invoice counts scoped to current business
+    $stmtInvoices = $db->prepare('
         SELECT 
             COUNT(*) AS total_invoices,
             SUM(CASE WHEN invoice_status = "paid" THEN 1 ELSE 0 END) AS paid_invoices,
             SUM(CASE WHEN invoice_status = "cancelled" THEN 1 ELSE 0 END) AS cancelled_invoices
         FROM invoices
+        WHERE business_id = :bid
     ');
+    $stmtInvoices->execute(['bid' => $bid]);
     $invStats = $stmtInvoices->fetch();
 
-    // Return stats
-    $stmtReturns = $db->query('
+    // Return stats scoped to current business
+    $stmtReturns = $db->prepare('
         SELECT 
             COUNT(*) AS total_returns,
             COALESCE(SUM(refund_amount), 0) AS total_refunded
         FROM returns
-        WHERE status = "completed"
+        WHERE status = "completed" AND business_id = :bid
     ');
+    $stmtReturns->execute(['bid' => $bid]);
     $retStats = $stmtReturns->fetch();
 
     return [
@@ -1035,18 +1132,20 @@ function process_pos_return(
     string $refundMethod = 'cash',
     string $reason = 'Customer Return',
     string $notes = '',
-    ?int $userId = null
+    ?int $userId = null,
+    ?int $businessId = null
 ): array {
     if (empty($returnItems)) {
         return ['success' => false, 'error' => 'No items selected for return.'];
     }
 
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     try {
         $db->beginTransaction();
 
-        $order = get_order_by_id($orderId);
+        $order = get_order_by_id($orderId, $bid);
         if (!$order) {
             throw new Exception('Order #' . $orderId . ' does not exist.');
         }
@@ -1107,26 +1206,28 @@ function process_pos_return(
         }
 
         // Generate Return Number
-        $stmtRetCount = $db->query("SELECT COUNT(*) FROM returns WHERE DATE(created_at) = CURDATE()");
+        $stmtRetCount = $db->prepare("SELECT COUNT(*) FROM returns WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtRetCount->execute(['bid' => $bid]);
         $seqToday = (int) $stmtRetCount->fetchColumn() + 1;
         $returnNumber = 'RET-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
 
         // Find linked invoice ID
-        $stmtInv = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id LIMIT 1');
-        $stmtInv->execute(['order_id' => $orderId]);
+        $stmtInv = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id AND business_id = :bid LIMIT 1');
+        $stmtInv->execute(['order_id' => $orderId, 'bid' => $bid]);
         $invoiceId = $stmtInv->fetchColumn() ?: null;
 
         // Insert into `returns`
         $stmtRet = $db->prepare('
             INSERT INTO returns (
-                return_number, order_id, invoice_id, customer_id, user_id,
+                business_id, return_number, order_id, invoice_id, customer_id, user_id,
                 refund_amount, refund_method, reason, notes, status, created_at, updated_at
             ) VALUES (
-                :return_number, :order_id, :invoice_id, :customer_id, :user_id,
+                :biz_id, :return_number, :order_id, :invoice_id, :customer_id, :user_id,
                 :refund_amount, :refund_method, :reason, :notes, "completed", NOW(), NOW()
             )
         ');
         $stmtRet->execute([
+            'biz_id' => $bid,
             'return_number' => $returnNumber,
             'order_id' => $orderId,
             'invoice_id' => $invoiceId,
@@ -1153,14 +1254,14 @@ function process_pos_return(
         $stmtStockInc = $db->prepare('
             UPDATE products
             SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
-            WHERE id = :id
+            WHERE id = :id AND business_id = :bid
         ');
 
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
 
@@ -1178,18 +1279,20 @@ function process_pos_return(
 
             if ($pRet['product_id'] > 0) {
                 // Get current stock
-                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id FOR UPDATE');
-                $stmtCur->execute(['id' => $pRet['product_id']]);
+                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+                $stmtCur->execute(['id' => $pRet['product_id'], 'bid' => $bid]);
                 $currStock = (int) $stmtCur->fetchColumn();
 
                 // Increment stock
                 $stmtStockInc->execute([
                     'qty' => $pRet['quantity'],
                     'id' => $pRet['product_id'],
+                    'bid' => $bid,
                 ]);
 
                 // Record inventory movement
                 $stmtMoveLog->execute([
+                    'biz_id' => $bid,
                     'product_id' => $pRet['product_id'],
                     'user_id' => $userId,
                     'quantity_change' => $pRet['quantity'],
@@ -1218,20 +1321,26 @@ function process_pos_return(
     }
 }
 
-function get_returns(string $search = '', string $dateFrom = '', string $dateTo = '', int $limit = 50): array {
+function get_returns(string $search = '', string $dateFrom = '', string $dateTo = '', int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT r.*, o.order_number, inv.invoice_number, c.name AS customer_name, c.phone AS customer_phone,
                u.name AS cashier_name,
                (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id = r.id) AS items_count
         FROM returns r
-        JOIN orders o ON o.id = r.order_id
-        LEFT JOIN invoices inv ON inv.id = r.invoice_id
-        LEFT JOIN customers c ON c.id = r.customer_id
+        JOIN orders o ON o.id = r.order_id AND o.business_id = :bid_o
+        LEFT JOIN invoices inv ON inv.id = r.invoice_id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = r.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = r.user_id
-        WHERE 1=1
+        WHERE r.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_o' => $bid,
+        'bid_inv' => $bid,
+        'bid_c' => $bid,
+    ];
 
     if ($search !== '') {
         $sql .= ' AND (r.return_number LIKE :search1 OR o.order_number LIKE :search2 OR c.name LIKE :search3 OR c.phone LIKE :search4)';
@@ -1258,20 +1367,21 @@ function get_returns(string $search = '', string $dateFrom = '', string $dateTo 
     return $stmt->fetchAll();
 }
 
-function get_return_by_id(int $id): ?array {
+function get_return_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT r.*, o.order_number, inv.invoice_number, c.name AS customer_name, c.phone AS customer_phone,
                c.email AS customer_email, u.name AS cashier_name
         FROM returns r
-        JOIN orders o ON o.id = r.order_id
-        LEFT JOIN invoices inv ON inv.id = r.invoice_id
-        LEFT JOIN customers c ON c.id = r.customer_id
+        JOIN orders o ON o.id = r.order_id AND o.business_id = :bid_o
+        LEFT JOIN invoices inv ON inv.id = r.invoice_id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = r.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = r.user_id
-        WHERE r.id = :id
+        WHERE r.id = :id AND r.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_o' => $bid, 'bid_inv' => $bid, 'bid_c' => $bid]);
     $ret = $stmt->fetch();
 
     if (!$ret) return null;
@@ -1292,8 +1402,9 @@ function get_return_by_id(int $id): ?array {
  * Handles customer linking, order generation, tax calculation, atomic inventory deductions,
  * and ledger auditing.
  */
-function create_custom_invoice(array $data, ?int $userId): array {
+function create_custom_invoice(array $data, ?int $userId, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     $customerId = !empty($data['customer_id']) ? (int)$data['customer_id'] : 1;
     $invoiceDate = !empty($data['invoice_date']) ? $data['invoice_date'] : date('Y-m-d');
@@ -1329,8 +1440,8 @@ function create_custom_invoice(array $data, ?int $userId): array {
                 continue; // Skip blank line rows
             }
 
-            $stmtProd = $db->prepare('SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status, hsn_code FROM products WHERE id = :id FOR UPDATE');
-            $stmtProd->execute(['id' => $productId]);
+            $stmtProd = $db->prepare('SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status, hsn_code FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+            $stmtProd->execute(['id' => $productId, 'bid' => $bid]);
             $prod = $stmtProd->fetch();
 
             if (!$prod) {
@@ -1386,16 +1497,17 @@ function create_custom_invoice(array $data, ?int $userId): array {
 
         $stmtOrder = $db->prepare('
             INSERT INTO orders (
-                order_number, outlet_id, customer_id, user_id, subtotal, discount_amount, discount_type,
+                business_id, order_number, outlet_id, customer_id, user_id, subtotal, discount_amount, discount_type,
                 tax_amount, total_amount, payment_method, payment_status, order_status, fulfillment_status,
                 notes, created_at, updated_at
             ) VALUES (
-                :order_number, 1, :customer_id, :user_id, :subtotal, :discount_amount, "fixed",
+                :biz_id, :order_number, 1, :customer_id, :user_id, :subtotal, :discount_amount, "fixed",
                 :tax_amount, :total_amount, :payment_method, :payment_status, "completed", "delivered",
                 :notes, NOW(), NOW()
             )
         ');
         $stmtOrder->execute([
+            'biz_id' => $bid,
             'order_number' => $orderNumber,
             'customer_id' => $customerId,
             'user_id' => $userId ?: 1,
@@ -1420,12 +1532,12 @@ function create_custom_invoice(array $data, ?int $userId): array {
             )
         ');
 
-        $stmtStockDec = $db->prepare('UPDATE products SET stock_quantity = stock_quantity - :qty, updated_at = NOW() WHERE id = :id');
+        $stmtStockDec = $db->prepare('UPDATE products SET stock_quantity = stock_quantity - :qty, updated_at = NOW() WHERE id = :id AND business_id = :bid');
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, "out", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, "out", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
 
@@ -1449,9 +1561,11 @@ function create_custom_invoice(array $data, ?int $userId): array {
             if ($invoiceStatus !== 'draft') {
                 $stmtStockDec->execute([
                     'qty' => $pItem['quantity'],
-                    'id' => $pItem['product_id']
+                    'id' => $pItem['product_id'],
+                    'bid' => $bid,
                 ]);
                 $stmtMoveLog->execute([
+                    'biz_id' => $bid,
                     'product_id' => $pItem['product_id'],
                     'user_id' => $userId ?: 1,
                     'quantity_change' => -$pItem['quantity'],
@@ -1465,7 +1579,8 @@ function create_custom_invoice(array $data, ?int $userId): array {
         // Auto-generate invoice number if not specified
         $invNum = trim((string)($data['invoice_number'] ?? ''));
         if ($invNum === '') {
-            $stmtInvCount = $db->query("SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE()");
+            $stmtInvCount = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+            $stmtInvCount->execute(['bid' => $bid]);
             $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
             $invNum = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
         }
@@ -1474,18 +1589,19 @@ function create_custom_invoice(array $data, ?int $userId): array {
 
         $stmtInsert = $db->prepare('
             INSERT INTO invoices (
-                invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :invoice_number, :order_id, :customer_id, :user_id, :invoice_date, :subtotal,
+                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, :invoice_date, :subtotal,
                 :discount_amount, "fixed", :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, 0.00, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
         $stmtInsert->execute([
+            'biz_id' => $bid,
             'invoice_number' => $invNum,
             'order_id' => $orderId,
             'customer_id' => $customerId,

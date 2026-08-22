@@ -6,12 +6,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 
-function get_sales_summary_report(string $dateFrom = '', string $dateTo = ''): array {
+function get_sales_summary_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
-    $where = 'WHERE o.order_status = "completed"';
-    $params = [];
+    $where = 'WHERE o.order_status = "completed" AND o.business_id = :bid';
+    $params = ['bid' => $bid];
     if ($dateFrom !== '') {
         $where .= ' AND DATE(o.created_at) >= :d_from';
         $params['d_from'] = $dateFrom;
@@ -50,11 +52,12 @@ function get_sales_summary_report(string $dateFrom = '', string $dateTo = ''): a
     return $summary;
 }
 
-function get_item_sales_report(string $dateFrom = '', string $dateTo = '', int $limit = 20): array {
+function get_item_sales_report(string $dateFrom = '', string $dateTo = '', int $limit = 20, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
-    $where = 'WHERE o.order_status = "completed"';
-    $params = [];
+    $where = 'WHERE o.order_status = "completed" AND o.business_id = :bid';
+    $params = ['bid' => $bid];
     if ($dateFrom !== '') {
         $where .= ' AND DATE(o.created_at) >= :d_from';
         $params['d_from'] = $dateFrom;
@@ -82,9 +85,10 @@ function get_item_sales_report(string $dateFrom = '', string $dateTo = '', int $
     return $stmt->fetchAll();
 }
 
-function get_inventory_valuation_report(): array {
+function get_inventory_valuation_report(?int $businessId = null): array {
     $db = get_db();
-    $stmt = $db->query('
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('
         SELECT 
             COUNT(*) AS total_products,
             COALESCE(SUM(stock_quantity), 0) AS total_units_in_stock,
@@ -93,14 +97,16 @@ function get_inventory_valuation_report(): array {
             SUM(CASE WHEN stock_quantity <= low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
             SUM(CASE WHEN stock_quantity = 0 THEN 1 ELSE 0 END) AS out_of_stock_count
         FROM products
-        WHERE status = "active"
+        WHERE business_id = :bid AND status = "active"
     ');
-    return $stmt->fetch();
+    $stmt->execute(['bid' => $bid]);
+    return $stmt->fetch() ?: [];
 }
 
-function get_category_performance_report(): array {
+function get_category_performance_report(?int $businessId = null): array {
     $db = get_db();
-    return $db->query('
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('
         SELECT 
             COALESCE(c.name, "Uncategorized") AS category_name,
             COUNT(DISTINCT p.id) AS products_count,
@@ -108,17 +114,21 @@ function get_category_performance_report(): array {
             COALESCE(SUM(oi.quantity), 0) AS total_units_sold,
             COALESCE(SUM(oi.line_total), 0) AS total_sales_value
         FROM categories c
-        LEFT JOIN products p ON p.category_id = c.id
+        LEFT JOIN products p ON p.category_id = c.id AND p.business_id = :bid_p
         LEFT JOIN order_items oi ON oi.product_id = p.id
+        WHERE c.business_id = :bid
         GROUP BY c.id, c.name
         ORDER BY total_sales_value DESC
-    ')->fetchAll();
+    ');
+    $stmt->execute(['bid' => $bid, 'bid_p' => $bid]);
+    return $stmt->fetchAll();
 }
 
-function get_gst_tax_report(string $dateFrom = '', string $dateTo = ''): array {
+function get_gst_tax_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
     $db = get_db();
-    $where = 'WHERE i.invoice_status != "cancelled"';
-    $params = [];
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE i.invoice_status != "cancelled" AND i.business_id = :bid';
+    $params = ['bid' => $bid];
     if ($dateFrom !== '') {
         $where .= ' AND DATE(i.invoice_date) >= :d_from';
         $params['d_from'] = $dateFrom;
@@ -147,10 +157,11 @@ function get_gst_tax_report(string $dateFrom = '', string $dateTo = ''): array {
     ];
 }
 
-function get_outlet_sales_report(string $dateFrom = '', string $dateTo = ''): array {
+function get_outlet_sales_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
     $db = get_db();
-    $where = 'WHERE o.order_status = "completed"';
-    $params = [];
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE o.order_status = "completed" AND o.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_ot' => $bid];
     if ($dateFrom !== '') {
         $where .= ' AND DATE(o.created_at) >= :d_from';
         $params['d_from'] = $dateFrom;
@@ -167,7 +178,7 @@ function get_outlet_sales_report(string $dateFrom = '', string $dateTo = ''): ar
             COUNT(o.id) AS total_orders,
             COALESCE(SUM(o.total_amount), 0) AS total_sales
         FROM orders o
-        LEFT JOIN outlets ot ON ot.id = o.outlet_id
+        LEFT JOIN outlets ot ON ot.id = o.outlet_id AND ot.business_id = :bid_ot
         {$where}
         GROUP BY ot.id, ot.name, ot.code
         ORDER BY total_sales DESC

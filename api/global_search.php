@@ -29,6 +29,7 @@ if ($query === '' || strlen($query) < 1) {
 }
 
 $db = get_db();
+$bid = current_business_id();
 $results = [];
 $searchPattern = '%' . $query . '%';
 
@@ -37,10 +38,10 @@ if ($scope === 'all' || $scope === 'products' || $scope === 'items') {
     $stmt = $db->prepare('
         SELECT id, name, sku, barcode, selling_price, stock_quantity
         FROM products
-        WHERE status = "active" AND (name LIKE ? OR sku LIKE ? OR barcode LIKE ?)
+        WHERE business_id = ? AND status = "active" AND (name LIKE ? OR sku LIKE ? OR barcode LIKE ?)
         LIMIT 6
     ');
-    $stmt->execute([$searchPattern, $searchPattern, $searchPattern]);
+    $stmt->execute([$bid, $searchPattern, $searchPattern, $searchPattern]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($items)) {
@@ -62,10 +63,10 @@ if ($scope === 'all' || $scope === 'customers') {
     $stmt = $db->prepare('
         SELECT id, name, phone, email
         FROM customers
-        WHERE name LIKE ? OR phone LIKE ? OR email LIKE ?
+        WHERE business_id = ? AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)
         LIMIT 6
     ');
-    $stmt->execute([$searchPattern, $searchPattern, $searchPattern]);
+    $stmt->execute([$bid, $searchPattern, $searchPattern, $searchPattern]);
     $custs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($custs)) {
@@ -87,11 +88,11 @@ if ($scope === 'all' || $scope === 'invoices') {
     $stmt = $db->prepare('
         SELECT id, invoice_number, total_amount, invoice_status, invoice_date
         FROM invoices
-        WHERE invoice_number LIKE ?
+        WHERE business_id = ? AND invoice_number LIKE ?
         ORDER BY id DESC
         LIMIT 6
     ');
-    $stmt->execute([$searchPattern]);
+    $stmt->execute([$bid, $searchPattern]);
     $invs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($invs)) {
@@ -113,11 +114,11 @@ if ($scope === 'all' || $scope === 'orders') {
     $stmt = $db->prepare('
         SELECT id, order_number, total_amount, payment_status, created_at
         FROM orders
-        WHERE order_number LIKE ?
+        WHERE business_id = ? AND order_number LIKE ?
         ORDER BY id DESC
         LIMIT 6
     ');
-    $stmt->execute([$searchPattern]);
+    $stmt->execute([$bid, $searchPattern]);
     $ords = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($ords)) {
@@ -139,10 +140,10 @@ if ($scope === 'all' || $scope === 'vendors') {
     $stmt = $db->prepare('
         SELECT id, name, company_name, phone, gstin
         FROM vendors
-        WHERE name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR gstin LIKE ?
+        WHERE business_id = ? AND (name LIKE ? OR company_name LIKE ? OR phone LIKE ? OR gstin LIKE ?)
         LIMIT 6
     ');
-    $stmt->execute([$searchPattern, $searchPattern, $searchPattern, $searchPattern]);
+    $stmt->execute([$bid, $searchPattern, $searchPattern, $searchPattern, $searchPattern]);
     $vens = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($vens)) {

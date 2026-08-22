@@ -6,15 +6,17 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 
 /* =========================================================================
    1. PROMOTIONS & DISCOUNTS
    ========================================================================= */
 
-function get_promotions(string $status = ''): array {
+function get_promotions(string $status = '', ?int $businessId = null): array {
     $db = get_db();
-    $sql = 'SELECT * FROM promotions WHERE 1=1';
-    $params = [];
+    $bid = $businessId ?: current_business_id();
+    $sql = 'SELECT * FROM promotions WHERE business_id = :bid';
+    $params = ['bid' => $bid];
     if ($status !== '') {
         $sql .= ' AND status = :status';
         $params['status'] = $status;
@@ -25,17 +27,19 @@ function get_promotions(string $status = ''): array {
     return $stmt->fetchAll();
 }
 
-function calculate_promotions_for_cart(array $cartItems, float $subtotal): array {
+function calculate_promotions_for_cart(array $cartItems, float $subtotal, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $today = date('Y-m-d');
     $stmt = $db->prepare('
         SELECT * FROM promotions 
-        WHERE status = "active" 
+        WHERE business_id = :bid
+          AND status = "active" 
           AND (start_date IS NULL OR start_date <= :d1)
           AND (end_date IS NULL OR end_date >= :d2)
         ORDER BY id DESC
     ');
-    $stmt->execute(['d1' => $today, 'd2' => $today]);
+    $stmt->execute(['bid' => $bid, 'd1' => $today, 'd2' => $today]);
     $activePromos = $stmt->fetchAll();
 
     $totalPromoDiscount = 0.00;
@@ -97,13 +101,17 @@ function calculate_promotions_for_cart(array $cartItems, float $subtotal): array
    2. COUPONS
    ========================================================================= */
 
-function get_coupons(): array {
+function get_coupons(?int $businessId = null): array {
     $db = get_db();
-    return $db->query('SELECT * FROM coupons ORDER BY id DESC')->fetchAll();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM coupons WHERE business_id = :bid ORDER BY id DESC');
+    $stmt->execute(['bid' => $bid]);
+    return $stmt->fetchAll();
 }
 
-function validate_and_apply_coupon(string $couponCode, float $subtotal): array {
+function validate_and_apply_coupon(string $couponCode, float $subtotal, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $code = strtoupper(trim($couponCode));
     if ($code === '') {
         return ['valid' => false, 'error' => 'Coupon code is required.'];
@@ -112,12 +120,12 @@ function validate_and_apply_coupon(string $couponCode, float $subtotal): array {
     $today = date('Y-m-d');
     $stmt = $db->prepare('
         SELECT * FROM coupons 
-        WHERE code = :code AND status = "active" 
+        WHERE code = :code AND business_id = :bid AND status = "active" 
           AND (start_date IS NULL OR start_date <= :d1)
           AND (end_date IS NULL OR end_date >= :d2)
         LIMIT 1
     ');
-    $stmt->execute(['code' => $code, 'd1' => $today, 'd2' => $today]);
+    $stmt->execute(['code' => $code, 'bid' => $bid, 'd1' => $today, 'd2' => $today]);
     $coupon = $stmt->fetch();
 
     if (!$coupon) {
@@ -153,41 +161,48 @@ function validate_and_apply_coupon(string $couponCode, float $subtotal): array {
     ];
 }
 
-function increment_coupon_usage(int $couponId): void {
+function increment_coupon_usage(int $couponId, ?int $businessId = null): void {
     $db = get_db();
-    $stmt = $db->prepare('UPDATE coupons SET usage_count = usage_count + 1 WHERE id = :id');
-    $stmt->execute(['id' => $couponId]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('UPDATE coupons SET usage_count = usage_count + 1 WHERE id = :id AND business_id = :bid');
+    $stmt->execute(['id' => $couponId, 'bid' => $bid]);
 }
 
 /* =========================================================================
    3. CUSTOMER GROUPS & LOYALTY PROGRAM
    ========================================================================= */
 
-function get_customer_groups(): array {
+function get_customer_groups(?int $businessId = null): array {
     $db = get_db();
-    return $db->query('SELECT * FROM customer_groups ORDER BY id ASC')->fetchAll();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM customer_groups WHERE business_id = :bid ORDER BY id ASC');
+    $stmt->execute(['bid' => $bid]);
+    return $stmt->fetchAll();
 }
 
-function get_customer_loyalty_balance(int $customerId): int {
+function get_customer_loyalty_balance(int $customerId, ?int $businessId = null): int {
     $db = get_db();
-    $stmt = $db->prepare('SELECT loyalty_points_balance FROM customers WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $customerId]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT loyalty_points_balance FROM customers WHERE id = :id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['id' => $customerId, 'bid' => $bid]);
     $pts = $stmt->fetchColumn();
     return $pts !== false ? (int)$pts : 0;
 }
 
-function record_loyalty_transaction(int $customerId, ?int $orderId, string $type, int $points, string $notes = ''): int {
+function record_loyalty_transaction(int $customerId, ?int $orderId, string $type, int $points, string $notes = '', ?int $businessId = null): int {
     $db = get_db();
-    $currBalance = get_customer_loyalty_balance($customerId);
+    $bid = $businessId ?: current_business_id();
+    $currBalance = get_customer_loyalty_balance($customerId, $bid);
 
     $change = ($type === 'redeemed') ? -$points : $points;
     $newBalance = max(0, $currBalance + $change);
 
     $stmt = $db->prepare('
-        INSERT INTO loyalty_transactions (customer_id, order_id, transaction_type, points, balance_after, notes, created_at)
-        VALUES (:cid, :oid, :type, :pts, :after, :notes, NOW())
+        INSERT INTO loyalty_transactions (business_id, customer_id, order_id, transaction_type, points, balance_after, notes, created_at)
+        VALUES (:biz_id, :cid, :oid, :type, :pts, :after, :notes, NOW())
     ');
     $stmt->execute([
+        'biz_id' => $bid,
         'cid' => $customerId,
         'oid' => $orderId,
         'type' => $type,
@@ -196,8 +211,8 @@ function record_loyalty_transaction(int $customerId, ?int $orderId, string $type
         'notes' => trim($notes) ?: null,
     ]);
 
-    $stmtCust = $db->prepare('UPDATE customers SET loyalty_points_balance = :bal WHERE id = :id');
-    $stmtCust->execute(['bal' => $newBalance, 'id' => $customerId]);
+    $stmtCust = $db->prepare('UPDATE customers SET loyalty_points_balance = :bal WHERE id = :id AND business_id = :bid');
+    $stmtCust->execute(['bal' => $newBalance, 'id' => $customerId, 'bid' => $bid]);
 
     return $newBalance;
 }

@@ -6,19 +6,27 @@
 declare(strict_types=1);
 
 $user = current_user();
+$business = current_business();
 $userName = $user ? $user['name'] : 'Aman Prajapat';
 $userEmail = $user ? $user['email'] : '';
-$displayName = !empty($user['name']) ? strtoupper($user['name']) : 'ASH COLLECTIVE';
+$businessName = $business ? $business['name'] : ($user ? $user['name'] : 'OminiFlow POS');
+$displayName = strtoupper($businessName);
 
 $initials = '';
-if ($user && !empty($user['name'])) {
+if (!empty($businessName)) {
+    $parts = explode(' ', trim($businessName));
+    $initials = strtoupper(substr($parts[0], 0, 1));
+    if (count($parts) > 1) {
+        $initials .= strtoupper(substr($parts[count($parts) - 1], 0, 1));
+    }
+} elseif ($user && !empty($user['name'])) {
     $parts = explode(' ', trim($user['name']));
     $initials = strtoupper(substr($parts[0], 0, 1));
     if (count($parts) > 1) {
         $initials .= strtoupper(substr($parts[count($parts) - 1], 0, 1));
     }
 } else {
-    $initials = 'AP';
+    $initials = 'OF';
 }
 
 $currentPage = basename($_SERVER['PHP_SELF']);

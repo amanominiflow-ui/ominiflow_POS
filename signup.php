@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         $errors['general'] = 'Invalid or expired session token. Please try again.';
     } else {
+        $businessName = (string) ($_POST['business_name'] ?? '');
         $name = (string) ($_POST['name'] ?? '');
         $email = (string) ($_POST['email'] ?? '');
         $phone = (string) ($_POST['phone'] ?? '');
@@ -26,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         set_old_input($_POST);
 
-        $result = register_user($name, $email, $phone, $password, $confirmPassword);
+        $result = register_user($name, $email, $phone, $password, $confirmPassword, $businessName);
 
         if ($result['success']) {
             clear_old_input();
@@ -165,6 +166,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <form method="POST" action="<?= asset('signup.php') ?>" novalidate>
                         <?= csrf_field() ?>
+
+                        <div class="of-form-group">
+                            <label for="business_name">Store / Business Name</label>
+                            <div class="of-input-wrap">
+                                <span class="of-input-icon">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.25A2.25 2.25 0 010 18.75V5.25A2.25 2.25 0 012.25 3h13.5A2.25 2.25 0 0118 5.25v13.5A2.25 2.25 0 0115.75 21H13.5z" />
+                                    </svg>
+                                </span>
+                                <input
+                                    id="business_name"
+                                    name="business_name"
+                                    type="text"
+                                    value="<?= e(old('business_name')) ?>"
+                                    autofocus
+                                    placeholder="e.g. My Fashion Store"
+                                    class="of-input <?= !empty($errors['business_name']) ? 'is-invalid' : '' ?>"
+                                >
+                            </div>
+                            <?php if (!empty($errors['business_name'])): ?>
+                                <p class="of-error"><?= e($errors['business_name']) ?></p>
+                            <?php endif; ?>
+                        </div>
 
                         <div class="of-form-group">
                             <label for="name">Full Name</label>
