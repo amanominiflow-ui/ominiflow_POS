@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
+require_once __DIR__ . '/includes/payment_options_db.php';
 
 require_auth();
 
@@ -133,6 +134,7 @@ $categories = get_categories('', 'active');
 $products = get_products('', null, 'active');
 $customers = get_customers();
 $heldSales = get_held_sales();
+$paymentOptions = get_payment_options('active');
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -398,18 +400,35 @@ $flashError = get_flash('error');
                     <!-- Payment Method Selectors -->
                     <label class="form-label" style="margin-bottom: 8px;">Select Payment Method <span style="color: #ef4444;">*</span></label>
                     <div class="payment-methods-grid">
-                        <div class="payment-method-card active" data-method="cash">
-                            <span style="font-size: 20px;">💵</span>
-                            <span>Cash</span>
-                        </div>
-                        <div class="payment-method-card" data-method="card">
-                            <span style="font-size: 20px;">💳</span>
-                            <span>Card / POS</span>
-                        </div>
-                        <div class="payment-method-card" data-method="upi">
-                            <span style="font-size: 20px;">📱</span>
-                            <span>UPI QR</span>
-                        </div>
+                        <?php if (!empty($paymentOptions)): ?>
+                            <?php foreach ($paymentOptions as $pIndex => $pOpt): 
+                                $pModeLower = strtolower(str_replace(' ', '_', $pOpt['payment_mode']));
+                                $pIcon = '💵';
+                                if (stripos($pOpt['payment_mode'], 'card') !== false) $pIcon = '💳';
+                                elseif (stripos($pOpt['payment_mode'], 'upi') !== false || stripos($pOpt['payment_mode'], 'pay') !== false) $pIcon = '📱';
+                                elseif (stripos($pOpt['payment_mode'], 'credit') !== false) $pIcon = '📋';
+                                elseif (stripos($pOpt['payment_mode'], 'loyalty') !== false) $pIcon = '🎁';
+                                elseif (stripos($pOpt['payment_mode'], 'bank') !== false || stripos($pOpt['payment_mode'], 'cheque') !== false) $pIcon = '🏛️';
+                            ?>
+                                <div class="payment-method-card <?= $pIndex === 0 ? 'active' : '' ?>" data-method="<?= e($pModeLower) ?>" title="<?= e($pOpt['display_name']) ?>">
+                                    <span style="font-size: 20px;"><?= $pIcon ?></span>
+                                    <span><?= e($pOpt['display_name']) ?></span>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="payment-method-card active" data-method="cash">
+                                <span style="font-size: 20px;">💵</span>
+                                <span>Cash</span>
+                            </div>
+                            <div class="payment-method-card" data-method="card">
+                                <span style="font-size: 20px;">💳</span>
+                                <span>Card / POS</span>
+                            </div>
+                            <div class="payment-method-card" data-method="upi">
+                                <span style="font-size: 20px;">📱</span>
+                                <span>UPI QR</span>
+                            </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Cash Payment Calculator -->

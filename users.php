@@ -32,24 +32,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = strtolower(trim($_POST['email'] ?? ''));
         $name = trim($_POST['name'] ?? '');
         $role = trim($_POST['role'] ?? 'Staff');
+        $bid = current_business_id();
 
         if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             set_flash('error', 'Please enter a valid email address.');
         } elseif (!$name) {
             set_flash('error', 'Please enter user full name.');
         } else {
-            // Check if user email already exists
-            $stmtChk = $db->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-            $stmtChk->execute(['email' => $email]);
+            // Check if user email already exists for this business
+            $stmtChk = $db->prepare('SELECT id FROM users WHERE email = :email AND business_id = :bid LIMIT 1');
+            $stmtChk->execute(['email' => $email, 'bid' => $bid]);
             if ($stmtChk->fetch()) {
-                set_flash('error', "A user with email '{$email}' already exists.");
+                set_flash('error', "A user with email '{$email}' already exists in your organization.");
             } else {
                 $tempPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
                 $stmt = $db->prepare('
-                    INSERT INTO users (name, email, password, role, status, created_at, updated_at)
-                    VALUES (:name, :email, :pass, :role, "active", NOW(), NOW())
+                    INSERT INTO users (business_id, name, email, password, role, status, created_at, updated_at)
+                    VALUES (:bid, :name, :email, :pass, :role, "active", NOW(), NOW())
                 ');
                 $stmt->execute([
+                    'bid' => $bid,
                     'name' => $name,
                     'email' => $email,
                     'pass' => $tempPassword,
@@ -64,30 +66,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'delete_user') {
         $delId = (int)($_POST['user_id'] ?? 0);
+        $bid = current_business_id();
         if ($delId === (int)$user['id']) {
             set_flash('error', 'You cannot delete your own active administrator account.');
         } elseif ($delId > 0) {
-            $db->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $delId]);
+            $db->prepare('DELETE FROM users WHERE id = :id AND business_id = :bid')->execute(['id' => $delId, 'bid' => $bid]);
             set_flash('success', 'User removed successfully.');
         }
         redirect(APP_URL . '/users.php');
     }
 }
 
-// Ensure primary Ravindra Nagar exists for exact parity with media_1787136275901.png
-$stmtR = $db->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-$stmtR->execute(['email' => 'info@ominiflow.com']);
-if (!$stmtR->fetch()) {
-    $db->prepare('
-        INSERT INTO users (name, email, password, role, status, created_at, updated_at)
-        VALUES ("Ravindra Nagar", "info@ominiflow.com", :pass, "Admin", "active", NOW(), NOW())
-    ')->execute(['pass' => password_hash('admin123', PASSWORD_DEFAULT)]);
-}
-
+$bid = current_business_id();
 // Filter support
 $filter = $_GET['filter'] ?? 'all';
-$sql = 'SELECT id, name, email, role, status, created_at FROM users WHERE 1=1';
-$params = [];
+$sql = 'SELECT id, name, email, role, status, created_at FROM users WHERE business_id = :bid';
+$params = ['bid' => $bid];
 
 if ($filter === 'active') {
     $sql .= ' AND status = "active"';
@@ -99,7 +93,7 @@ if ($filter === 'active') {
     $sql .= ' AND LOWER(role) != "admin"';
 }
 
-$sql .= ' ORDER BY (email = "info@ominiflow.com") DESC, id ASC';
+$sql .= ' ORDER BY id ASC';
 $stmtUsers = $db->prepare($sql);
 $stmtUsers->execute($params);
 $usersList = $stmtUsers->fetchAll() ?: [];

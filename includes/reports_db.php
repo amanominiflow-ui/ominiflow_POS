@@ -186,3 +186,223 @@ function get_outlet_sales_report(string $dateFrom = '', string $dateTo = '', ?in
     $stmt->execute($params);
     return $stmt->fetchAll();
 }
+
+function get_sales_by_cashier_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE o.order_status = "completed" AND o.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_u' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(o.created_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(o.created_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            COALESCE(u.name, 'Primary Cashier') AS cashier_name,
+            COALESCE(u.email, 'staff@ominiflow.pos') AS cashier_email,
+            COUNT(o.id) AS total_bills,
+            COALESCE(SUM(o.total_amount), 0) AS total_sales_collected,
+            COALESCE(SUM(o.discount_amount), 0) AS total_discounts
+        FROM orders o
+        LEFT JOIN users u ON u.id = o.user_id AND u.business_id = :bid_u
+        {$where}
+        GROUP BY o.user_id, u.name, u.email
+        ORDER BY total_sales_collected DESC
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_payments_received_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE o.order_status = "completed" AND o.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_c' => $bid, 'bid_u' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(o.created_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(o.created_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            o.id AS order_id,
+            o.order_number,
+            o.created_at AS payment_date,
+            COALESCE(c.name, 'Walk-in Customer') AS customer_name,
+            o.payment_method,
+            o.total_amount AS amount_received,
+            COALESCE(u.name, 'Cashier') AS received_by
+        FROM orders o
+        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
+        LEFT JOIN users u ON u.id = o.user_id AND u.business_id = :bid_u
+        {$where}
+        ORDER BY o.id DESC
+        LIMIT 100
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_credit_notes_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE cn.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_c' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(cn.created_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(cn.created_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            cn.*,
+            COALESCE(c.name, 'Walk-in Customer') AS customer_name
+        FROM credit_notes cn
+        LEFT JOIN customers c ON c.id = cn.customer_id AND c.business_id = :bid_c
+        {$where}
+        ORDER BY cn.id DESC
+        LIMIT 100
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_refunds_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE r.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_c' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(r.created_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(r.created_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            r.*,
+            COALESCE(c.name, 'Walk-in Customer') AS customer_name
+        FROM returns r
+        LEFT JOIN customers c ON c.id = r.customer_id AND c.business_id = :bid_c
+        {$where}
+        ORDER BY r.id DESC
+        LIMIT 100
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_customer_balances_report(?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare("
+        SELECT 
+            c.id, c.name, c.phone, c.email,
+            c.loyalty_points_balance,
+            c.credit_limit,
+            c.outstanding_receivable,
+            COUNT(o.id) AS total_orders_placed,
+            COALESCE(SUM(o.total_amount), 0) AS lifetime_spend
+        FROM customers c
+        LEFT JOIN orders o ON o.customer_id = c.id AND o.order_status = 'completed' AND o.business_id = :bid_o
+        WHERE c.business_id = :bid
+        GROUP BY c.id, c.name, c.phone, c.email, c.loyalty_points_balance, c.credit_limit, c.outstanding_receivable
+        ORDER BY lifetime_spend DESC
+    ");
+    $stmt->execute(['bid' => $bid, 'bid_o' => $bid]);
+    return $stmt->fetchAll();
+}
+
+function get_vendor_balances_report(?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare("
+        SELECT 
+            v.*,
+            COUNT(po.id) AS total_pos_created,
+            COALESCE(SUM(po.total_amount), 0) AS total_procured_value
+        FROM vendors v
+        LEFT JOIN purchase_orders po ON po.vendor_id = v.id AND po.business_id = :bid_po
+        WHERE v.business_id = :bid
+        GROUP BY v.id
+        ORDER BY v.outstanding_balance DESC
+    ");
+    $stmt->execute(['bid' => $bid, 'bid_po' => $bid]);
+    return $stmt->fetchAll();
+}
+
+function get_purchases_summary_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE po.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_v' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(po.created_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(po.created_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            po.*,
+            v.name AS vendor_name,
+            v.company_name AS vendor_company
+        FROM purchase_orders po
+        LEFT JOIN vendors v ON v.id = po.vendor_id AND v.business_id = :bid_v
+        {$where}
+        ORDER BY po.id DESC
+        LIMIT 100
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_register_shifts_report(string $dateFrom = '', string $dateTo = '', ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $where = 'WHERE rs.business_id = :bid';
+    $params = ['bid' => $bid, 'bid_r' => $bid, 'bid_u' => $bid];
+    if ($dateFrom !== '') {
+        $where .= ' AND DATE(rs.opened_at) >= :d_from';
+        $params['d_from'] = $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $where .= ' AND DATE(rs.opened_at) <= :d_to';
+        $params['d_to'] = $dateTo;
+    }
+
+    $stmt = $db->prepare("
+        SELECT 
+            rs.*,
+            r.name AS register_name,
+            r.code AS register_code,
+            COALESCE(u.name, 'Staff') AS cashier_name
+        FROM register_sessions rs
+        LEFT JOIN registers r ON r.id = rs.register_id AND r.business_id = :bid_r
+        LEFT JOIN users u ON u.id = rs.user_id AND u.business_id = :bid_u
+        {$where}
+        ORDER BY rs.id DESC
+        LIMIT 100
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}

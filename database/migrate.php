@@ -8,6 +8,26 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
 
+function add_column_if_not_exists(PDO $pdo, string $table, string $column, string $definition): void {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = :col
+        ");
+        $stmt->execute([
+            'db' => DB_NAME,
+            'tbl' => $table,
+            'col' => $column,
+        ]);
+        if ((int)$stmt->fetchColumn() === 0) {
+            $pdo->exec("ALTER TABLE `{$table}` ADD `{$column}` {$definition}");
+        }
+    } catch (Exception $e) {
+        // Table might not exist or already has column
+    }
+}
+
 try {
     $dsn = sprintf('mysql:host=%s;port=%d;charset=utf8mb4', DB_HOST, DB_PORT);
     $pdo = new PDO($dsn, DB_USER, DB_PASS, [
@@ -1016,6 +1036,69 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
+    // 48. Payment Options / Tender Types Table (Zoho POS Parity)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `payment_options` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `display_name` VARCHAR(100) NOT NULL,
+            `processing_type` VARCHAR(50) NOT NULL DEFAULT 'Manual Entry',
+            `payment_mode` VARCHAR(100) NOT NULL DEFAULT 'Cash',
+            `deposit_to` VARCHAR(100) NOT NULL DEFAULT 'Petty Cash',
+            `is_customer_required` TINYINT(1) NOT NULL DEFAULT 0,
+            `is_express_checkout` TINYINT(1) NOT NULL DEFAULT 0,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_payment_options_business` (`business_id`),
+            INDEX `idx_payment_options_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // Seed default Payment Tender Types for Business 1 if empty
+    $stmtPO = $pdo->query("SELECT id FROM payment_options WHERE business_id = 1 LIMIT 1");
+    if (!$stmtPO->fetch()) {
+        $pdo->exec("
+            INSERT INTO `payment_options` (`business_id`, `display_name`, `processing_type`, `payment_mode`, `deposit_to`, `is_customer_required`, `is_express_checkout`, `sort_order`, `status`, `created_at`, `updated_at`) VALUES
+            (1, 'Cash', 'Manual Entry', 'Cash', 'Petty Cash', 0, 1, 1, 'active', NOW(), NOW()),
+            (1, 'Card', 'Manual Entry', 'Card', 'Main Bank Account', 0, 0, 2, 'active', NOW(), NOW()),
+            (1, 'UPI', 'Manual Entry', 'UPI', 'Main Bank Account', 0, 1, 3, 'active', NOW(), NOW()),
+            (1, 'Credit Sale', 'Credit Sale', '-', 'Petty Cash', 1, 0, 4, 'active', NOW(), NOW()),
+            (1, 'Loyalty', 'Loyalty Redemption', 'Loyalty Points', 'Petty Cash', 1, 0, 5, 'inactive', NOW(), NOW()),
+            (1, 'Credit Note', 'Credit Note', 'Credit Note', 'Petty Cash', 1, 0, 6, 'active', NOW(), NOW());
+        ");
+    }
+
+    // 49. Custom Roles & Permissions Table (Zoho POS Parity)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `roles` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `name` VARCHAR(100) NOT NULL,
+            `description` TEXT NULL,
+            `web_access` TINYINT(1) NOT NULL DEFAULT 1,
+            `billing_access` TINYINT(1) NOT NULL DEFAULT 1,
+            `permissions_json` LONGTEXT NULL,
+            `is_system_default` TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_roles_business` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // Seed default Roles for Business 1 if empty
+    $stmtRole = $pdo->query("SELECT id FROM roles WHERE business_id = 1 LIMIT 1");
+    if (!$stmtRole->fetch()) {
+        $pdo->exec("
+            INSERT INTO `roles` (`business_id`, `name`, `description`, `web_access`, `billing_access`, `permissions_json`, `is_system_default`, `created_at`, `updated_at`) VALUES
+            (1, 'Admin', 'The administrators are the business owners. They\'ll have access to the entire application', 1, 1, '{\"all\":true}', 1, NOW(), NOW()),
+            (1, 'Store Manager', 'The store manager manages the business. They\'ll have access to most features except for certain administrative privileges', 1, 1, '{\"inventory\":{\"items\":[\"view\",\"create\",\"edit\",\"delete\"]},\"sales\":{\"invoices\":[\"view\",\"create\",\"edit\"]},\"pos\":{\"allow_price_edit\":true,\"allow_discount\":true}}', 1, NOW(), NOW()),
+            (1, 'Cashier', 'The staff executes day-to-day operations such as sales, receiving purchases, processing returns, etc.', 0, 1, '{\"sales\":{\"invoices\":[\"view\",\"create\"]},\"pos\":{\"allow_discount\":true,\"allow_cash_in\":true,\"allow_cash_out\":true}}', 1, NOW(), NOW()),
+            (1, 'Staff', 'General store staff with basic sales checkout and item lookup permissions.', 0, 1, '{\"sales\":{\"invoices\":[\"view\",\"create\"]}}', 1, NOW(), NOW());
+        ");
+    }
+
     /* =========================================================================
        ADDITIVE MULTI-TENANT & BUSINESS_ID COLUMNS (SAFE & NON-BREAKING)
        ========================================================================= */
@@ -1028,7 +1111,8 @@ try {
         'price_lists', 'customer_groups', 'promotions', 'coupons', 'loyalty_transactions',
         'role_permissions', 'purchase_returns', 'vendor_payments', 'product_serials',
         'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
-        'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations'
+        'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations',
+        'payment_options', 'roles'
     ];
 
     foreach ($tenantTables as $tTable) {
@@ -1116,12 +1200,41 @@ try {
     ");
 
     if (php_sapi_name() === 'cli') {
-        echo "SUCCESS: Database `ominiflow_pos` Phase 2 Advanced Zoho POS tables and columns migrated successfully.\n";
+        echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";
+    } else {
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!DOCTYPE html>
+        <html>
+        <head>
+            <title>Migration Successful — OminiFlow POS</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 40px; max-width: 540px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+                .icon { width: 64px; height: 64px; background: #059669; color: #fff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 20px; font-size: 32px; }
+                h1 { margin: 0 0 10px; font-size: 24px; color: #fff; }
+                p { color: #94a3b8; font-size: 15px; line-height: 1.5; margin: 0 0 28px; }
+                .btn { display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: 15px; transition: background 0.2s; }
+                .btn:hover { background: #1d4ed8; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="icon">✓</div>
+                <h1>Database Migration Completed!</h1>
+                <p>All 37 multi-tenant tables, <code>businesses</code> organization schema, and <code>business_id</code> columns have been configured successfully.</p>
+                <a href="../login.php" class="btn">Go to Login / Dashboard →</a>
+            </div>
+        </body>
+        </html>';
     }
 } catch (PDOException $e) {
     if (php_sapi_name() === 'cli') {
         echo "ERROR: " . $e->getMessage() . "\n";
         exit(1);
     }
-    throw $e;
+    echo '<div style="font-family:sans-serif;background:#fee2e2;color:#991b1b;padding:24px;border-radius:12px;max-width:600px;margin:50px auto;border:1px solid #f87171;">
+        <h2 style="margin-top:0;">Migration Error</h2>
+        <p>' . htmlspecialchars($e->getMessage()) . '</p>
+    </div>';
+    exit(1);
 }
