@@ -6,15 +6,17 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 
 /* =========================================================================
    1. OUTLET OPERATIONS
    ========================================================================= */
 
-function get_outlets(string $status = ''): array {
+function get_outlets(string $status = '', ?int $businessId = null): array {
     $db = get_db();
-    $sql = 'SELECT * FROM outlets WHERE 1=1';
-    $params = [];
+    $bid = $businessId ?: current_business_id();
+    $sql = 'SELECT * FROM outlets WHERE business_id = :biz_id';
+    $params = ['biz_id' => $bid];
     if ($status !== '') {
         $sql .= ' AND status = :status';
         $params['status'] = $status;
@@ -25,16 +27,18 @@ function get_outlets(string $status = ''): array {
     return $stmt->fetchAll();
 }
 
-function get_outlet_by_id(int $id): ?array {
+function get_outlet_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM outlets WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM outlets WHERE id = :id AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['id' => $id, 'biz_id' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }
 
-function save_outlet(array $data, ?int $id = null): array {
+function save_outlet(array $data, ?int $id = null, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $name = trim((string)($data['name'] ?? ''));
     $code = strtoupper(trim((string)($data['code'] ?? '')));
     $address = trim((string)($data['address'] ?? ''));
@@ -51,20 +55,21 @@ function save_outlet(array $data, ?int $id = null): array {
             $stmt = $db->prepare('
                 UPDATE outlets 
                 SET name = :name, code = :code, address = :address, phone = :phone, email = :email, gstin = :gstin, status = :status, updated_at = NOW()
-                WHERE id = :id
+                WHERE id = :id AND business_id = :biz_id
             ');
             $stmt->execute([
                 'name' => $name, 'code' => $code, 'address' => $address ?: null,
                 'phone' => $phone ?: null, 'email' => $email ?: null, 'gstin' => $gstin ?: null,
-                'status' => $status, 'id' => $id,
+                'status' => $status, 'id' => $id, 'biz_id' => $bid,
             ]);
             return ['success' => true, 'outlet_id' => $id];
         } else {
             $stmt = $db->prepare('
-                INSERT INTO outlets (name, code, address, phone, email, gstin, status, created_at, updated_at)
-                VALUES (:name, :code, :address, :phone, :email, :gstin, :status, NOW(), NOW())
+                INSERT INTO outlets (business_id, name, code, address, phone, email, gstin, status, created_at, updated_at)
+                VALUES (:biz_id, :name, :code, :address, :phone, :email, :gstin, :status, NOW(), NOW())
             ');
             $stmt->execute([
+                'biz_id' => $bid,
                 'name' => $name, 'code' => $code, 'address' => $address ?: null,
                 'phone' => $phone ?: null, 'email' => $email ?: null, 'gstin' => $gstin ?: null,
                 'status' => $status,
@@ -74,10 +79,11 @@ function save_outlet(array $data, ?int $id = null): array {
             // Auto-create an associated default warehouse for this new outlet
             $whCode = 'WH-' . $code;
             $stmtWH = $db->prepare('
-                INSERT INTO warehouses (outlet_id, name, code, location, status, created_at, updated_at)
-                VALUES (:oid, :name, :code, :loc, "active", NOW(), NOW())
+                INSERT INTO warehouses (business_id, outlet_id, name, code, location, status, created_at, updated_at)
+                VALUES (:biz_id, :oid, :name, :code, :loc, "active", NOW(), NOW())
             ');
             $stmtWH->execute([
+                'biz_id' => $bid,
                 'oid' => $outletId,
                 'name' => $name . ' Warehouse',
                 'code' => $whCode,
@@ -95,15 +101,19 @@ function save_outlet(array $data, ?int $id = null): array {
    2. WAREHOUSE OPERATIONS & STOCK
    ========================================================================= */
 
-function get_warehouses(?int $outletId = null, string $status = ''): array {
+function get_warehouses(?int $outletId = null, string $status = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT w.*, o.name AS outlet_name, o.code AS outlet_code
         FROM warehouses w
-        LEFT JOIN outlets o ON o.id = w.outlet_id
-        WHERE 1=1
+        LEFT JOIN outlets o ON o.id = w.outlet_id AND o.business_id = :biz_id_o
+        WHERE w.business_id = :biz_id
     ';
-    $params = [];
+    $params = [
+        'biz_id' => $bid,
+        'biz_id_o' => $bid
+    ];
     if ($outletId !== null && $outletId > 0) {
         $sql .= ' AND w.outlet_id = :oid';
         $params['oid'] = $outletId;
@@ -118,15 +128,16 @@ function get_warehouses(?int $outletId = null, string $status = ''): array {
     return $stmt->fetchAll();
 }
 
-function get_warehouse_by_id(int $id): ?array {
+function get_warehouse_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT w.*, o.name AS outlet_name 
         FROM warehouses w 
-        LEFT JOIN outlets o ON o.id = w.outlet_id 
-        WHERE w.id = :id LIMIT 1
+        LEFT JOIN outlets o ON o.id = w.outlet_id AND o.business_id = :biz_id_o
+        WHERE w.id = :id AND w.business_id = :biz_id LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'biz_id' => $bid, 'biz_id_o' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }
@@ -153,8 +164,9 @@ function set_product_warehouse_stock(int $productId, int $warehouseId, int $newS
    3. STOCK TRANSFERS WORKFLOW
    ========================================================================= */
 
-function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, array $items, string $notes = '', ?int $userId = null): array {
+function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, array $items, string $notes = '', ?int $userId = null, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     if ($sourceWarehouseId === $destWarehouseId) {
         return ['success' => false, 'error' => 'Source and destination warehouse cannot be identical.'];
     }
@@ -165,15 +177,17 @@ function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, arr
     try {
         $db->beginTransaction();
 
-        $stmtCount = $db->query("SELECT COUNT(*) FROM stock_transfers WHERE DATE(created_at) = CURDATE()");
+        $stmtCount = $db->prepare("SELECT COUNT(*) FROM stock_transfers WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtCount->execute(['bid' => $bid]);
         $seq = (int)$stmtCount->fetchColumn() + 1;
         $transferNumber = 'TRF-' . date('Ymd') . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
         $stmtTrf = $db->prepare('
-            INSERT INTO stock_transfers (transfer_number, source_warehouse_id, dest_warehouse_id, user_id, status, notes, created_at, updated_at)
-            VALUES (:num, :swid, :dwid, :uid, "requested", :notes, NOW(), NOW())
+            INSERT INTO stock_transfers (business_id, transfer_number, source_warehouse_id, dest_warehouse_id, user_id, status, notes, created_at, updated_at)
+            VALUES (:biz_id, :num, :swid, :dwid, :uid, "requested", :notes, NOW(), NOW())
         ');
         $stmtTrf->execute([
+            'biz_id' => $bid,
             'num' => $transferNumber,
             'swid' => $sourceWarehouseId,
             'dwid' => $destWarehouseId,
@@ -218,6 +232,7 @@ function dispatch_stock_transfer(int $transferId, ?int $userId = null): array {
             throw new Exception('Stock transfer is not in dispatchable state.');
         }
 
+        $bid = (int)($trf['business_id'] ?? current_business_id());
         $sourceWhId = (int)$trf['source_warehouse_id'];
 
         // Deduct from source warehouse stock & log audit
@@ -234,15 +249,16 @@ function dispatch_stock_transfer(int $transferId, ?int $userId = null): array {
             set_product_warehouse_stock($pid, $sourceWhId, $newSourceStock);
 
             // Also decrement general product table stock while in transit
-            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity - :qty WHERE id = :id');
-            $stmtProd->execute(['qty' => $qty, 'id' => $pid]);
+            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity - :qty WHERE id = :id AND business_id = :biz_id');
+            $stmtProd->execute(['qty' => $qty, 'id' => $pid, 'biz_id' => $bid]);
 
             // Audit movement
             $stmtMov = $db->prepare('
-                INSERT INTO inventory_movements (product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
-                VALUES (:pid, :uid, "out", :change, :before, :after, :reason, NOW())
+                INSERT INTO inventory_movements (business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
+                VALUES (:biz_id, :pid, :uid, "out", :change, :before, :after, :reason, NOW())
             ');
             $stmtMov->execute([
+                'biz_id' => $bid,
                 'pid' => $pid,
                 'uid' => $userId ?: 1,
                 'change' => -$qty,
@@ -273,6 +289,7 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
             throw new Exception('Only in-transit transfers can be received.');
         }
 
+        $bid = (int)($trf['business_id'] ?? current_business_id());
         $destWhId = (int)$trf['dest_warehouse_id'];
 
         foreach ($trf['items'] as $item) {
@@ -284,8 +301,8 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
             set_product_warehouse_stock($pid, $destWhId, $newDestStock);
 
             // Increment general product stock table
-            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity + :qty WHERE id = :id');
-            $stmtProd->execute(['qty' => $qty, 'id' => $pid]);
+            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity + :qty WHERE id = :id AND business_id = :biz_id');
+            $stmtProd->execute(['qty' => $qty, 'id' => $pid, 'biz_id' => $bid]);
 
             // Update item received qty
             $stmtItemUp = $db->prepare('UPDATE stock_transfer_items SET quantity_received = :qty WHERE stock_transfer_id = :tid AND product_id = :pid');
@@ -293,10 +310,11 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
 
             // Audit movement
             $stmtMov = $db->prepare('
-                INSERT INTO inventory_movements (product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
-                VALUES (:pid, :uid, "in", :change, :before, :after, :reason, NOW())
+                INSERT INTO inventory_movements (business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
+                VALUES (:biz_id, :pid, :uid, "in", :change, :before, :after, :reason, NOW())
             ');
             $stmtMov->execute([
+                'biz_id' => $bid,
                 'pid' => $pid,
                 'uid' => $userId ?: 1,
                 'change' => $qty,
@@ -317,8 +335,9 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
     }
 }
 
-function get_stock_transfers(int $limit = 50): array {
+function get_stock_transfers(int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT st.*, 
                sw.name AS source_warehouse_name, sw.code AS source_warehouse_code,
@@ -327,42 +346,47 @@ function get_stock_transfers(int $limit = 50): array {
                (SELECT COUNT(*) FROM stock_transfer_items sti WHERE sti.stock_transfer_id = st.id) AS total_items,
                (SELECT COALESCE(SUM(quantity_requested), 0) FROM stock_transfer_items sti WHERE sti.stock_transfer_id = st.id) AS total_units
         FROM stock_transfers st
-        LEFT JOIN warehouses sw ON sw.id = st.source_warehouse_id
-        LEFT JOIN warehouses dw ON dw.id = st.dest_warehouse_id
+        LEFT JOIN warehouses sw ON sw.id = st.source_warehouse_id AND sw.business_id = :bid1
+        LEFT JOIN warehouses dw ON dw.id = st.dest_warehouse_id AND dw.business_id = :bid2
         LEFT JOIN users u ON u.id = st.user_id
+        WHERE st.business_id = :bid3
         ORDER BY st.id DESC
         LIMIT :limit
     ');
+    $stmt->bindValue(':bid1', $bid, PDO::PARAM_INT);
+    $stmt->bindValue(':bid2', $bid, PDO::PARAM_INT);
+    $stmt->bindValue(':bid3', $bid, PDO::PARAM_INT);
     $stmt->bindValue(':limit', max(1, $limit), PDO::PARAM_INT);
     $stmt->execute();
     return $stmt->fetchAll();
 }
 
-function get_stock_transfer_by_id(int $id): ?array {
+function get_stock_transfer_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT st.*, 
                sw.name AS source_warehouse_name, sw.code AS source_warehouse_code,
                dw.name AS dest_warehouse_name, dw.code AS dest_warehouse_code,
                COALESCE(u.name, "Staff") AS creator_name
         FROM stock_transfers st
-        LEFT JOIN warehouses sw ON sw.id = st.source_warehouse_id
-        LEFT JOIN warehouses dw ON dw.id = st.dest_warehouse_id
+        LEFT JOIN warehouses sw ON sw.id = st.source_warehouse_id AND sw.business_id = :bid1
+        LEFT JOIN warehouses dw ON dw.id = st.dest_warehouse_id AND dw.business_id = :bid2
         LEFT JOIN users u ON u.id = st.user_id
-        WHERE st.id = :id
+        WHERE st.id = :id AND st.business_id = :bid3
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid1' => $bid, 'bid2' => $bid, 'bid3' => $bid]);
     $trf = $stmt->fetch();
     if (!$trf) return null;
 
     $stmtItems = $db->prepare('
         SELECT sti.*, p.name AS product_name, p.sku AS product_sku, p.selling_price
         FROM stock_transfer_items sti
-        JOIN products p ON p.id = sti.product_id
+        JOIN products p ON p.id = sti.product_id AND p.business_id = :bid
         WHERE sti.stock_transfer_id = :id
     ');
-    $stmtItems->execute(['id' => $id]);
+    $stmtItems->execute(['id' => $id, 'bid' => $bid]);
     $trf['items'] = $stmtItems->fetchAll();
 
     return $trf;

@@ -6,10 +6,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/products_db.php';
 
-function export_data_to_csv(string $entityType): void {
+function export_data_to_csv(string $entityType, ?int $businessId = null): void {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $filename = "{$entityType}_export_" . date('Ymd_His') . ".csv";
 
     header('Content-Type: text/csv; charset=utf-8');
@@ -18,25 +20,29 @@ function export_data_to_csv(string $entityType): void {
 
     if ($entityType === 'products') {
         fputcsv($output, ['ID', 'Name', 'SKU', 'Barcode', 'Cost Price', 'Selling Price', 'Tax Percent', 'Stock Quantity', 'Status']);
-        $stmt = $db->query('SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status FROM products ORDER BY id ASC');
+        $stmt = $db->prepare('SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status FROM products WHERE business_id = :bid ORDER BY id ASC');
+        $stmt->execute(['bid' => $bid]);
         while ($row = $stmt->fetch()) {
             fputcsv($output, $row);
         }
     } elseif ($entityType === 'customers') {
         fputcsv($output, ['ID', 'Name', 'Phone', 'Email', 'Address', 'Loyalty Points', 'Credit Limit']);
-        $stmt = $db->query('SELECT id, name, phone, email, address, loyalty_points_balance, credit_limit FROM customers ORDER BY id ASC');
+        $stmt = $db->prepare('SELECT id, name, phone, email, address, loyalty_points_balance, credit_limit FROM customers WHERE business_id = :bid ORDER BY id ASC');
+        $stmt->execute(['bid' => $bid]);
         while ($row = $stmt->fetch()) {
             fputcsv($output, $row);
         }
     } elseif ($entityType === 'orders') {
         fputcsv($output, ['Order Number', 'Date', 'Subtotal', 'Discount', 'Tax', 'Grand Total', 'Payment Method', 'Order Status']);
-        $stmt = $db->query('SELECT order_number, created_at, subtotal, discount_amount, tax_amount, total_amount, payment_method, order_status FROM orders ORDER BY id DESC');
+        $stmt = $db->prepare('SELECT order_number, created_at, subtotal, discount_amount, tax_amount, total_amount, payment_method, order_status FROM orders WHERE business_id = :bid ORDER BY id DESC');
+        $stmt->execute(['bid' => $bid]);
         while ($row = $stmt->fetch()) {
             fputcsv($output, $row);
         }
     } elseif ($entityType === 'invoices') {
         fputcsv($output, ['Invoice Number', 'Date', 'Subtotal', 'Taxable', 'CGST', 'SGST', 'Total Amount', 'Payment Method', 'Status']);
-        $stmt = $db->query('SELECT invoice_number, invoice_date, subtotal, taxable_amount, cgst_amount, sgst_amount, total_amount, payment_method, invoice_status FROM invoices ORDER BY id DESC');
+        $stmt = $db->prepare('SELECT invoice_number, invoice_date, subtotal, taxable_amount, cgst_amount, sgst_amount, total_amount, payment_method, invoice_status FROM invoices WHERE business_id = :bid ORDER BY id DESC');
+        $stmt->execute(['bid' => $bid]);
         while ($row = $stmt->fetch()) {
             fputcsv($output, $row);
         }

@@ -6,22 +6,30 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 
-function get_registers(): array {
+function get_registers(?int $businessId = null): array {
     $db = get_db();
-    return $db->query('SELECT * FROM registers ORDER BY id ASC')->fetchAll();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM registers WHERE business_id = :bid ORDER BY id ASC');
+    $stmt->execute(['bid' => $bid]);
+    return $stmt->fetchAll();
 }
 
-function get_open_register_session(?int $userId = null): ?array {
+function get_open_register_session(?int $userId = null, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
-        JOIN registers r ON r.id = s.register_id
+        JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
         LEFT JOIN users u ON u.id = s.user_id
-        WHERE s.status = "open"
+        WHERE s.status = "open" AND s.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_r' => $bid,
+    ];
     if ($userId !== null) {
         $sql .= ' AND s.user_id = :user_id';
         $params['user_id'] = $userId;
@@ -34,23 +42,25 @@ function get_open_register_session(?int $userId = null): ?array {
     return $session ?: null;
 }
 
-function open_register_session(int $registerId, int $userId, float $openingCash): array {
+function open_register_session(int $registerId, int $userId, float $openingCash, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     // Check if user already has an open session
-    $existing = get_open_register_session($userId);
+    $existing = get_open_register_session($userId, $bid);
     if ($existing) {
         return ['success' => false, 'error' => 'You already have an active open register session (#'.$existing['id'].'). Please close it before opening a new one.'];
     }
 
     $stmt = $db->prepare('
         INSERT INTO register_sessions (
-            register_id, user_id, opened_at, opening_cash, status, created_at
+            business_id, register_id, user_id, opened_at, opening_cash, status, created_at
         ) VALUES (
-            :register_id, :user_id, NOW(), :opening_cash, "open", NOW()
+            :biz_id, :register_id, :user_id, NOW(), :opening_cash, "open", NOW()
         )
     ');
     $stmt->execute([
+        'biz_id' => $bid,
         'register_id' => $registerId,
         'user_id' => $userId,
         'opening_cash' => max(0, $openingCash),
@@ -60,9 +70,10 @@ function open_register_session(int $registerId, int $userId, float $openingCash)
     return ['success' => true, 'session_id' => $sessionId];
 }
 
-function record_cash_movement(int $sessionId, float $amount, string $type, string $reason, int $userId): array {
+function record_cash_movement(int $sessionId, float $amount, string $type, string $reason, int $userId, ?int $businessId = null): array {
     $db = get_db();
-    $session = get_register_session_by_id($sessionId);
+    $bid = $businessId ?: current_business_id();
+    $session = get_register_session_by_id($sessionId, $bid);
     if (!$session || $session['status'] !== 'open') {
         return ['success' => false, 'error' => 'Active open session not found.'];
     }
@@ -72,11 +83,11 @@ function record_cash_movement(int $sessionId, float $amount, string $type, strin
     }
 
     if ($type === 'cash_in') {
-        $stmt = $db->prepare('UPDATE register_sessions SET cash_in = cash_in + :amt WHERE id = :id');
-        $stmt->execute(['amt' => $amount, 'id' => $sessionId]);
+        $stmt = $db->prepare('UPDATE register_sessions SET cash_in = cash_in + :amt WHERE id = :id AND business_id = :bid');
+        $stmt->execute(['amt' => $amount, 'id' => $sessionId, 'bid' => $bid]);
     } elseif ($type === 'cash_out') {
-        $stmt = $db->prepare('UPDATE register_sessions SET cash_out = cash_out + :amt WHERE id = :id');
-        $stmt->execute(['amt' => $amount, 'id' => $sessionId]);
+        $stmt = $db->prepare('UPDATE register_sessions SET cash_out = cash_out + :amt WHERE id = :id AND business_id = :bid');
+        $stmt->execute(['amt' => $amount, 'id' => $sessionId, 'bid' => $bid]);
     } else {
         return ['success' => false, 'error' => 'Invalid movement type.'];
     }
@@ -96,9 +107,10 @@ function update_session_sales(int $sessionId, float $amount, string $paymentMeth
     $stmt->execute(['amt' => $amount, 'id' => $sessionId]);
 }
 
-function close_register_session(int $sessionId, float $closingCashActual, string $notes, int $userId): array {
+function close_register_session(int $sessionId, float $closingCashActual, string $notes, int $userId, ?int $businessId = null): array {
     $db = get_db();
-    $session = get_register_session_by_id($sessionId);
+    $bid = $businessId ?: current_business_id();
+    $session = get_register_session_by_id($sessionId, $bid);
     if (!$session || $session['status'] !== 'open') {
         return ['success' => false, 'error' => 'Open session not found.'];
     }
@@ -121,7 +133,7 @@ function close_register_session(int $sessionId, float $closingCashActual, string
             cash_difference = :diff,
             status = "closed",
             closing_notes = :notes
-        WHERE id = :id
+        WHERE id = :id AND business_id = :bid
     ');
     $stmt->execute([
         'actual' => $closingCashActual,
@@ -129,6 +141,7 @@ function close_register_session(int $sessionId, float $closingCashActual, string
         'diff' => $difference,
         'notes' => trim($notes) ?: null,
         'id' => $sessionId,
+        'bid' => $bid,
     ]);
 
     return [
@@ -140,32 +153,37 @@ function close_register_session(int $sessionId, float $closingCashActual, string
     ];
 }
 
-function get_register_sessions(int $limit = 50): array {
+function get_register_sessions(int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
-        JOIN registers r ON r.id = s.register_id
+        JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
         LEFT JOIN users u ON u.id = s.user_id
+        WHERE s.business_id = :bid
         ORDER BY s.id DESC
         LIMIT :limit
     ');
+    $stmt->bindValue(':bid', $bid, PDO::PARAM_INT);
+    $stmt->bindValue(':bid_r', $bid, PDO::PARAM_INT);
     $stmt->bindValue(':limit', max(1, $limit), PDO::PARAM_INT);
     $stmt->execute();
     return $stmt->fetchAll();
 }
 
-function get_register_session_by_id(int $id): ?array {
+function get_register_session_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
-        JOIN registers r ON r.id = s.register_id
+        JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
         LEFT JOIN users u ON u.id = s.user_id
-        WHERE s.id = :id
+        WHERE s.id = :id AND s.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_r' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }

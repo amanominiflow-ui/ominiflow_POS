@@ -6,21 +6,27 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
 
 /* =========================================================================
    1. VENDOR MANAGEMENT
    ========================================================================= */
 
-function get_vendors(string $search = ''): array {
+function get_vendors(string $search = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT v.*,
-               (SELECT COUNT(*) FROM purchase_orders po WHERE po.vendor_id = v.id) AS total_orders,
-               (SELECT COALESCE(SUM(po.total_amount), 0) FROM purchase_orders po WHERE po.vendor_id = v.id) AS total_purchased
+               (SELECT COUNT(*) FROM purchase_orders po WHERE po.vendor_id = v.id AND po.business_id = :bid_po) AS total_orders,
+               (SELECT COALESCE(SUM(po.total_amount), 0) FROM purchase_orders po WHERE po.vendor_id = v.id AND po.business_id = :bid_po2) AS total_purchased
         FROM vendors v
-        WHERE 1=1
+        WHERE v.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_po' => $bid,
+        'bid_po2' => $bid,
+    ];
     if ($search !== '') {
         $sql .= ' AND (v.name LIKE :s1 OR v.company_name LIKE :s2 OR v.phone LIKE :s3 OR v.email LIKE :s4)';
         $params['s1'] = "%{$search}%";
@@ -35,27 +41,29 @@ function get_vendors(string $search = ''): array {
     return $stmt->fetchAll();
 }
 
-function get_vendor_by_id(int $id): ?array {
+function get_vendor_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM vendors WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM vendors WHERE id = :id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['id' => $id, 'bid' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }
 
-function save_vendor(array $data, ?int $id = null): array {
+function save_vendor(array $data, ?int $id = null, ?int $businessId = null): array {
     $name = trim($data['name'] ?? '');
     if ($name === '') {
         return ['success' => false, 'error' => 'Vendor name is required.'];
     }
 
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     if ($id) {
         $stmt = $db->prepare('
             UPDATE vendors
             SET name = :name, company_name = :company, phone = :phone, email = :email,
                 address = :address, gstin = :gstin, payment_terms = :terms, status = :status, updated_at = NOW()
-            WHERE id = :id
+            WHERE id = :id AND business_id = :bid
         ');
         $stmt->execute([
             'name' => $name,
@@ -67,17 +75,19 @@ function save_vendor(array $data, ?int $id = null): array {
             'terms' => trim($data['payment_terms'] ?? 'Net 30'),
             'status' => in_array($data['status'] ?? 'active', ['active', 'inactive'], true) ? $data['status'] : 'active',
             'id' => $id,
+            'bid' => $bid,
         ]);
         return ['success' => true, 'id' => $id];
     } else {
         $stmt = $db->prepare('
             INSERT INTO vendors (
-                name, company_name, phone, email, address, gstin, payment_terms, status, created_at, updated_at
+                business_id, name, company_name, phone, email, address, gstin, payment_terms, status, created_at, updated_at
             ) VALUES (
-                :name, :company, :phone, :email, :address, :gstin, :terms, :status, NOW(), NOW()
+                :biz_id, :name, :company, :phone, :email, :address, :gstin, :terms, :status, NOW(), NOW()
             )
         ');
         $stmt->execute([
+            'biz_id' => $bid,
             'name' => $name,
             'company' => trim($data['company_name'] ?? '') ?: null,
             'phone' => trim($data['phone'] ?? '') ?: null,
@@ -100,24 +110,27 @@ function create_purchase_order(
     array $items, // Array of ['product_id' => int, 'quantity' => int, 'unit_cost' => float, 'tax_percent' => float]
     string $expectedDate = '',
     string $notes = '',
-    ?int $userId = null
+    ?int $userId = null,
+    ?int $businessId = null
 ): array {
     if (empty($items)) {
         return ['success' => false, 'error' => 'Purchase order must have at least one product.'];
     }
 
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     try {
         $db->beginTransaction();
 
-        $vendor = get_vendor_by_id($vendorId);
+        $vendor = get_vendor_by_id($vendorId, $bid);
         if (!$vendor) {
             throw new Exception('Vendor not found.');
         }
 
         // Generate PO Number (PO-YYYYMMDD-XXXX)
-        $stmtPOCount = $db->query("SELECT COUNT(*) FROM purchase_orders WHERE DATE(created_at) = CURDATE()");
+        $stmtPOCount = $db->prepare("SELECT COUNT(*) FROM purchase_orders WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtPOCount->execute(['bid' => $bid]);
         $seqToday = (int) $stmtPOCount->fetchColumn() + 1;
         $poNumber = 'PO-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
 
@@ -133,8 +146,8 @@ function create_purchase_order(
 
             if ($qty <= 0) continue;
 
-            $stmtP = $db->prepare('SELECT name, sku FROM products WHERE id = :id');
-            $stmtP->execute(['id' => $productId]);
+            $stmtP = $db->prepare('SELECT name, sku FROM products WHERE id = :id AND business_id = :bid');
+            $stmtP->execute(['id' => $productId, 'bid' => $bid]);
             $p = $stmtP->fetch();
             if (!$p) throw new Exception("Product ID {$productId} not found.");
 
@@ -160,14 +173,15 @@ function create_purchase_order(
 
         $stmtPO = $db->prepare('
             INSERT INTO purchase_orders (
-                po_number, vendor_id, user_id, subtotal, tax_amount, total_amount,
+                business_id, po_number, vendor_id, user_id, subtotal, tax_amount, total_amount,
                 expected_delivery_date, status, notes, created_at, updated_at
             ) VALUES (
-                :po_number, :vendor_id, :user_id, :subtotal, :tax_amount, :total_amount,
+                :biz_id, :po_number, :vendor_id, :user_id, :subtotal, :tax_amount, :total_amount,
                 :exp_date, "ordered", :notes, NOW(), NOW()
             )
         ');
         $stmtPO->execute([
+            'biz_id' => $bid,
             'po_number' => $poNumber,
             'vendor_id' => $vendorId,
             'user_id' => $userId,
@@ -214,13 +228,14 @@ function create_purchase_order(
  * Goods Receiving: Increments inventory stock in products table,
  * logs inventory movement audit ('movement_type' = 'in'), and updates PO status.
  */
-function receive_purchase_order_items(int $poId, array $receivingList, ?int $userId = null): array {
+function receive_purchase_order_items(int $poId, array $receivingList, ?int $userId = null, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
     try {
         $db->beginTransaction();
 
-        $po = get_purchase_order_by_id($poId);
+        $po = get_purchase_order_by_id($poId, $bid);
         if (!$po) throw new Exception("Purchase Order #{$poId} not found.");
 
         if ($po['status'] === 'received') {
@@ -236,14 +251,14 @@ function receive_purchase_order_items(int $poId, array $receivingList, ?int $use
         $stmtStockInc = $db->prepare('
             UPDATE products
             SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
-            WHERE id = :id
+            WHERE id = :id AND business_id = :bid
         ');
 
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
 
@@ -276,14 +291,15 @@ function receive_purchase_order_items(int $poId, array $receivingList, ?int $use
 
             // Get product current stock & increment
             $prodId = (int) $foundItem['product_id'];
-            $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id FOR UPDATE');
-            $stmtCur->execute(['id' => $prodId]);
+            $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+            $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
             $currStock = (int) $stmtCur->fetchColumn();
 
-            $stmtStockInc->execute(['qty' => $qtyToReceive, 'id' => $prodId]);
+            $stmtStockInc->execute(['qty' => $qtyToReceive, 'id' => $prodId, 'bid' => $bid]);
 
             // Log movement
             $stmtMoveLog->execute([
+                'biz_id' => $bid,
                 'product_id' => $prodId,
                 'user_id' => $userId,
                 'quantity_change' => $qtyToReceive,
@@ -300,7 +316,7 @@ function receive_purchase_order_items(int $poId, array $receivingList, ?int $use
         }
 
         // Re-evaluate overall PO status
-        $updatedPO = get_purchase_order_by_id($poId);
+        $updatedPO = get_purchase_order_by_id($poId, $bid);
         $allComplete = true;
         foreach ($updatedPO['items'] as $uit) {
             if ((int)$uit['quantity_received'] < (int)$uit['quantity_ordered']) {
@@ -310,8 +326,8 @@ function receive_purchase_order_items(int $poId, array $receivingList, ?int $use
         }
 
         $newStatus = $allComplete ? 'received' : 'partially_received';
-        $stmtStatus = $db->prepare('UPDATE purchase_orders SET status = :status, updated_at = NOW() WHERE id = :id');
-        $stmtStatus->execute(['status' => $newStatus, 'id' => $poId]);
+        $stmtStatus = $db->prepare('UPDATE purchase_orders SET status = :status, updated_at = NOW() WHERE id = :id AND business_id = :bid');
+        $stmtStatus->execute(['status' => $newStatus, 'id' => $poId, 'bid' => $bid]);
 
         $db->commit();
         return ['success' => true, 'new_status' => $newStatus, 'received_units' => $totalReceivedInBatch];
@@ -321,19 +337,23 @@ function receive_purchase_order_items(int $poId, array $receivingList, ?int $use
     }
 }
 
-function get_purchase_orders(string $search = '', string $status = '', int $limit = 50): array {
+function get_purchase_orders(string $search = '', string $status = '', int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT po.*, v.name AS vendor_name, v.phone AS vendor_phone, u.name AS creator_name,
                (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS items_count,
                (SELECT SUM(poi.quantity_ordered) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_ordered_qty,
                (SELECT SUM(poi.quantity_received) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_received_qty
         FROM purchase_orders po
-        JOIN vendors v ON v.id = po.vendor_id
+        JOIN vendors v ON v.id = po.vendor_id AND v.business_id = :bid_v
         LEFT JOIN users u ON u.id = po.user_id
-        WHERE 1=1
+        WHERE po.business_id = :bid
     ';
-    $params = [];
+    $params = [
+        'bid' => $bid,
+        'bid_v' => $bid,
+    ];
     if ($search !== '') {
         $sql .= ' AND (po.po_number LIKE :s1 OR v.name LIKE :s2)';
         $params['s1'] = "%{$search}%";
@@ -350,18 +370,19 @@ function get_purchase_orders(string $search = '', string $status = '', int $limi
     return $stmt->fetchAll();
 }
 
-function get_purchase_order_by_id(int $id): ?array {
+function get_purchase_order_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT po.*, v.name AS vendor_name, v.company_name AS vendor_company, v.phone AS vendor_phone,
                v.email AS vendor_email, v.address AS vendor_address, v.gstin AS vendor_gstin, u.name AS creator_name
         FROM purchase_orders po
-        JOIN vendors v ON v.id = po.vendor_id
+        JOIN vendors v ON v.id = po.vendor_id AND v.business_id = :bid_v
         LEFT JOIN users u ON u.id = po.user_id
-        WHERE po.id = :id
+        WHERE po.id = :id AND po.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_v' => $bid]);
     $po = $stmt->fetch();
     if (!$po) return null;
 

@@ -25,20 +25,79 @@ function current_user(): ?array {
     }
 
     $db = get_db();
-    $stmt = $db->prepare('SELECT id, name, email, phone, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
-    $stmt->execute([
-        'id' => $_SESSION['user_id'],
-        'status' => 'active',
-    ]);
+    $user = null;
+    try {
+        $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
+        $stmt->execute([
+            'id' => $_SESSION['user_id'],
+            'status' => 'active',
+        ]);
+        $user = $stmt->fetch();
+    } catch (PDOException $e) {
+        // Fallback if business_id column not added to users table yet
+        try {
+            $stmt = $db->prepare('SELECT id, name, email, phone, role, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
+            $stmt->execute([
+                'id' => $_SESSION['user_id'],
+                'status' => 'active',
+            ]);
+            $user = $stmt->fetch();
+            if ($user) {
+                $user['business_id'] = 1;
+            }
+        } catch (Exception $e2) {
+            $user = null;
+        }
+    }
 
-    $user = $stmt->fetch();
     if (!$user) {
         logout_user();
         return null;
     }
 
+    if (empty($_SESSION['business_id']) && !empty($user['business_id'])) {
+        $_SESSION['business_id'] = (int)$user['business_id'];
+    }
+
     $cachedUser = $user;
     return $user;
+}
+
+function current_business_id(): int {
+    if (!empty($_SESSION['business_id'])) {
+        return (int)$_SESSION['business_id'];
+    }
+    $user = current_user();
+    if ($user && !empty($user['business_id'])) {
+        $_SESSION['business_id'] = (int)$user['business_id'];
+        return (int)$user['business_id'];
+    }
+    return 1;
+}
+
+function current_business(): ?array {
+    $bid = current_business_id();
+    $db = get_db();
+    try {
+        $stmt = $db->prepare('SELECT * FROM businesses WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $bid]);
+        $biz = $stmt->fetch();
+        if ($biz) {
+            return $biz;
+        }
+    } catch (PDOException $e) {
+        // Table not created yet
+    }
+
+    return [
+        'id' => $bid,
+        'name' => 'My Store POS',
+        'legal_name' => 'My Store POS',
+        'currency' => 'INR',
+        'currency_symbol' => '₹',
+        'country' => 'India',
+        'status' => 'active'
+    ];
 }
 
 function require_auth(): void {
@@ -62,11 +121,15 @@ function find_user_by_email(string $email): ?array {
     return $user ?: null;
 }
 
-function register_user(string $name, string $email, string $phone, string $password, string $confirmPassword): array {
+function register_user(string $name, string $email, string $phone, string $password, string $confirmPassword, string $businessName = ''): array {
     $errors = [];
     $name = trim($name);
     $email = strtolower(trim($email));
     $phone = trim($phone);
+    $businessName = trim($businessName);
+    if ($businessName === '') {
+        $businessName = $name . "'s Store";
+    }
 
     // Validation
     if ($name === '') {
@@ -110,22 +173,123 @@ function register_user(string $name, string $email, string $phone, string $passw
 
     try {
         $db = get_db();
+        $db->beginTransaction();
+
+        // 1. Create Business Record
+        $stmtBiz = $db->prepare('
+            INSERT INTO businesses (name, legal_name, email, phone, currency, currency_symbol, country, status, created_at, updated_at)
+            VALUES (:name, :legal_name, :email, :phone, "INR", "₹", "India", "active", NOW(), NOW())
+        ');
+        $stmtBiz->execute([
+            'name' => $businessName,
+            'legal_name' => $businessName,
+            'email' => $email,
+            'phone' => $phone ?: null,
+        ]);
+        $businessId = (int)$db->lastInsertId();
+
+        // 2. Create User linked to Business
         $stmt = $db->prepare('
-            INSERT INTO users (name, email, phone, password, status, created_at)
-            VALUES (:name, :email, :phone, :password, :status, NOW())
+            INSERT INTO users (business_id, name, email, phone, password, role, status, created_at)
+            VALUES (:biz_id, :name, :email, :phone, :password, "admin", :status, NOW())
         ');
         $stmt->execute([
+            'biz_id' => $businessId,
             'name' => $name,
             'email' => $email,
             'phone' => $phone,
             'password' => $hashedPassword,
             'status' => 'active',
         ]);
-
         $userId = (int) $db->lastInsertId();
 
-        return ['success' => true, 'errors' => [], 'user_id' => $userId];
+        // 3. Seed Default Category
+        try {
+            $stmtCat = $db->prepare('
+                INSERT INTO categories (business_id, name, code, description, status, created_at, updated_at)
+                VALUES (:biz_id, "General", :code, "Standard category for in-store items", "active", NOW(), NOW())
+            ');
+            $stmtCat->execute([
+                'biz_id' => $businessId,
+                'code' => 'GEN-' . strtoupper(substr(uniqid(), -4)),
+            ]);
+        } catch (Exception $eCat) {}
+
+        // 4. Seed Default Outlet
+        $outletId = 1;
+        $outletCode = 'OUT-' . strtoupper(substr(uniqid(), -4));
+        try {
+            $stmtOutlet = $db->prepare('
+                INSERT INTO outlets (business_id, name, code, address, phone, email, status, created_at, updated_at)
+                VALUES (:biz_id, :name, :code, :address, :phone, :email, "active", NOW(), NOW())
+            ');
+            $stmtOutlet->execute([
+                'biz_id' => $businessId,
+                'name' => $businessName . ' (Main Outlet)',
+                'code' => $outletCode,
+                'address' => 'Main Retail Counter',
+                'phone' => $phone ?: null,
+                'email' => $email,
+            ]);
+            $outletId = (int)$db->lastInsertId();
+        } catch (Exception $eOut) {}
+
+        // 5. Seed Default Warehouse
+        try {
+            $stmtWH = $db->prepare('
+                INSERT INTO warehouses (business_id, outlet_id, name, code, location, status, created_at, updated_at)
+                VALUES (:biz_id, :oid, :name, :code, "Store Front Inventory", "active", NOW(), NOW())
+            ');
+            $stmtWH->execute([
+                'biz_id' => $businessId,
+                'oid' => $outletId,
+                'name' => $businessName . ' Warehouse',
+                'code' => 'WH-' . $outletCode,
+            ]);
+        } catch (Exception $eWH) {}
+
+        // 6. Seed Default Register
+        try {
+            $stmtReg = $db->prepare('
+                INSERT INTO registers (business_id, name, code, order_prefix, invoice_prefix, status, created_at, updated_at)
+                VALUES (:biz_id, "Counter 1", :code, "ORD", "INV", "active", NOW(), NOW())
+            ');
+            $stmtReg->execute([
+                'biz_id' => $businessId,
+                'code' => 'REG-' . strtoupper(substr(uniqid(), -4)),
+            ]);
+        } catch (Exception $eReg) {}
+
+        // 7. Seed Default Walk-in Customer
+        try {
+            $stmtCust = $db->prepare('
+                INSERT INTO customers (business_id, name, phone, email, address, created_at, updated_at)
+                VALUES (:biz_id, "Walk-in Customer", "N/A", NULL, "Counter Customer", NOW(), NOW())
+            ');
+            $stmtCust->execute(['biz_id' => $businessId]);
+        } catch (Exception $eCust) {}
+
+        // 8. Seed Default Taxes
+        try {
+            $stmtTax = $db->prepare('
+                INSERT INTO tax_rates (business_id, name, rate, type, is_default, status, created_at, updated_at)
+                VALUES (:biz_id, "GST 18% (Standard Rate)", 18.00, "gst", 1, "active", NOW(), NOW())
+            ');
+            $stmtTax->execute(['biz_id' => $businessId]);
+        } catch (Exception $eTax) {}
+
+        // 9. Seed Default Payment Tender Types
+        try {
+            require_once __DIR__ . '/payment_options_db.php';
+            seed_default_payment_options_if_needed($businessId);
+        } catch (Exception $ePay) {}
+
+        $db->commit();
+        return ['success' => true, 'errors' => [], 'user_id' => $userId, 'business_id' => $businessId];
     } catch (PDOException $e) {
+        if (isset($db) && $db->inTransaction()) {
+            $db->rollBack();
+        }
         return ['success' => false, 'errors' => ['general' => 'Registration failed: ' . $e->getMessage()]];
     }
 }
@@ -159,8 +323,10 @@ function login_user(string $email, string $password, bool $remember = false): ar
     session_regenerate_id(true);
 
     $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['business_id'] = (int) ($user['business_id'] ?? 1);
     $_SESSION['user_name'] = $user['name'];
     $_SESSION['user_email'] = $user['email'];
+    $_SESSION['user_role'] = $user['role'] ?? 'admin';
 
     return ['success' => true, 'errors' => []];
 }

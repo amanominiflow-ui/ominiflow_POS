@@ -6,30 +6,33 @@
 declare(strict_types=1);
 
 $user = current_user();
+$business = current_business();
 $userName = $user ? $user['name'] : 'Aman Prajapat';
 $userEmail = $user ? $user['email'] : '';
-$displayName = !empty($user['name']) ? strtoupper($user['name']) : 'ASH COLLECTIVE';
+$businessName = $business ? $business['name'] : ($user ? $user['name'] : 'OminiFlow POS');
+$displayName = strtoupper($businessName);
 
 $initials = '';
-if ($user && !empty($user['name'])) {
-    $parts = explode(' ', trim($user['name']));
-    $initials = strtoupper(substr($parts[0], 0, 1));
-    if (count($parts) > 1) {
-        $initials .= strtoupper(substr($parts[count($parts) - 1], 0, 1));
+$fullName = trim((string)($user['name'] ?? $userName));
+$nameParts = array_values(array_filter(preg_split('/\s+/', $fullName) ?: []));
+if (!empty($nameParts)) {
+    $initials = strtoupper(substr($nameParts[0], 0, 1));
+    if (count($nameParts) > 1) {
+        $initials .= strtoupper(substr($nameParts[count($nameParts) - 1], 0, 1));
     }
 } else {
-    $initials = 'AP';
+    $initials = 'RN';
 }
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 // Active rail tab selection
 $activeRailTab = 'business';
-if (in_array($currentPage, ['pos.php', 'registers.php'], true)) {
+if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php'], true)) {
     $activeRailTab = 'channels';
 } elseif ($currentPage === 'reports.php') {
     $activeRailTab = 'reports';
-} elseif (in_array($currentPage, ['settings.php', 'integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'taxes.php', 'business-profile.php', 'users.php', 'roles.php'], true)) {
+} elseif (in_array($currentPage, ['settings.php', 'integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'taxes.php', 'business-profile.php', 'users.php', 'roles.php', 'role-create.php'], true)) {
     $activeRailTab = 'settings';
 }
 
@@ -492,7 +495,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('settings.php') ?>" class="submenu-link">Preferences</a>
-                        <a href="<?= asset('promotions.php') ?>" class="submenu-link">Payment Options</a>
+                        <a href="<?= asset('payment-options.php') ?>" class="submenu-link <?= $currentPage === 'payment-options.php' ? 'active' : '' ?>">Payment Options</a>
                         <a href="<?= asset('barcode-print.php') ?>" class="submenu-link">Print Templates</a>
                     </div>
                 </div>
@@ -530,63 +533,208 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
             </nav>
         </div>
 
-        <!-- ================= TAB CONTENT 3: REPORTS ================= -->
+        <!-- ================= TAB CONTENT 3: REPORTS (Zoho POS Exact Parity) ================= -->
         <div class="drawer-tab-content <?= $activeRailTab === 'reports' ? 'active' : '' ?>" id="drawer-tab-reports">
             <div class="sidebar-store-bar">
-                <div class="store-badge-title">Reports & Analytics</div>
+                <div class="store-badge-title" style="color: #ffffff; border-bottom: 2px solid #3b82f6; width: fit-content; padding-bottom: 3px; font-weight: 700;">Reports</div>
             </div>
 
             <div class="drawer-search-wrap">
-                <input type="text" placeholder="Search reports..." class="drawer-search-input" id="reportSearchInp" onkeyup="filterReportsNav(this.value)">
+                <input type="text" placeholder="Search reports" class="drawer-search-input" id="reportSearchInp" onkeyup="filterReportsNav(this.value)">
             </div>
 
             <nav class="sidebar-nav">
-                <a href="<?= asset('reports.php') ?>" class="nav-item <?= $currentPage === 'reports.php' ? 'active' : '' ?>">
-                    <span class="nav-item-icon">
-                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                        </svg>
+                <!-- Special Views -->
+                <a href="<?= asset('reports.php?view=favorites') ?>" class="nav-item <?= ($_GET['view'] ?? '') === 'favorites' ? 'active' : '' ?>">
+                    <span class="nav-item-icon" style="color: #eab308;">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
                     </span>
-                    <span>Home Overview</span>
+                    <span>Favorites</span>
+                </a>
+
+                <a href="<?= asset('reports.php?view=shared') ?>" class="nav-item <?= ($_GET['view'] ?? '') === 'shared' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                    </span>
+                    <span>Shared Reports</span>
+                </a>
+
+                <a href="<?= asset('reports.php?view=my-reports') ?>" class="nav-item <?= ($_GET['view'] ?? '') === 'my-reports' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    </span>
+                    <span>My Reports</span>
+                </a>
+
+                <a href="<?= asset('reports.php?view=scheduled') ?>" class="nav-item <?= ($_GET['view'] ?? '') === 'scheduled' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </span>
+                    <span>Scheduled Reports</span>
                 </a>
 
                 <div class="drawer-section-title">DEFAULT REPORTS</div>
 
-                <a href="<?= asset('reports.php') ?>" class="nav-item">
-                    <span class="nav-item-icon">
-                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
-                        </svg>
-                    </span>
-                    <span>Sales Summary</span>
-                </a>
+                <!-- 1. Sales Group -->
+                <?php $currentType = $_GET['type'] ?? 'sales-summary'; ?>
+                <div class="nav-group <?= in_array($currentType, ['sales-summary', 'item-sales', 'sales-by-outlet', 'sales-by-cashier', 'category-performance'], true) ? 'open' : '' ?>" id="grp-rep-sales">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-sales')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                            </span>
+                            <span>Sales</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=sales-summary') ?>" class="submenu-link <?= $currentType === 'sales-summary' ? 'active' : '' ?>">Sales Summary</a>
+                        <a href="<?= asset('reports.php?type=item-sales') ?>" class="submenu-link <?= $currentType === 'item-sales' ? 'active' : '' ?>">Item Sales Report</a>
+                        <a href="<?= asset('reports.php?type=sales-by-outlet') ?>" class="submenu-link <?= $currentType === 'sales-by-outlet' ? 'active' : '' ?>">Sales by Outlet</a>
+                        <a href="<?= asset('reports.php?type=sales-by-cashier') ?>" class="submenu-link <?= $currentType === 'sales-by-cashier' ? 'active' : '' ?>">Sales by Cashier</a>
+                        <a href="<?= asset('reports.php?type=category-performance') ?>" class="submenu-link <?= $currentType === 'category-performance' ? 'active' : '' ?>">Category Performance</a>
+                    </div>
+                </div>
 
-                <a href="<?= asset('reports.php') ?>" class="nav-item">
-                    <span class="nav-item-icon">
-                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                        </svg>
-                    </span>
-                    <span>Inventory Velocity</span>
-                </a>
+                <!-- 2. Inventory Group -->
+                <div class="nav-group <?= in_array($currentType, ['stock-summary', 'inventory-movements', 'low-stock-alert', 'expiry-batches'], true) ? 'open' : '' ?>" id="grp-rep-inv">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-inv')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                            </span>
+                            <span>Inventory</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=stock-summary') ?>" class="submenu-link <?= $currentType === 'stock-summary' ? 'active' : '' ?>">Stock Summary</a>
+                        <a href="<?= asset('reports.php?type=inventory-movements') ?>" class="submenu-link <?= $currentType === 'inventory-movements' ? 'active' : '' ?>">Stock Movements</a>
+                        <a href="<?= asset('reports.php?type=low-stock-alert') ?>" class="submenu-link <?= $currentType === 'low-stock-alert' ? 'active' : '' ?>">Low Stock Alerts</a>
+                        <a href="<?= asset('reports.php?type=expiry-batches') ?>" class="submenu-link <?= $currentType === 'expiry-batches' ? 'active' : '' ?>">Product Expiry & Batches</a>
+                    </div>
+                </div>
 
-                <a href="<?= asset('reports.php') ?>" class="nav-item">
-                    <span class="nav-item-icon">
-                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                    </span>
-                    <span>Inventory Valuation</span>
-                </a>
+                <!-- 3. Inventory Valuation Group -->
+                <div class="nav-group <?= in_array($currentType, ['inventory-valuation', 'category-valuation'], true) ? 'open' : '' ?>" id="grp-rep-val">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-val')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            </span>
+                            <span>Inventory Valuation</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=inventory-valuation') ?>" class="submenu-link <?= $currentType === 'inventory-valuation' ? 'active' : '' ?>">Valuation Summary</a>
+                        <a href="<?= asset('reports.php?type=category-valuation') ?>" class="submenu-link <?= $currentType === 'category-valuation' ? 'active' : '' ?>">Category-wise Valuation</a>
+                    </div>
+                </div>
 
-                <a href="<?= asset('reports.php') ?>" class="nav-item">
-                    <span class="nav-item-icon">
-                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </span>
-                    <span>GST Tax & GSTR-1</span>
-                </a>
+                <!-- 4. Receivables Group -->
+                <div class="nav-group <?= in_array($currentType, ['customer-balances', 'receivables'], true) ? 'open' : '' ?>" id="grp-rep-rec">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-rec')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            </span>
+                            <span>Receivables</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=customer-balances') ?>" class="submenu-link <?= $currentType === 'customer-balances' ? 'active' : '' ?>">Customer Balances</a>
+                        <a href="<?= asset('reports.php?type=receivables') ?>" class="submenu-link <?= $currentType === 'receivables' ? 'active' : '' ?>">Outstanding Receivables</a>
+                    </div>
+                </div>
+
+                <!-- 5. Payments Received Group (Highlighted in Zoho Screenshot) -->
+                <div class="nav-group <?= in_array($currentType, ['payments-received', 'credit-notes', 'refunds'], true) ? 'open' : '' ?>" id="grp-rep-payrec">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-payrec')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                            </span>
+                            <span>Payments Received</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=payments-received') ?>" class="submenu-link <?= $currentType === 'payments-received' ? 'active' : '' ?>">Payments Received</a>
+                        <a href="<?= asset('reports.php?type=credit-notes') ?>" class="submenu-link <?= $currentType === 'credit-notes' ? 'active' : '' ?>">Credit Note Details</a>
+                        <a href="<?= asset('reports.php?type=refunds') ?>" class="submenu-link <?= $currentType === 'refunds' ? 'active' : '' ?>">Refund History</a>
+                    </div>
+                </div>
+
+                <!-- 6. Payables Group -->
+                <div class="nav-group <?= in_array($currentType, ['vendor-balances', 'payables'], true) ? 'open' : '' ?>" id="grp-rep-pay">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-pay')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </span>
+                            <span>Payables</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=vendor-balances') ?>" class="submenu-link <?= $currentType === 'vendor-balances' ? 'active' : '' ?>">Vendor Balances</a>
+                        <a href="<?= asset('reports.php?type=payables') ?>" class="submenu-link <?= $currentType === 'payables' ? 'active' : '' ?>">Outstanding Payables</a>
+                    </div>
+                </div>
+
+                <!-- 7. Purchases Group -->
+                <div class="nav-group <?= in_array($currentType, ['purchase-summary', 'purchases-by-vendor', 'purchase-returns'], true) ? 'open' : '' ?>" id="grp-rep-pur">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-pur')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+                            </span>
+                            <span>Purchases</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=purchase-summary') ?>" class="submenu-link <?= $currentType === 'purchase-summary' ? 'active' : '' ?>">Purchase Summary</a>
+                        <a href="<?= asset('reports.php?type=purchases-by-vendor') ?>" class="submenu-link <?= $currentType === 'purchases-by-vendor' ? 'active' : '' ?>">Purchases by Vendor</a>
+                        <a href="<?= asset('reports.php?type=purchase-returns') ?>" class="submenu-link <?= $currentType === 'purchase-returns' ? 'active' : '' ?>">Purchase Returns</a>
+                    </div>
+                </div>
+
+                <!-- 8. Activity & Audit Group -->
+                <div class="nav-group <?= in_array($currentType, ['register-shifts', 'cash-movements', 'gst-tax'], true) ? 'open' : '' ?>" id="grp-rep-act">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-rep-act')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </span>
+                            <span>Activity</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('reports.php?type=register-shifts') ?>" class="submenu-link <?= $currentType === 'register-shifts' ? 'active' : '' ?>">Register Shifts</a>
+                        <a href="<?= asset('reports.php?type=cash-movements') ?>" class="submenu-link <?= $currentType === 'cash-movements' ? 'active' : '' ?>">Cash Movements</a>
+                        <a href="<?= asset('reports.php?type=gst-tax') ?>" class="submenu-link <?= $currentType === 'gst-tax' ? 'active' : '' ?>">GST Tax & GSTR-1</a>
+                    </div>
+                </div>
             </nav>
         </div>
 
@@ -636,7 +784,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </div>
 
                 <!-- Users & Roles Group -->
-                <div class="nav-group <?= in_array($currentPage, ['users.php', 'roles.php'], true) ? 'open' : '' ?>" id="grp-set-users">
+                <div class="nav-group <?= in_array($currentPage, ['users.php', 'roles.php', 'role-create.php'], true) ? 'open' : '' ?>" id="grp-set-users">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-set-users')">
                         <div class="nav-group-title">
                             <span class="nav-item-icon">
@@ -650,7 +798,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('users.php') ?>" class="submenu-link <?= $currentPage === 'users.php' ? 'active' : '' ?>">Users</a>
-                        <a href="<?= asset('roles.php') ?>" class="submenu-link <?= $currentPage === 'roles.php' ? 'active' : '' ?>">Roles</a>
+                        <a href="<?= asset('roles.php') ?>" class="submenu-link <?= in_array($currentPage, ['roles.php', 'role-create.php'], true) ? 'active' : '' ?>">Roles</a>
                     </div>
                 </div>
 
@@ -897,10 +1045,8 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         <!-- Blue Header -->
         <div class="zpd-header">
             <div style="display: flex; align-items: center; gap: 14px;">
-                <div class="zpd-avatar">
-                    <svg width="34" height="34" fill="#94a3b8" viewBox="0 0 24 24">
-                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                    </svg>
+                <div class="zpd-avatar" style="font-size: 20px; font-weight: 800; color: #2563eb;">
+                    <?= e($initials) ?>
                 </div>
                 <div>
                     <div class="zpd-name"><?= e($userName) ?></div>
@@ -908,7 +1054,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <div class="zpd-email"><?= e($userEmail ?: 'info@ominiflow.com') ?></div>
                     <div class="zpd-org-badge" onclick="window.location.href='<?= asset('business-profile.php') ?>'" title="Manage Business Profile">
                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-                        <span>Ominiflow</span>
+                        <span><?= e($businessName) ?></span>
                         <span style="font-size: 8px;">▼</span>
                     </div>
                 </div>

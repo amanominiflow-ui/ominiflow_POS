@@ -7,20 +7,25 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/auth.php';
 
 /* =========================================================================
    1. CATEGORY OPERATIONS
    ========================================================================= */
 
-function get_categories(string $search = '', string $status = ''): array {
+function get_categories(string $search = '', string $status = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT c.*, COUNT(p.id) AS product_count
         FROM categories c
-        LEFT JOIN products p ON p.category_id = c.id
-        WHERE 1=1
+        LEFT JOIN products p ON p.category_id = c.id AND p.business_id = :biz_id_prod
+        WHERE c.business_id = :biz_id
     ';
-    $params = [];
+    $params = [
+        'biz_id' => $bid,
+        'biz_id_prod' => $bid
+    ];
 
     if ($search !== '') {
         $sql .= ' AND (c.name LIKE :search1 OR c.code LIKE :search2 OR c.description LIKE :search3)';
@@ -41,24 +46,27 @@ function get_categories(string $search = '', string $status = ''): array {
     return $stmt->fetchAll();
 }
 
-function get_category_by_id(int $id): ?array {
+function get_category_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM categories WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $id]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM categories WHERE id = :id AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['id' => $id, 'biz_id' => $bid]);
     $cat = $stmt->fetch();
     return $cat ?: null;
 }
 
-function get_category_by_code(string $code): ?array {
+function get_category_by_code(string $code, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM categories WHERE code = :code LIMIT 1');
-    $stmt->execute(['code' => strtoupper(trim($code))]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM categories WHERE code = :code AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['code' => strtoupper(trim($code)), 'biz_id' => $bid]);
     $cat = $stmt->fetch();
     return $cat ?: null;
 }
 
-function save_category(array $data, ?int $id = null): array {
+function save_category(array $data, ?int $id = null, ?int $businessId = null): array {
     $errors = [];
+    $bid = $businessId ?: current_business_id();
     $name = trim((string) ($data['name'] ?? ''));
     $code = strtoupper(trim((string) ($data['code'] ?? '')));
     $description = trim((string) ($data['description'] ?? ''));
@@ -76,9 +84,8 @@ function save_category(array $data, ?int $id = null): array {
         }
     }
 
-    // Check unique code
-    $db = get_db();
-    $existing = get_category_by_code($code);
+    // Check unique code within the same business
+    $existing = get_category_by_code($code, $bid);
     if ($existing && ($id === null || (int) $existing['id'] !== $id)) {
         $errors['code'] = 'A category with code "' . $code . '" already exists.';
     }
@@ -88,11 +95,12 @@ function save_category(array $data, ?int $id = null): array {
     }
 
     try {
+        $db = get_db();
         if ($id !== null) {
             $stmt = $db->prepare('
                 UPDATE categories
                 SET name = :name, code = :code, description = :description, status = :status, updated_at = NOW()
-                WHERE id = :id
+                WHERE id = :id AND business_id = :biz_id
             ');
             $stmt->execute([
                 'name' => $name,
@@ -100,14 +108,16 @@ function save_category(array $data, ?int $id = null): array {
                 'description' => $description,
                 'status' => $status,
                 'id' => $id,
+                'biz_id' => $bid,
             ]);
             $categoryId = $id;
         } else {
             $stmt = $db->prepare('
-                INSERT INTO categories (name, code, description, status, created_at, updated_at)
-                VALUES (:name, :code, :description, :status, NOW(), NOW())
+                INSERT INTO categories (business_id, name, code, description, status, created_at, updated_at)
+                VALUES (:biz_id, :name, :code, :description, :status, NOW(), NOW())
             ');
             $stmt->execute([
+                'biz_id' => $bid,
                 'name' => $name,
                 'code' => $code,
                 'description' => $description,
@@ -122,18 +132,19 @@ function save_category(array $data, ?int $id = null): array {
     }
 }
 
-function delete_category(int $id): array {
+function delete_category(int $id, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     
     // Check if category exists
-    $cat = get_category_by_id($id);
+    $cat = get_category_by_id($id, $bid);
     if (!$cat) {
         return ['success' => false, 'error' => 'Category not found.'];
     }
 
     // Check if products are assigned to this category
-    $stmt = $db->prepare('SELECT COUNT(*) FROM products WHERE category_id = :id');
-    $stmt->execute(['id' => $id]);
+    $stmt = $db->prepare('SELECT COUNT(*) FROM products WHERE category_id = :id AND business_id = :biz_id');
+    $stmt->execute(['id' => $id, 'biz_id' => $bid]);
     $count = (int) $stmt->fetchColumn();
 
     if ($count > 0) {
@@ -143,8 +154,8 @@ function delete_category(int $id): array {
         ];
     }
 
-    $stmt = $db->prepare('DELETE FROM categories WHERE id = :id');
-    $stmt->execute(['id' => $id]);
+    $stmt = $db->prepare('DELETE FROM categories WHERE id = :id AND business_id = :biz_id');
+    $stmt->execute(['id' => $id, 'biz_id' => $bid]);
 
     return ['success' => true];
 }
@@ -153,15 +164,19 @@ function delete_category(int $id): array {
    2. PRODUCT OPERATIONS
    ========================================================================= */
 
-function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = ''): array {
+function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = '', ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT p.*, c.name AS category_name, c.code AS category_code
         FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE 1=1
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_id_cat
+        WHERE p.business_id = :biz_id
     ';
-    $params = [];
+    $params = [
+        'biz_id' => $bid,
+        'biz_id_cat' => $bid
+    ];
 
     if ($search !== '') {
         $sql .= ' AND (p.name LIKE :search1 OR p.sku LIKE :search2 OR p.barcode LIKE :search3)';
@@ -195,33 +210,36 @@ function get_products(string $search = '', ?int $categoryId = null, string $stat
     return $stmt->fetchAll();
 }
 
-function get_product_by_id(int $id): ?array {
+function get_product_by_id(int $id, ?int $businessId = null): ?array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
         SELECT p.*, c.name AS category_name, c.code AS category_code
         FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE p.id = :id
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_id_cat
+        WHERE p.id = :id AND p.business_id = :biz_id
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id]);
+    $stmt->execute(['id' => $id, 'biz_id' => $bid, 'biz_id_cat' => $bid]);
     $prod = $stmt->fetch();
     return $prod ?: null;
 }
 
-function get_product_by_sku(string $sku): ?array {
+function get_product_by_sku(string $sku, ?int $businessId = null): ?array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM products WHERE sku = :sku LIMIT 1');
-    $stmt->execute(['sku' => trim($sku)]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM products WHERE sku = :sku AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['sku' => trim($sku), 'biz_id' => $bid]);
     $prod = $stmt->fetch();
     return $prod ?: null;
 }
 
-function get_product_by_barcode(string $barcode): ?array {
+function get_product_by_barcode(string $barcode, ?int $businessId = null): ?array {
     if (trim($barcode) === '') return null;
     $db = get_db();
-    $stmt = $db->prepare('SELECT * FROM products WHERE barcode = :barcode LIMIT 1');
-    $stmt->execute(['barcode' => trim($barcode)]);
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT * FROM products WHERE barcode = :barcode AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['barcode' => trim($barcode), 'biz_id' => $bid]);
     $prod = $stmt->fetch();
     return $prod ?: null;
 }
@@ -273,8 +291,9 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
     return $oldPath;
 }
 
-function save_product(array $data, ?array $file = null, ?int $id = null, ?int $userId = null): array {
+function save_product(array $data, ?array $file = null, ?int $id = null, ?int $userId = null, ?int $businessId = null): array {
     $errors = [];
+    $bid = $businessId ?: current_business_id();
     $name = trim((string) ($data['name'] ?? ''));
     $sku = strtoupper(trim((string) ($data['sku'] ?? '')));
     $barcode = trim((string) ($data['barcode'] ?? ''));
@@ -294,15 +313,15 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         $sku = 'SKU-' . strtoupper(substr(uniqid(), -6));
     }
 
-    // Check unique SKU
-    $existingSku = get_product_by_sku($sku);
+    // Check unique SKU within the same business
+    $existingSku = get_product_by_sku($sku, $bid);
     if ($existingSku && ($id === null || (int) $existingSku['id'] !== $id)) {
         $errors['sku'] = 'A product with SKU "' . $sku . '" already exists.';
     }
 
-    // Check unique Barcode
+    // Check unique Barcode within the same business
     if ($barcode !== '') {
-        $existingBarcode = get_product_by_barcode($barcode);
+        $existingBarcode = get_product_by_barcode($barcode, $bid);
         if ($existingBarcode && ($id === null || (int) $existingBarcode['id'] !== $id)) {
             $errors['barcode'] = 'A product with Barcode "' . $barcode . '" already exists.';
         }
@@ -323,7 +342,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
     }
 
     $db = get_db();
-    $oldProduct = $id !== null ? get_product_by_id($id) : null;
+    $oldProduct = $id !== null ? get_product_by_id($id, $bid) : null;
     $imagePath = handle_product_image_upload($file, $oldProduct['image_path'] ?? null);
 
     try {
@@ -341,7 +360,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
                     image_path = :image_path,
                     status = :status,
                     updated_at = NOW()
-                WHERE id = :id
+                WHERE id = :id AND business_id = :biz_id
             ');
             $stmt->execute([
                 'category_id' => $categoryId,
@@ -355,19 +374,21 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
                 'image_path' => $imagePath,
                 'status' => $status,
                 'id' => $id,
+                'biz_id' => $bid,
             ]);
             $productId = $id;
         } else {
             $stmt = $db->prepare('
                 INSERT INTO products (
-                    category_id, name, sku, barcode, cost_price, selling_price,
+                    business_id, category_id, name, sku, barcode, cost_price, selling_price,
                     tax_percent, stock_quantity, low_stock_threshold, image_path, status, created_at, updated_at
                 ) VALUES (
-                    :category_id, :name, :sku, :barcode, :cost_price, :selling_price,
+                    :biz_id, :category_id, :name, :sku, :barcode, :cost_price, :selling_price,
                     :tax_percent, :stock_quantity, :low_stock_threshold, :image_path, :status, NOW(), NOW()
                 )
             ');
             $stmt->execute([
+                'biz_id' => $bid,
                 'category_id' => $categoryId,
                 'name' => $name,
                 'sku' => $sku,
@@ -386,12 +407,13 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
             if ($initialStock > 0) {
                 $stmtMove = $db->prepare('
                     INSERT INTO inventory_movements (
-                        product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                        business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
                     ) VALUES (
-                        :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                        :biz_id, :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
                     )
                 ');
                 $stmtMove->execute([
+                    'biz_id' => $bid,
                     'product_id' => $productId,
                     'user_id' => $userId,
                     'movement_type' => 'in',
@@ -409,9 +431,10 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
     }
 }
 
-function delete_product(int $id): array {
+function delete_product(int $id, ?int $businessId = null): array {
     $db = get_db();
-    $prod = get_product_by_id($id);
+    $bid = $businessId ?: current_business_id();
+    $prod = get_product_by_id($id, $bid);
     if (!$prod) {
         return ['success' => false, 'error' => 'Product not found.'];
     }
@@ -420,8 +443,8 @@ function delete_product(int $id): array {
         @unlink(__DIR__ . '/../' . ltrim($prod['image_path'], '/'));
     }
 
-    $stmt = $db->prepare('DELETE FROM products WHERE id = :id');
-    $stmt->execute(['id' => $id]);
+    $stmt = $db->prepare('DELETE FROM products WHERE id = :id AND business_id = :biz_id');
+    $stmt->execute(['id' => $id, 'biz_id' => $bid]);
 
     return ['success' => true];
 }
@@ -430,8 +453,9 @@ function delete_product(int $id): array {
    3. INVENTORY & STOCK ADJUSTMENT OPERATIONS
    ========================================================================= */
 
-function adjust_stock(int $productId, ?int $userId, string $movementType, int $quantity, string $reason): array {
+function adjust_stock(int $productId, ?int $userId, string $movementType, int $quantity, string $reason, ?int $businessId = null): array {
     $errors = [];
+    $bid = $businessId ?: current_business_id();
     $movementType = strtolower(trim($movementType));
     $reason = trim($reason);
 
@@ -447,7 +471,7 @@ function adjust_stock(int $productId, ?int $userId, string $movementType, int $q
         $errors['reason'] = 'Reason for stock adjustment is required.';
     }
 
-    $product = get_product_by_id($productId);
+    $product = get_product_by_id($productId, $bid);
     if (!$product) {
         $errors['product'] = 'Product not found.';
     }
@@ -483,18 +507,19 @@ function adjust_stock(int $productId, ?int $userId, string $movementType, int $q
         $db->beginTransaction();
 
         // 1. Update product stock
-        $stmtUpdate = $db->prepare('UPDATE products SET stock_quantity = :stock, updated_at = NOW() WHERE id = :id');
-        $stmtUpdate->execute(['stock' => $newStock, 'id' => $productId]);
+        $stmtUpdate = $db->prepare('UPDATE products SET stock_quantity = :stock, updated_at = NOW() WHERE id = :id AND business_id = :biz_id');
+        $stmtUpdate->execute(['stock' => $newStock, 'id' => $productId, 'biz_id' => $bid]);
 
         // 2. Insert inventory movement log
         $stmtMove = $db->prepare('
             INSERT INTO inventory_movements (
-                product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
             ) VALUES (
-                :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+                :biz_id, :product_id, :user_id, :movement_type, :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
             )
         ');
         $stmtMove->execute([
+            'biz_id' => $bid,
             'product_id' => $productId,
             'user_id' => $userId,
             'movement_type' => $movementType,
@@ -521,16 +546,20 @@ function adjust_stock(int $productId, ?int $userId, string $movementType, int $q
     }
 }
 
-function get_inventory_movements(?int $productId = null, int $limit = 50): array {
+function get_inventory_movements(?int $productId = null, int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
     $sql = '
         SELECT m.*, p.name AS product_name, p.sku AS product_sku, u.name AS user_name
         FROM inventory_movements m
-        JOIN products p ON p.id = m.product_id
+        JOIN products p ON p.id = m.product_id AND p.business_id = :biz_id_p
         LEFT JOIN users u ON u.id = m.user_id
-        WHERE 1=1
+        WHERE m.business_id = :biz_id
     ';
-    $params = [];
+    $params = [
+        'biz_id' => $bid,
+        'biz_id_p' => $bid
+    ];
 
     if ($productId !== null && $productId > 0) {
         $sql .= ' AND m.product_id = :product_id';
@@ -544,11 +573,12 @@ function get_inventory_movements(?int $productId = null, int $limit = 50): array
     return $stmt->fetchAll();
 }
 
-function get_inventory_stats(): array {
+function get_inventory_stats(?int $businessId = null): array {
     $db = get_db();
+    $bid = $businessId ?: current_business_id();
 
-    // Total products & stock units
-    $stmt = $db->query('
+    // Total products & stock units scoped to current business
+    $stmt = $db->prepare('
         SELECT 
             COUNT(*) AS total_products,
             COALESCE(SUM(stock_quantity), 0) AS total_stock_units,
@@ -557,7 +587,9 @@ function get_inventory_stats(): array {
             SUM(CASE WHEN stock_quantity > 0 AND stock_quantity <= low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
             SUM(CASE WHEN stock_quantity <= 0 THEN 1 ELSE 0 END) AS out_of_stock_count
         FROM products
+        WHERE business_id = :biz_id
     ');
+    $stmt->execute(['biz_id' => $bid]);
     $stats = $stmt->fetch();
 
     return [
