@@ -105,6 +105,8 @@ function require_auth(): void {
         set_flash('error', 'Please sign in to access the POS Dashboard.');
         redirect(APP_URL . '/login.php');
     }
+    require_once __DIR__ . '/premium_db.php';
+    enforce_premium_gate();
 }
 
 function require_guest(): void {

@@ -1060,11 +1060,19 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <!-- Bottom Plan Status Widget -->
+        <?php $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); ?>
         <div class="sidebar-plan-card">
             <div class="plan-card-title">
-                <span>OMINIFLOW PRO</span>
-                <span style="background: #10b981; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">ACTIVE</span>
+                <span><?= $isPremiumPlan ? 'OMINIFLOW PREMIUM' : 'FREE PLAN' ?></span>
+                <?php if ($isPremiumPlan): ?>
+                    <span style="background: #10b981; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">ACTIVE</span>
+                <?php else: ?>
+                    <span style="background: #f59e0b; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">LOCKED</span>
+                <?php endif; ?>
             </div>
+            <?php if (!$isPremiumPlan): ?>
+                <a href="<?= asset('pricing.php') ?>" style="display:block;margin-top:8px;text-align:center;background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;text-decoration:none;">Upgrade to Premium</a>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1095,9 +1103,15 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
             <!-- 1. Subscription Card -->
             <div class="zpd-card">
                 <div class="zpd-card-heading">SUBSCRIPTION</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">You're currently on our Premium Trial</div>
-                <div style="font-size: 12.5px; color: #64748b; margin-bottom: 12px;">Premium Trial expires in 6 days</div>
-                <a href="<?= asset('settings.php') ?>" class="zpd-btn-outline">Upgrade</a>
+                <?php if (function_exists('is_premium_active') && is_premium_active()): ?>
+                    <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">OminiFlow Premium</div>
+                    <div style="font-size: 12.5px; color: #64748b; margin-bottom: 12px;">All modules are unlocked on this account.</div>
+                    <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
+                <?php else: ?>
+                    <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">You're on the Free plan</div>
+                    <div style="font-size: 12.5px; color: #64748b; margin-bottom: 12px;">Home is available. Buy Premium (₹35,000 + 18% GST extra) to unlock POS, inventory, online store, and more.</div>
+                    <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">Upgrade</a>
+                <?php endif; ?>
             </div>
 
             <!-- 2. Get In Touch Card -->

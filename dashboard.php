@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/premium_db.php';
 require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
 
@@ -15,6 +16,10 @@ require_auth();
 
 $user = current_user();
 $userName = $user ? $user['name'] : 'Admin';
+$isPremium = is_premium_active();
+$pendingPremium = $isPremium ? null : get_pending_premium_order(current_business_id());
+$flashSuccess = get_flash('success');
+$flashError = get_flash('error');
 
 $inventoryStats = get_inventory_stats();
 $salesStats = get_sales_stats();
@@ -432,6 +437,20 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
             <!-- Tab View 1: Main POS Dashboard Content -->
             <div id="viewDashboard" class="main-tab-content <?= $activeTab === 'dashboard' ? 'active' : '' ?>">
                 <main class="dashboard-content">
+                    <?php if ($flashSuccess): ?><div class="saas-alert saas-alert-success" style="margin-bottom:16px"><span><?= e($flashSuccess) ?></span></div><?php endif; ?>
+                    <?php if ($flashError): ?><div class="saas-alert saas-alert-danger" style="margin-bottom:16px"><span><?= e($flashError) ?></span></div><?php endif; ?>
+
+                    <?php if (!$isPremium): ?>
+                    <section style="background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+                        <div>
+                            <div style="font-size:11px;font-weight:800;letter-spacing:.06em;opacity:.85;margin-bottom:4px;">PREMIUM PLAN</div>
+                            <div style="font-size:18px;font-weight:800;margin-bottom:4px;">Unlock all POS modules</div>
+                            <div style="font-size:13.5px;opacity:.92;"><?= $pendingPremium ? 'Payment submitted. Premium stays locked until payment is confirmed.' : '₹35,000 + 18% GST extra. Until you buy, Home stays available and other pages stay locked.' ?></div>
+                        </div>
+                        <a href="<?= asset('pricing.php') ?>" class="btn-hero-primary" style="background:#fff;color:#1d4ed8;flex-shrink:0;">View features &amp; buy</a>
+                    </section>
+                    <?php endif; ?>
+
                     <!-- Welcome Banner -->
                     <section class="welcome-hero">
                         <div class="welcome-text">
@@ -439,7 +458,7 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                             <p>Your OminiFlow POS billing terminal is ready. Today: <strong>₹<?= number_format($salesStats['today_revenue'], 2) ?></strong> sales across <strong><?= $salesStats['today_orders'] ?></strong> orders.</p>
                         </div>
                         <div class="welcome-actions">
-                            <a href="<?= asset('pos.php') ?>" class="btn-hero-primary">
+                            <a href="<?= asset($isPremium ? 'pos.php' : 'pricing.php') ?>" class="btn-hero-primary">
                                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                                 </svg>
