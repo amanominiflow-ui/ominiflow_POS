@@ -109,7 +109,10 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_section_name', "VARCHAR(191) NOT NULL DEFAULT 'Banners'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_banner_section_name', "TINYINT(1) NOT NULL DEFAULT 0");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'item_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Items'");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'section_order', "VARCHAR(191) NOT NULL DEFAULT 'banner,category,item'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'section_order', "VARCHAR(191) NOT NULL DEFAULT 'category,banner,item'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'font_size', "VARCHAR(20) NOT NULL DEFAULT 'medium'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'category_mode', "VARCHAR(20) NOT NULL DEFAULT 'all'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'selected_category_ids', "TEXT NULL");
 }
 
 function add_schema_column_if_missing(PDO $db, string $table, string $column, string $definition): void {
@@ -473,8 +476,51 @@ function get_mobile_store_settings(int $businessId): array {
         'banner_section_name' => (string) ($row['banner_section_name'] ?? 'Banners'),
         'show_banner_section_name' => (int) ($row['show_banner_section_name'] ?? 0) === 1,
         'item_section_name' => (string) ($row['item_section_name'] ?? 'All Items'),
-        'section_order' => (string) ($row['section_order'] ?? 'banner,category,item'),
+        'section_order' => (string) ($row['section_order'] ?? 'category,banner,item'),
+        'font_size' => in_array(($row['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? (string) $row['font_size'] : 'medium',
+        'category_mode' => (($row['category_mode'] ?? 'all') === 'custom') ? 'custom' : 'all',
+        'selected_category_ids' => parse_selected_ids($row['selected_category_ids'] ?? ''),
     ];
+}
+
+function parse_selected_ids($value): array {
+    if (is_array($value)) {
+        return array_values(array_unique(array_filter(array_map('intval', $value))));
+    }
+    $decoded = json_decode((string) $value, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    return array_values(array_unique(array_filter(array_map('intval', $decoded))));
+}
+
+function storefront_home_sections(array $brand): array {
+    $order = array_filter(array_map('trim', explode(',', (string) ($brand['section_order'] ?? ''))));
+    $allowed = ['category', 'banner', 'item'];
+    $out = [];
+    foreach ($order as $key) {
+        if (in_array($key, $allowed, true) && !in_array($key, $out, true)) {
+            $out[] = $key;
+        }
+    }
+    foreach ($allowed as $key) {
+        if (!in_array($key, $out, true)) {
+            $out[] = $key;
+        }
+    }
+    return $out;
+}
+
+function storefront_visible_categories(array $categories, array $brand): array {
+    if (($brand['category_mode'] ?? 'all') !== 'custom') {
+        return $categories;
+    }
+    $ids = $brand['selected_category_ids'] ?? [];
+    if (!is_array($ids) || !$ids) {
+        return $categories;
+    }
+    $set = array_fill_keys($ids, true);
+    return array_values(array_filter($categories, static fn($c) => isset($set[(int) ($c['id'] ?? 0)])));
 }
 
 function save_mobile_store_settings(int $businessId, array $data, array $files = []): array {
@@ -571,6 +617,9 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             show_banner_section_name = :sbsn,
             item_section_name = :isn,
             section_order = :sord,
+            font_size = :fsize,
+            category_mode = :cmode,
+            selected_category_ids = :scids,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -606,13 +655,20 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'csn' => trim((string)($data['category_section_name'] ?? $current['category_section_name'])),
         'cbg' => normalize_hex_color((string)($data['category_bg_color'] ?? $current['category_bg_color']), '#ffffff'),
         'ctc' => normalize_hex_color((string)($data['category_text_color'] ?? $current['category_text_color']), '#000000'),
-        'csh' => in_array(($data['category_shape'] ?? $current['category_shape']), ['square', 'rectangle'], true) ? $data['category_shape'] : 'rectangle',
+        'csh' => in_array(($data['category_shape'] ?? $current['category_shape']), ['square', 'rectangle'], true)
+            ? (string) ($data['category_shape'] ?? $current['category_shape'])
+            : 'rectangle',
         'ccol' => isset($data['category_columns']) ? (int)$data['category_columns'] : (int)$current['category_columns'],
         'crow' => isset($data['category_rows']) ? (int)$data['category_rows'] : (int)$current['category_rows'],
         'bsn' => trim((string)($data['banner_section_name'] ?? $current['banner_section_name'])),
         'sbsn' => array_key_exists('show_banner_section_name', $data) ? (!empty($data['show_banner_section_name']) ? 1 : 0) : ($current['show_banner_section_name'] ? 1 : 0),
         'isn' => trim((string)($data['item_section_name'] ?? $current['item_section_name'])),
         'sord' => trim((string)($data['section_order'] ?? $current['section_order'])),
+        'fsize' => in_array(($data['font_size'] ?? $current['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true)
+            ? (string) ($data['font_size'] ?? $current['font_size'])
+            : 'medium',
+        'cmode' => (($data['category_mode'] ?? $current['category_mode'] ?? 'all') === 'custom') ? 'custom' : 'all',
+        'scids' => json_encode(parse_selected_ids($data['selected_category_ids'] ?? $current['selected_category_ids'] ?? [])),
         'bid' => $businessId,
     ]);
 
@@ -645,8 +701,8 @@ function upload_mobile_store_image(int $businessId, array $file, string $kind): 
     if (!in_array($ext, $allowed, true)) {
         return ['success' => false, 'error' => $kind === 'favicon' ? 'Use PNG, JPG, WEBP, or ICO.' : 'Use JPG, PNG, or WEBP.'];
     }
-    if (($file['size'] ?? 0) > 4 * 1024 * 1024) {
-        return ['success' => false, 'error' => 'Image must be under 4 MB.'];
+    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        return ['success' => false, 'error' => 'Image must be under 5 MB.'];
     }
     $dir = dirname(__DIR__) . '/assets/uploads/store/' . $businessId . '/';
     if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {

@@ -122,7 +122,15 @@ function sf_product_image(?string $path): string {
     return $path ? asset($path) : '';
 }
 
-$favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
+$favicon = '';
+if (!empty($brand['favicon_path'])) {
+    $favicon = asset((string) $brand['favicon_path']);
+} elseif (!empty($brand['logo_path'])) {
+    $favicon = asset((string) $brand['logo_path']);
+}
+$fontSize = in_array(($brand['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? $brand['font_size'] : 'medium';
+$headerText = (string) ($brand['header_text_color'] ?? '#ffffff');
+$buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -137,11 +145,17 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
     <style>
         :root {
             --ms-header: <?= e($brand['header_color']) ?>;
+            --ms-header-text: <?= e($headerText) ?>;
             --ms-accent: <?= e($brand['accent_color']) ?>;
+            --ms-btn-text: <?= e($buttonText) ?>;
+            --ms-font: <?= $fontSize === 'small' ? '13px' : ($fontSize === 'large' ? '16px' : '14px') ?>;
         }
+        body.ms-body { font-size: var(--ms-font); }
+        .ms-top-nav, .ms-title, .ms-nav-item, .ms-location-widget { color: var(--ms-header-text, #ffffff); }
+        .ms-add-btn, .ms-btn { color: var(--ms-btn-text, #ffffff); }
     </style>
 </head>
-<body class="ms-body">
+<body class="ms-body ms-font-<?= e($fontSize) ?>">
 <div class="ms-app">
     <header class="ms-top-nav">
         <div class="ms-top-container">
@@ -153,6 +167,7 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
             <?php else: ?>
                 <div class="ms-top-row">
                     <a class="ms-brand-left" href="<?= e($homeUrl) ?>">
+                        <?php if (!empty($brand['show_logo_header'])): ?>
                         <span class="<?= $brand['logo_path'] ? 'ms-logo' : 'ms-initials' ?>">
                             <?php if ($brand['logo_path']): ?>
                                 <img src="<?= asset($brand['logo_path']) ?>" alt="<?= e($pageTitle) ?>">
@@ -160,7 +175,10 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                             <?php endif; ?>
                         </span>
+                        <?php endif; ?>
+                        <?php if (!empty($brand['show_name_with_logo'])): ?>
                         <span class="ms-title"><?= e($pageTitle) ?></span>
+                        <?php endif; ?>
                     </a>
 
                     <div class="ms-top-actions">
@@ -217,15 +235,19 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                 if (!empty($brand['hide_out_of_stock'])) {
                     $products = array_values(array_filter($products, static fn($p) => (int) ($p['stock_quantity'] ?? 0) > 0));
                 }
+                $categories = storefront_visible_categories($categories, $brand);
+                $homeSections = storefront_home_sections($brand);
+                $catCols = max(2, min(4, (int) ($brand['category_columns'] ?? 2)));
                 ?>
 
-                <?php if ($brand['show_banner'] && $q === '' && !$catId): ?>
+                <?php foreach ($homeSections as $homeSec): ?>
+                <?php if ($homeSec === 'banner' && $brand['show_banner'] && $q === '' && !$catId): ?>
                     <div class="ms-banners-grid">
                         <!-- Banner 1: Online Now -->
                         <div class="ms-banner-card ms-banner-1">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-title">We're<br>online now!</div>
-                                <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
+                                <div class="ms-banner-title"><?= e($brand['banner_title'] ?: "We're online now!") ?></div>
+                                <div class="ms-banner-sub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></div>
                             </div>
                             <div class="ms-banner-art">
                                 <svg viewBox="0 0 140 120" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -304,11 +326,10 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                             </div>
                         </div>
                     </div>
-                <?php endif; ?>
 
-                <?php if ($brand['show_categories'] && $categories && $q === ''): ?>
-                    <div class="ms-sec-title">All Categories</div>
-                    <div class="ms-cat-grid">
+                <?php elseif ($homeSec === 'category' && $brand['show_categories'] && $categories && $q === ''): ?>
+                    <div class="ms-sec-title"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
+                    <div class="ms-cat-grid" style="grid-template-columns: repeat(<?= $catCols ?>, minmax(0, 1fr));">
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
                             $thumb = !empty($cat['image_path']) ? (string) $cat['image_path'] : '';
@@ -335,10 +356,9 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                             </a>
                         <?php endforeach; ?>
                     </div>
-                <?php endif; ?>
 
-                <?php if ($brand['show_items']): ?>
-                    <div class="ms-sec-title"><?= $catId ? 'Category items' : 'All Items' ?></div>
+                <?php elseif ($homeSec === 'item' && $brand['show_items']): ?>
+                    <div class="ms-sec-title"><?= $catId ? 'Category items' : e($brand['item_section_name'] ?: 'All Items') ?></div>
                     <?php if (!$products): ?>
                         <div class="ms-empty">No items to show.</div>
                     <?php else: ?>
@@ -408,6 +428,7 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                         <?php endif; ?>
                     <?php endif; ?>
                 <?php endif; ?>
+                <?php endforeach; ?>
 
             <?php elseif ($page === 'product'):
                 $product = get_product_by_id((int) ($_GET['id'] ?? 0), $bid);

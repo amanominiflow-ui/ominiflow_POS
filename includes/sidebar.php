@@ -531,6 +531,12 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Custom Domain</span>
                 </a>
+                <a href="<?= asset('online-store.php?tab=customize') ?>" class="nav-item <?= $currentPage === 'online-store.php' && in_array(($_GET['tab'] ?? ''), ['customize', 'branding'], true) ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </span>
+                    <span>Customize App</span>
+                </a>
 
                 <div class="drawer-section-title" style="margin-top: 10px;">MULTI-STORE / WAREHOUSES</div>
 

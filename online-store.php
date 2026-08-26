@@ -17,7 +17,7 @@ ensure_online_store_schema();
 $user = current_user();
 $bid = current_business_id();
 $tab = trim((string) ($_GET['tab'] ?? 'overview'));
-if (!in_array($tab, ['overview', 'preferences', 'domain', 'customize'], true)) {
+if (!in_array($tab, ['overview', 'preferences', 'domain', 'customize', 'branding'], true)) {
     $tab = 'overview';
 }
 
@@ -26,6 +26,7 @@ $pageTitles = [
     'preferences' => 'Store Preferences',
     'domain' => 'Custom Domain',
     'customize' => 'Home Layout',
+    'branding' => 'Branding',
 ];
 $pageTitle = $pageTitles[$tab];
 
@@ -41,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = (string) ($_POST['action'] ?? '');
     $backTab = (string) ($_POST['tab'] ?? $tab);
-    if (!in_array($backTab, ['overview', 'preferences', 'domain', 'customize'], true)) {
+    if (!in_array($backTab, ['overview', 'preferences', 'domain', 'customize', 'branding'], true)) {
         $backTab = 'overview';
     }
 
@@ -62,6 +63,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         set_store_published($bid, !$currentStatus);
         set_flash('success', !$currentStatus ? 'Store is now Open.' : 'Store is now Closed.');
         redirect(os_tab_url('overview'));
+    }
+
+    if ($action === 'save_branding') {
+        $saveData = [
+            'display_name' => $_POST['display_name'] ?? '',
+            'header_color' => $_POST['header_color'] ?? '',
+            'header_text_color' => $_POST['header_text_color'] ?? '',
+            'accent_color' => $_POST['accent_color'] ?? '',
+            'button_text_color' => $_POST['button_text_color'] ?? '',
+            'show_logo_header' => !empty($_POST['show_logo_header']),
+            'show_name_with_logo' => !empty($_POST['show_name_with_logo']),
+            'font_size' => $_POST['font_size'] ?? 'medium',
+            'remove_logo' => !empty($_POST['remove_logo']),
+            'remove_favicon' => !empty($_POST['remove_favicon']),
+        ];
+        $res = save_mobile_store_settings($bid, $saveData, $_FILES);
+        if (empty($res['success'])) {
+            set_flash('error', $res['error'] ?? 'Could not save branding.');
+        } else {
+            set_flash('success', 'Branding saved. Open the website to see it.');
+        }
+        redirect(os_tab_url('branding'));
+    }
+
+    if ($action === 'publish_layout' && !array_key_exists('display_name', $_POST)) {
+        publish_mobile_store($bid);
+        set_flash('success', 'Website published with your branding.');
+        redirect(os_tab_url($backTab));
     }
 
     if ($action === 'save_preferences' || $action === 'save_customize' || $action === 'publish_layout') {
@@ -103,9 +132,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_POST['category_columns'])) $saveData['category_columns'] = (int)$_POST['category_columns'];
             if (isset($_POST['category_rows'])) $saveData['category_rows'] = (int)$_POST['category_rows'];
             if (isset($_POST['banner_section_name'])) $saveData['banner_section_name'] = $_POST['banner_section_name'];
-            if (isset($_POST['show_banner_section_name'])) $saveData['show_banner_section_name'] = !empty($_POST['show_banner_section_name']);
+            $saveData['show_banner_section_name'] = !empty($_POST['show_banner_section_name']);
             if (isset($_POST['item_section_name'])) $saveData['item_section_name'] = $_POST['item_section_name'];
             if (isset($_POST['section_order'])) $saveData['section_order'] = $_POST['section_order'];
+            if (isset($_POST['category_mode'])) {
+                $saveData['category_mode'] = $_POST['category_mode'];
+                $saveData['selected_category_ids'] = $_POST['selected_category_ids'] ?? [];
+            }
         }
 
         $res = save_mobile_store_settings($bid, $saveData, $_FILES);
@@ -193,6 +226,13 @@ $storeCity = trim((string)($bizProfile['city'] ?? ''));
 $storeCountry = trim((string)($bizProfile['business_location'] ?? ''));
 $locationDisplay = $storeState ?: ($storeCity ?: ($storeCountry ?: 'West Bengal'));
 $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['display_name'] : ($business['name'] ?? 'ASH COLLECTIVE')));
+
+if (in_array($tab, ['customize', 'branding'], true)) {
+    $builderCategories = get_categories('', 'active', $bid);
+    $builderProducts = get_products('', null, 'active', '', $bid);
+    require __DIR__ . '/includes/store_studio.php';
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1545,483 +1585,6 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
                         <button class="pref-save-btn" type="submit">Save</button>
                     </form>
                 </div>
-
-            <?php elseif ($tab === 'customize'):
-                $builderCategories = get_categories('', 'active', $bid);
-                $builderProducts = get_products('', null, 'active', '', $bid);
-                ?>
-                <div class="vb-workspace">
-                    <!-- Studio Top Bar -->
-                    <div class="vb-top-bar">
-                        <div>
-                            <h1 class="vb-title">Home Layout</h1>
-                            <div class="vb-subtitle">
-                                <?= !empty($brand['published_at']) ? ('Published on ' . date('d M Y H:i:s', strtotime((string)$brand['published_at']))) : 'Draft - Unpublished changes' ?>
-                            </div>
-                        </div>
-                        <div class="vb-top-actions">
-                            <a class="vb-view-link" href="<?= e($localUrl) ?>" target="_blank">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                <span>View Store</span>
-                            </a>
-                            <form method="post" style="margin:0">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="publish_layout">
-                                <input type="hidden" name="tab" value="customize">
-                                <button type="submit" class="vb-publish-btn">
-                                    <span>Publish</span>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Studio Body: Canvas + Properties Drawer -->
-                    <div class="vb-body-grid">
-                        <!-- Left Canvas Area (with dot grid background) -->
-                        <div class="vb-canvas-area" onclick="handleCanvasBgClick(event)">
-                            <div class="vb-phone-frame" id="vbPhoneFrame">
-                                <div class="vb-phone-inner">
-                                    <!-- Phone Notch -->
-                                    <div class="vb-phone-notch">
-                                    <div class="vb-phone-notch-bar"></div>
-                                </div>
-
-                                <!-- Phone Header -->
-                                <div class="vb-phone-header">
-                                    <div style="font-size:10.5px;opacity:0.85;margin-bottom:4px;display:flex;align-items:center;gap:3px">
-                                        <span>Set Delivery Location</span>
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
-                                    </div>
-                                    <div class="vb-phone-search">
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                        <span>Search by "WOMEN"</span>
-                                    </div>
-                                </div>
-
-                                <!-- Section 1: Banners Component -->
-                                <div class="vb-section-block vb-selected" id="vbSecBanner" onclick="selectVbSection(event, 'banner')">
-                                    <div class="vb-section-pill">Banner</div>
-                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
-                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
-
-                                    <!-- Floating Menu -->
-                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-banner')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                            <span>Edit</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-banner')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
-                                            <span>Theme</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn" onclick="moveVbSection('banner', 'down')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 13l-5 5-5-5M12 6v12"/></svg>
-                                            <span>Move to next</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('banner', false)">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                            <span>Delete Section</span>
-                                        </button>
-                                    </div>
-
-                                    <!-- Banners Preview -->
-                                    <div style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 8px; padding: 14px; color: #fff; min-height: 110px; position: relative; overflow: hidden;">
-                                        <div style="font-size: 9.5px; opacity: 0.85; text-transform: uppercase;">Best deal,</div>
-                                        <div style="font-size: 16px; font-weight: 800; line-height: 1.1; margin: 2px 0 4px;" id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "Start Shopping") ?></div>
-                                        <div style="font-size: 10px; opacity: 0.9;" id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: "and discover the best deals!") ?></div>
-                                        <div style="position: absolute; right: 10px; bottom: 8px; font-size: 28px;">🛍️</div>
-                                    </div>
-                                    <div style="display:flex;justify-content:center;gap:4px;margin-top:6px;">
-                                        <span style="width:5px;height:5px;border-radius:50%;background:#2563eb;"></span>
-                                        <span style="width:5px;height:5px;border-radius:50%;background:#cbd5e1;"></span>
-                                        <span style="width:5px;height:5px;border-radius:50%;background:#cbd5e1;"></span>
-                                    </div>
-                                </div>
-
-                                <!-- Section 2: Category Component -->
-                                <div class="vb-section-block" id="vbSecCategory" onclick="selectVbSection(event, 'category')">
-                                    <div class="vb-section-pill">Category</div>
-                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
-                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
-
-                                    <!-- Floating Menu -->
-                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-category')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                            <span>Edit</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('theme-category')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
-                                            <span>Theme</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn" onclick="moveVbSection('category', 'down')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 13l-5 5-5-5M12 6v12"/></svg>
-                                            <span>Move to next</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('category', false)">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                            <span>Delete Section</span>
-                                        </button>
-                                    </div>
-
-                                    <!-- Category Title -->
-                                    <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px;" id="canvasCatTitle"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" id="canvasCatGrid">
-                                        <?php if (!empty($builderCategories)):
-                                            $sampleCats = array_slice($builderCategories, 0, 4);
-                                            foreach ($sampleCats as $sc): ?>
-                                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
-                                                    <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; overflow: hidden;">
-                                                        <?php if (!empty($sc['image_path'])): ?>
-                                                            <img src="<?= asset($sc['image_path']) ?>" alt="" style="width:100%;height:100%;object-fit:cover">
-                                                        <?php else: ?>
-                                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                    <div style="font-size: 10px; font-weight: 700; color: #0f172a; text-transform: uppercase;"><?= e((string)$sc['name']) ?></div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        <?php else: ?>
-                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
-                                                <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-                                                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">MENS</div>
-                                            </div>
-                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
-                                                <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-                                                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">WOMEN</div>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-
-                                <!-- Section 3: Item Component (All Items) -->
-                                <div class="vb-section-block" id="vbSecItem" onclick="selectVbSection(event, 'item')">
-                                    <div class="vb-section-pill">Item</div>
-                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
-                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
-
-                                    <!-- Floating Menu -->
-                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-item')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                            <span>Edit</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-item')">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
-                                            <span>Theme</span>
-                                        </button>
-                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('item', false)">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                            <span>Delete Section</span>
-                                        </button>
-                                    </div>
-
-                                    <!-- Items Title -->
-                                    <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px;" id="canvasItemTitle"><?= e($brand['item_section_name'] ?: 'All Items') ?></div>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                        <?php if (!empty($builderProducts)):
-                                            $sampleProds = array_slice($builderProducts, 0, 2);
-                                            foreach ($sampleProds as $sp):
-                                                $sImg = sf_product_image($sp['image_path'] ?? null);
-                                                ?>
-                                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
-                                                    <div style="width: 100%; height: 75px; background: #f8fafc; border-radius: 6px; overflow: hidden; margin-bottom: 6px; display: flex; align-items: center; justify-content: center;">
-                                                        <?php if ($sImg): ?><img src="<?= e($sImg) ?>" alt="" style="width:100%;height:100%;object-fit:cover"><?php else: ?><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><?php endif; ?>
-                                                    </div>
-                                                    <div style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?= e((string)$sp['name']) ?></div>
-                                                    <div style="font-size: 9.5px; color: #64748b; margin: 2px 0;">In stock</div>
-                                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-                                                        <span style="font-size: 11px; font-weight: 700; color: #0f172a;"><?= sf_money($currency, (float)$sp['selling_price']) ?></span>
-                                                        <span style="background: #e2e8f0; font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">Add</span>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        <?php else: ?>
-                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
-                                                <div style="width: 100%; height: 75px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
-                                                <div style="font-size: 10.5px; font-weight: 700;">SAMPLE ITEM</div>
-                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;"><span style="font-size: 11px; font-weight: 700;">₹499.00</span><span style="background: #e2e8f0; font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">Add</span></div>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                        <!-- Right Drawer: Component & Properties Sidebar -->
-                        <div class="vb-drawer" id="vbDrawer">
-                            <form method="post" id="vbForm" style="display:flex;flex-direction:column;height:100%;">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="save_customize">
-                                <input type="hidden" name="tab" value="customize">
-                                <input type="hidden" name="display_name" value="<?= e($brand['display_name']) ?>">
-                                <input type="hidden" name="header_color" value="<?= e($brand['header_color']) ?>">
-                                <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
-
-                                <!-- Drawer Header -->
-                                <div class="vb-drawer-header">
-                                    <h3 class="vb-drawer-title" id="vbDrawerHeading">Edit Banner Component</h3>
-                                    <button type="button" class="vb-drawer-close" onclick="closeDrawer()">✕</button>
-                                </div>
-
-                                <!-- Drawer Body: Panels -->
-                                <div class="vb-drawer-body">
-                                    <!-- Panel 1: Edit Banner Component -->
-                                    <div id="panelEditBanner" class="vb-panel">
-                                        <div class="form-group" style="margin-bottom: 16px;">
-                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
-                                            <input type="text" class="form-control" name="banner_section_name" id="inputBannerSectionName" value="<?= e($brand['banner_section_name'] ?: 'Banners') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasBannerTitle').innerText=this.value">
-                                        </div>
-                                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;margin-bottom:18px;cursor:pointer;">
-                                            <input type="checkbox" name="show_banner_section_name" value="1" <?= !empty($brand['show_banner_section_name']) ? 'checked' : '' ?>>
-                                            <span>Show section name</span>
-                                        </label>
-
-                                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                                            <span style="font-size:13px;font-weight:700;color:#334155;">Banners</span>
-                                            <span style="font-size:12.5px;color:#2563eb;font-weight:600;cursor:pointer;">+ Add Banner</span>
-                                        </div>
-
-                                        <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">
-                                            <div style="display:grid;grid-template-columns:110px 1fr;background:#f8fafc;padding:8px 12px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">
-                                                <div>Banner</div>
-                                                <div>On Click Action</div>
-                                            </div>
-                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;border-bottom:1px solid #f1f5f9;">
-                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#0d9488,#14b8a6);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 1</div>
-                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
-                                            </div>
-                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;border-bottom:1px solid #f1f5f9;">
-                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#2563eb,#3b82f6);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 2</div>
-                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
-                                            </div>
-                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;">
-                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#9333ea,#a855f7);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 3</div>
-                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Panel 2: Edit Category Component -->
-                                    <div id="panelEditCategory" class="vb-panel" style="display:none;">
-                                        <div class="form-group" style="margin-bottom: 16px;">
-                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
-                                            <input type="text" class="form-control" name="category_section_name" id="inputCatSectionName" value="<?= e($brand['category_section_name'] ?: 'All Categories') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasCatTitle').innerText=this.value">
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Suggested Categories</label>
-                                            <div style="display:flex;gap:18px;align-items:center;">
-                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
-                                                    <input type="radio" name="suggested_cats" value="all" checked>
-                                                    <span>All Categories</span>
-                                                </label>
-                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
-                                                    <input type="radio" name="suggested_cats" value="custom">
-                                                    <span>Custom</span>
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#0369a1;margin-bottom:16px;">
-                                            All categories from the inventory will be listed in this section
-                                        </div>
-                                    </div>
-
-                                    <!-- Panel 3: Category Properties / Theme -->
-                                    <div id="panelThemeCategory" class="vb-panel" style="display:none;">
-                                        <div class="form-group" style="margin-bottom: 16px;">
-                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
-                                            <input type="text" class="form-control" value="<?= e($brand['category_section_name'] ?: 'All Categories') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" readonly>
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Section Theme</label>
-                                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                                                <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
-                                                    <input type="color" name="category_bg_color" value="<?= e($brand['category_bg_color'] ?: '#ffffff') ?>" style="width:26px;height:26px;border:0;border-radius:4px;cursor:pointer;">
-                                                    <div>
-                                                        <div style="font-size:11px;color:#64748b;">Background</div>
-                                                        <div style="font-size:11.5px;font-weight:700;color:#0f172a;">#ffffff</div>
-                                                    </div>
-                                                </div>
-                                                <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
-                                                    <input type="color" name="category_text_color" value="<?= e($brand['category_text_color'] ?: '#000000') ?>" style="width:26px;height:26px;border:0;border-radius:4px;cursor:pointer;">
-                                                    <div>
-                                                        <div style="font-size:11px;color:#64748b;">Text Color</div>
-                                                        <div style="font-size:11.5px;font-weight:700;color:#0f172a;">#000000</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px;display:block;">Shape</label>
-                                            <div class="vb-shape-grid">
-                                                <div class="vb-shape-box <?= $brand['category_shape'] === 'square' ? 'selected' : '' ?>" onclick="setShape('square', this)">
-                                                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                                    <div class="vb-check-icon" style="<?= $brand['category_shape'] === 'square' ? '' : 'display:none;' ?>">✓</div>
-                                                </div>
-                                                <div class="vb-shape-box <?= $brand['category_shape'] !== 'square' ? 'selected' : '' ?>" onclick="setShape('rectangle', this)">
-                                                    <svg width="48" height="34" viewBox="0 0 32 24" fill="none" stroke="#60a5fa" stroke-width="1.5"><rect x="2" y="3" width="28" height="18" rx="3"/><circle cx="7.5" cy="8.5" r="1.5"/><polyline points="30 15 22 10 5 21"/></svg>
-                                                    <div class="vb-check-icon" style="<?= $brand['category_shape'] !== 'square' ? '' : 'display:none;' ?>">✓</div>
-                                                </div>
-                                            </div>
-                                            <input type="hidden" name="category_shape" id="inputCatShape" value="<?= e($brand['category_shape'] ?: 'rectangle') ?>">
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px;display:block;">Sizes</label>
-                                            <div class="vb-size-grid">
-                                                <div class="vb-size-box <?= $brand['category_columns'] === 4 ? 'selected' : '' ?>" onclick="setColumns(4, this)">
-                                                    <svg width="34" height="24" viewBox="0 0 24 16" fill="#e2e8f0"><rect width="4" height="6" rx="1"/><rect x="6" width="4" height="6" rx="1"/><rect x="12" width="4" height="6" rx="1"/><rect x="18" width="4" height="6" rx="1"/><rect y="8" width="4" height="6" rx="1"/><rect x="6" y="8" width="4" height="6" rx="1"/><rect x="12" y="8" width="4" height="6" rx="1"/><rect x="18" y="8" width="4" height="6" rx="1"/></svg>
-                                                </div>
-                                                <div class="vb-size-box <?= $brand['category_columns'] !== 4 ? 'selected' : '' ?>" onclick="setColumns(2, this)">
-                                                    <svg width="34" height="24" viewBox="0 0 24 16" fill="#3b82f6"><rect width="9" height="6" rx="1"/><rect x="12" width="9" height="6" rx="1"/><rect y="8" width="9" height="6" rx="1"/><rect x="12" y="8" width="9" height="6" rx="1"/></svg>
-                                                    <div class="vb-check-icon">✓</div>
-                                                </div>
-                                            </div>
-                                            <input type="hidden" name="category_columns" id="inputCatColumns" value="<?= (int)($brand['category_columns'] ?: 2) ?>">
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">No of Rows</label>
-                                            <select name="category_rows" class="form-control" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13px;">
-                                                <option value="1" <?= $brand['category_rows'] === 1 ? 'selected' : '' ?>>1</option>
-                                                <option value="2" <?= $brand['category_rows'] === 2 ? 'selected' : '' ?>>2</option>
-                                                <option value="3" <?= $brand['category_rows'] === 3 ? 'selected' : '' ?>>3</option>
-                                                <option value="4" <?= $brand['category_rows'] === 4 ? 'selected' : '' ?>>4</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <!-- Panel 4: Edit Item Component -->
-                                    <div id="panelEditItem" class="vb-panel" style="display:none;">
-                                        <div class="form-group" style="margin-bottom: 16px;">
-                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
-                                            <input type="text" class="form-control" name="item_section_name" id="inputItemSectionName" value="<?= e($brand['item_section_name'] ?: 'All Items') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasItemTitle').innerText=this.value">
-                                        </div>
-
-                                        <div style="margin-bottom:16px;">
-                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Suggested Items</label>
-                                            <div style="display:flex;gap:18px;align-items:center;">
-                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
-                                                    <input type="radio" name="suggested_items" value="all" checked>
-                                                    <span>All Items</span>
-                                                </label>
-                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
-                                                    <input type="radio" name="suggested_items" value="custom">
-                                                    <span>Custom</span>
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#0369a1;margin-bottom:16px;">
-                                            All Items from the inventory will be listed in this section
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Drawer Footer -->
-                                <div class="vb-drawer-footer">
-                                    <button type="submit" class="cd-save-btn">Save</button>
-                                    <button type="button" class="btn-secondary" onclick="closeDrawer()" style="padding:8px 18px;border-radius:6px;">Cancel</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <script>
-                    function selectVbSection(event, sectionKey) {
-                        event.stopPropagation();
-                        document.querySelectorAll('.vb-section-block').forEach(b => b.classList.remove('vb-selected'));
-                        const target = document.getElementById('vbSec' + sectionKey.charAt(0).toUpperCase() + sectionKey.slice(1));
-                        if (target) target.classList.add('vb-selected');
-
-                        if (sectionKey === 'banner') {
-                            openDrawerTab('edit-banner');
-                        } else if (sectionKey === 'category') {
-                            openDrawerTab('edit-category');
-                        } else if (sectionKey === 'item') {
-                            openDrawerTab('edit-item');
-                        }
-                    }
-
-                    function openDrawerTab(tabId) {
-                        const heading = document.getElementById('vbDrawerHeading');
-                        document.querySelectorAll('.vb-panel').forEach(p => p.style.display = 'none');
-
-                        if (tabId === 'edit-banner') {
-                            heading.textContent = 'Edit Banner Component';
-                            document.getElementById('panelEditBanner').style.display = 'block';
-                        } else if (tabId === 'edit-category') {
-                            heading.textContent = 'Edit Category Component';
-                            document.getElementById('panelEditCategory').style.display = 'block';
-                        } else if (tabId === 'theme-category') {
-                            heading.textContent = 'Category Properties';
-                            document.getElementById('panelThemeCategory').style.display = 'block';
-                        } else if (tabId === 'edit-item') {
-                            heading.textContent = 'Edit Item Component';
-                            document.getElementById('panelEditItem').style.display = 'block';
-                        }
-                    }
-
-                    function closeDrawer() {
-                        document.querySelectorAll('.vb-section-block').forEach(b => b.classList.remove('vb-selected'));
-                    }
-
-                    function handleCanvasBgClick(event) {
-                        if (!event.target.closest('.vb-section-block')) {
-                            // clicked outside section
-                        }
-                    }
-
-                    function setShape(shape, el) {
-                        document.getElementById('inputCatShape').value = shape;
-                        document.querySelectorAll('.vb-shape-box').forEach(b => {
-                            b.classList.remove('selected');
-                            const chk = b.querySelector('.vb-check-icon');
-                            if (chk) chk.style.display = 'none';
-                        });
-                        el.classList.add('selected');
-                        const chk = el.querySelector('.vb-check-icon');
-                        if (chk) chk.style.display = 'flex';
-                    }
-
-                    function setColumns(cols, el) {
-                        document.getElementById('inputCatColumns').value = cols;
-                        document.querySelectorAll('.vb-size-box').forEach(b => {
-                            b.classList.remove('selected');
-                            const chk = b.querySelector('.vb-check-icon');
-                            if (chk) chk.remove();
-                        });
-                        el.classList.add('selected');
-                        const badge = document.createElement('div');
-                        badge.className = 'vb-check-icon';
-                        badge.textContent = '✓';
-                        el.appendChild(badge);
-                    }
-
-                    function toggleVbSection(secKey, show) {
-                        const target = document.getElementById('vbSec' + secKey.charAt(0).toUpperCase() + secKey.slice(1));
-                        if (target) target.style.display = show ? 'block' : 'none';
-                    }
-
-                    function moveVbSection(secKey, direction) {
-                        const frame = document.getElementById('vbPhoneFrame');
-                        const target = document.getElementById('vbSec' + secKey.charAt(0).toUpperCase() + secKey.slice(1));
-                        if (!target || !frame) return;
-
-                        if (direction === 'down' && target.nextElementSibling) {
-                            target.parentNode.insertBefore(target.nextElementSibling, target);
-                        } else if (direction === 'up' && target.previousElementSibling && !target.previousElementSibling.classList.contains('vb-phone-header')) {
-                            target.parentNode.insertBefore(target, target.previousElementSibling);
-                        }
-                    }
-                </script>
 
             <?php elseif ($tab === 'domain'):
                 $currentDomain = !empty($domains[0]) ? $domains[0] : null;
