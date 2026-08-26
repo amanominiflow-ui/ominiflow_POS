@@ -311,10 +311,12 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                     <div class="ms-cat-grid">
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
-                            $catProducts = get_products('', (int) $cat['id'], 'active', '', $bid);
-                            $thumb = '';
-                            foreach ($catProducts as $cp) {
-                                if (!empty($cp['image_path'])) { $thumb = (string) $cp['image_path']; break; }
+                            $thumb = !empty($cat['image_path']) ? (string) $cat['image_path'] : '';
+                            if (!$thumb) {
+                                $catProducts = get_products('', (int) $cat['id'], 'active', '', $bid);
+                                foreach ($catProducts as $cp) {
+                                    if (!empty($cp['image_path'])) { $thumb = (string) $cp['image_path']; break; }
+                                }
                             }
                             ?>
                             <a class="ms-cat-card" href="<?= e($catUrl) ?>">

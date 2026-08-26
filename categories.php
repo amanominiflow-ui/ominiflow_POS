@@ -35,9 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'code' => $_POST['code'] ?? '',
             'description' => $_POST['description'] ?? '',
             'status' => $_POST['status'] ?? 'active',
+            'remove_image' => !empty($_POST['remove_image']),
         ];
 
-        $result = save_category($data, $id);
+        $result = save_category($data, $id, null, $_FILES['category_image'] ?? null);
         if ($result['success']) {
             set_flash('success', $id ? 'Category updated successfully!' : 'Category created successfully!');
         } else {
@@ -213,7 +214,14 @@ $categories = get_categories($search, $statusFilter);
                                     <?php foreach ($categories as $cat): ?>
                                         <tr>
                                             <td>
-                                                <div style="font-weight: 700; color: var(--saas-navy-950);"><?= e($cat['name']) ?></div>
+                                                <div style="display: flex; align-items: center; gap: 12px;">
+                                                    <?php if (!empty($cat['image_path'])): ?>
+                                                        <img src="<?= asset($cat['image_path']) ?>" alt="" style="width: 38px; height: 38px; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; flex-shrink: 0;">
+                                                    <?php else: ?>
+                                                        <div style="width: 38px; height: 38px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #64748b; flex-shrink: 0;">🏷️</div>
+                                                    <?php endif; ?>
+                                                    <div style="font-weight: 700; color: var(--saas-navy-950);"><?= e($cat['name']) ?></div>
+                                                </div>
                                             </td>
                                             <td>
                                                 <code style="background: var(--saas-surface); padding: 2px 6px; border-radius: 4px; font-weight: 600; color: var(--saas-primary);"><?= e($cat['code']) ?></code>
@@ -248,6 +256,8 @@ $categories = get_categories($search, $statusFilter);
                                                         data-code="<?= e($cat['code']) ?>"
                                                         data-description="<?= e($cat['description'] ?? '') ?>"
                                                         data-status="<?= e($cat['status']) ?>"
+                                                        data-image="<?= e($cat['image_path'] ?? '') ?>"
+                                                        data-image-url="<?= !empty($cat['image_path']) ? e(asset($cat['image_path'])) : '' ?>"
                                                         title="Edit Category"
                                                     >
                                                         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,7 +295,7 @@ $categories = get_categories($search, $statusFilter);
                 <h3 class="modal-title" id="categoryModalTitle">Add Category</h3>
                 <button type="button" class="modal-close-btn" id="closeCategoryModal">&times;</button>
             </div>
-            <form method="POST" action="<?= asset('categories.php') ?>">
+            <form method="POST" action="<?= asset('categories.php') ?>" enctype="multipart/form-data">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="category_id" id="modalCategoryId" value="">
@@ -305,6 +315,24 @@ $categories = get_categories($search, $statusFilter);
                     <div class="form-group" style="margin-bottom: 16px;">
                         <label for="modalCategoryDescription" class="form-label">Description</label>
                         <textarea id="modalCategoryDescription" name="description" rows="3" placeholder="Optional brief description of this product category..." class="form-control"></textarea>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label">Category Image</label>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <div id="modalImagePreviewBox" style="width: 56px; height: 56px; border-radius: 8px; border: 1.5px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; background: #f8fafc; overflow: hidden; flex-shrink: 0;">
+                                <span id="modalImagePlaceholder" style="font-size: 22px;">🏷️</span>
+                                <img id="modalImagePreview" src="" alt="" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                            </div>
+                            <div style="flex: 1;">
+                                <input type="file" id="modalCategoryImage" name="category_image" accept="image/png,image/jpeg,image/webp" class="form-control" style="padding: 6px 10px; font-size: 13px;">
+                                <label id="modalRemoveImageWrap" style="display: none; align-items: center; gap: 6px; font-size: 12.5px; color: #ef4444; cursor: pointer; margin-top: 6px;">
+                                    <input type="checkbox" name="remove_image" id="modalRemoveImage" value="1">
+                                    <span>Remove current image</span>
+                                </label>
+                            </div>
+                        </div>
+                        <span class="form-hint">Shown on storefront and POS catalog. PNG, JPG, WEBP (Max 5MB).</span>
                     </div>
 
                     <div class="form-group">
@@ -337,14 +365,69 @@ $categories = get_categories($search, $statusFilter);
             const codeInput = document.getElementById('modalCategoryCode');
             const descInput = document.getElementById('modalCategoryDescription');
             const statusInput = document.getElementById('modalCategoryStatus');
+            const fileInput = document.getElementById('modalCategoryImage');
+            const previewImg = document.getElementById('modalImagePreview');
+            const placeholder = document.getElementById('modalImagePlaceholder');
+            const removeWrap = document.getElementById('modalRemoveImageWrap');
+            const removeCheck = document.getElementById('modalRemoveImage');
+
+            function updateImageDisplay(imageUrl) {
+                if (imageUrl) {
+                    previewImg.src = imageUrl;
+                    previewImg.style.display = 'block';
+                    placeholder.style.display = 'none';
+                    if (removeWrap) removeWrap.style.display = 'flex';
+                } else {
+                    previewImg.src = '';
+                    previewImg.style.display = 'none';
+                    placeholder.style.display = 'block';
+                    if (removeWrap) removeWrap.style.display = 'none';
+                }
+                if (removeCheck) removeCheck.checked = false;
+                if (fileInput) fileInput.value = '';
+            }
+
+            if (fileInput) {
+                fileInput.addEventListener('change', function () {
+                    if (this.files && this.files[0]) {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            previewImg.src = e.target.result;
+                            previewImg.style.display = 'block';
+                            placeholder.style.display = 'none';
+                        };
+                        reader.readAsDataURL(this.files[0]);
+                        if (removeCheck) removeCheck.checked = false;
+                    }
+                });
+            }
+
+            if (removeCheck) {
+                removeCheck.addEventListener('change', function () {
+                    if (this.checked) {
+                        previewImg.style.display = 'none';
+                        placeholder.style.display = 'block';
+                        if (fileInput) fileInput.value = '';
+                    } else {
+                        const currentUrl = idInput.getAttribute('data-current-img');
+                        if (currentUrl) {
+                            previewImg.src = currentUrl;
+                            previewImg.style.display = 'block';
+                            placeholder.style.display = 'none';
+                        }
+                    }
+                });
+            }
 
             function openModal(isEdit = false, data = {}) {
                 modalTitle.textContent = isEdit ? 'Edit Category' : 'Add Category';
                 idInput.value = isEdit ? data.id : '';
+                idInput.setAttribute('data-current-img', isEdit && data.imageUrl ? data.imageUrl : '');
                 nameInput.value = isEdit ? data.name : '';
                 codeInput.value = isEdit ? data.code : '';
                 descInput.value = isEdit ? data.description : '';
                 statusInput.value = isEdit ? data.status : 'active';
+                updateImageDisplay(isEdit && data.imageUrl ? data.imageUrl : null);
                 modal.classList.add('open');
                 nameInput.focus();
             }
@@ -370,6 +453,7 @@ $categories = get_categories($search, $statusFilter);
                         code: this.getAttribute('data-code'),
                         description: this.getAttribute('data-description'),
                         status: this.getAttribute('data-status'),
+                        imageUrl: this.getAttribute('data-image-url'),
                     };
                     openModal(true, data);
                 });

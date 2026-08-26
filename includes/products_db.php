@@ -13,7 +13,76 @@ require_once __DIR__ . '/auth.php';
    1. CATEGORY OPERATIONS
    ========================================================================= */
 
+function ensure_category_schema(): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $db = get_db();
+    try {
+        $stmt = $db->prepare("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'categories' AND COLUMN_NAME = 'image_path'
+        ");
+        $stmt->execute(['db' => DB_NAME]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("ALTER TABLE `categories` ADD `image_path` VARCHAR(255) NULL AFTER `description`");
+        }
+    } catch (PDOException $e) {
+        // Table may not exist yet or column exists
+    }
+}
+
+function handle_category_image_upload(?array $file, ?string $oldPath = null): ?string {
+    if (!$file || !isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return $oldPath;
+    }
+
+    $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+
+    $fileInfo = pathinfo($file['name']);
+    $ext = strtolower($fileInfo['extension'] ?? '');
+
+    if (!in_array($ext, $allowedExts, true)) {
+        return $oldPath;
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mime, $allowedMimes, true)) {
+        return $oldPath;
+    }
+
+    // Max 5MB
+    if ($file['size'] > 5 * 1024 * 1024) {
+        return $oldPath;
+    }
+
+    $uploadDir = __DIR__ . '/../assets/uploads/categories/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    $newFileName = 'cat_' . bin2hex(random_bytes(8)) . '_' . time() . '.' . $ext;
+    $targetPath = $uploadDir . $newFileName;
+
+    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        // Delete old category image if it exists
+        if ($oldPath && file_exists(__DIR__ . '/../' . ltrim($oldPath, '/'))) {
+            @unlink(__DIR__ . '/../' . ltrim($oldPath, '/'));
+        }
+        return 'assets/uploads/categories/' . $newFileName;
+    }
+
+    return $oldPath;
+}
+
 function get_categories(string $search = '', string $status = '', ?int $businessId = null): array {
+    ensure_category_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
@@ -47,6 +116,7 @@ function get_categories(string $search = '', string $status = '', ?int $business
 }
 
 function get_category_by_id(int $id, ?int $businessId = null): ?array {
+    ensure_category_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('SELECT * FROM categories WHERE id = :id AND business_id = :biz_id LIMIT 1');
@@ -56,6 +126,7 @@ function get_category_by_id(int $id, ?int $businessId = null): ?array {
 }
 
 function get_category_by_code(string $code, ?int $businessId = null): ?array {
+    ensure_category_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('SELECT * FROM categories WHERE code = :code AND business_id = :biz_id LIMIT 1');
@@ -64,7 +135,8 @@ function get_category_by_code(string $code, ?int $businessId = null): ?array {
     return $cat ?: null;
 }
 
-function save_category(array $data, ?int $id = null, ?int $businessId = null): array {
+function save_category(array $data, ?int $id = null, ?int $businessId = null, ?array $file = null): array {
+    ensure_category_schema();
     $errors = [];
     $bid = $businessId ?: current_business_id();
     $name = trim((string) ($data['name'] ?? ''));
@@ -94,18 +166,33 @@ function save_category(array $data, ?int $id = null, ?int $businessId = null): a
         return ['success' => false, 'errors' => $errors];
     }
 
+    $oldCategory = $id !== null ? get_category_by_id($id, $bid) : null;
+    $imagePath = $oldCategory['image_path'] ?? null;
+
+    if (!empty($data['remove_image'])) {
+        if ($imagePath && file_exists(__DIR__ . '/../' . ltrim($imagePath, '/'))) {
+            @unlink(__DIR__ . '/../' . ltrim($imagePath, '/'));
+        }
+        $imagePath = null;
+    }
+
+    if ($file && isset($file['error']) && $file['error'] === UPLOAD_ERR_OK) {
+        $imagePath = handle_category_image_upload($file, $imagePath);
+    }
+
     try {
         $db = get_db();
         if ($id !== null) {
             $stmt = $db->prepare('
                 UPDATE categories
-                SET name = :name, code = :code, description = :description, status = :status, updated_at = NOW()
+                SET name = :name, code = :code, description = :description, image_path = :image_path, status = :status, updated_at = NOW()
                 WHERE id = :id AND business_id = :biz_id
             ');
             $stmt->execute([
                 'name' => $name,
                 'code' => $code,
                 'description' => $description,
+                'image_path' => $imagePath,
                 'status' => $status,
                 'id' => $id,
                 'biz_id' => $bid,
@@ -113,14 +200,15 @@ function save_category(array $data, ?int $id = null, ?int $businessId = null): a
             $categoryId = $id;
         } else {
             $stmt = $db->prepare('
-                INSERT INTO categories (business_id, name, code, description, status, created_at, updated_at)
-                VALUES (:biz_id, :name, :code, :description, :status, NOW(), NOW())
+                INSERT INTO categories (business_id, name, code, description, image_path, status, created_at, updated_at)
+                VALUES (:biz_id, :name, :code, :description, :image_path, :status, NOW(), NOW())
             ');
             $stmt->execute([
                 'biz_id' => $bid,
                 'name' => $name,
                 'code' => $code,
                 'description' => $description,
+                'image_path' => $imagePath,
                 'status' => $status,
             ]);
             $categoryId = (int) $db->lastInsertId();
@@ -133,6 +221,7 @@ function save_category(array $data, ?int $id = null, ?int $businessId = null): a
 }
 
 function delete_category(int $id, ?int $businessId = null): array {
+    ensure_category_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     
@@ -152,6 +241,10 @@ function delete_category(int $id, ?int $businessId = null): array {
             'success' => false,
             'error' => 'Cannot delete category "' . $cat['name'] . '" because ' . $count . ' product(s) are assigned to it. Please reassign or delete the products first.',
         ];
+    }
+
+    if (!empty($cat['image_path']) && file_exists(__DIR__ . '/../' . ltrim($cat['image_path'], '/'))) {
+        @unlink(__DIR__ . '/../' . ltrim($cat['image_path'], '/'));
     }
 
     $stmt = $db->prepare('DELETE FROM categories WHERE id = :id AND business_id = :biz_id');

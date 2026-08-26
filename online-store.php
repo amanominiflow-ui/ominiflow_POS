@@ -95,6 +95,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['customer_care_email'] = $_POST['customer_care_email'] ?? '';
         }
 
+        if ($action === 'save_customize' || $action === 'publish_layout') {
+            if (isset($_POST['category_section_name'])) $saveData['category_section_name'] = $_POST['category_section_name'];
+            if (isset($_POST['category_bg_color'])) $saveData['category_bg_color'] = $_POST['category_bg_color'];
+            if (isset($_POST['category_text_color'])) $saveData['category_text_color'] = $_POST['category_text_color'];
+            if (isset($_POST['category_shape'])) $saveData['category_shape'] = $_POST['category_shape'];
+            if (isset($_POST['category_columns'])) $saveData['category_columns'] = (int)$_POST['category_columns'];
+            if (isset($_POST['category_rows'])) $saveData['category_rows'] = (int)$_POST['category_rows'];
+            if (isset($_POST['banner_section_name'])) $saveData['banner_section_name'] = $_POST['banner_section_name'];
+            if (isset($_POST['show_banner_section_name'])) $saveData['show_banner_section_name'] = !empty($_POST['show_banner_section_name']);
+            if (isset($_POST['item_section_name'])) $saveData['item_section_name'] = $_POST['item_section_name'];
+            if (isset($_POST['section_order'])) $saveData['section_order'] = $_POST['section_order'];
+        }
+
         $res = save_mobile_store_settings($bid, $saveData, $_FILES);
         if (empty($res['success'])) {
             set_flash('error', $res['error'] ?? 'Could not save.');
@@ -326,6 +339,575 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
         }
         .pref-save-btn:hover {
             background: #1d4ed8;
+        }
+
+        /* Custom Domain Landing & Stepper Styles */
+        .cd-landing-wrap {
+            min-height: 480px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        .cd-landing-card {
+            text-align: center;
+            max-width: 580px;
+            margin: 0 auto;
+        }
+        .cd-art-box {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .cd-landing-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 12px;
+        }
+        .cd-landing-text {
+            font-size: 13.5px;
+            color: #64748b;
+            line-height: 1.6;
+            margin-bottom: 26px;
+        }
+        .cd-add-btn {
+            background: #3b82f6;
+            color: #ffffff;
+            border: 0;
+            border-radius: 6px;
+            padding: 11px 24px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .cd-add-btn:hover {
+            background: #2563eb;
+        }
+
+        /* Stepper Wizard */
+        .cd-stepper-wrap {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 36px 40px;
+            max-width: 800px;
+        }
+        .cd-step-item {
+            display: flex;
+            gap: 16px;
+            position: relative;
+        }
+        .cd-step-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 32px;
+            flex-shrink: 0;
+        }
+        .cd-step-num {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid #cbd5e1;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            background: #ffffff;
+            z-index: 2;
+            transition: all 0.2s;
+        }
+        .cd-num-active {
+            border-color: #3b82f6;
+            color: #3b82f6;
+        }
+        .cd-step-item.cd-step-done .cd-step-num {
+            border-color: #3b82f6;
+            background: #3b82f6;
+            color: #ffffff;
+        }
+        .cd-step-line {
+            width: 2px;
+            flex: 1;
+            background: #e2e8f0;
+            margin: 6px 0;
+            min-height: 40px;
+        }
+        .cd-step-item:last-child .cd-step-line {
+            display: none;
+        }
+        .cd-step-content {
+            flex: 1;
+            padding-bottom: 28px;
+        }
+        .cd-step-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 28px;
+            margin-bottom: 12px;
+        }
+        .cd-step-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        .cd-step-item.cd-step-active .cd-step-title {
+            color: #2563eb;
+            font-weight: 700;
+        }
+        .cd-step-desc {
+            font-size: 13.5px;
+            color: #475569;
+            margin-bottom: 14px;
+        }
+        .cd-input-row {
+            display: flex;
+            align-items: center;
+            max-width: 480px;
+            margin-bottom: 14px;
+        }
+        .cd-prefix-box {
+            background: #f1f5f9;
+            border: 1.5px solid #cbd5e1;
+            border-right: 0;
+            border-radius: 6px 0 0 6px;
+            padding: 9px 12px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #64748b;
+        }
+        .cd-text-input {
+            border: 1.5px solid #cbd5e1;
+            border-radius: 0 6px 6px 0;
+            padding: 9px 14px;
+            font-size: 13.5px;
+            font-weight: 500;
+            color: #0f172a;
+            flex: 1;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .cd-text-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .cd-save-btn {
+            background: #3b82f6;
+            color: #ffffff;
+            border: 0;
+            border-radius: 6px;
+            padding: 9px 22px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .cd-save-btn:hover {
+            background: #2563eb;
+        }
+        .cd-cancel-btn {
+            background: transparent;
+            color: #ef4444;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .cd-cancel-btn:hover {
+            background: #fef2f2;
+            border-color: #f87171;
+        }
+        .cd-edit-link {
+            background: transparent;
+            border: 0;
+            color: #3b82f6;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+        }
+        .cd-edit-link:hover {
+            text-decoration: underline;
+        }
+        .cd-dns-table {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            max-width: 600px;
+        }
+        .cd-dns-row {
+            display: grid;
+            grid-template-columns: 90px 140px 1fr;
+            padding: 10px 14px;
+            align-items: center;
+            font-size: 13px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .cd-dns-row:last-child {
+            border-bottom: 0;
+        }
+        .cd-dns-header {
+            background: #f8fafc;
+            font-weight: 700;
+            color: #475569;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cd-type-badge {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 11px;
+        }
+        .cd-dns-val code {
+            font-family: ui-monospace, monospace;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        .cd-dns-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+        .cd-ssl-success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 16px 20px;
+            max-width: 600px;
+        }
+        .cd-ssl-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            color: #15803d;
+            font-size: 14.5px;
+        }
+
+        /* Zoho Visual Builder / Home Layout Studio */
+        .vb-workspace {
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: calc(100vh - 120px);
+        }
+        .vb-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #ffffff;
+        }
+        .vb-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+        }
+        .vb-subtitle {
+            font-size: 11.5px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        .vb-top-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .vb-view-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #475569;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: background 0.15s;
+        }
+        .vb-view-link:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+        .vb-publish-btn {
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 7px 16px;
+            border: 0;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s;
+        }
+        .vb-publish-btn:hover {
+            background: #1d4ed8;
+        }
+
+        /* Canvas & Drawer Body Grid */
+        .vb-body-grid {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            flex: 1;
+            min-height: 650px;
+            background-color: #f8fafc;
+            background-image: radial-gradient(#cbd5e1 1.2px, transparent 1.2px);
+            background-size: 20px 20px;
+            position: relative;
+        }
+        .vb-canvas-area {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 36px 20px;
+            overflow-y: auto;
+        }
+        .vb-phone-frame {
+            width: 340px;
+            position: relative;
+            margin: 0 80px 0 0;
+        }
+        .vb-phone-inner {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 28px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.08);
+            overflow: hidden;
+            position: relative;
+        }
+        .vb-phone-notch {
+            height: 18px;
+            background: #0f4c3a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .vb-phone-notch-bar {
+            width: 50px;
+            height: 4px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+        .vb-phone-header {
+            background: #0f4c3a;
+            padding: 8px 14px 12px;
+            color: #ffffff;
+        }
+        .vb-phone-search {
+            background: #ffffff;
+            border-radius: 6px;
+            padding: 6px 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        /* Section Blocks inside Canvas */
+        .vb-section-block {
+            position: relative;
+            padding: 10px 12px;
+            border: 2px solid transparent;
+            transition: border-color 0.15s;
+            cursor: pointer;
+        }
+        .vb-section-block:hover,
+        .vb-section-block.vb-selected {
+            border-color: #2563eb;
+        }
+        .vb-section-pill {
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 0 0 6px 0;
+            text-transform: capitalize;
+            display: none;
+            z-index: 10;
+        }
+        .vb-section-block:hover .vb-section-pill,
+        .vb-section-block.vb-selected .vb-section-pill {
+            display: block;
+        }
+        .vb-plus-btn {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            background: #2563eb;
+            color: #ffffff;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            z-index: 12;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.4);
+        }
+        .vb-plus-top { top: -10px; }
+        .vb-plus-bot { bottom: -10px; }
+        .vb-section-block.vb-selected .vb-plus-btn {
+            display: flex;
+        }
+
+        /* Floating Context Menu */
+        .vb-floating-menu {
+            position: absolute;
+            top: 10px;
+            right: -155px;
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 6px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+            width: 140px;
+        }
+        .vb-section-block.vb-selected .vb-floating-menu {
+            display: flex;
+        }
+        .vb-menu-btn {
+            background: transparent;
+            border: 0;
+            color: #cbd5e1;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 10px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.15s;
+            width: 100%;
+        }
+        .vb-menu-btn:hover {
+            background: #334155;
+            color: #ffffff;
+        }
+        .vb-menu-btn.vb-btn-delete {
+            color: #f87171;
+        }
+        .vb-menu-btn.vb-btn-delete:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        /* Right Drawer */
+        .vb-drawer {
+            background: #ffffff;
+            border-left: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .vb-drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .vb-drawer-title {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+        }
+        .vb-drawer-close {
+            background: transparent;
+            border: 0;
+            font-size: 16px;
+            color: #64748b;
+            cursor: pointer;
+        }
+        .vb-drawer-body {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .vb-drawer-footer {
+            padding: 14px 20px;
+            border-top: 1px solid #f1f5f9;
+            display: flex;
+            gap: 10px;
+            background: #ffffff;
+        }
+        .vb-shape-grid,
+        .vb-size-grid {
+            display: flex;
+            gap: 10px;
+            margin-top: 6px;
+            margin-bottom: 16px;
+        }
+        .vb-shape-box,
+        .vb-size-box {
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            position: relative;
+            background: #ffffff;
+            transition: all 0.15s;
+        }
+        .vb-shape-box.selected,
+        .vb-size-box.selected {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+        .vb-check-icon {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 16px;
+            height: 16px;
+            background: #2563eb;
+            color: #ffffff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 800;
         }
 
         /* Store Details Overview Card */
@@ -964,97 +1546,681 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
                     </form>
                 </div>
 
-            <?php elseif ($tab === 'customize'): ?>
-                <div class="page-header-row" style="margin-bottom:18px">
-                    <div>
-                        <h1 class="page-title">Home Layout</h1>
-                        <p class="page-subtitle">Turn sections on or off, edit the banner, then Publish. Preview updates on the right.</p>
-                    </div>
-                    <a class="btn-secondary" href="<?= e($localUrl) ?>" target="_blank">View Store</a>
-                </div>
-                <div class="os-grid">
-                    <form class="os-card" method="post" enctype="multipart/form-data">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="tab" value="customize">
-                        <input type="hidden" name="display_name" value="<?= e($brand['display_name']) ?>">
-                        <input type="hidden" name="header_color" value="<?= e($brand['header_color']) ?>">
-                        <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
-
-                        <label class="os-check"><input type="checkbox" name="show_location" value="1" <?= $brand['show_location'] ? 'checked' : '' ?>> Delivery location bar</label>
-                        <label class="os-check"><input type="checkbox" name="show_banner" value="1" <?= $brand['show_banner'] ? 'checked' : '' ?>> Promo banner</label>
-                        <label class="os-check"><input type="checkbox" name="show_categories" value="1" <?= $brand['show_categories'] ? 'checked' : '' ?>> All Categories</label>
-                        <label class="os-check"><input type="checkbox" name="show_items" value="1" <?= $brand['show_items'] ? 'checked' : '' ?>> All Items</label>
-
-                        <label class="os-label">Search placeholder</label>
-                        <input class="os-input" type="text" name="search_placeholder" value="<?= e($brand['search_placeholder']) ?>">
-                        <label class="os-label">Banner title</label>
-                        <input class="os-input" type="text" name="banner_title" value="<?= e($brand['banner_title']) ?>">
-                        <label class="os-label">Banner subtitle</label>
-                        <input class="os-input" type="text" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>">
-                        <label class="os-label">Banner image</label>
-                        <input type="file" name="banner" accept="image/png,image/jpeg,image/webp">
-                        <?php if ($brand['banner_image']): ?>
-                            <label class="os-check"><input type="checkbox" name="remove_banner" value="1"> Remove banner image</label>
-                        <?php endif; ?>
-
-                        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-                            <button class="btn-secondary" type="submit" name="action" value="save_customize">Save draft</button>
-                            <button class="btn-primary" type="submit" name="action" value="publish_layout">Publish</button>
+            <?php elseif ($tab === 'customize'):
+                $builderCategories = get_categories('', 'active', $bid);
+                $builderProducts = get_products('', null, 'active', '', $bid);
+                ?>
+                <div class="vb-workspace">
+                    <!-- Studio Top Bar -->
+                    <div class="vb-top-bar">
+                        <div>
+                            <h1 class="vb-title">Home Layout</h1>
+                            <div class="vb-subtitle">
+                                <?= !empty($brand['published_at']) ? ('Published on ' . date('d M Y H:i:s', strtotime((string)$brand['published_at']))) : 'Draft - Unpublished changes' ?>
+                            </div>
                         </div>
-                    </form>
-                    <div class="os-phone"><iframe src="<?= e($localUrl) ?>" title="Layout preview"></iframe></div>
+                        <div class="vb-top-actions">
+                            <a class="vb-view-link" href="<?= e($localUrl) ?>" target="_blank">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                <span>View Store</span>
+                            </a>
+                            <form method="post" style="margin:0">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="publish_layout">
+                                <input type="hidden" name="tab" value="customize">
+                                <button type="submit" class="vb-publish-btn">
+                                    <span>Publish</span>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Studio Body: Canvas + Properties Drawer -->
+                    <div class="vb-body-grid">
+                        <!-- Left Canvas Area (with dot grid background) -->
+                        <div class="vb-canvas-area" onclick="handleCanvasBgClick(event)">
+                            <div class="vb-phone-frame" id="vbPhoneFrame">
+                                <div class="vb-phone-inner">
+                                    <!-- Phone Notch -->
+                                    <div class="vb-phone-notch">
+                                    <div class="vb-phone-notch-bar"></div>
+                                </div>
+
+                                <!-- Phone Header -->
+                                <div class="vb-phone-header">
+                                    <div style="font-size:10.5px;opacity:0.85;margin-bottom:4px;display:flex;align-items:center;gap:3px">
+                                        <span>Set Delivery Location</span>
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+                                    </div>
+                                    <div class="vb-phone-search">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                        <span>Search by "WOMEN"</span>
+                                    </div>
+                                </div>
+
+                                <!-- Section 1: Banners Component -->
+                                <div class="vb-section-block vb-selected" id="vbSecBanner" onclick="selectVbSection(event, 'banner')">
+                                    <div class="vb-section-pill">Banner</div>
+                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
+                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
+
+                                    <!-- Floating Menu -->
+                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-banner')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                            <span>Edit</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-banner')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
+                                            <span>Theme</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn" onclick="moveVbSection('banner', 'down')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 13l-5 5-5-5M12 6v12"/></svg>
+                                            <span>Move to next</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('banner', false)">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                            <span>Delete Section</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Banners Preview -->
+                                    <div style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 8px; padding: 14px; color: #fff; min-height: 110px; position: relative; overflow: hidden;">
+                                        <div style="font-size: 9.5px; opacity: 0.85; text-transform: uppercase;">Best deal,</div>
+                                        <div style="font-size: 16px; font-weight: 800; line-height: 1.1; margin: 2px 0 4px;" id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "Start Shopping") ?></div>
+                                        <div style="font-size: 10px; opacity: 0.9;" id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: "and discover the best deals!") ?></div>
+                                        <div style="position: absolute; right: 10px; bottom: 8px; font-size: 28px;">🛍️</div>
+                                    </div>
+                                    <div style="display:flex;justify-content:center;gap:4px;margin-top:6px;">
+                                        <span style="width:5px;height:5px;border-radius:50%;background:#2563eb;"></span>
+                                        <span style="width:5px;height:5px;border-radius:50%;background:#cbd5e1;"></span>
+                                        <span style="width:5px;height:5px;border-radius:50%;background:#cbd5e1;"></span>
+                                    </div>
+                                </div>
+
+                                <!-- Section 2: Category Component -->
+                                <div class="vb-section-block" id="vbSecCategory" onclick="selectVbSection(event, 'category')">
+                                    <div class="vb-section-pill">Category</div>
+                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
+                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
+
+                                    <!-- Floating Menu -->
+                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-category')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                            <span>Edit</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('theme-category')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
+                                            <span>Theme</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn" onclick="moveVbSection('category', 'down')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 13l-5 5-5-5M12 6v12"/></svg>
+                                            <span>Move to next</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('category', false)">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                            <span>Delete Section</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Category Title -->
+                                    <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px;" id="canvasCatTitle"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" id="canvasCatGrid">
+                                        <?php if (!empty($builderCategories)):
+                                            $sampleCats = array_slice($builderCategories, 0, 4);
+                                            foreach ($sampleCats as $sc): ?>
+                                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
+                                                    <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; overflow: hidden;">
+                                                        <?php if (!empty($sc['image_path'])): ?>
+                                                            <img src="<?= asset($sc['image_path']) ?>" alt="" style="width:100%;height:100%;object-fit:cover">
+                                                        <?php else: ?>
+                                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div style="font-size: 10px; font-weight: 700; color: #0f172a; text-transform: uppercase;"><?= e((string)$sc['name']) ?></div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
+                                                <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+                                                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">MENS</div>
+                                            </div>
+                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 6px; text-align: center;">
+                                                <div style="width: 100%; height: 50px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+                                                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">WOMEN</div>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+
+                                <!-- Section 3: Item Component (All Items) -->
+                                <div class="vb-section-block" id="vbSecItem" onclick="selectVbSection(event, 'item')">
+                                    <div class="vb-section-pill">Item</div>
+                                    <div class="vb-plus-btn vb-plus-top" title="Add component above">+</div>
+                                    <div class="vb-plus-btn vb-plus-bot" title="Add component below">+</div>
+
+                                    <!-- Floating Menu -->
+                                    <div class="vb-floating-menu" onclick="event.stopPropagation()">
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-item')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                            <span>Edit</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn" onclick="openDrawerTab('edit-item')">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/></svg>
+                                            <span>Theme</span>
+                                        </button>
+                                        <button type="button" class="vb-menu-btn vb-btn-delete" onclick="toggleVbSection('item', false)">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                            <span>Delete Section</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Items Title -->
+                                    <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px;" id="canvasItemTitle"><?= e($brand['item_section_name'] ?: 'All Items') ?></div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <?php if (!empty($builderProducts)):
+                                            $sampleProds = array_slice($builderProducts, 0, 2);
+                                            foreach ($sampleProds as $sp):
+                                                $sImg = sf_product_image($sp['image_path'] ?? null);
+                                                ?>
+                                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
+                                                    <div style="width: 100%; height: 75px; background: #f8fafc; border-radius: 6px; overflow: hidden; margin-bottom: 6px; display: flex; align-items: center; justify-content: center;">
+                                                        <?php if ($sImg): ?><img src="<?= e($sImg) ?>" alt="" style="width:100%;height:100%;object-fit:cover"><?php else: ?><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><?php endif; ?>
+                                                    </div>
+                                                    <div style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?= e((string)$sp['name']) ?></div>
+                                                    <div style="font-size: 9.5px; color: #64748b; margin: 2px 0;">In stock</div>
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                                                        <span style="font-size: 11px; font-weight: 700; color: #0f172a;"><?= sf_money($currency, (float)$sp['selling_price']) ?></span>
+                                                        <span style="background: #e2e8f0; font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">Add</span>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px;">
+                                                <div style="width: 100%; height: 75px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+                                                <div style="font-size: 10.5px; font-weight: 700;">SAMPLE ITEM</div>
+                                                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;"><span style="font-size: 11px; font-weight: 700;">₹499.00</span><span style="background: #e2e8f0; font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px;">Add</span></div>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                        <!-- Right Drawer: Component & Properties Sidebar -->
+                        <div class="vb-drawer" id="vbDrawer">
+                            <form method="post" id="vbForm" style="display:flex;flex-direction:column;height:100%;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_customize">
+                                <input type="hidden" name="tab" value="customize">
+                                <input type="hidden" name="display_name" value="<?= e($brand['display_name']) ?>">
+                                <input type="hidden" name="header_color" value="<?= e($brand['header_color']) ?>">
+                                <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
+
+                                <!-- Drawer Header -->
+                                <div class="vb-drawer-header">
+                                    <h3 class="vb-drawer-title" id="vbDrawerHeading">Edit Banner Component</h3>
+                                    <button type="button" class="vb-drawer-close" onclick="closeDrawer()">✕</button>
+                                </div>
+
+                                <!-- Drawer Body: Panels -->
+                                <div class="vb-drawer-body">
+                                    <!-- Panel 1: Edit Banner Component -->
+                                    <div id="panelEditBanner" class="vb-panel">
+                                        <div class="form-group" style="margin-bottom: 16px;">
+                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
+                                            <input type="text" class="form-control" name="banner_section_name" id="inputBannerSectionName" value="<?= e($brand['banner_section_name'] ?: 'Banners') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasBannerTitle').innerText=this.value">
+                                        </div>
+                                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;margin-bottom:18px;cursor:pointer;">
+                                            <input type="checkbox" name="show_banner_section_name" value="1" <?= !empty($brand['show_banner_section_name']) ? 'checked' : '' ?>>
+                                            <span>Show section name</span>
+                                        </label>
+
+                                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                                            <span style="font-size:13px;font-weight:700;color:#334155;">Banners</span>
+                                            <span style="font-size:12.5px;color:#2563eb;font-weight:600;cursor:pointer;">+ Add Banner</span>
+                                        </div>
+
+                                        <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">
+                                            <div style="display:grid;grid-template-columns:110px 1fr;background:#f8fafc;padding:8px 12px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">
+                                                <div>Banner</div>
+                                                <div>On Click Action</div>
+                                            </div>
+                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;border-bottom:1px solid #f1f5f9;">
+                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#0d9488,#14b8a6);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 1</div>
+                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
+                                            </div>
+                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;border-bottom:1px solid #f1f5f9;">
+                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#2563eb,#3b82f6);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 2</div>
+                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
+                                            </div>
+                                            <div style="display:grid;grid-template-columns:110px 1fr;padding:8px 12px;align-items:center;">
+                                                <div style="width:75px;height:36px;background:linear-gradient(135deg,#9333ea,#a855f7);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;">Banner 3</div>
+                                                <select class="form-control" style="font-size:12px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;"><option>None</option><option>Category</option><option>Product</option></select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Panel 2: Edit Category Component -->
+                                    <div id="panelEditCategory" class="vb-panel" style="display:none;">
+                                        <div class="form-group" style="margin-bottom: 16px;">
+                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
+                                            <input type="text" class="form-control" name="category_section_name" id="inputCatSectionName" value="<?= e($brand['category_section_name'] ?: 'All Categories') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasCatTitle').innerText=this.value">
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Suggested Categories</label>
+                                            <div style="display:flex;gap:18px;align-items:center;">
+                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
+                                                    <input type="radio" name="suggested_cats" value="all" checked>
+                                                    <span>All Categories</span>
+                                                </label>
+                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
+                                                    <input type="radio" name="suggested_cats" value="custom">
+                                                    <span>Custom</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#0369a1;margin-bottom:16px;">
+                                            All categories from the inventory will be listed in this section
+                                        </div>
+                                    </div>
+
+                                    <!-- Panel 3: Category Properties / Theme -->
+                                    <div id="panelThemeCategory" class="vb-panel" style="display:none;">
+                                        <div class="form-group" style="margin-bottom: 16px;">
+                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
+                                            <input type="text" class="form-control" value="<?= e($brand['category_section_name'] ?: 'All Categories') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" readonly>
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Section Theme</label>
+                                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                                                <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
+                                                    <input type="color" name="category_bg_color" value="<?= e($brand['category_bg_color'] ?: '#ffffff') ?>" style="width:26px;height:26px;border:0;border-radius:4px;cursor:pointer;">
+                                                    <div>
+                                                        <div style="font-size:11px;color:#64748b;">Background</div>
+                                                        <div style="font-size:11.5px;font-weight:700;color:#0f172a;">#ffffff</div>
+                                                    </div>
+                                                </div>
+                                                <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
+                                                    <input type="color" name="category_text_color" value="<?= e($brand['category_text_color'] ?: '#000000') ?>" style="width:26px;height:26px;border:0;border-radius:4px;cursor:pointer;">
+                                                    <div>
+                                                        <div style="font-size:11px;color:#64748b;">Text Color</div>
+                                                        <div style="font-size:11.5px;font-weight:700;color:#0f172a;">#000000</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px;display:block;">Shape</label>
+                                            <div class="vb-shape-grid">
+                                                <div class="vb-shape-box <?= $brand['category_shape'] === 'square' ? 'selected' : '' ?>" onclick="setShape('square', this)">
+                                                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                                    <div class="vb-check-icon" style="<?= $brand['category_shape'] === 'square' ? '' : 'display:none;' ?>">✓</div>
+                                                </div>
+                                                <div class="vb-shape-box <?= $brand['category_shape'] !== 'square' ? 'selected' : '' ?>" onclick="setShape('rectangle', this)">
+                                                    <svg width="48" height="34" viewBox="0 0 32 24" fill="none" stroke="#60a5fa" stroke-width="1.5"><rect x="2" y="3" width="28" height="18" rx="3"/><circle cx="7.5" cy="8.5" r="1.5"/><polyline points="30 15 22 10 5 21"/></svg>
+                                                    <div class="vb-check-icon" style="<?= $brand['category_shape'] !== 'square' ? '' : 'display:none;' ?>">✓</div>
+                                                </div>
+                                            </div>
+                                            <input type="hidden" name="category_shape" id="inputCatShape" value="<?= e($brand['category_shape'] ?: 'rectangle') ?>">
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px;display:block;">Sizes</label>
+                                            <div class="vb-size-grid">
+                                                <div class="vb-size-box <?= $brand['category_columns'] === 4 ? 'selected' : '' ?>" onclick="setColumns(4, this)">
+                                                    <svg width="34" height="24" viewBox="0 0 24 16" fill="#e2e8f0"><rect width="4" height="6" rx="1"/><rect x="6" width="4" height="6" rx="1"/><rect x="12" width="4" height="6" rx="1"/><rect x="18" width="4" height="6" rx="1"/><rect y="8" width="4" height="6" rx="1"/><rect x="6" y="8" width="4" height="6" rx="1"/><rect x="12" y="8" width="4" height="6" rx="1"/><rect x="18" y="8" width="4" height="6" rx="1"/></svg>
+                                                </div>
+                                                <div class="vb-size-box <?= $brand['category_columns'] !== 4 ? 'selected' : '' ?>" onclick="setColumns(2, this)">
+                                                    <svg width="34" height="24" viewBox="0 0 24 16" fill="#3b82f6"><rect width="9" height="6" rx="1"/><rect x="12" width="9" height="6" rx="1"/><rect y="8" width="9" height="6" rx="1"/><rect x="12" y="8" width="9" height="6" rx="1"/></svg>
+                                                    <div class="vb-check-icon">✓</div>
+                                                </div>
+                                            </div>
+                                            <input type="hidden" name="category_columns" id="inputCatColumns" value="<?= (int)($brand['category_columns'] ?: 2) ?>">
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">No of Rows</label>
+                                            <select name="category_rows" class="form-control" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13px;">
+                                                <option value="1" <?= $brand['category_rows'] === 1 ? 'selected' : '' ?>>1</option>
+                                                <option value="2" <?= $brand['category_rows'] === 2 ? 'selected' : '' ?>>2</option>
+                                                <option value="3" <?= $brand['category_rows'] === 3 ? 'selected' : '' ?>>3</option>
+                                                <option value="4" <?= $brand['category_rows'] === 4 ? 'selected' : '' ?>>4</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Panel 4: Edit Item Component -->
+                                    <div id="panelEditItem" class="vb-panel" style="display:none;">
+                                        <div class="form-group" style="margin-bottom: 16px;">
+                                            <label class="form-label" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:6px;display:block;">Section Name <span style="color:#ef4444">*</span></label>
+                                            <input type="text" class="form-control" name="item_section_name" id="inputItemSectionName" value="<?= e($brand['item_section_name'] ?: 'All Items') ?>" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:13.5px;" oninput="document.getElementById('canvasItemTitle').innerText=this.value">
+                                        </div>
+
+                                        <div style="margin-bottom:16px;">
+                                            <label style="font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;display:block;">Suggested Items</label>
+                                            <div style="display:flex;gap:18px;align-items:center;">
+                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
+                                                    <input type="radio" name="suggested_items" value="all" checked>
+                                                    <span>All Items</span>
+                                                </label>
+                                                <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;">
+                                                    <input type="radio" name="suggested_items" value="custom">
+                                                    <span>Custom</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#0369a1;margin-bottom:16px;">
+                                            All Items from the inventory will be listed in this section
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Drawer Footer -->
+                                <div class="vb-drawer-footer">
+                                    <button type="submit" class="cd-save-btn">Save</button>
+                                    <button type="button" class="btn-secondary" onclick="closeDrawer()" style="padding:8px 18px;border-radius:6px;">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
 
-            <?php elseif ($tab === 'domain'): ?>
+                <script>
+                    function selectVbSection(event, sectionKey) {
+                        event.stopPropagation();
+                        document.querySelectorAll('.vb-section-block').forEach(b => b.classList.remove('vb-selected'));
+                        const target = document.getElementById('vbSec' + sectionKey.charAt(0).toUpperCase() + sectionKey.slice(1));
+                        if (target) target.classList.add('vb-selected');
+
+                        if (sectionKey === 'banner') {
+                            openDrawerTab('edit-banner');
+                        } else if (sectionKey === 'category') {
+                            openDrawerTab('edit-category');
+                        } else if (sectionKey === 'item') {
+                            openDrawerTab('edit-item');
+                        }
+                    }
+
+                    function openDrawerTab(tabId) {
+                        const heading = document.getElementById('vbDrawerHeading');
+                        document.querySelectorAll('.vb-panel').forEach(p => p.style.display = 'none');
+
+                        if (tabId === 'edit-banner') {
+                            heading.textContent = 'Edit Banner Component';
+                            document.getElementById('panelEditBanner').style.display = 'block';
+                        } else if (tabId === 'edit-category') {
+                            heading.textContent = 'Edit Category Component';
+                            document.getElementById('panelEditCategory').style.display = 'block';
+                        } else if (tabId === 'theme-category') {
+                            heading.textContent = 'Category Properties';
+                            document.getElementById('panelThemeCategory').style.display = 'block';
+                        } else if (tabId === 'edit-item') {
+                            heading.textContent = 'Edit Item Component';
+                            document.getElementById('panelEditItem').style.display = 'block';
+                        }
+                    }
+
+                    function closeDrawer() {
+                        document.querySelectorAll('.vb-section-block').forEach(b => b.classList.remove('vb-selected'));
+                    }
+
+                    function handleCanvasBgClick(event) {
+                        if (!event.target.closest('.vb-section-block')) {
+                            // clicked outside section
+                        }
+                    }
+
+                    function setShape(shape, el) {
+                        document.getElementById('inputCatShape').value = shape;
+                        document.querySelectorAll('.vb-shape-box').forEach(b => {
+                            b.classList.remove('selected');
+                            const chk = b.querySelector('.vb-check-icon');
+                            if (chk) chk.style.display = 'none';
+                        });
+                        el.classList.add('selected');
+                        const chk = el.querySelector('.vb-check-icon');
+                        if (chk) chk.style.display = 'flex';
+                    }
+
+                    function setColumns(cols, el) {
+                        document.getElementById('inputCatColumns').value = cols;
+                        document.querySelectorAll('.vb-size-box').forEach(b => {
+                            b.classList.remove('selected');
+                            const chk = b.querySelector('.vb-check-icon');
+                            if (chk) chk.remove();
+                        });
+                        el.classList.add('selected');
+                        const badge = document.createElement('div');
+                        badge.className = 'vb-check-icon';
+                        badge.textContent = '✓';
+                        el.appendChild(badge);
+                    }
+
+                    function toggleVbSection(secKey, show) {
+                        const target = document.getElementById('vbSec' + secKey.charAt(0).toUpperCase() + secKey.slice(1));
+                        if (target) target.style.display = show ? 'block' : 'none';
+                    }
+
+                    function moveVbSection(secKey, direction) {
+                        const frame = document.getElementById('vbPhoneFrame');
+                        const target = document.getElementById('vbSec' + secKey.charAt(0).toUpperCase() + secKey.slice(1));
+                        if (!target || !frame) return;
+
+                        if (direction === 'down' && target.nextElementSibling) {
+                            target.parentNode.insertBefore(target.nextElementSibling, target);
+                        } else if (direction === 'up' && target.previousElementSibling && !target.previousElementSibling.classList.contains('vb-phone-header')) {
+                            target.parentNode.insertBefore(target, target.previousElementSibling);
+                        }
+                    }
+                </script>
+
+            <?php elseif ($tab === 'domain'):
+                $currentDomain = !empty($domains[0]) ? $domains[0] : null;
+                $hasDomain = !empty($currentDomain);
+                $initialStep = 1;
+                if ($hasDomain) {
+                    $initialStep = ($currentDomain['status'] === 'verified') ? 3 : 2;
+                }
+                if (isset($_GET['step'])) {
+                    $initialStep = (int) $_GET['step'];
+                }
+                $showLanding = !$hasDomain && empty($_GET['setup']);
+                ?>
                 <div class="page-header-row" style="margin-bottom:18px">
                     <div>
                         <h1 class="page-title">Custom Domain</h1>
-                        <p class="page-subtitle">Map shop.yourbrand.com so customers open your website on your domain.</p>
                     </div>
                 </div>
-                <div class="os-card" style="margin-bottom:16px">
-                    <div class="os-label" style="margin-top:0">Default store URL</div>
-                    <div class="os-url"><input type="text" value="<?= e($localUrl) ?>" readonly></div>
-                </div>
-                <div class="os-card" style="margin-bottom:16px">
-                    <p class="os-help">Add a CNAME at your registrar, or for XAMPP add a hosts line, then Verify.</p>
-                    <div class="os-dns">
-CNAME (production)<br>
-Host: shop<br>
-Points to: <?= e($cnameTarget) ?><br><br>
-Local hosts file<br>
-127.0.0.1 shop.yourbrand.test
+
+                <!-- State 1: Landing Empty State (when no custom domain is added yet) -->
+                <div class="cd-landing-wrap" id="cdLandingView" style="<?= $showLanding ? '' : 'display:none;' ?>">
+                    <div class="cd-landing-card">
+                        <div class="cd-art-box">
+                            <svg width="220" height="130" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Sparkles -->
+                                <path d="M35 30 L38 23 L45 20 L38 17 L35 10 L32 17 L25 20 L32 23 Z" fill="#fbbf24"/>
+                                <path d="M52 42 L54 37 L59 35 L54 33 L52 28 L50 33 L45 35 L50 37 Z" fill="#fbbf24"/>
+                                <circle cx="190" cy="30" r="3" fill="#fbbf24"/>
+                                <circle cx="205" cy="45" r="3.5" fill="#fbbf24"/>
+
+                                <!-- Browser mockup -->
+                                <rect x="38" y="24" width="144" height="92" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+                                <rect x="38" y="24" width="144" height="24" rx="8" fill="#eff6ff"/>
+                                <circle cx="48" cy="36" r="2.5" fill="#93c5fd"/>
+                                <circle cx="56" cy="36" r="2.5" fill="#93c5fd"/>
+                                <circle cx="64" cy="36" r="2.5" fill="#93c5fd"/>
+
+                                <!-- URL address bar in browser -->
+                                <rect x="35" y="44" width="150" height="26" rx="4" fill="#86efac" stroke="#4ade80" stroke-width="1"/>
+                                <text x="44" y="61" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11.5" font-weight="700" fill="#065f46">https://ww</text>
+
+                                <!-- Pencil editing -->
+                                <g transform="translate(126, 52) rotate(-45)">
+                                    <rect x="0" y="0" width="11" height="32" rx="2" fill="#818cf8"/>
+                                    <path d="M0 32 L5.5 41 L11 32 Z" fill="#c7d2fe"/>
+                                    <path d="M3.5 37 L5.5 41 L7.5 37 Z" fill="#1e1b4b"/>
+                                    <rect x="0" y="0" width="11" height="5" fill="#f43f5e"/>
+                                    <rect x="0" y="5" width="11" height="3" fill="#cbd5e1"/>
+                                </g>
+                            </svg>
+                        </div>
+
+                        <h2 class="cd-landing-title">Custom Domain</h2>
+                        <p class="cd-landing-text">This feature lets customers access your store via a custom domain, such as https://shop.zylker.com, instead of the default URL. For details, see our help document on custom domain mapping.</p>
+
+                        <button type="button" class="cd-add-btn" onclick="showDomainStepper()">ADD CUSTOM DOMAIN</button>
                     </div>
                 </div>
-                <div class="os-card">
-                    <form method="post" style="display:flex;gap:10px;max-width:640px;margin-bottom:16px">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="action" value="add_domain">
-                        <input class="os-input" type="text" name="domain" placeholder="shop.yourbrand.com" required>
-                        <button class="btn-primary" type="submit">Add domain</button>
-                    </form>
-                    <?php if (!$domains): ?>
-                        <p class="os-help" style="margin:0">No custom domain yet.</p>
-                    <?php else: foreach ($domains as $d):
-                        $st = (string) $d['status'];
-                        ?>
-                        <div class="os-domain-row">
-                            <strong><?= e((string) $d['domain']) ?></strong>
-                            <span class="os-badge <?= $st === 'verified' ? 'os-open' : 'os-closed' ?>"><?= e($st) ?></span>
-                            <div class="os-actions">
-                                <?php if ($st !== 'verified'): ?>
-                                    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="verify_domain"><input type="hidden" name="domain_id" value="<?= (int) $d['id'] ?>"><button class="btn-primary" type="submit">Verify DNS</button></form>
-                                    <?php if ($isDev): ?>
-                                        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="activate_local"><input type="hidden" name="domain_id" value="<?= (int) $d['id'] ?>"><button class="btn-secondary" type="submit">Activate locally</button></form>
+
+                <!-- State 2: 3-Step Stepper Wizard -->
+                <div class="cd-stepper-wrap" id="cdStepperView" style="<?= $showLanding ? 'display:none;' : '' ?>">
+                    <div class="cd-stepper-container">
+                        <!-- Step 1: Add Domain -->
+                        <div class="cd-step-item <?= $initialStep === 1 ? 'cd-step-active' : ($initialStep > 1 ? 'cd-step-done' : '') ?>" id="stepItem1">
+                            <div class="cd-step-left">
+                                <div class="cd-step-num <?= $initialStep >= 1 ? 'cd-num-active' : '' ?>">1</div>
+                                <div class="cd-step-line"></div>
+                            </div>
+                            <div class="cd-step-content">
+                                <div class="cd-step-head">
+                                    <span class="cd-step-title">Add Domain</span>
+                                    <?php if ($hasDomain && $initialStep > 1): ?>
+                                        <button type="button" class="cd-edit-link" onclick="setWizardStep(1)">Edit</button>
                                     <?php endif; ?>
-                                <?php else: ?>
-                                    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="disable_domain"><input type="hidden" name="domain_id" value="<?= (int) $d['id'] ?>"><button class="btn-secondary" type="submit">Disable</button></form>
-                                <?php endif; ?>
-                                <form method="post" onsubmit="return confirm('Remove this domain?');"><?= csrf_field() ?><input type="hidden" name="action" value="delete_domain"><input type="hidden" name="domain_id" value="<?= (int) $d['id'] ?>"><button class="btn-secondary" type="submit">Delete</button></form>
+                                </div>
+
+                                <div class="cd-step-body" id="stepBody1" style="<?= $initialStep === 1 ? '' : 'display:none;' ?>">
+                                    <form method="post">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="add_domain">
+                                        <div class="cd-input-row">
+                                            <span class="cd-prefix-box">https://</span>
+                                            <input class="cd-text-input" type="text" name="domain" value="<?= e($currentDomain['domain'] ?? '') ?>" placeholder="subdomain.domain.com" required autocomplete="off">
+                                        </div>
+                                        <button type="submit" class="cd-save-btn">Save & Next</button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
-                    <?php endforeach; endif; ?>
+
+                        <!-- Step 2: DNS Verification -->
+                        <div class="cd-step-item <?= $initialStep === 2 ? 'cd-step-active' : ($initialStep > 2 ? 'cd-step-done' : '') ?>" id="stepItem2">
+                            <div class="cd-step-left">
+                                <div class="cd-step-num <?= $initialStep >= 2 ? 'cd-num-active' : '' ?>">2</div>
+                                <div class="cd-step-line"></div>
+                            </div>
+                            <div class="cd-step-content">
+                                <div class="cd-step-head">
+                                    <span class="cd-step-title">DNS Verification</span>
+                                </div>
+
+                                <div class="cd-step-body" id="stepBody2" style="<?= $initialStep === 2 ? '' : 'display:none;' ?>">
+                                    <?php if ($currentDomain): ?>
+                                        <p class="cd-step-desc">Add the following <strong>CNAME</strong> record in your domain registrar's DNS settings:</p>
+                                        <div class="cd-dns-table">
+                                            <div class="cd-dns-row cd-dns-header">
+                                                <div>Type</div>
+                                                <div>Host / Name</div>
+                                                <div>Points to / Value</div>
+                                            </div>
+                                            <div class="cd-dns-row">
+                                                <div><span class="cd-type-badge">CNAME</span></div>
+                                                <div class="cd-dns-val"><code><?= e(explode('.', (string)$currentDomain['domain'])[0] ?? 'shop') ?></code></div>
+                                                <div class="cd-dns-val"><code><?= e($cnameTarget) ?></code></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="cd-dns-actions">
+                                            <form method="post" style="display:inline;">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="verify_domain">
+                                                <input type="hidden" name="domain_id" value="<?= (int) $currentDomain['id'] ?>">
+                                                <button type="submit" class="cd-save-btn">Verify DNS</button>
+                                            </form>
+                                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete this domain?');">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_domain">
+                                                <input type="hidden" name="domain_id" value="<?= (int) $currentDomain['id'] ?>">
+                                                <button type="submit" class="cd-cancel-btn">Delete</button>
+                                            </form>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="cd-step-desc" style="color: #94a3b8; margin: 0;">Save domain in Step 1 to generate DNS configuration.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: SSL Installation -->
+                        <div class="cd-step-item <?= $initialStep === 3 ? 'cd-step-active cd-step-done' : '' ?>" id="stepItem3">
+                            <div class="cd-step-left">
+                                <div class="cd-step-num <?= $initialStep === 3 ? 'cd-num-active' : '' ?>">3</div>
+                            </div>
+                            <div class="cd-step-content">
+                                <div class="cd-step-head">
+                                    <span class="cd-step-title">SSL Installation</span>
+                                </div>
+
+                                <div class="cd-step-body" id="stepBody3" style="<?= $initialStep === 3 ? '' : 'display:none;' ?>">
+                                    <?php if ($currentDomain && $currentDomain['status'] === 'verified'): ?>
+                                        <div class="cd-ssl-success">
+                                            <div class="cd-ssl-badge">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                                <span>SSL Certificate Active & Verified</span>
+                                            </div>
+                                            <p style="font-size: 13.5px; color: #475569; margin: 8px 0 16px;">Your custom domain <strong>https://<?= e($currentDomain['domain']) ?></strong> is active and secured.</p>
+                                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                                <a href="http://<?= e($currentDomain['domain']) ?>" target="_blank" class="cd-save-btn" style="text-decoration:none;display:inline-block">Open Store</a>
+                                                <form method="post" style="display:inline;" onsubmit="return confirm('Remove custom domain?');">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="delete_domain">
+                                                    <input type="hidden" name="domain_id" value="<?= (int) $currentDomain['id'] ?>">
+                                                    <button type="submit" class="cd-cancel-btn">Remove Domain</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="cd-step-desc" style="color: #94a3b8; margin: 0;">SSL certificate will be provisioned automatically once DNS verification is complete.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <script>
+                    function showDomainStepper() {
+                        const landing = document.getElementById('cdLandingView');
+                        const stepper = document.getElementById('cdStepperView');
+                        if (landing) landing.style.display = 'none';
+                        if (stepper) stepper.style.display = 'block';
+                        setWizardStep(1);
+                    }
+
+                    function setWizardStep(step) {
+                        for (let i = 1; i <= 3; i++) {
+                            const body = document.getElementById('stepBody' + i);
+                            const item = document.getElementById('stepItem' + i);
+                            if (body) body.style.display = (i === step) ? 'block' : 'none';
+                            if (item) {
+                                if (i === step) {
+                                    item.classList.add('cd-step-active');
+                                } else {
+                                    item.classList.remove('cd-step-active');
+                                }
+                            }
+                        }
+                    }
+                </script>
             <?php endif; ?>
         </main>
     </div>
