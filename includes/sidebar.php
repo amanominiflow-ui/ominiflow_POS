@@ -24,6 +24,37 @@ if (!empty($nameParts)) {
     $initials = 'RN';
 }
 
+$bizInitials = 'OF';
+$bizParts = array_values(array_filter(preg_split('/\s+/', trim((string) $businessName)) ?: []));
+if (!empty($bizParts)) {
+    $bizInitials = strtoupper(substr($bizParts[0], 0, 1));
+    if (count($bizParts) > 1) {
+        $bizInitials .= strtoupper(substr($bizParts[count($bizParts) - 1], 0, 1));
+    } else {
+        $bizInitials = strtoupper(substr($bizParts[0], 0, min(2, strlen($bizParts[0]))));
+    }
+}
+
+$profileLogoUrl = '';
+try {
+    $logoPath = '';
+    $stLogo = get_db()->prepare('SELECT logo_path FROM business_profile WHERE business_id = :bid LIMIT 1');
+    $stLogo->execute(['bid' => current_business_id()]);
+    $logoPath = (string) ($stLogo->fetchColumn() ?: '');
+    if ($logoPath === '') {
+        $stLogo2 = get_db()->query('SELECT logo_path FROM business_profile WHERE id = 1 LIMIT 1');
+        $logoPath = $stLogo2 ? (string) ($stLogo2->fetchColumn() ?: '') : '';
+    }
+    if ($logoPath !== '' && is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $logoPath))) {
+        $profileLogoUrl = asset($logoPath);
+    }
+} catch (Throwable $logoErr) {
+    $profileLogoUrl = '';
+}
+
+$userIdLabel = (string) (60077667000 + (int) ($user['id'] ?? 379));
+$isPremiumPlan = function_exists('is_premium_active') && is_premium_active();
+
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 // Active rail tab selection
@@ -57,10 +88,10 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
     left: 72px;
     top: 0;
     bottom: 0;
-    width: 370px;
-    background: #f1f5f9 !important;
+    width: 392px;
+    background: #eef2f6 !important;
     border-right: 1px solid #e2e8f0;
-    box-shadow: 20px 0 50px rgba(15, 23, 42, 0.3);
+    box-shadow: 12px 0 40px rgba(15, 23, 42, 0.22);
     z-index: 100000 !important;
     flex-direction: column;
     animation: zpdSlideIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -77,141 +108,187 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 }
 
 .zpd-header {
-    background: #2563eb !important;
-    padding: 22px 20px 18px;
+    background: linear-gradient(180deg, #4b8dff 0%, #3b7cf6 55%, #3574ef 100%) !important;
+    padding: 20px 20px 18px;
     color: #ffffff !important;
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    gap: 14px;
     flex-shrink: 0;
 }
 
 .zpd-avatar {
-    width: 54px;
-    height: 54px;
+    width: 58px;
+    height: 58px;
     border-radius: 50%;
-    background: #ffffff;
+    background: #0f766e;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 800;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.zpd-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.zpd-header-meta {
+    min-width: 0;
+    padding-top: 1px;
 }
 
 .zpd-name {
-    font-size: 17px;
-    font-weight: 700;
+    font-size: 16.5px;
+    font-weight: 800;
     color: #ffffff !important;
     line-height: 1.2;
+    letter-spacing: 0.01em;
 }
 
 .zpd-uid {
-    font-size: 11.5px;
-    color: rgba(255, 255, 255, 0.82) !important;
-    margin-top: 3px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.88) !important;
+    margin-top: 4px;
+    font-weight: 500;
 }
 
 .zpd-email {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.9) !important;
-    margin-top: 1px;
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.92) !important;
+    margin-top: 2px;
+    word-break: break-all;
 }
 
 .zpd-org-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(255, 255, 255, 0.2);
-    padding: 3px 10px;
+    background: rgba(255, 255, 255, 0.18);
+    padding: 4px 10px 4px 8px;
     border-radius: 4px;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     color: #ffffff !important;
-    margin-top: 6px;
+    margin-top: 10px;
     cursor: pointer;
+    max-width: 100%;
 }
 
-.zpd-close-btn {
-    background: transparent;
-    border: 0;
-    color: #ffffff !important;
-    font-size: 24px;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.8;
+.zpd-org-badge span:nth-child(2) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.zpd-close-btn:hover {
-    opacity: 1;
+.zpd-org-badge svg {
+    flex-shrink: 0;
+    opacity: 0.95;
 }
 
 .zpd-body {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 14px 14px 18px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
 }
 
 .zpd-card {
     background: #ffffff !important;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 16px 18px;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+    border: 0;
+    border-radius: 8px;
+    padding: 16px 18px 14px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .zpd-card-heading {
-    font-size: 11px;
-    font-weight: 700;
-    color: #64748b !important;
-    letter-spacing: 0.05em;
-    margin-bottom: 10px;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #1e293b !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    line-height: 1.35;
+}
+
+.zpd-sub-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.zpd-sub-text {
+    font-size: 13.5px;
+    color: #475569 !important;
+    font-weight: 500;
+    line-height: 1.4;
 }
 
 .zpd-btn-outline {
     display: inline-block;
-    padding: 6px 16px;
-    border: 1px solid #2563eb;
-    border-radius: 6px;
+    padding: 5px 14px;
+    border: 1px solid #3b82f6;
+    border-radius: 4px;
     font-size: 12.5px;
     font-weight: 600;
     color: #2563eb !important;
     text-decoration: none !important;
-    transition: all 0.15s;
+    background: #ffffff !important;
+    flex-shrink: 0;
+    transition: background 0.12s, color 0.12s;
 }
 
 .zpd-btn-outline:hover {
-    background: #2563eb !important;
-    color: #ffffff !important;
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
 }
 
 .zpd-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 13px;
 }
 
 .zpd-link-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: #334155 !important;
     text-decoration: none !important;
     font-weight: 500;
+    line-height: 1.3;
     transition: color 0.12s;
+}
+
+.zpd-link-row svg {
+    flex-shrink: 0;
+    color: #64748b;
 }
 
 .zpd-link-row:hover {
     color: #2563eb !important;
 }
 
+.zpd-link-row:hover svg {
+    color: #2563eb;
+}
+
 .zpd-footer {
-    height: 52px;
+    min-height: 52px;
     background: #ffffff !important;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid #e8edf3;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -222,8 +299,8 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 .zpd-footer-link {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
+    gap: 7px;
+    font-size: 13.5px;
     font-weight: 600;
     color: #2563eb !important;
     text-decoration: none !important;
@@ -234,7 +311,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 }
 
 .zpd-footer-link:hover {
-    text-decoration: underline !important;
+    opacity: 0.82;
 }
 </style>
 <aside class="app-sidebar" id="appSidebar">
@@ -466,7 +543,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
                         </svg>
                     </span>
-                    <span>Billing Apps (POS)</span>
+                    <span>POS</span>
                 </a>
 
                 <a href="<?= asset('registers.php') ?>" class="nav-item <?= $currentPage === 'registers.php' ? 'active' : '' ?>">
@@ -1078,116 +1155,93 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 
     <!-- ================= FULL ZOHO POS USER PROFILE DRAWER ================= -->
     <div class="zoho-profile-drawer" id="sidebarProfileMenu" onclick="event.stopPropagation()">
-        <!-- Blue Header -->
         <div class="zpd-header">
-            <div style="display: flex; align-items: center; gap: 14px;">
-                <div class="zpd-avatar" style="font-size: 20px; font-weight: 800; color: #2563eb;">
-                    <?= e($initials) ?>
-                </div>
-                <div>
-                    <div class="zpd-name"><?= e($userName) ?></div>
-                    <div class="zpd-uid">User ID: <?= 60077667000 + (int)($user['id'] ?? 379) ?></div>
-                    <div class="zpd-email"><?= e($userEmail ?: 'info@ominiflow.com') ?></div>
-                    <div class="zpd-org-badge" onclick="window.location.href='<?= asset('business-profile.php') ?>'" title="Manage Business Profile">
-                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-                        <span><?= e($businessName) ?></span>
-                        <span style="font-size: 8px;">▼</span>
-                    </div>
-                </div>
-            </div>
-            <button type="button" class="zpd-close-btn" onclick="toggleSidebarProfileMenu()" title="Close">&times;</button>
-        </div>
-
-        <!-- Scrollable Cards Body -->
-        <div class="zpd-body">
-            <!-- 1. Subscription Card -->
-            <div class="zpd-card">
-                <div class="zpd-card-heading">SUBSCRIPTION</div>
-                <?php if (function_exists('is_premium_active') && is_premium_active()): ?>
-                    <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">OminiFlow Premium</div>
-                    <div style="font-size: 12.5px; color: #64748b; margin-bottom: 12px;">All modules are unlocked on this account.</div>
-                    <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
+            <div class="zpd-avatar">
+                <?php if ($profileLogoUrl !== ''): ?>
+                    <img src="<?= e($profileLogoUrl) ?>" alt="">
                 <?php else: ?>
-                    <div style="font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">You're on the Free plan</div>
-                    <div style="font-size: 12.5px; color: #64748b; margin-bottom: 12px;">Home is available. Buy Premium (₹35,000 + 18% GST extra) to unlock POS, inventory, online store, and more.</div>
-                    <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">Upgrade</a>
+                    <?= e($bizInitials) ?>
                 <?php endif; ?>
             </div>
+            <div class="zpd-header-meta">
+                <div class="zpd-name"><?= e($displayName) ?></div>
+                <div class="zpd-uid">User ID: <?= e($userIdLabel) ?></div>
+                <div class="zpd-email"><?= e($userEmail ?: 'info@ominiflow.com') ?></div>
+                <div class="zpd-org-badge" onclick="window.location.href='<?= asset('business-profile.php') ?>'" title="Manage Business Profile">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                    <span><?= e($businessName) ?></span>
+                    <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" d="M6 9l6 6 6-6"/></svg>
+                </div>
+            </div>
+        </div>
 
-            <!-- 2. Get In Touch Card -->
+        <div class="zpd-body">
             <div class="zpd-card">
-                <div class="zpd-card-heading">GET IN TOUCH</div>
-                <div class="zpd-list">
-                    <a href="mailto:info@ominiflow.com" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                        <span>Mail us at <strong>info@ominiflow.com</strong></span>
-                    </a>
-                    <a href="https://wa.me/919243747854" target="_blank" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                        <span>Whatsapp or call us <strong style="color: #047857;">+91 9243747854</strong></span>
-                    </a>
-                    <div style="height: 1px; background: #f1f5f9; margin: 4px 0;"></div>
-                    <div style="font-size: 12px; color: #334155; display: flex; flex-direction: column; gap: 4px; padding-left: 2px;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <strong>Monday - Friday</strong>
-                            <span style="color: #64748b;">10:00 AM - 7:00 PM IST</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <strong>Saturday</strong>
-                            <span style="color: #64748b;">11:00 AM - 5:00 PM IST</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; color: #ef4444; font-weight: 700;">
-                            <span>Sunday</span>
-                            <span>Closed</span>
-                        </div>
-                    </div>
+                <div class="zpd-card-heading">Subscription</div>
+                <div class="zpd-sub-row">
+                    <?php if ($isPremiumPlan): ?>
+                        <div class="zpd-sub-text">You're currently on our Premium plan</div>
+                        <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
+                    <?php else: ?>
+                        <div class="zpd-sub-text">You're currently on our Free plan</div>
+                        <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">Upgrade</a>
+                    <?php endif; ?>
                 </div>
             </div>
 
-            <!-- 3. Explore More Card -->
             <div class="zpd-card">
-                <div class="zpd-card-heading">EXPLORE MORE</div>
+                <div class="zpd-card-heading">Get in touch</div>
                 <div class="zpd-list">
-                    <a href="<?= asset('reports.php') ?>" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                    <a href="mailto:info@ominiflow.com?subject=Question%20about%20OminiFlow%20POS" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.947L3 20l1.116-3.348A7.52 7.52 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                        <span>Have questions? Ask away!</span>
+                    </a>
+                    <a href="mailto:info@ominiflow.com" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        <span>Email us at info@ominiflow.com</span>
+                    </a>
+                    <a href="mailto:info@ominiflow.com?subject=Feedback%20for%20OminiFlow%20POS" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>Share Feedback</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="zpd-card">
+                <div class="zpd-card-heading">Explore more</div>
+                <div class="zpd-list">
+                    <a href="<?= asset('dashboard.php?tab=getting-started') ?>" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                         <span>Resources</span>
                     </a>
                     <a href="<?= asset('dashboard.php?tab=getting-started') ?>" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
                         <span>Whats New</span>
                     </a>
-                    <a href="https://youtube.com" target="_blank" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    <a href="<?= asset('dashboard.php') ?>" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                         <span>Webinars</span>
                     </a>
                     <a href="<?= asset('settings.php') ?>" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
                         <span>User Community</span>
                     </a>
-                    <a href="<?= asset('reports.php') ?>" class="zpd-link-row">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <a href="<?= asset('dashboard.php?tab=getting-started') ?>" class="zpd-link-row">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         <span>Online Training Course</span>
                     </a>
                 </div>
             </div>
-
-            <!-- 4. Start Selling Card -->
-            <div class="zpd-card" style="background: #eff6ff !important; border-color: #bfdbfe;">
-                <div style="font-size: 11px; font-weight: 800; color: #1e40af; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1.4;">
-                    START SELLING WITH ZOHO POS BILLING APPS
-                </div>
-            </div>
         </div>
 
-        <!-- Bottom Sticky Action Bar -->
         <div class="zpd-footer">
             <a href="<?= asset('business-profile.php') ?>" class="zpd-footer-link">
-                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
                 <span>My Account</span>
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
             </a>
             <a href="<?= asset('logout.php') ?>" class="zpd-footer-link logout">
-                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                 <span>Sign Out</span>
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10"/></svg>
             </a>
         </div>
     </div>
@@ -1494,7 +1548,7 @@ function filterSettingsNav(query) {
         profileHoverTimer = setTimeout(function() {
             var menu = document.getElementById('sidebarProfileMenu');
             if (menu) menu.classList.remove('show');
-        }, 200);
+        }, 400);
     }
 
     window.toggleSidebarProfileMenu = function(e) {
