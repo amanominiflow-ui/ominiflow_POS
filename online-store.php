@@ -56,6 +56,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(os_tab_url($backTab));
     }
 
+    if ($action === 'toggle_status') {
+        $currentBiz = get_business_store($bid);
+        $currentStatus = (int) ($currentBiz['store_published'] ?? 1) === 1;
+        set_store_published($bid, !$currentStatus);
+        set_flash('success', !$currentStatus ? 'Store is now Open.' : 'Store is now Closed.');
+        redirect(os_tab_url('overview'));
+    }
+
     if ($action === 'save_preferences' || $action === 'save_customize' || $action === 'publish_layout') {
         $res = save_mobile_store_settings($bid, [
             'display_name' => $_POST['display_name'] ?? '',
@@ -186,6 +194,153 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
         .os-domain-row { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
         .os-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         @media (max-width: 1100px) { .os-grid { grid-template-columns: 1fr; } }
+
+        /* Store Details Overview Card */
+        .os-store-details-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px 28px;
+            position: relative;
+            overflow: hidden;
+            min-height: 250px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .os-card-menu-wrap {
+            position: relative;
+        }
+        .os-card-menu-btn {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #64748b;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .os-card-menu-btn:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+            border-color: #cbd5e1;
+        }
+        .os-card-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+            min-width: 180px;
+            padding: 6px;
+            z-index: 50;
+        }
+        .os-card-dropdown.show {
+            display: block;
+        }
+        .os-card-menu-item {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 13.5px;
+            color: #334155;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.15s;
+            box-sizing: border-box;
+            font-weight: 500;
+        }
+        .os-card-menu-item:hover {
+            background: #f8fafc;
+            color: #0f172a;
+        }
+        .os-details-table {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .os-detail-row {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+        .os-detail-label {
+            width: 140px;
+            color: #64748b;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        .os-detail-value {
+            color: #0f172a;
+            font-size: 14px;
+        }
+        .os-detail-bold {
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .os-icon-btn {
+            background: transparent;
+            border: 0;
+            color: #64748b;
+            cursor: pointer;
+            padding: 2px 4px;
+            display: inline-flex;
+            align-items: center;
+            border-radius: 4px;
+            transition: color 0.15s;
+        }
+        .os-icon-btn:hover {
+            color: #0f172a;
+        }
+        .os-status-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2.5px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+        .os-pill-open {
+            background: #16a34a;
+            color: #ffffff;
+        }
+        .os-pill-closed {
+            background: #dc2626;
+            color: #ffffff;
+        }
+        .os-qr-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #2563eb;
+            font-weight: 600;
+            font-size: 13.5px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .os-qr-link:hover {
+            opacity: 0.85;
+        }
+        .os-globe-watermark {
+            position: absolute;
+            right: -20px;
+            bottom: -30px;
+            width: 175px;
+            height: 175px;
+            pointer-events: none;
+            z-index: 1;
+        }
 
         /* QR Poster Modal Styling */
         .qr-modal-overlay {
@@ -502,37 +657,75 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
                 <div class="page-header-row" style="margin-bottom:18px">
                     <div>
                         <h1 class="page-title">Mobile Store</h1>
-                        <p class="page-subtitle">This website is exclusive to your business. Customers browse items and place orders with your branding — not the platform logo.</p>
+                        <p class="page-subtitle">Your mobile store can be accessed with the below URL. It will be exclusive to your business. Your customers can access the URL to browse the products on sale and place orders.</p>
                     </div>
                     <a class="btn-primary" href="<?= e($localUrl) ?>" target="_blank" rel="noopener">View Store</a>
                 </div>
                 <div class="os-grid">
-                    <div class="os-card">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-                            <div>
-                                <div class="os-label" style="margin-top:0">Display Name</div>
-                                <div style="font-size:18px;font-weight:800"><?= e($brand['display_name']) ?></div>
-                                <div class="os-label">Store URL</div>
-                                <div class="os-url">
-                                    <input id="ovUrl" type="text" value="<?= e($publicLabel) ?>" readonly>
-                                    <button type="button" class="btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('ovUrl').value)">Copy</button>
+                    <div class="os-store-details-card">
+                        <!-- Top Row: Card Title + Kebab Menu -->
+                        <div style="display:flex;justify-content:space-between;align-items:center;position:relative;z-index:3;">
+                            <h3 style="font-size:16px;font-weight:700;color:#1e293b;margin:0">Store Details</h3>
+                            <div class="os-card-menu-wrap">
+                                <button type="button" class="os-card-menu-btn" onclick="toggleCardMenu(event)" aria-label="Store actions">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                                </button>
+                                <div id="osCardDropdown" class="os-card-dropdown">
+                                    <a href="<?= e(os_tab_url('preferences')) ?>" class="os-card-menu-item">Edit Store Details</a>
+                                    <a href="<?= e(os_tab_url('domain')) ?>" class="os-card-menu-item">Customize Domain</a>
+                                    <form method="post" style="margin:0">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="toggle_status">
+                                        <input type="hidden" name="tab" value="overview">
+                                        <button type="submit" class="os-card-menu-item" style="width:100%;text-align:left;background:none;border:none;cursor:pointer;font:inherit">
+                                            <?= $published ? 'Close Store' : 'Open Store' ?>
+                                        </button>
+                                    </form>
                                 </div>
-                                <div style="margin-top:12px">
-                                    Status
-                                    <span class="os-badge <?= $published ? 'os-open' : 'os-closed' ?>"><?= $published ? 'Open' : 'Closed' ?></span>
-                                </div>
-                                <a href="#get-qr" onclick="openQrPosterModal(event)" class="os-help" style="display:inline-flex;align-items:center;gap:6px;margin-top:14px;color:#2563eb;font-weight:700;cursor:pointer;text-decoration:none">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01"/><path d="M17 17h.01"/><path d="M7 7h.01"/><path d="M17 7h.01"/></svg>
-                                    Get QR Code
-                                </a>
                             </div>
-                            <div class="os-logo-preview">
-                                <?php if ($brand['logo_path']): ?>
-                                    <img src="<?= asset($brand['logo_path']) ?>" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">
-                                <?php else: ?>
-                                    <?= e($brand['initials']) ?>
-                                <?php endif; ?>
+                        </div>
+
+                        <!-- Info Grid -->
+                        <div class="os-details-table" style="margin:22px 0 26px;position:relative;z-index:2;">
+                            <div class="os-detail-row">
+                                <span class="os-detail-label">Display Name:</span>
+                                <span class="os-detail-value os-detail-bold"><?= e($brand['display_name']) ?></span>
                             </div>
+                            <div class="os-detail-row">
+                                <span class="os-detail-label">Store URL:</span>
+                                <span class="os-detail-value" style="display:inline-flex;align-items:center;gap:8px;">
+                                    <a href="<?= e($publicLabel) ?>" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;font-weight:500"><?= e($publicLabel) ?></a>
+                                    <button type="button" class="os-icon-btn" onclick="navigator.clipboard.writeText('<?= e($publicLabel) ?>');this.innerHTML='<svg width=\'15\' height=\'15\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'#16a34a\' stroke-width=\'2.5\'><polyline points=\'20 6 9 17 4 12\'/></svg>';setTimeout(()=>{this.innerHTML='<svg width=\'15\' height=\'15\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><rect x=\'9\' y=\'9\' width=\'13\' height=\'13\' rx=\'2\' ry=\'2\'/><path d=\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\'/></svg>'}, 1500);" title="Copy URL">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    </button>
+                                </span>
+                            </div>
+                            <div class="os-detail-row">
+                                <span class="os-detail-label">Status:</span>
+                                <span class="os-detail-value">
+                                    <span class="os-status-pill <?= $published ? 'os-pill-open' : 'os-pill-closed' ?>"><?= $published ? 'Open' : 'Closed' ?></span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Link -->
+                        <div style="position:relative;z-index:2;">
+                            <a href="#get-qr" onclick="openQrPosterModal(event)" class="os-qr-link">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M7 17h.01"/><path d="M17 17h.01"/><path d="M7 7h.01"/><path d="M17 7h.01"/></svg>
+                                <span>Get QR Code</span>
+                            </a>
+                        </div>
+
+                        <!-- Globe Watermark in Bottom Right -->
+                        <div class="os-globe-watermark">
+                            <svg viewBox="0 0 200 200" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="130" cy="130" r="75" stroke="#3b82f6" stroke-width="2.5" opacity="0.12"/>
+                                <ellipse cx="130" cy="130" rx="42" ry="75" stroke="#3b82f6" stroke-width="2" opacity="0.12"/>
+                                <ellipse cx="130" cy="130" rx="16" ry="75" stroke="#3b82f6" stroke-width="1.8" opacity="0.12"/>
+                                <line x1="55" y1="130" x2="205" y2="130" stroke="#3b82f6" stroke-width="2" opacity="0.12"/>
+                                <line x1="70" y1="95" x2="190" y2="95" stroke="#3b82f6" stroke-width="1.8" opacity="0.12"/>
+                                <line x1="70" y1="165" x2="190" y2="165" stroke="#3b82f6" stroke-width="1.8" opacity="0.12"/>
+                            </svg>
                         </div>
                     </div>
                     <div>
@@ -906,16 +1099,28 @@ function toggleDownloadDropdown(e) {
     if (menu) menu.classList.toggle('show');
 }
 
+function toggleCardMenu(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const drop = document.getElementById('osCardDropdown');
+    if (drop) drop.classList.toggle('show');
+}
+
 document.addEventListener('click', function(e) {
     const menu = document.getElementById('qrDownloadMenu');
     if (menu && !menu.contains(e.target) && !e.target.closest('.qr-dropdown-toggle')) {
         menu.classList.remove('show');
+    }
+    const cardDrop = document.getElementById('osCardDropdown');
+    if (cardDrop && !cardDrop.contains(e.target) && !e.target.closest('.os-card-menu-btn')) {
+        cardDrop.classList.remove('show');
     }
 });
 
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeQrPosterModal();
+        const cardDrop = document.getElementById('osCardDropdown');
+        if (cardDrop) cardDrop.classList.remove('show');
     }
 });
 
