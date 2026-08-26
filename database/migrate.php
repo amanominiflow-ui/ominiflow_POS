@@ -1133,6 +1133,7 @@ try {
     add_column_if_not_exists($pdo, 'customers', 'loyalty_points_balance', "INT NOT NULL DEFAULT 0 AFTER `address`");
     add_column_if_not_exists($pdo, 'customers', 'credit_limit', "DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `loyalty_points_balance`");
     add_column_if_not_exists($pdo, 'customers', 'outstanding_receivable', "DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `credit_limit`");
+    add_column_if_not_exists($pdo, 'customers', 'password', "VARCHAR(255) NULL");
 
     add_column_if_not_exists($pdo, 'orders', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'orders', 'fulfillment_status', "ENUM('pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled', 'returned') NOT NULL DEFAULT 'delivered' AFTER `order_status`");

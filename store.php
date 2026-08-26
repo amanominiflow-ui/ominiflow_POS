@@ -42,6 +42,10 @@ if (!$storeBiz) {
     $currency = '₹';
     $homeUrl = $cartUrl = $checkoutUrl = '#';
     $bid = 0;
+    $drawerCart = ['lines' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
+    $openCartDrawer = false;
+    $openAccountDrawer = false;
+    $storeShopper = null;
 } else {
     $storeNotFound = false;
     $bid = (int) $storeBiz['id'];
@@ -50,7 +54,7 @@ if (!$storeBiz) {
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
     $page = trim((string) ($_GET['page'] ?? 'home'));
-    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks'], true)) {
+    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'], true)) {
         $page = 'home';
     }
 
@@ -75,6 +79,10 @@ if (!$storeBiz) {
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
             }
+            if (!empty($_GET['q'])) {
+                $params['q'] = (string) $_GET['q'];
+            }
+            $params['cart'] = '1';
             redirect(public_store_url($storeBiz, $back === 'product' ? 'product' : 'home', $params));
         }
 
@@ -83,7 +91,44 @@ if (!$storeBiz) {
             if (empty($res['success']) && !empty($res['error'])) {
                 set_flash('error', $res['error']);
             }
-            redirect(public_store_url($storeBiz, 'cart'));
+            $allowedReturn = ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'];
+            $returnPage = (string) ($_POST['return_page'] ?? $page);
+            if (!in_array($returnPage, $allowedReturn, true)) {
+                $returnPage = 'home';
+            }
+            $params = ['cart' => '1'];
+            if ($returnPage === 'product') {
+                $params['id'] = (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+            }
+            if (!empty($_GET['category_id'])) {
+                $params['category_id'] = (int) $_GET['category_id'];
+            }
+            if (!empty($_GET['q'])) {
+                $params['q'] = (string) $_GET['q'];
+            }
+            $target = $returnPage === 'cart' ? 'home' : $returnPage;
+            redirect(public_store_url($storeBiz, $target, $params));
+        }
+
+        if ($action === 'storefront_signout') {
+            clear_storefront_shopper($bid);
+            set_flash('success', 'Signed out.');
+            redirect(public_store_url($storeBiz, 'home'));
+        }
+
+        if ($action === 'update_profile' || $action === 'update_address') {
+            $shopper = get_storefront_shopper($bid);
+            if (!$shopper) {
+                redirect(public_store_signin_url($storeBiz));
+            }
+            $res = update_storefront_shopper_profile($bid, (int) $shopper['id'], [
+                'name' => (string) ($_POST['name'] ?? $shopper['name']),
+                'email' => (string) ($_POST['email'] ?? $shopper['email']),
+                'phone' => (string) ($_POST['phone'] ?? $shopper['phone']),
+                'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
+            ]);
+            set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Saved.' : ($res['error'] ?? 'Could not save.'));
+            redirect(public_store_url($storeBiz, $action === 'update_address' ? 'addresses' : 'profile'));
         }
 
         if ($action === 'place_order') {
@@ -112,6 +157,14 @@ if (!$storeBiz) {
     $homeUrl = public_store_url($storeBiz, 'home');
     $cartUrl = public_store_url($storeBiz, 'cart');
     $checkoutUrl = public_store_url($storeBiz, 'checkout');
+    $drawerCart = hydrate_storefront_cart($bid);
+    $cartCount = (int) ($drawerCart['count'] ?? $cartCount);
+    $storeShopper = refresh_storefront_shopper($bid);
+    $openAccountDrawer = !empty($_GET['account']);
+    $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $page === 'cart');
+    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile'], true) && !$storeShopper) {
+        redirect(public_store_signin_url($storeBiz));
+    }
 }
 
 function sf_money(string $symbol, float $amount): string {
@@ -141,7 +194,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
     <?php if ($favicon): ?>
         <link rel="icon" href="<?= e($favicon) ?>">
     <?php endif; ?>
-    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=5">
+    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=9">
     <style>
         :root {
             --ms-header: <?= e($brand['header_color']) ?>;
@@ -155,7 +208,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
         .ms-add-btn, .ms-btn { color: var(--ms-btn-text, #ffffff); }
     </style>
 </head>
-<body class="ms-body ms-font-<?= e($fontSize) ?>">
+<body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
 <div class="ms-app">
     <header class="ms-top-nav">
         <div class="ms-top-container">
@@ -199,7 +252,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                         <span class="ms-nav-divider" aria-hidden="true"></span>
                     <?php endif; ?>
 
-                    <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Cart">
+                    <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Cart" id="msCartToggle">
                         <span class="ms-nav-icon">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 12H7L6 7z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg>
                             <?php if ($cartCount > 0): ?>
@@ -209,7 +262,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                         <span class="ms-nav-label">Cart</span>
                     </a>
 
-                    <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Account">
+                    <a class="ms-nav-item" href="#account" title="Account" id="msAccountToggle">
                         <span class="ms-nav-icon">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3"/><path d="M6.8 18.2c1.4-2.2 3.2-3.2 5.2-3.2s3.8 1 5.2 3.2"/></svg>
                         </span>
@@ -331,7 +384,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                     </div>
 
                 <?php elseif ($homeSec === 'category' && $brand['show_categories'] && $categories && $q === ''): ?>
-                    <div class="ms-sec-title"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
+                    <div id="msCategories" class="ms-sec-title"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
                     <div class="ms-cat-grid" style="--ms-cat-cols: <?= $catCols ?>;">
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
@@ -468,7 +521,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                 <?php endif; ?>
 
             <?php elseif ($page === 'cart'):
-                $hydrated = hydrate_storefront_cart($bid);
+                $hydrated = $drawerCart;
                 ?>
                 <div class="ms-form-card">
                     <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Shopping Cart</h1>
@@ -497,7 +550,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                 </div>
 
             <?php elseif ($page === 'checkout'):
-                $hydrated = hydrate_storefront_cart($bid);
+                $hydrated = $drawerCart;
                 if (empty($hydrated['lines'])): ?>
                     <div class="ms-form-card">
                         <div class="ms-empty">Your cart is empty.</div>
@@ -510,11 +563,11 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="place_order">
                             <label class="ms-label">Full name</label>
-                            <input class="ms-input" type="text" name="name" required>
+                            <input class="ms-input" type="text" name="name" required value="<?= e((string) ($storeShopper['name'] ?? '')) ?>">
                             <label class="ms-label">Phone</label>
-                            <input class="ms-input" type="tel" name="phone" required>
+                            <input class="ms-input" type="tel" name="phone" required value="<?= e((string) ($storeShopper['phone'] ?? '')) ?>">
                             <label class="ms-label">Email</label>
-                            <input class="ms-input" type="email" name="email">
+                            <input class="ms-input" type="email" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
                             <label class="ms-label">Delivery address</label>
                             <textarea class="ms-textarea" name="address" rows="3" required></textarea>
                             <label class="ms-label">Payment Method</label>
@@ -529,6 +582,78 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                     </div>
                 <?php endif; ?>
 
+            <?php elseif ($page === 'profile' && $storeShopper): ?>
+                <div class="ms-form-card">
+                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Edit profile</h1>
+                    <form method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="update_profile">
+                        <label class="ms-label">Full name</label>
+                        <input class="ms-input" type="text" name="name" required value="<?= e(storefront_clean_person_name((string) ($storeShopper['name'] ?? ''))) ?>">
+                        <label class="ms-label">Email</label>
+                        <input class="ms-input" type="email" name="email" required value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
+                        <label class="ms-label">Phone</label>
+                        <input class="ms-input" type="tel" name="phone" value="<?= e((string) ($storeShopper['phone'] ?? '')) ?>">
+                        <input type="hidden" name="address" value="<?= e((string) ($storeShopper['address'] ?? '')) ?>">
+                        <button class="ms-btn" type="submit">Save</button>
+                    </form>
+                </div>
+
+            <?php elseif ($page === 'orders' && $storeShopper):
+                $myOrders = get_storefront_customer_orders($bid, (int) $storeShopper['id']);
+                ?>
+                <div class="ms-form-card">
+                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Orders</h1>
+                    <?php if (!$myOrders): ?>
+                        <div class="ms-empty" style="padding:24px 0">You have no orders yet.</div>
+                    <?php else: ?>
+                        <?php foreach ($myOrders as $ord): ?>
+                            <div class="ms-cart-line">
+                                <div>
+                                    <strong><?= e((string) ($ord['order_number'] ?? ('#' . $ord['id']))) ?></strong>
+                                    <div class="ms-item-meta"><?= e((string) ($ord['created_at'] ?? '')) ?> · <?= e((string) ($ord['order_status'] ?? '')) ?></div>
+                                </div>
+                                <div style="font-weight:700"><?= sf_money($currency, (float) ($ord['total_amount'] ?? 0)) ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+
+            <?php elseif ($page === 'invoices' && $storeShopper):
+                $myInvoices = get_storefront_customer_invoices($bid, (int) $storeShopper['id']);
+                ?>
+                <div class="ms-form-card">
+                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Invoices</h1>
+                    <?php if (!$myInvoices): ?>
+                        <div class="ms-empty" style="padding:24px 0">No invoices yet.</div>
+                    <?php else: ?>
+                        <?php foreach ($myInvoices as $inv): ?>
+                            <div class="ms-cart-line">
+                                <div>
+                                    <strong><?= e((string) ($inv['invoice_number'] ?? ('#' . $inv['id']))) ?></strong>
+                                    <div class="ms-item-meta"><?= e((string) ($inv['invoice_date'] ?? $inv['created_at'] ?? '')) ?></div>
+                                </div>
+                                <div style="font-weight:700"><?= sf_money($currency, (float) ($inv['total_amount'] ?? 0)) ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+
+            <?php elseif ($page === 'addresses' && $storeShopper): ?>
+                <div class="ms-form-card">
+                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Addresses</h1>
+                    <form method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="update_address">
+                        <input type="hidden" name="name" value="<?= e((string) ($storeShopper['name'] ?? '')) ?>">
+                        <input type="hidden" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
+                        <input type="hidden" name="phone" value="<?= e((string) ($storeShopper['phone'] ?? '')) ?>">
+                        <label class="ms-label">Delivery address</label>
+                        <textarea class="ms-textarea" name="address" rows="4" required><?= e((string) ($storeShopper['address'] ?? '')) ?></textarea>
+                        <button class="ms-btn" type="submit">Save address</button>
+                    </form>
+                </div>
+
             <?php elseif ($page === 'thanks'): ?>
                 <div class="ms-form-card" style="text-align:center">
                     <div class="ms-empty" style="padding:20px 0">
@@ -541,6 +666,285 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
         <?php endif; ?>
     </main>
 </div>
+<?php if (empty($storeNotFound)):
+    $cdLines = $drawerCart['lines'] ?? [];
+    $cdLineCount = count($cdLines);
+    $cdQty = (int) ($drawerCart['count'] ?? 0);
+    $cdSub = (float) ($drawerCart['subtotal'] ?? 0);
+    $cdTax = (float) ($drawerCart['tax'] ?? 0);
+    $cdTotal = (float) ($drawerCart['total'] ?? 0);
+    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'], true) ? $page : 'home';
+    $cdReturnId = (int) ($_GET['id'] ?? 0);
+    ?>
+<div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
+    <button type="button" class="ms-cd-close" id="msCartClose" aria-label="Close cart">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
+        <div class="ms-cd-head">
+            <div class="ms-cd-title" id="msCartTitle">My cart <span>( <?= $cdLineCount ?> <?= $cdLineCount === 1 ? 'item' : 'items' ?>, <?= $cdQty ?> Qty)</span></div>
+        </div>
+        <?php if (!empty($brand['show_location'])): ?>
+            <div class="ms-cd-delivery">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+                <span>Set delivery location</span>
+            </div>
+        <?php endif; ?>
+
+        <div class="ms-cd-body">
+            <?php if (!$cdLines): ?>
+                <div class="ms-cd-empty">Your cart is empty.</div>
+            <?php else: ?>
+                <?php foreach ($cdLines as $line):
+                    $p = $line['product'];
+                    $pid = (int) $p['id'];
+                    $qty = (int) $line['qty'];
+                    $stock = (int) ($p['stock_quantity'] ?? 0);
+                    $img = sf_product_image($p['image_path'] ?? null);
+                    $sku = trim((string) ($p['sku'] ?? ''));
+                    ?>
+                    <div class="ms-cd-item">
+                        <div class="ms-cd-thumb">
+                            <?php if ($img): ?>
+                                <img src="<?= e($img) ?>" alt="">
+                            <?php else: ?>
+                                <span></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="ms-cd-info">
+                            <div class="ms-cd-name"><?= e((string) $p['name']) ?></div>
+                            <?php if ($sku !== ''): ?>
+                                <div class="ms-cd-meta"><?= e($sku) ?></div>
+                            <?php endif; ?>
+                            <?php if (empty($brand['hide_product_price'])): ?>
+                                <div class="ms-cd-price"><?= sf_money($currency, (float) $line['unit_price']) ?></div>
+                            <?php endif; ?>
+                            <form method="post" class="ms-cd-remove">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="update_cart">
+                                <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                <input type="hidden" name="qty" value="0">
+                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                <?php if ($cdReturnPage === 'product'): ?>
+                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                <?php endif; ?>
+                                <button type="submit">Remove</button>
+                            </form>
+                        </div>
+                        <div class="ms-cd-stepper">
+                            <form method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="update_cart">
+                                <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
+                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                <?php if ($cdReturnPage === 'product'): ?>
+                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                <?php endif; ?>
+                                <button type="submit" aria-label="Decrease quantity">−</button>
+                            </form>
+                            <span><?= $qty ?></span>
+                            <form method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="update_cart">
+                                <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
+                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                <?php if ($cdReturnPage === 'product'): ?>
+                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                <?php endif; ?>
+                                <button type="submit" aria-label="Increase quantity" <?= $qty >= $stock ? 'disabled' : '' ?>>+</button>
+                            </form>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+
+                <div class="ms-cd-summary" id="msCartSummary">
+                    <div class="ms-cd-summary-title">Summary</div>
+                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $cdSub) ?></span></div>
+                    <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
+                    <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $cdTax) ?></span></div>
+                    <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $cdTotal) ?></span></div>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="ms-cd-foot">
+            <div class="ms-cd-foot-left">
+                <div class="ms-cd-foot-total"><?= sf_money($currency, $cdTotal) ?></div>
+                <?php if ($cdLines): ?>
+                    <button type="button" class="ms-cd-summary-link" id="msCartSummaryLink">View summary details</button>
+                <?php endif; ?>
+            </div>
+            <?php if ($cdLines): ?>
+                <a class="ms-cd-checkout" href="<?= e($checkoutUrl) ?>">Proceed to checkout</a>
+            <?php else: ?>
+                <a class="ms-cd-checkout" href="<?= e($homeUrl) ?>">Start shopping</a>
+            <?php endif; ?>
+        </div>
+    </aside>
+</div>
+
+<div class="ms-cart-overlay<?= !empty($openAccountDrawer) ? ' is-open' : '' ?>" id="msAccountOverlay"<?= empty($openAccountDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openAccountDrawer) ? 'false' : 'true' ?>">
+    <button type="button" class="ms-cd-close" id="msAccountClose" aria-label="Close account">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <aside class="ms-cart-drawer" id="msAccountDrawer" role="dialog" aria-labelledby="msAccountTitle">
+        <div class="ms-acc-head">
+            <div class="ms-acc-title" id="msAccountTitle">Account</div>
+        </div>
+        <div class="ms-acc-body">
+            <div class="ms-acc-block">
+                <?php if (!empty($storeShopper)):
+                    $accName = storefront_clean_person_name((string) ($storeShopper['name'] ?? ''));
+                    if ($accName === '') {
+                        $accName = explode('@', (string) ($storeShopper['email'] ?? 'customer'))[0];
+                    }
+                    ?>
+                    <div class="ms-acc-user">
+                        <div>
+                            <div class="ms-acc-user-name"><?= e($accName) ?></div>
+                            <?php if (!empty($storeShopper['email'])): ?>
+                                <div class="ms-acc-user-email"><?= e((string) $storeShopper['email']) ?></div>
+                            <?php endif; ?>
+                        </div>
+                        <a class="ms-acc-edit" href="<?= e(public_store_url($storeBiz, 'profile')) ?>">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                            Edit
+                        </a>
+                    </div>
+                <?php else: ?>
+                    <div class="ms-acc-h">Welcome</div>
+                    <p class="ms-acc-sub">Sign in to <?= e($pageTitle) ?></p>
+                    <a class="ms-acc-signin" href="<?= e(public_store_signin_url($storeBiz)) ?>">Sign In</a>
+                <?php endif; ?>
+            </div>
+
+            <?php if (!empty($storeShopper)): ?>
+            <div class="ms-acc-block">
+                <div class="ms-acc-sec">General</div>
+                <a class="ms-acc-link" href="<?= e(public_store_url($storeBiz, 'orders')) ?>">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span>Orders</span>
+                </a>
+                <a class="ms-acc-link" href="<?= e(public_store_url($storeBiz, 'invoices')) ?>">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+                    <span>Invoices</span>
+                </a>
+                <a class="ms-acc-link" href="<?= e(public_store_url($storeBiz, 'addresses')) ?>">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+                    <span>Addresses</span>
+                </a>
+            </div>
+            <?php endif; ?>
+
+            <div class="ms-acc-block">
+                <div class="ms-acc-sec">Explore</div>
+                <a class="ms-acc-link" href="<?= e($homeUrl) ?>" data-acc-close="1">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg>
+                    <span>Home</span>
+                </a>
+                <a class="ms-acc-link" href="<?= e($homeUrl) ?>#msCategories" data-acc-close="1" id="msAccountCatsLink">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2"/></svg>
+                    <span>All Categories</span>
+                </a>
+            </div>
+        </div>
+        <?php if (!empty($storeShopper)): ?>
+        <div class="ms-acc-foot">
+            <form method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="storefront_signout">
+                <button type="submit" class="ms-acc-logout">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10"/></svg>
+                    <span>Log out</span>
+                </button>
+            </form>
+        </div>
+        <?php endif; ?>
+    </aside>
+</div>
+<?php endif; ?>
+<script>
+(function () {
+    function lockBody() {
+        document.body.classList.add('ms-cart-lock');
+    }
+    function unlockIfNoneOpen() {
+        var cart = document.getElementById('msCartOverlay');
+        var acc = document.getElementById('msAccountOverlay');
+        var cartOpen = cart && cart.classList.contains('is-open');
+        var accOpen = acc && acc.classList.contains('is-open');
+        if (!cartOpen && !accOpen) {
+            document.body.classList.remove('ms-cart-lock');
+        }
+    }
+    function closeDrawer(overlay) {
+        if (!overlay) return;
+        overlay.classList.remove('is-open');
+        overlay.hidden = true;
+        overlay.setAttribute('aria-hidden', 'true');
+        unlockIfNoneOpen();
+    }
+    function openDrawer(overlay) {
+        if (!overlay) return;
+        closeDrawer(document.getElementById('msCartOverlay') === overlay
+            ? document.getElementById('msAccountOverlay')
+            : document.getElementById('msCartOverlay'));
+        overlay.hidden = false;
+        overlay.classList.add('is-open');
+        overlay.setAttribute('aria-hidden', 'false');
+        lockBody();
+    }
+    function bindDrawer(overlayId, toggleId, closeId) {
+        var overlay = document.getElementById(overlayId);
+        var toggle = document.getElementById(toggleId);
+        var closeBtn = document.getElementById(closeId);
+        if (!overlay) return overlay;
+        if (toggle) {
+            toggle.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (overlay.classList.contains('is-open')) closeDrawer(overlay);
+                else openDrawer(overlay);
+            });
+        }
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () { closeDrawer(overlay); });
+        }
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) closeDrawer(overlay);
+        });
+        if (overlay.classList.contains('is-open')) {
+            overlay.hidden = false;
+            lockBody();
+        }
+        return overlay;
+    }
+
+    var cartOverlay = bindDrawer('msCartOverlay', 'msCartToggle', 'msCartClose');
+    var accOverlay = bindDrawer('msAccountOverlay', 'msAccountToggle', 'msAccountClose');
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (accOverlay && accOverlay.classList.contains('is-open')) closeDrawer(accOverlay);
+        else if (cartOverlay && cartOverlay.classList.contains('is-open')) closeDrawer(cartOverlay);
+    });
+
+    var summaryLink = document.getElementById('msCartSummaryLink');
+    var summaryBox = document.getElementById('msCartSummary');
+    if (summaryLink && summaryBox) {
+        summaryLink.addEventListener('click', function () {
+            summaryBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    }
+
+    document.querySelectorAll('[data-acc-close]').forEach(function (link) {
+        link.addEventListener('click', function () {
+            closeDrawer(accOverlay);
+        });
+    });
+})();
+</script>
 <script>
 (function () {
     var track = document.getElementById('msBanners');

@@ -24,6 +24,7 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'businesses', 'store_published', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'orders', 'sales_channel', "VARCHAR(30) NOT NULL DEFAULT 'pos'");
     add_schema_column_if_missing($db, 'payments', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'customers', 'password', "VARCHAR(255) NULL");
 
     $db->exec("
         CREATE TABLE IF NOT EXISTS `mobile_store_settings` (
@@ -304,6 +305,15 @@ function public_store_url(?array $business, string $page = 'home', array $query 
         $query['page'] = $page;
     }
     return app_absolute_url('store.php') . '?' . http_build_query($query);
+}
+
+function public_store_signin_url(?array $business, array $query = []): string {
+    if ($business && !store_is_on_custom_domain($business) && !empty($business['store_slug'])) {
+        $query['slug'] = (string) $business['store_slug'];
+    }
+    $qs = array_filter($query, static fn($v) => $v !== null && $v !== '');
+    $url = app_absolute_url('store-signin.php');
+    return $qs ? ($url . '?' . http_build_query($qs)) : $url;
 }
 
 function public_store_local_url(array $business): string {
@@ -984,6 +994,261 @@ function hydrate_storefront_cart(int $businessId): array {
         'total' => round($subtotal + $tax, 2),
         'count' => storefront_cart_count($businessId),
     ];
+}
+
+function storefront_shopper_key(int $businessId): string {
+    return 'storefront_shopper_' . $businessId;
+}
+
+function get_storefront_shopper(int $businessId): ?array {
+    $row = $_SESSION[storefront_shopper_key($businessId)] ?? null;
+    return is_array($row) && !empty($row['id']) ? $row : null;
+}
+
+function set_storefront_shopper(int $businessId, array $shopper): void {
+    $name = storefront_clean_person_name((string) ($shopper['name'] ?? ''));
+    $email = strtolower(trim((string) ($shopper['email'] ?? '')));
+    if ($name === '' && $email !== '') {
+        $name = explode('@', $email)[0] ?: 'Customer';
+    }
+    if ($name === '') {
+        $name = 'Customer';
+    }
+    $_SESSION[storefront_shopper_key($businessId)] = [
+        'id' => (int) ($shopper['id'] ?? 0),
+        'name' => $name,
+        'phone' => (string) ($shopper['phone'] ?? ''),
+        'email' => $email,
+        'address' => (string) ($shopper['address'] ?? ''),
+    ];
+}
+
+function storefront_clean_person_name(string $name): string {
+    $name = trim($name);
+    $name = preg_replace('/\bnull\b/i', '', $name) ?? $name;
+    $name = trim((string) preg_replace('/\s+/', ' ', $name));
+    return $name;
+}
+
+function refresh_storefront_shopper(int $businessId): ?array {
+    $current = get_storefront_shopper($businessId);
+    if (!$current) {
+        return null;
+    }
+    $cust = function_exists('get_customer_by_id') ? get_customer_by_id((int) $current['id'], $businessId) : null;
+    if (!$cust) {
+        clear_storefront_shopper($businessId);
+        return null;
+    }
+    set_storefront_shopper($businessId, $cust);
+    return get_storefront_shopper($businessId);
+}
+
+function update_storefront_shopper_profile(int $businessId, int $customerId, array $data): array {
+    $name = storefront_clean_person_name((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $phone = trim((string) ($data['phone'] ?? ''));
+    $address = trim((string) ($data['address'] ?? ''));
+    if ($name === '') {
+        return ['success' => false, 'error' => 'Name is required.'];
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Enter a valid email address.'];
+    }
+    $other = find_store_customer_by_email($businessId, $email);
+    if ($other && (int) $other['id'] !== $customerId) {
+        return ['success' => false, 'error' => 'That email is already used on another account.'];
+    }
+    get_db()->prepare('UPDATE customers SET name = :name, email = :email, phone = :phone, address = :address, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+        ->execute([
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone !== '' ? $phone : null,
+            'address' => $address !== '' ? $address : null,
+            'id' => $customerId,
+            'bid' => $businessId,
+        ]);
+    $cust = get_customer_by_id($customerId, $businessId);
+    if ($cust) {
+        set_storefront_shopper($businessId, $cust);
+    }
+    return ['success' => true];
+}
+
+function get_storefront_customer_orders(int $businessId, int $customerId): array {
+    $stmt = get_db()->prepare('SELECT * FROM orders WHERE business_id = :bid AND customer_id = :cid ORDER BY id DESC LIMIT 50');
+    $stmt->execute(['bid' => $businessId, 'cid' => $customerId]);
+    return $stmt->fetchAll() ?: [];
+}
+
+function get_storefront_customer_invoices(int $businessId, int $customerId): array {
+    try {
+        $stmt = get_db()->prepare('SELECT * FROM invoices WHERE business_id = :bid AND customer_id = :cid ORDER BY id DESC LIMIT 50');
+        $stmt->execute(['bid' => $businessId, 'cid' => $customerId]);
+        return $stmt->fetchAll() ?: [];
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+function clear_storefront_shopper(int $businessId): void {
+    unset($_SESSION[storefront_shopper_key($businessId)]);
+}
+
+function find_store_customer_by_email(int $businessId, string $email): ?array {
+    $email = strtolower(trim($email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return null;
+    }
+    $stmt = get_db()->prepare('SELECT * FROM customers WHERE business_id = :bid AND email = :email LIMIT 1');
+    $stmt->execute(['bid' => $businessId, 'email' => $email]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function login_storefront_shopper(int $businessId, string $email, string $password): array {
+    $email = strtolower(trim($email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Enter a valid email address.'];
+    }
+    if ($password === '') {
+        return ['success' => false, 'error' => 'Enter your password.'];
+    }
+    $cust = find_store_customer_by_email($businessId, $email);
+    if (!$cust) {
+        return ['success' => false, 'error' => 'No account found for this email. Create an account to continue.'];
+    }
+    $hash = (string) ($cust['password'] ?? '');
+    if ($hash === '') {
+        return ['success' => false, 'error' => 'This account has no password yet. Use Create Account or Forgot Password to set one.'];
+    }
+    if (!password_verify($password, $hash)) {
+        return ['success' => false, 'error' => 'Incorrect password. Try again or use Forgot Password.'];
+    }
+    set_storefront_shopper($businessId, $cust);
+    return ['success' => true];
+}
+
+function register_storefront_shopper(int $businessId, array $data): array {
+    $name = storefront_clean_person_name((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $phone = trim((string) ($data['phone'] ?? ''));
+    $password = (string) ($data['password'] ?? '');
+    $confirm = (string) ($data['password_confirmation'] ?? '');
+
+    if ($name === '') {
+        return ['success' => false, 'error' => 'Name is required.'];
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Enter a valid email address.'];
+    }
+    if (strlen($password) < 6) {
+        return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
+    }
+    if ($password !== $confirm) {
+        return ['success' => false, 'error' => 'Passwords do not match.'];
+    }
+
+    $existing = find_store_customer_by_email($businessId, $email);
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $db = get_db();
+
+    if ($existing) {
+        if (!empty($existing['password'])) {
+            return ['success' => false, 'error' => 'An account already exists for this email. Please sign in.'];
+        }
+        $db->prepare('UPDATE customers SET name = :name, phone = COALESCE(:phone, phone), password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute([
+                'name' => $name,
+                'phone' => $phone !== '' ? $phone : null,
+                'password' => $hash,
+                'id' => (int) $existing['id'],
+                'bid' => $businessId,
+            ]);
+        $existing['name'] = $name;
+        $existing['phone'] = $phone !== '' ? $phone : ($existing['phone'] ?? '');
+        set_storefront_shopper($businessId, $existing);
+        return ['success' => true];
+    }
+
+    $res = save_customer([
+        'name' => $name,
+        'phone' => $phone,
+        'email' => $email,
+        'address' => '',
+    ], $businessId);
+    if (empty($res['success']) || empty($res['customer_id'])) {
+        $errors = $res['errors'] ?? [];
+        $msg = is_array($errors) ? implode(' ', $errors) : 'Could not create account.';
+        return ['success' => false, 'error' => $msg !== '' ? $msg : 'Could not create account.'];
+    }
+    $db->prepare('UPDATE customers SET password = :password WHERE id = :id AND business_id = :bid')
+        ->execute([
+            'password' => $hash,
+            'id' => (int) $res['customer_id'],
+            'bid' => $businessId,
+        ]);
+    set_storefront_shopper($businessId, [
+        'id' => (int) $res['customer_id'],
+        'name' => $name,
+        'phone' => $phone,
+        'email' => $email,
+    ]);
+    return ['success' => true];
+}
+
+function reset_storefront_shopper_password(int $businessId, string $email, string $password, string $confirm): array {
+    $email = strtolower(trim($email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Enter a valid email address.'];
+    }
+    if (strlen($password) < 6) {
+        return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
+    }
+    if ($password !== $confirm) {
+        return ['success' => false, 'error' => 'Passwords do not match.'];
+    }
+    $cust = find_store_customer_by_email($businessId, $email);
+    if (!$cust) {
+        return ['success' => false, 'error' => 'No account found for this email. Create an account instead.'];
+    }
+    get_db()->prepare('UPDATE customers SET password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+        ->execute([
+            'password' => password_hash($password, PASSWORD_DEFAULT),
+            'id' => (int) $cust['id'],
+            'bid' => $businessId,
+        ]);
+    return ['success' => true];
+}
+
+function sign_in_storefront_shopper(int $businessId, string $name, string $phone): array {
+    $phone = trim($phone);
+    $name = trim($name);
+    if ($phone === '' || !preg_match('/^[0-9+\-\s]{7,20}$/', $phone)) {
+        return ['success' => false, 'error' => 'Enter a valid phone number.'];
+    }
+    if ($name === '') {
+        $name = 'Customer';
+    }
+    $res = find_or_create_store_customer($businessId, [
+        'name' => $name,
+        'phone' => $phone,
+        'email' => '',
+        'address' => '',
+    ]);
+    if (empty($res['success']) || empty($res['customer_id'])) {
+        $errors = $res['errors'] ?? [];
+        $msg = is_array($errors) ? implode(' ', $errors) : 'Could not sign in.';
+        return ['success' => false, 'error' => $msg !== '' ? $msg : 'Could not sign in.'];
+    }
+    $cust = function_exists('get_customer_by_id') ? get_customer_by_id((int) $res['customer_id'], $businessId) : null;
+    set_storefront_shopper($businessId, [
+        'id' => (int) $res['customer_id'],
+        'name' => (string) ($cust['name'] ?? $name),
+        'phone' => (string) ($cust['phone'] ?? $phone),
+        'email' => (string) ($cust['email'] ?? ''),
+    ]);
+    return ['success' => true];
 }
 
 function find_or_create_store_customer(int $businessId, array $data): array {

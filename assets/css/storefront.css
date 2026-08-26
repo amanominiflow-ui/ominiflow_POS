@@ -766,3 +766,621 @@ img {
     }
 }
 
+/* ==========================================================================
+   CART DRAWER
+   ========================================================================== */
+body.ms-cart-lock {
+    overflow: hidden;
+}
+
+.ms-cart-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200000;
+    background: rgba(15, 23, 42, 0.48);
+    display: none;
+    justify-content: flex-end;
+    align-items: stretch;
+}
+
+.ms-cart-overlay.is-open {
+    display: flex;
+}
+
+.ms-cd-close {
+    position: absolute;
+    top: 18px;
+    right: min(420px, 100vw);
+    margin-right: 12px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 0;
+    background: #ffffff;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    z-index: 2;
+}
+
+.ms-cart-drawer {
+    width: min(420px, 100%);
+    max-width: 100%;
+    height: 100%;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -12px 0 40px rgba(15, 23, 42, 0.18);
+    animation: msCartIn 0.22s ease-out;
+}
+
+@keyframes msCartIn {
+    from { transform: translateX(24px); opacity: 0.6; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.ms-cd-head {
+    padding: 18px 20px 12px;
+    flex-shrink: 0;
+}
+
+.ms-cd-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+}
+
+.ms-cd-title span {
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.ms-cd-delivery {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px 14px;
+    border-bottom: 1px solid #e8edf3;
+    color: #0f172a;
+    font-size: 13.5px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.ms-cd-delivery svg { color: #64748b; flex-shrink: 0; }
+
+.ms-cd-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 20px 20px;
+    min-height: 0;
+}
+
+.ms-cd-empty {
+    text-align: center;
+    color: #64748b;
+    padding: 48px 12px;
+    font-size: 14.5px;
+}
+
+.ms-cd-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid #eef2f6;
+}
+
+.ms-cd-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ms-cd-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ms-cd-info { flex: 1; min-width: 0; }
+
+.ms-cd-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    line-height: 1.3;
+}
+
+.ms-cd-meta {
+    font-size: 11.5px;
+    color: #64748b;
+    margin-top: 3px;
+    text-transform: uppercase;
+}
+
+.ms-cd-price {
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 6px;
+    color: #0f172a;
+}
+
+.ms-cd-remove { margin-top: 8px; }
+
+.ms-cd-remove button {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    text-underline-offset: 3px;
+}
+
+.ms-cd-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #dbe3ee;
+    border-radius: 20px;
+    overflow: hidden;
+    height: 34px;
+    flex-shrink: 0;
+    margin-top: 4px;
+}
+
+.ms-cd-stepper form { margin: 0; }
+
+.ms-cd-stepper button {
+    width: 32px;
+    height: 34px;
+    border: 0;
+    background: #ffffff;
+    color: #334155;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.ms-cd-stepper button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.ms-cd-stepper span {
+    min-width: 22px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.ms-cd-summary {
+    padding-top: 18px;
+}
+
+.ms-cd-summary-title {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 12px;
+}
+
+.ms-cd-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13.5px;
+    color: #334155;
+    padding: 5px 0;
+}
+
+.ms-cd-free { color: #16a34a; font-weight: 700; }
+
+.ms-cd-pay {
+    font-weight: 800;
+    color: #0f172a;
+    font-size: 14.5px;
+    margin-top: 6px;
+}
+
+.ms-cd-foot {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid #e8edf3;
+    background: #ffffff;
+}
+
+.ms-cd-foot-total {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.ms-cd-summary-link {
+    display: block;
+    margin-top: 2px;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.ms-cd-checkout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ms-header, #083d30);
+    color: #ffffff !important;
+    text-decoration: none !important;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 12px 18px;
+    border-radius: 8px;
+    white-space: nowrap;
+    min-width: 170px;
+}
+
+@media (max-width: 768px) {
+    .ms-cart-drawer {
+        width: 100%;
+    }
+    .ms-cd-close {
+        right: auto;
+        left: 12px;
+        top: 12px;
+        margin-right: 0;
+    }
+    .ms-cd-head {
+        padding: 16px 16px 10px 60px;
+    }
+    .ms-cd-foot {
+        flex-wrap: wrap;
+    }
+    .ms-cd-checkout {
+        flex: 1;
+        min-width: 0;
+    }
+    .ms-acc-head {
+        padding: 16px 16px 8px 60px;
+    }
+}
+
+/* ==========================================================================
+   ACCOUNT DRAWER
+   ========================================================================== */
+.ms-acc-head {
+    padding: 20px 22px 8px;
+    flex-shrink: 0;
+}
+
+.ms-acc-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+}
+
+.ms-acc-body {
+    padding: 8px 22px 28px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.ms-acc-block {
+    padding: 18px 0 8px;
+}
+
+.ms-acc-h {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 6px;
+}
+
+.ms-acc-sub {
+    font-size: 14px;
+    color: #334155;
+    margin-bottom: 16px;
+}
+
+.ms-acc-user {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+}
+
+.ms-acc-user-name {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.25;
+}
+
+.ms-acc-user-email {
+    margin-top: 4px;
+    font-size: 13.5px;
+    color: #64748b;
+    word-break: break-all;
+}
+
+.ms-acc-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--ms-header, #0f4c3a) !important;
+    font-size: 13.5px;
+    font-weight: 700;
+    text-decoration: none !important;
+}
+
+.ms-acc-sec {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 4px 0 6px;
+}
+
+.ms-acc-foot {
+    flex-shrink: 0;
+    border-top: 1px solid #e8edf3;
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+}
+
+.ms-acc-logout {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: 0;
+    padding: 12px 14px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #ef4444;
+    cursor: pointer;
+    text-align: left;
+}
+
+.ms-acc-logout svg {
+    color: #ef4444;
+}
+
+.ms-acc-signin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ms-header, #083d30);
+    color: #ffffff !important;
+    border: 0;
+    border-radius: 6px;
+    padding: 11px 28px;
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none !important;
+}
+
+.ms-acc-form {
+    margin-top: 14px;
+    max-width: 280px;
+}
+
+.ms-acc-form .ms-input {
+    margin-bottom: 10px;
+}
+
+.ms-acc-signout {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #dc2626;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.ms-acc-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 0;
+    color: #0f172a !important;
+    text-decoration: none !important;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.ms-acc-link svg {
+    color: #334155;
+    flex-shrink: 0;
+}
+
+.ms-acc-link:hover {
+    color: var(--ms-header, #083d30) !important;
+}
+
+.ms-acc-signin {
+    text-decoration: none !important;
+}
+
+/* ==========================================================================
+   STORE CUSTOMER SIGN IN
+   ========================================================================== */
+body.sf-auth-body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px 32px;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #e8edf2;
+    background-image:
+        linear-gradient(30deg, #e2e8f0 12%, transparent 12.5%, transparent 87%, #e2e8f0 87.5%, #e2e8f0),
+        linear-gradient(150deg, #e2e8f0 12%, transparent 12.5%, transparent 87%, #e2e8f0 87.5%, #e2e8f0),
+        linear-gradient(30deg, #e2e8f0 12%, transparent 12.5%, transparent 87%, #e2e8f0 87.5%, #e2e8f0),
+        linear-gradient(150deg, #e2e8f0 12%, transparent 12.5%, transparent 87%, #e2e8f0 87.5%, #e2e8f0);
+    background-size: 80px 140px;
+    background-position: 0 0, 0 0, 40px 70px, 40px 70px;
+}
+
+.sf-auth-card {
+    width: 100%;
+    max-width: 420px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 36px 32px 28px;
+    box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+}
+
+.sf-auth-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.03em;
+}
+
+.sf-auth-sub {
+    margin: 6px 0 22px;
+    font-size: 14.5px;
+    color: #64748b;
+}
+
+.sf-auth-input {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 6px;
+    background: #dbeafe;
+    padding: 14px 14px;
+    font: inherit;
+    font-size: 15px;
+    color: #0f172a;
+    margin-bottom: 12px;
+    outline: none;
+}
+
+.sf-auth-input:focus {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+
+.sf-auth-input:disabled {
+    opacity: 0.85;
+}
+
+.sf-auth-btn {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    margin-top: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--ms-header, #0f4c3a);
+    color: #ffffff;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 13px 16px;
+    cursor: pointer;
+}
+
+.sf-auth-forgot {
+    display: block;
+    text-align: center;
+    margin: 18px 0 0;
+    color: #2563eb;
+    font-size: 14.5px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sf-auth-forgot:hover { text-decoration: underline; }
+
+.sf-auth-foot {
+    text-align: center;
+    margin: 28px 0 0;
+    font-size: 14px;
+    color: #334155;
+}
+
+.sf-auth-foot a {
+    color: #2563eb;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.sf-auth-foot a:hover { text-decoration: underline; }
+
+.sf-auth-back {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: none;
+    color: #64748b;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.sf-auth-store {
+    margin-top: 18px;
+    color: #475569;
+    font-size: 13.5px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sf-auth-store:hover { color: #0f172a; }
+
+@media (max-width: 480px) {
+    .sf-auth-card {
+        padding: 28px 20px 22px;
+        border-radius: 10px;
+    }
+    .sf-auth-title { font-size: 24px; }
+}
+
+
+
+
