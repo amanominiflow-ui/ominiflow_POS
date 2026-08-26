@@ -1,0 +1,451 @@
+<?php
+/**
+ * Shared Zoho-style New Item / Edit Item form.
+ * Expects: $isEdit, $product, $categories, $vendors, $taxRates, $brands, $manufacturers, $productImages, $errors
+ */
+
+declare(strict_types=1);
+
+if (!function_exists('product_form_val')) {
+    function product_form_val(string $key, string $default = ''): string {
+        global $product;
+        if (isset($_SESSION['old_input'][$key]) || $_SERVER['REQUEST_METHOD'] === 'POST') {
+            return old($key, $default);
+        }
+        if (is_array($product ?? null) && isset($product[$key]) && $product[$key] !== null && $product[$key] !== '') {
+            return (string) $product[$key];
+        }
+        return $default;
+    }
+}
+
+$isEdit = !empty($isEdit);
+$product = is_array($product ?? null) ? $product : [];
+$errors = $errors ?? [];
+$units = ['pcs', 'box', 'dz', 'kg', 'g', 'mg', 'lb', 'ml', 'l', 'm', 'cm', 'ft', 'in', 'sqft', 'sqm'];
+$salesAccounts = ['Sales', 'Other Charges', 'Shipping Charge', 'Discount'];
+$purchaseAccounts = ['Cost of Goods Sold', 'Inventory Asset', 'Freight', 'Purchase'];
+$inventoryAccounts = ['Inventory Asset', 'Finished Goods', 'Raw Materials', 'Stock in Hand'];
+$gstRates = array_values(array_filter($taxRates ?? [], static fn($t) => in_array(($t['type'] ?? ''), ['gst', 'exempt'], true)));
+$igstRates = array_values(array_filter($taxRates ?? [], static fn($t) => ($t['type'] ?? '') === 'igst'));
+if (!$gstRates) {
+    $gstRates = $taxRates ?? [];
+}
+if (!$igstRates) {
+    $igstRates = $taxRates ?? [];
+}
+
+$itemKind = product_form_val('item_kind', 'goods');
+$itemType = product_form_val('product_type') === 'variable' ? 'variants' : product_form_val('item_type', 'single');
+$taxPref = product_form_val('tax_preference', 'taxable');
+$salesOn = $_SERVER['REQUEST_METHOD'] === 'POST' ? !empty($_POST['sales_enabled']) : ((int) ($product['sales_enabled'] ?? 1) === 1);
+$purchaseOn = $_SERVER['REQUEST_METHOD'] === 'POST' ? !empty($_POST['purchase_enabled']) : ((int) ($product['purchase_enabled'] ?? 1) === 1);
+$trackOn = $_SERVER['REQUEST_METHOD'] === 'POST' ? !empty($_POST['track_inventory']) : ((int) ($product['track_inventory'] ?? 1) === 1);
+if ($itemKind === 'service') {
+    $trackOn = false;
+}
+$returnable = $_SERVER['REQUEST_METHOD'] === 'POST' ? (($_POST['returnable'] ?? '1') === '1') : ((int) ($product['returnable'] ?? 1) === 1);
+
+$identifiers = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $identifiers = array_values(array_filter(array_map('trim', (array) ($_POST['identifiers'] ?? []))));
+} elseif (!empty($product['extra_identifiers'])) {
+    $decoded = json_decode((string) $product['extra_identifiers'], true);
+    $identifiers = is_array($decoded) ? $decoded : [];
+}
+if (!$identifiers && !empty($product['barcode'])) {
+    $identifiers = [(string) $product['barcode']];
+}
+
+$frontImg = $product['image_path'] ?? '';
+$rearImg = $product['rear_image_path'] ?? '';
+$otherImgs = [];
+foreach ($productImages ?? [] as $im) {
+    if (($im['kind'] ?? '') === 'front') {
+        $frontImg = $im['path'];
+    } elseif (($im['kind'] ?? '') === 'rear') {
+        $rearImg = $im['path'];
+    } else {
+        $otherImgs[] = $im;
+    }
+}
+
+$defaultIntra = product_form_val('intra_tax_rate_id');
+$defaultInter = product_form_val('inter_tax_rate_id');
+if ($defaultIntra === '' && $gstRates) {
+    foreach ($gstRates as $g) {
+        if ((float) $g['rate'] == 5.0) { $defaultIntra = (string) $g['id']; break; }
+    }
+    if ($defaultIntra === '') {
+        $defaultIntra = (string) $gstRates[0]['id'];
+    }
+}
+if ($defaultInter === '' && $igstRates) {
+    foreach ($igstRates as $g) {
+        if ((float) $g['rate'] == 5.0) { $defaultInter = (string) $g['id']; break; }
+    }
+    if ($defaultInter === '') {
+        $defaultInter = (string) $igstRates[0]['id'];
+    }
+}
+?>
+
+<div class="item-sheet">
+    <div class="item-top">
+        <div>
+            <div class="item-row">
+                <label class="item-label req" for="name">Name*</label>
+                <input class="item-input <?= !empty($errors['name']) ? 'is-invalid' : '' ?>" type="text" id="name" name="name" value="<?= e(product_form_val('name')) ?>" required>
+                <?php if (!empty($errors['name'])): ?><div class="item-err"><?= e($errors['name']) ?></div><?php endif; ?>
+            </div>
+            <div class="item-row">
+                <label class="item-label">Type</label>
+                <div class="item-radio">
+                    <label><input type="radio" name="item_kind" value="goods" <?= $itemKind !== 'service' ? 'checked' : '' ?>> Goods</label>
+                    <label><input type="radio" name="item_kind" value="service" <?= $itemKind === 'service' ? 'checked' : '' ?>> Service</label>
+                </div>
+            </div>
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label" for="category_id">Category</label>
+                    <select class="item-select" id="category_id" name="category_id">
+                        <option value="">Select a category</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= (int) $cat['id'] ?>" <?= product_form_val('category_id') === (string) $cat['id'] ? 'selected' : '' ?>><?= e((string) $cat['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="item-row">
+                    <label class="item-label" for="brand">Brand</label>
+                    <input class="item-input" list="brand-list" id="brand" name="brand" value="<?= e(product_form_val('brand')) ?>" placeholder="Select or Add Brand">
+                    <datalist id="brand-list">
+                        <?php foreach ($brands as $b): ?><option value="<?= e($b) ?>"><?php endforeach; ?>
+                    </datalist>
+                </div>
+            </div>
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label" for="manufacturer">Manufacturer</label>
+                    <input class="item-input" list="mfr-list" id="manufacturer" name="manufacturer" value="<?= e(product_form_val('manufacturer')) ?>" placeholder="Select or Add Manufacturer">
+                    <datalist id="mfr-list">
+                        <?php foreach ($manufacturers as $m): ?><option value="<?= e($m) ?>"><?php endforeach; ?>
+                    </datalist>
+                </div>
+                <div class="item-row">
+                    <label class="item-label" for="hsn_code">HSN Code</label>
+                    <div class="item-hsn">
+                        <input class="item-input" type="text" id="hsn_code" name="hsn_code" value="<?= e(product_form_val('hsn_code')) ?>">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" d="M20 20l-3-3"/></svg>
+                    </div>
+                </div>
+            </div>
+            <div class="item-row">
+                <label class="item-label req" for="tax_preference">Tax Preference*</label>
+                <select class="item-select" id="tax_preference" name="tax_preference" style="max-width:280px">
+                    <option value="taxable" <?= $taxPref !== 'non_taxable' ? 'selected' : '' ?>>Taxable</option>
+                    <option value="non_taxable" <?= $taxPref === 'non_taxable' ? 'selected' : '' ?>>Non-Taxable</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="item-uploads">
+            <div class="item-pair">
+                <div class="item-drop" id="frontDrop">
+                    <?php if ($frontImg): ?><img src="<?= asset($frontImg) ?>" alt=""><?php else: ?><span class="item-drop-btn">Upload Front Image</span><?php endif; ?>
+                    <input type="file" name="image_front" accept="image/jpeg,image/png,image/webp">
+                </div>
+                <div class="item-drop" id="rearDrop">
+                    <?php if ($rearImg): ?><img src="<?= asset($rearImg) ?>" alt=""><?php else: ?><span class="item-drop-btn">Upload Rear Image</span><?php endif; ?>
+                    <input type="file" name="image_rear" accept="image/jpeg,image/png,image/webp">
+                </div>
+            </div>
+            <div class="item-drop tall" id="otherDrop">
+                <svg width="28" height="28" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6h.1a5 5 0 011 9.9M12 12v9m0-9l-3 3m3-3l3 3"/></svg>
+                <div><strong>Drag &amp; Drop Images.</strong> You can add up to 15 images including front, rear and other images, each not exceeding 5 MB.</div>
+                <input type="file" name="images[]" accept="image/jpeg,image/png,image/webp" multiple>
+            </div>
+            <?php if ($otherImgs): ?>
+                <div class="item-thumbs">
+                    <?php foreach ($otherImgs as $im): ?>
+                        <div class="item-thumb">
+                            <img src="<?= asset($im['path']) ?>" alt="">
+                            <label><input type="checkbox" name="remove_image_ids[]" value="<?= (int) $im['id'] ?>"> Remove</label>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="item-sec">
+        <div class="item-toggles">
+            <button type="button" class="item-tog <?= $itemType !== 'variants' ? 'on' : '' ?>" data-item-type="single">Single Item</button>
+            <button type="button" class="item-tog <?= $itemType === 'variants' ? 'on' : '' ?>" data-item-type="variants">Contains Variants</button>
+        </div>
+        <input type="hidden" name="item_type" id="item_type" value="<?= e($itemType === 'variants' ? 'variants' : 'single') ?>">
+        <div class="item-2">
+            <div class="item-row">
+                <label class="item-label req" for="unit">Unit*</label>
+                <select class="item-select" id="unit" name="unit">
+                    <?php foreach ($units as $u): ?>
+                        <option value="<?= e($u) ?>" <?= product_form_val('unit', 'pcs') === $u ? 'selected' : '' ?>><?= e($u) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="item-row">
+                <label class="item-label" for="sku">SKU</label>
+                <input class="item-input" type="text" id="sku" name="sku" value="<?= e(product_form_val('sku')) ?>" style="text-transform:uppercase">
+                <?php if (!empty($errors['sku'])): ?><div class="item-err"><?= e($errors['sku']) ?></div><?php endif; ?>
+            </div>
+        </div>
+        <div id="identWrap">
+            <?php foreach ($identifiers as $ident): ?>
+                <div class="item-ident">
+                    <input class="item-input" type="text" name="identifiers[]" value="<?= e((string) $ident) ?>" placeholder="UPC / EAN / ISBN">
+                    <button type="button" class="ident-remove" aria-label="Remove">&times;</button>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <button type="button" class="item-link" id="addIdent">+ Add Identifier</button>
+    </div>
+
+    <div class="item-sec">
+        <div class="item-sec-title">Item Description</div>
+        <textarea class="item-textarea" name="description" placeholder=""><?= e(product_form_val('description')) ?></textarea>
+    </div>
+
+    <div class="item-sec">
+        <label class="item-check-title"><input type="checkbox" name="sales_enabled" value="1" <?= $salesOn ? 'checked' : '' ?> data-toggle="#salesBlock"> Sales Information</label>
+        <div id="salesBlock" class="<?= $salesOn ? '' : 'item-hidden' ?>">
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label req">Selling Price*</label>
+                    <div class="item-prefix"><span>INR</span><input class="item-input" type="number" step="0.01" min="0" name="selling_price" value="<?= e(product_form_val('selling_price', '0.00')) ?>"></div>
+                    <?php if (!empty($errors['selling_price'])): ?><div class="item-err"><?= e($errors['selling_price']) ?></div><?php endif; ?>
+                </div>
+                <div class="item-row">
+                    <label class="item-label">MRP</label>
+                    <input class="item-input" type="number" step="0.01" min="0" name="mrp" value="<?= e(product_form_val('mrp')) ?>">
+                </div>
+            </div>
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label req">Account*</label>
+                    <select class="item-select" name="sales_account">
+                        <?php foreach ($salesAccounts as $a): ?>
+                            <option <?= product_form_val('sales_account', 'Sales') === $a ? 'selected' : '' ?>><?= e($a) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="item-row">
+                    <label class="item-label">Description</label>
+                    <textarea class="item-textarea" name="sales_description"><?= e(product_form_val('sales_description')) ?></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="item-sec">
+        <label class="item-check-title"><input type="checkbox" name="purchase_enabled" value="1" <?= $purchaseOn ? 'checked' : '' ?> data-toggle="#purchaseBlock"> Purchase Information</label>
+        <div id="purchaseBlock" class="<?= $purchaseOn ? '' : 'item-hidden' ?>">
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label req">Cost Price*</label>
+                    <div class="item-prefix"><span>INR</span><input class="item-input" type="number" step="0.01" min="0" name="cost_price" value="<?= e(product_form_val('cost_price', '0.00')) ?>"></div>
+                </div>
+                <div class="item-row">
+                    <label class="item-label req">Account*</label>
+                    <select class="item-select" name="purchase_account">
+                        <?php foreach ($purchaseAccounts as $a): ?>
+                            <option <?= product_form_val('purchase_account', 'Cost of Goods Sold') === $a ? 'selected' : '' ?>><?= e($a) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label">Description</label>
+                    <textarea class="item-textarea" name="purchase_description"><?= e(product_form_val('purchase_description')) ?></textarea>
+                </div>
+                <div class="item-row">
+                    <label class="item-label">Preferred Vendor</label>
+                    <select class="item-select" name="preferred_vendor_id">
+                        <option value="">Select a vendor</option>
+                        <?php foreach ($vendors as $v): ?>
+                            <option value="<?= (int) $v['id'] ?>" <?= product_form_val('preferred_vendor_id') === (string) $v['id'] ? 'selected' : '' ?>><?= e((string) $v['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="item-sec" id="taxRatesBlock">
+        <div class="item-sec-title">Default Tax Rates</div>
+        <div class="item-2">
+            <div class="item-row">
+                <label class="item-label">Intra State Tax Rate</label>
+                <select class="item-select" name="intra_tax_rate_id">
+                    <?php foreach ($gstRates as $tr): ?>
+                        <option value="<?= (int) $tr['id'] ?>" <?= $defaultIntra === (string) $tr['id'] ? 'selected' : '' ?>><?= e((string) $tr['name']) ?> (<?= e((string) $tr['rate']) ?>%)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="item-row">
+                <label class="item-label">Inter State Tax Rate</label>
+                <select class="item-select" name="inter_tax_rate_id">
+                    <?php foreach ($igstRates as $tr): ?>
+                        <option value="<?= (int) $tr['id'] ?>" <?= $defaultInter === (string) $tr['id'] ? 'selected' : '' ?>><?= e((string) $tr['name']) ?> (<?= e((string) $tr['rate']) ?>%)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="item-sec" id="inventorySec">
+        <label class="item-check-title"><input type="checkbox" name="track_inventory" value="1" <?= $trackOn ? 'checked' : '' ?> data-toggle="#inventoryBlock"> Track Inventory for this item</label>
+        <p class="item-hint">You cannot enable/disable inventory tracking once you've created transactions for this item.</p>
+        <div id="inventoryBlock" class="<?= $trackOn ? '' : 'item-hidden' ?>">
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label req">Inventory Account*</label>
+                    <select class="item-select" name="inventory_account">
+                        <option value="">Select an account</option>
+                        <?php foreach ($inventoryAccounts as $a): ?>
+                            <option <?= product_form_val('inventory_account') === $a ? 'selected' : '' ?>><?= e($a) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="item-row">
+                    <label class="item-label req">Inventory Valuation Method*</label>
+                    <select class="item-select" name="inventory_valuation">
+                        <option value="fifo" <?= product_form_val('inventory_valuation', 'fifo') === 'fifo' ? 'selected' : '' ?>>FIFO (First In, First Out)</option>
+                        <option value="wac" <?= product_form_val('inventory_valuation') === 'wac' ? 'selected' : '' ?>>Weighted Average</option>
+                    </select>
+                </div>
+            </div>
+            <div class="item-2">
+                <div class="item-row">
+                    <label class="item-label">Reorder Point</label>
+                    <input class="item-input" type="number" min="0" name="reorder_point" value="<?= e(product_form_val('reorder_point', product_form_val('low_stock_threshold', '5'))) ?>">
+                </div>
+                <?php if (!$isEdit): ?>
+                <div class="item-row">
+                    <label class="item-label">Opening Stock</label>
+                    <input class="item-input" type="number" min="0" name="initial_stock" value="<?= e(product_form_val('initial_stock', '0')) ?>">
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="item-sec">
+        <div class="item-sec-title">Cancellation and Returns</div>
+        <label class="item-label">Returnable Item</label>
+        <div class="item-radio">
+            <label><input type="radio" name="returnable" value="1" <?= $returnable ? 'checked' : '' ?>> Yes</label>
+            <label><input type="radio" name="returnable" value="0" <?= !$returnable ? 'checked' : '' ?>> No</label>
+        </div>
+    </div>
+
+    <div class="item-sec">
+        <div class="item-sec-title">Fulfilment Details</div>
+        <div class="item-2">
+            <div class="item-row">
+                <label class="item-label">Dimensions</label>
+                <div class="item-dims">
+                    <input class="item-input" type="number" step="0.01" min="0" name="dim_length" value="<?= e(product_form_val('dim_length')) ?>" placeholder="L">
+                    <span>×</span>
+                    <input class="item-input" type="number" step="0.01" min="0" name="dim_width" value="<?= e(product_form_val('dim_width')) ?>" placeholder="W">
+                    <span>×</span>
+                    <input class="item-input" type="number" step="0.01" min="0" name="dim_height" value="<?= e(product_form_val('dim_height')) ?>" placeholder="H">
+                    <select class="item-select" name="dim_unit">
+                        <?php foreach (['cm', 'mm', 'in', 'm', 'ft'] as $u): ?>
+                            <option <?= product_form_val('dim_unit', 'cm') === $u ? 'selected' : '' ?>><?= e($u) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="item-hint">(Length X Width X Height)</div>
+            </div>
+            <div class="item-row">
+                <label class="item-label">Weight</label>
+                <div class="item-weight">
+                    <input class="item-input" type="number" step="0.001" min="0" name="weight" value="<?= e(product_form_val('weight')) ?>">
+                    <select class="item-select" name="weight_unit">
+                        <?php foreach (['kg', 'g', 'lb', 'oz'] as $u): ?>
+                            <option <?= product_form_val('weight_unit', 'kg') === $u ? 'selected' : '' ?>><?= e($u) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="item-row" style="max-width:280px;margin-top:8px">
+        <label class="item-label">Status</label>
+        <select class="item-select" name="status">
+            <option value="active" <?= product_form_val('status', 'active') === 'active' ? 'selected' : '' ?>>Active</option>
+            <option value="inactive" <?= product_form_val('status') === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+        </select>
+    </div>
+
+    <div class="item-actions">
+        <button class="item-save" type="submit">Save</button>
+        <a class="item-cancel" href="<?= asset('products.php') ?>">Cancel</a>
+    </div>
+</div>
+
+<script>
+(function () {
+    function preview(input, box) {
+        input.addEventListener('change', function () {
+            const f = this.files && this.files[0];
+            if (!f) return;
+            const url = URL.createObjectURL(f);
+            let img = box.querySelector('img');
+            if (!img) { img = document.createElement('img'); box.prepend(img); }
+            img.src = url;
+            const btn = box.querySelector('.item-drop-btn');
+            if (btn) btn.style.display = 'none';
+        });
+    }
+    document.querySelectorAll('.item-drop').forEach(function (box) {
+        const input = box.querySelector('input[type=file]');
+        if (input) preview(input, box);
+    });
+    document.querySelectorAll('[data-toggle]').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            const el = document.querySelector(this.getAttribute('data-toggle'));
+            if (el) el.classList.toggle('item-hidden', !this.checked);
+        });
+    });
+    document.querySelectorAll('.item-tog').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.item-tog').forEach(function (b) { b.classList.remove('on'); });
+            this.classList.add('on');
+            document.getElementById('item_type').value = this.getAttribute('data-item-type');
+        });
+    });
+    document.querySelectorAll('input[name=item_kind]').forEach(function (r) {
+        r.addEventListener('change', function () {
+            const service = this.value === 'service';
+            const inv = document.getElementById('inventorySec');
+            if (inv) inv.classList.toggle('item-hidden', service);
+            if (service) {
+                const cb = document.querySelector('input[name=track_inventory]');
+                if (cb) { cb.checked = false; document.getElementById('inventoryBlock').classList.add('item-hidden'); }
+            }
+        });
+    });
+    document.getElementById('addIdent').addEventListener('click', function () {
+        const wrap = document.getElementById('identWrap');
+        const row = document.createElement('div');
+        row.className = 'item-ident';
+        row.innerHTML = '<input class="item-input" type="text" name="identifiers[]" placeholder="UPC / EAN / ISBN"><button type="button" class="ident-remove" aria-label="Remove">&times;</button>';
+        wrap.appendChild(row);
+    });
+    document.getElementById('identWrap').addEventListener('click', function (e) {
+        if (e.target.classList.contains('ident-remove')) e.target.parentElement.remove();
+    });
+})();
+</script>

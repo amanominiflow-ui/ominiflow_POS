@@ -1225,6 +1225,41 @@ try {
         }
     } catch (Exception $ign) {}
 
+    /* Zoho-style item fields (additive) */
+    add_column_if_not_exists($pdo, 'products', 'item_kind', "ENUM('goods','service') NOT NULL DEFAULT 'goods'");
+    add_column_if_not_exists($pdo, 'products', 'brand', "VARCHAR(120) NULL");
+    add_column_if_not_exists($pdo, 'products', 'manufacturer', "VARCHAR(120) NULL");
+    add_column_if_not_exists($pdo, 'products', 'tax_preference', "ENUM('taxable','non_taxable') NOT NULL DEFAULT 'taxable'");
+    add_column_if_not_exists($pdo, 'products', 'unit', "VARCHAR(30) NOT NULL DEFAULT 'pcs'");
+    add_column_if_not_exists($pdo, 'products', 'description', "TEXT NULL");
+    add_column_if_not_exists($pdo, 'products', 'mrp', "DECIMAL(10,2) NULL");
+    add_column_if_not_exists($pdo, 'products', 'sales_enabled', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_column_if_not_exists($pdo, 'products', 'purchase_enabled', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_column_if_not_exists($pdo, 'products', 'track_inventory', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_column_if_not_exists($pdo, 'products', 'returnable', "TINYINT(1) NOT NULL DEFAULT 1");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `product_images` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `product_id` INT UNSIGNED NOT NULL,
+            `kind` ENUM('front','rear','other') NOT NULL DEFAULT 'other',
+            `path` VARCHAR(255) NOT NULL,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_product_images_product` (`product_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `product_brands` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `kind` ENUM('brand','manufacturer') NOT NULL DEFAULT 'brand',
+            `name` VARCHAR(120) NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_product_brands` (`business_id`, `kind`, `name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     /* =========================================================================
        DEFAULT SEEDING FOR MULTI-OUTLET, WAREHOUSES & CUSTOMER GROUPS
        ========================================================================= */
