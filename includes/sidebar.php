@@ -28,7 +28,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
 // Active rail tab selection
 $activeRailTab = 'business';
-if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php'], true)) {
+if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', 'online-store.php'], true)) {
     $activeRailTab = 'channels';
 } elseif ($currentPage === 'reports.php') {
     $activeRailTab = 'reports';
@@ -511,6 +511,27 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <span>Shopify / Online Store</span>
                 </a>
 
+                <div class="drawer-section-title" style="margin-top: 10px;">MOBILE STORE</div>
+
+                <a href="<?= asset('online-store.php') ?>" class="nav-item <?= $currentPage === 'online-store.php' && (($_GET['tab'] ?? 'overview') === 'overview') ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                    </span>
+                    <span>Overview</span>
+                </a>
+                <a href="<?= asset('online-store.php?tab=preferences') ?>" class="nav-item <?= $currentPage === 'online-store.php' && (($_GET['tab'] ?? '') === 'preferences') ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                    </span>
+                    <span>Preferences</span>
+                </a>
+                <a href="<?= asset('online-store.php?tab=domain') ?>" class="nav-item <?= $currentPage === 'online-store.php' && (($_GET['tab'] ?? '') === 'domain') ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+                    </span>
+                    <span>Custom Domain</span>
+                </a>
+
                 <div class="drawer-section-title" style="margin-top: 10px;">MULTI-STORE / WAREHOUSES</div>
 
                 <a href="<?= asset('outlets.php') ?>" class="nav-item <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">
@@ -986,7 +1007,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 <div class="drawer-section-title">EXTENSION & DEVELOPER DATA</div>
 
                 <!-- Integrations -->
-                <div class="nav-group <?= in_array($currentPage, ['integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php'], true) ? 'open' : '' ?>" id="grp-set-integ">
+                <div class="nav-group <?= in_array($currentPage, ['integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'online-store.php'], true) ? 'open' : '' ?>" id="grp-set-integ">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-set-integ')">
                         <div class="nav-group-title">
                             <span class="nav-item-icon">
@@ -1001,6 +1022,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <div class="nav-submenu">
                         <a href="<?= asset('integrations-shipping.php') ?>" class="submenu-link <?= $currentPage === 'integrations-shipping.php' ? 'active' : '' ?>">Shipping</a>
                         <a href="<?= asset('integrations-cart.php') ?>" class="submenu-link <?= $currentPage === 'integrations-cart.php' ? 'active' : '' ?>">Shopping Cart</a>
+                        <a href="<?= asset('online-store.php') ?>" class="submenu-link <?= $currentPage === 'online-store.php' ? 'active' : '' ?>">Mobile Store Overview</a>
                         <a href="<?= asset('reports.php') ?>" class="submenu-link">Accounting</a>
                         <a href="https://wa.me/919243747854" target="_blank" class="submenu-link">SMS Integrations</a>
                         <a href="<?= asset('integrations-whatsapp.php') ?>" class="submenu-link <?= $currentPage === 'integrations-whatsapp.php' ? 'active' : '' ?>">WhatsApp</a>
@@ -1402,7 +1424,7 @@ function filterSettingsNav(query) {
         var savedRail = sessionStorage.getItem('active_rail_tab');
         if (savedRail && ['business', 'channels', 'reports', 'settings'].indexOf(savedRail) !== -1) {
             var path = window.location.pathname;
-            if (path.indexOf('pos.php') === -1 && path.indexOf('registers.php') === -1 && path.indexOf('reports.php') === -1 && path.indexOf('settings.php') === -1 && path.indexOf('integrations-whatsapp.php') === -1 && path.indexOf('taxes.php') === -1 && path.indexOf('business-profile.php') === -1) {
+            if (path.indexOf('pos.php') === -1 && path.indexOf('registers.php') === -1 && path.indexOf('reports.php') === -1 && path.indexOf('settings.php') === -1 && path.indexOf('integrations-whatsapp.php') === -1 && path.indexOf('taxes.php') === -1 && path.indexOf('business-profile.php') === -1 && path.indexOf('online-store.php') === -1) {
                 switchRailTab(savedRail);
             }
         }

@@ -1112,7 +1112,7 @@ try {
         'role_permissions', 'purchase_returns', 'vendor_payments', 'product_serials',
         'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
         'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations',
-        'payment_options', 'roles'
+        'payment_options', 'roles', 'payments'
     ];
 
     foreach ($tenantTables as $tTable) {
@@ -1148,6 +1148,82 @@ try {
 
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");
+
+    /* =========================================================================
+       ONLINE STORE + CUSTOM DOMAIN (ZOHO POS PARITY) — ADDITIVE
+       ========================================================================= */
+    add_column_if_not_exists($pdo, 'businesses', 'store_slug', "VARCHAR(80) NULL");
+    add_column_if_not_exists($pdo, 'businesses', 'store_published', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_column_if_not_exists($pdo, 'orders', 'sales_channel', "VARCHAR(30) NOT NULL DEFAULT 'pos'");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `mobile_store_settings` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `display_name` VARCHAR(191) NULL,
+            `logo_path` VARCHAR(255) NULL,
+            `header_color` VARCHAR(20) NOT NULL DEFAULT '#0f4c3a',
+            `accent_color` VARCHAR(20) NOT NULL DEFAULT '#2563eb',
+            `banner_title` VARCHAR(191) NULL,
+            `banner_subtitle` VARCHAR(255) NULL,
+            `banner_image` VARCHAR(255) NULL,
+            `search_placeholder` VARCHAR(191) NULL,
+            `show_location` TINYINT(1) NOT NULL DEFAULT 1,
+            `show_banner` TINYINT(1) NOT NULL DEFAULT 1,
+            `show_categories` TINYINT(1) NOT NULL DEFAULT 1,
+            `show_items` TINYINT(1) NOT NULL DEFAULT 1,
+            `published_at` TIMESTAMP NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mobile_store_business` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    try {
+        $pdo->exec("ALTER TABLE `businesses` ADD UNIQUE INDEX `uq_businesses_store_slug` (`store_slug`)");
+    } catch (Exception $ign) {}
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `custom_domains` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `domain` VARCHAR(191) NOT NULL,
+            `status` ENUM('pending', 'verified', 'disabled') NOT NULL DEFAULT 'pending',
+            `cname_token` VARCHAR(64) NOT NULL,
+            `ssl_status` ENUM('none', 'pending', 'active') NOT NULL DEFAULT 'none',
+            `verified_at` TIMESTAMP NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_custom_domains_domain` (`domain`),
+            INDEX `idx_custom_domains_business` (`business_id`),
+            INDEX `idx_custom_domains_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    try {
+        $bizRows = $pdo->query("SELECT id, name, store_slug FROM businesses")->fetchAll();
+        foreach ($bizRows as $bizRow) {
+            if (!empty($bizRow['store_slug'])) {
+                continue;
+            }
+            $base = strtolower(trim((string) preg_replace('/[^a-zA-Z0-9]+/', '-', (string) ($bizRow['name'] ?? 'store')), '-'));
+            if ($base === '') {
+                $base = 'store';
+            }
+            $base = substr($base, 0, 48);
+            $slug = $base;
+            $n = 2;
+            while (true) {
+                $chk = $pdo->prepare('SELECT id FROM businesses WHERE store_slug = :s AND id <> :id LIMIT 1');
+                $chk->execute(['s' => $slug, 'id' => (int) $bizRow['id']]);
+                if (!$chk->fetch()) {
+                    break;
+                }
+                $slug = $base . '-' . $n;
+                $n++;
+            }
+            $pdo->prepare('UPDATE businesses SET store_slug = :s WHERE id = :id')
+                ->execute(['s' => $slug, 'id' => (int) $bizRow['id']]);
+        }
+    } catch (Exception $ign) {}
 
     /* =========================================================================
        DEFAULT SEEDING FOR MULTI-OUTLET, WAREHOUSES & CUSTOMER GROUPS

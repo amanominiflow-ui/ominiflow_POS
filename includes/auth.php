@@ -188,6 +188,14 @@ function register_user(string $name, string $email, string $phone, string $passw
         ]);
         $businessId = (int)$db->lastInsertId();
 
+        try {
+            require_once __DIR__ . '/storefront_db.php';
+            ensure_online_store_schema();
+            $slug = generate_unique_store_slug($businessName, $businessId);
+            $db->prepare('UPDATE businesses SET store_slug = :slug, store_published = 1 WHERE id = :id')
+                ->execute(['slug' => $slug, 'id' => $businessId]);
+        } catch (Exception $eSlug) {}
+
         // 2. Create User linked to Business
         $stmt = $db->prepare('
             INSERT INTO users (business_id, name, email, phone, password, role, status, created_at)

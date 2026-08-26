@@ -289,6 +289,7 @@ $settings = $stmtS->fetch() ?: [
                         </div>
                         <ul class="set-links-list">
                             <li><a href="<?= asset('business-profile.php') ?>" class="set-link">Profile</a></li>
+                            <li><a href="<?= asset('online-store.php') ?>" class="set-link">Online Store & Domain</a></li>
                             <li><a href="<?= asset('outlets.php') ?>" class="set-link">Locations</a></li>
                             <li><a href="<?= asset('import-export.php?tab=export') ?>" class="set-link">Data Backup</a></li>
                             <li>
@@ -446,6 +447,7 @@ $settings = $stmtS->fetch() ?: [
                             <ul class="set-links-list">
                                 <li><a href="<?= asset('integrations-shipping.php') ?>" class="set-link">Shipping</a></li>
                                 <li><a href="<?= asset('integrations-cart.php') ?>" class="set-link">Shopping Cart</a></li>
+                                <li><a href="<?= asset('online-store.php') ?>" class="set-link">Online Store & Domain</a></li>
                                 <li><a href="<?= asset('reports.php') ?>" class="set-link">Accounting</a></li>
                                 <li><a href="https://wa.me/918925108639" target="_blank" class="set-link">SMS Integrations</a></li>
                                 <li><a href="<?= asset('integrations-whatsapp.php') ?>" class="set-link">WhatsApp</a></li>

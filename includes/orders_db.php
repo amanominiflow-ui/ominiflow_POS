@@ -206,7 +206,10 @@ function process_pos_order(
     int $loyaltyPointsUsed = 0,
     float $loyaltyDiscountAmount = 0.00,
     ?int $priceListId = null,
-    ?int $businessId = null
+    ?int $businessId = null,
+    string $salesChannel = 'pos',
+    string $fulfillmentStatus = 'delivered',
+    ?string $overridePaymentStatus = null
 ): array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
@@ -367,10 +370,12 @@ function process_pos_order(
             ) VALUES (
                 :biz_id, :order_number, :outlet_id, :customer_id, :user_id, :subtotal, :discount_amount, :discount_type,
                 :price_list_id, :coupon_id, :coupon_code, :loyalty_points_used, :loyalty_discount_amount,
-                :tax_amount, :total_amount, :payment_method, :payment_status, :order_status, "delivered",
+                :tax_amount, :total_amount, :payment_method, :payment_status, :order_status, :fulfillment_status,
                 :client_order_uuid, :notes, NOW(), NOW()
             )
         ');
+        $allowedFulfillment = ['pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled', 'returned'];
+        $fulfillmentStatus = in_array($fulfillmentStatus, $allowedFulfillment, true) ? $fulfillmentStatus : 'delivered';
         $stmtOrder->execute([
             'biz_id' => $bid,
             'order_number' => $orderNumber,
@@ -388,12 +393,22 @@ function process_pos_order(
             'tax_amount' => $totalTax,
             'total_amount' => $grandTotal,
             'payment_method' => $paymentMethod ?: 'cash',
-            'payment_status' => 'paid',
+            'payment_status' => $overridePaymentStatus ?: 'paid',
             'order_status' => 'completed',
+            'fulfillment_status' => $fulfillmentStatus,
             'client_order_uuid' => $clientOrderUuid ?: null,
             'notes' => $notes ?: null,
         ]);
         $orderId = (int) $db->lastInsertId();
+
+        if ($salesChannel !== 'pos') {
+            try {
+                $db->prepare('UPDATE orders SET sales_channel = :ch WHERE id = :id AND business_id = :bid')
+                    ->execute(['ch' => $salesChannel, 'id' => $orderId, 'bid' => $bid]);
+            } catch (PDOException $eCh) {
+                // sales_channel column is added by online-store schema; POS checkout still succeeds
+            }
+        }
 
         // 6. Insert Order Items & Deduct Stock Atomically
         $stmtItem = $db->prepare('
