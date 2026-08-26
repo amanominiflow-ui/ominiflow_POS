@@ -84,6 +84,20 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_logo_header', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_name_with_logo', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'published_at', "TIMESTAMP NULL");
+
+    // Additional Store Preferences
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'hide_out_of_stock', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'allow_custom_quantity', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'display_stock_count', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'display_low_stock_below_10', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'hide_product_price', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'show_image_disclaimer', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_billing_address', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_delivery', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'min_delivery_order_value', "DECIMAL(10,2) NOT NULL DEFAULT 50.00");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_pickup', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'customer_care_phone', "VARCHAR(50) NOT NULL DEFAULT ''");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'customer_care_email', "VARCHAR(191) NOT NULL DEFAULT ''");
 }
 
 function add_schema_column_if_missing(PDO $db, string $table, string $column, string $definition): void {
@@ -423,6 +437,20 @@ function get_mobile_store_settings(int $businessId): array {
         'published_at' => $row['published_at'] ?? null,
         'phone' => (string) ($store['phone'] ?? $biz['phone'] ?? ''),
         'tagline' => (string) ($store['tagline'] ?? ''),
+
+        // Additional Preferences
+        'hide_out_of_stock' => (int) ($row['hide_out_of_stock'] ?? 1) === 1,
+        'allow_custom_quantity' => (int) ($row['allow_custom_quantity'] ?? 1) === 1,
+        'display_stock_count' => (int) ($row['display_stock_count'] ?? 0) === 1,
+        'display_low_stock_below_10' => (int) ($row['display_low_stock_below_10'] ?? 0) === 1,
+        'hide_product_price' => (int) ($row['hide_product_price'] ?? 0) === 1,
+        'show_image_disclaimer' => (int) ($row['show_image_disclaimer'] ?? 0) === 1,
+        'enable_billing_address' => (int) ($row['enable_billing_address'] ?? 0) === 1,
+        'enable_delivery' => (int) ($row['enable_delivery'] ?? 1) === 1,
+        'min_delivery_order_value' => (float) ($row['min_delivery_order_value'] ?? 50.00),
+        'enable_pickup' => (int) ($row['enable_pickup'] ?? 0) === 1,
+        'customer_care_phone' => (string) ($row['customer_care_phone'] ?? ''),
+        'customer_care_email' => (string) ($row['customer_care_email'] ?? ''),
     ];
 }
 
@@ -498,6 +526,18 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             show_items = :items,
             show_logo_header = :slogo,
             show_name_with_logo = :sname,
+            hide_out_of_stock = :hoos,
+            allow_custom_quantity = :acq,
+            display_stock_count = :dsc,
+            display_low_stock_below_10 = :dls,
+            hide_product_price = :hpp,
+            show_image_disclaimer = :sid,
+            enable_billing_address = :eba,
+            enable_delivery = :ed,
+            min_delivery_order_value = :mdov,
+            enable_pickup = :ep,
+            customer_care_phone = :ccp,
+            customer_care_email = :cce,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -518,6 +558,18 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'items' => array_key_exists('show_items', $data) ? (!empty($data['show_items']) ? 1 : 0) : ($current['show_items'] ? 1 : 0),
         'slogo' => array_key_exists('show_logo_header', $data) ? (!empty($data['show_logo_header']) ? 1 : 0) : ($current['show_logo_header'] ? 1 : 0),
         'sname' => array_key_exists('show_name_with_logo', $data) ? (!empty($data['show_name_with_logo']) ? 1 : 0) : ($current['show_name_with_logo'] ? 1 : 0),
+        'hoos' => array_key_exists('hide_out_of_stock', $data) ? (!empty($data['hide_out_of_stock']) ? 1 : 0) : ($current['hide_out_of_stock'] ? 1 : 0),
+        'acq' => array_key_exists('allow_custom_quantity', $data) ? (!empty($data['allow_custom_quantity']) ? 1 : 0) : ($current['allow_custom_quantity'] ? 1 : 0),
+        'dsc' => array_key_exists('display_stock_count', $data) ? (!empty($data['display_stock_count']) ? 1 : 0) : ($current['display_stock_count'] ? 1 : 0),
+        'dls' => array_key_exists('display_low_stock_below_10', $data) ? (!empty($data['display_low_stock_below_10']) ? 1 : 0) : ($current['display_low_stock_below_10'] ? 1 : 0),
+        'hpp' => array_key_exists('hide_product_price', $data) ? (!empty($data['hide_product_price']) ? 1 : 0) : ($current['hide_product_price'] ? 1 : 0),
+        'sid' => array_key_exists('show_image_disclaimer', $data) ? (!empty($data['show_image_disclaimer']) ? 1 : 0) : ($current['show_image_disclaimer'] ? 1 : 0),
+        'eba' => array_key_exists('enable_billing_address', $data) ? (!empty($data['enable_billing_address']) ? 1 : 0) : ($current['enable_billing_address'] ? 1 : 0),
+        'ed' => array_key_exists('enable_delivery', $data) ? (!empty($data['enable_delivery']) ? 1 : 0) : ($current['enable_delivery'] ? 1 : 0),
+        'mdov' => array_key_exists('min_delivery_order_value', $data) ? (float)$data['min_delivery_order_value'] : (float)$current['min_delivery_order_value'],
+        'ep' => array_key_exists('enable_pickup', $data) ? (!empty($data['enable_pickup']) ? 1 : 0) : ($current['enable_pickup'] ? 1 : 0),
+        'ccp' => trim((string)($data['customer_care_phone'] ?? $current['customer_care_phone'])),
+        'cce' => trim((string)($data['customer_care_email'] ?? $current['customer_care_email'])),
         'bid' => $businessId,
     ]);
 

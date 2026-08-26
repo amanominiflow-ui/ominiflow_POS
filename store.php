@@ -213,6 +213,10 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                 $catId = !empty($_GET['category_id']) ? (int) $_GET['category_id'] : null;
                 $categories = get_categories('', 'active', $bid);
                 $products = get_products($q, $catId, 'active', '', $bid);
+
+                if (!empty($brand['hide_out_of_stock'])) {
+                    $products = array_values(array_filter($products, static fn($p) => (int) ($p['stock_quantity'] ?? 0) > 0));
+                }
                 ?>
 
                 <?php if ($brand['show_banner'] && $q === '' && !$catId): ?>
@@ -341,6 +345,19 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                                 $img = sf_product_image($p['image_path'] ?? null);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
+
+                                $stockText = 'In stock';
+                                if (!empty($brand['display_stock_count'])) {
+                                    $stockText = $inStock ? ((int)$p['stock_quantity'] . ' units available') : 'Out of stock';
+                                } elseif (!empty($brand['display_low_stock_below_10'])) {
+                                    if ($inStock && (int)$p['stock_quantity'] < 10) {
+                                        $stockText = 'Only ' . (int)$p['stock_quantity'] . ' left in stock';
+                                    } else {
+                                        $stockText = $inStock ? 'In stock' : 'Out of stock';
+                                    }
+                                } else {
+                                    $stockText = $inStock ? 'In stock' : 'Out of stock';
+                                }
                                 ?>
                                 <div class="ms-product-card">
                                     <a class="ms-product-img-wrap" href="<?= e($pUrl) ?>">
@@ -363,10 +380,14 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                                     <div class="ms-product-body">
                                         <div>
                                             <a class="ms-product-name" href="<?= e($pUrl) ?>" style="text-decoration:none;color:inherit"><?= e((string) $p['name']) ?></a>
-                                            <div class="ms-product-variant"><?= $inStock ? ((int)$p['stock_quantity'] . ' units available') : 'Out of stock' ?></div>
+                                            <div class="ms-product-variant"><?= e($stockText) ?></div>
                                         </div>
                                         <div class="ms-product-foot">
-                                            <div class="ms-product-price"><?= sf_money($currency, (float) $p['selling_price']) ?></div>
+                                            <?php if (empty($brand['hide_product_price'])): ?>
+                                                <div class="ms-product-price"><?= sf_money($currency, (float) $p['selling_price']) ?></div>
+                                            <?php else: ?>
+                                                <div></div>
+                                            <?php endif; ?>
                                             <form method="post" style="margin:0">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="add_to_cart">
@@ -380,6 +401,9 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                        <?php if (!empty($brand['show_image_disclaimer'])): ?>
+                            <div style="font-size:11.5px;color:#94a3b8;margin-top:14px;text-align:center;">* Product images are for representation purposes only.</div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 <?php endif; ?>
 
@@ -397,15 +421,21 @@ $favicon = !empty($brand['logo_path']) ? asset($brand['logo_path']) : '';
                             <?php if ($img): ?><img src="<?= e($img) ?>" alt="<?= e((string) $product['name']) ?>"><?php else: ?>No image<?php endif; ?>
                         </div>
                         <h1 style="font-size:20px;font-weight:800;margin-bottom:6px;text-transform:uppercase"><?= e((string) $product['name']) ?></h1>
-                        <div class="ms-product-price" style="font-size:20px;margin-bottom:8px"><?= sf_money($currency, (float) $product['selling_price']) ?></div>
+                        <?php if (empty($brand['hide_product_price'])): ?>
+                            <div class="ms-product-price" style="font-size:20px;margin-bottom:8px"><?= sf_money($currency, (float) $product['selling_price']) ?></div>
+                        <?php endif; ?>
                         <p class="ms-item-meta" style="margin-bottom:16px;color:#64748b"><?= $inStock ? ((int) $product['stock_quantity'] . ' in stock') : 'Out of stock' ?></p>
                         <form method="post">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="add_to_cart">
                             <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
                             <input type="hidden" name="redirect_page" value="product">
-                            <label class="ms-label">Quantity</label>
-                            <input class="ms-input" type="number" name="qty" min="1" value="1" <?= $inStock ? '' : 'disabled' ?>>
+                            <?php if (!empty($brand['allow_custom_quantity'])): ?>
+                                <label class="ms-label">Quantity</label>
+                                <input class="ms-input" type="number" name="qty" min="1" value="1" <?= $inStock ? '' : 'disabled' ?>>
+                            <?php else: ?>
+                                <input type="hidden" name="qty" value="1">
+                            <?php endif; ?>
                             <button class="ms-btn" type="submit" <?= $inStock ? '' : 'disabled' ?>>Add to cart</button>
                         </form>
                     </div>

@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'save_preferences' || $action === 'save_customize' || $action === 'publish_layout') {
-        $res = save_mobile_store_settings($bid, [
+        $saveData = [
             'display_name' => $_POST['display_name'] ?? '',
             'header_color' => $_POST['header_color'] ?? '',
             'accent_color' => $_POST['accent_color'] ?? '',
@@ -78,7 +78,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'show_items' => !empty($_POST['show_items']),
             'remove_logo' => !empty($_POST['remove_logo']),
             'remove_banner' => !empty($_POST['remove_banner']),
-        ], $_FILES);
+        ];
+
+        if ($action === 'save_preferences') {
+            $saveData['hide_out_of_stock'] = !empty($_POST['hide_out_of_stock']);
+            $saveData['allow_custom_quantity'] = !empty($_POST['allow_custom_quantity']);
+            $saveData['display_stock_count'] = !empty($_POST['display_stock_count']);
+            $saveData['display_low_stock_below_10'] = !empty($_POST['display_low_stock_below_10']);
+            $saveData['hide_product_price'] = !empty($_POST['hide_product_price']);
+            $saveData['show_image_disclaimer'] = !empty($_POST['show_image_disclaimer']);
+            $saveData['enable_billing_address'] = !empty($_POST['enable_billing_address']);
+            $saveData['enable_delivery'] = !empty($_POST['enable_delivery']);
+            $saveData['min_delivery_order_value'] = isset($_POST['min_delivery_order_value']) ? (float)$_POST['min_delivery_order_value'] : 50.00;
+            $saveData['enable_pickup'] = !empty($_POST['enable_pickup']);
+            $saveData['customer_care_phone'] = $_POST['customer_care_phone'] ?? '';
+            $saveData['customer_care_email'] = $_POST['customer_care_email'] ?? '';
+        }
+
+        $res = save_mobile_store_settings($bid, $saveData, $_FILES);
         if (empty($res['success'])) {
             set_flash('error', $res['error'] ?? 'Could not save.');
             redirect(os_tab_url($backTab));
@@ -192,8 +209,124 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
         .os-check { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin: 8px 0; }
         .os-logo-preview { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: #0f4c3a; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }
         .os-domain-row { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
-        .os-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         @media (max-width: 1100px) { .os-grid { grid-template-columns: 1fr; } }
+
+        /* Mobile Store Preferences Styling */
+        .pref-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 32px 36px;
+            max-width: 900px;
+        }
+        .pref-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 24px;
+        }
+        .pref-section {
+            margin-bottom: 28px;
+        }
+        .pref-sec-heading {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 14px;
+        }
+        .pref-check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13.5px;
+            color: #334155;
+            font-weight: 500;
+        }
+        .pref-check-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1.5px solid #94a3b8;
+            accent-color: #2563eb;
+            cursor: pointer;
+        }
+        .pref-sub-row {
+            margin-left: 26px;
+            margin-top: 8px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13.5px;
+            color: #334155;
+        }
+        .pref-curr-box {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px 0 0 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+        }
+        .pref-min-input {
+            border: 1px solid #cbd5e1;
+            border-left: 0;
+            border-radius: 0 6px 6px 0;
+            padding: 6px 10px;
+            font-size: 13px;
+            width: 75px;
+            outline: none;
+        }
+        .pref-help-sub {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .pref-form-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+            max-width: 680px;
+        }
+        .pref-field-label {
+            font-size: 13.5px;
+            color: #334155;
+            font-weight: 500;
+        }
+        .pref-field-input {
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 9px 12px;
+            font: inherit;
+            font-size: 13px;
+            color: #0f172a;
+            width: 100%;
+            outline: none;
+        }
+        .pref-field-input::placeholder {
+            color: #94a3b8;
+        }
+        .pref-save-btn {
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 9px 24px;
+            border: 0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .pref-save-btn:hover {
+            background: #1d4ed8;
+        }
 
         /* Store Details Overview Card */
         .os-store-details-card {
@@ -735,66 +868,101 @@ $storePosterName = strtoupper((string)(!empty($brand['display_name']) ? $brand['
                 </div>
 
             <?php elseif ($tab === 'preferences'): ?>
-                <div class="page-header-row" style="margin-bottom:18px">
-                    <div>
-                        <h1 class="page-title">Preferences</h1>
-                        <p class="page-subtitle">Your store name, logo, and colors. The OminiFlow logo is never shown on the customer website.</p>
-                    </div>
+                <div class="pref-container">
+                    <h1 class="pref-title">Mobile Store Preferences</h1>
+
+                    <form method="post" enctype="multipart/form-data">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="save_preferences">
+                        <input type="hidden" name="tab" value="preferences">
+                        <input type="hidden" name="display_name" value="<?= e($brand['display_name']) ?>">
+                        <input type="hidden" name="header_color" value="<?= e($brand['header_color']) ?>">
+                        <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
+                        <input type="hidden" name="show_banner" value="<?= $brand['show_banner'] ? '1' : '' ?>">
+                        <input type="hidden" name="show_categories" value="<?= $brand['show_categories'] ? '1' : '' ?>">
+                        <input type="hidden" name="show_items" value="<?= $brand['show_items'] ? '1' : '' ?>">
+                        <input type="hidden" name="show_location" value="<?= $brand['show_location'] ? '1' : '' ?>">
+                        <input type="hidden" name="banner_title" value="<?= e($brand['banner_title']) ?>">
+                        <input type="hidden" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>">
+                        <input type="hidden" name="search_placeholder" value="<?= e($brand['search_placeholder']) ?>">
+
+                        <!-- Items Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading">Items</div>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="hide_out_of_stock" value="1" <?= !empty($brand['hide_out_of_stock']) ? 'checked' : '' ?>>
+                                <span>Hide out of stock items</span>
+                            </label>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="allow_custom_quantity" value="1" <?= !empty($brand['allow_custom_quantity']) ? 'checked' : '' ?>>
+                                <span>Allow customers to enter the item quantity</span>
+                            </label>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="display_stock_count" value="1" <?= !empty($brand['display_stock_count']) ? 'checked' : '' ?>>
+                                <span>Display available stock count</span>
+                            </label>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="display_low_stock_below_10" value="1" <?= !empty($brand['display_low_stock_below_10']) ? 'checked' : '' ?>>
+                                <span>Display stock count when the available quantity falls below 10</span>
+                            </label>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="hide_product_price" value="1" <?= !empty($brand['hide_product_price']) ? 'checked' : '' ?>>
+                                <span>Hide product price details</span>
+                            </label>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="show_image_disclaimer" value="1" <?= !empty($brand['show_image_disclaimer']) ? 'checked' : '' ?>>
+                                <span>Show product image disclaimer content</span>
+                            </label>
+                        </div>
+
+                        <!-- Orders Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading">Orders</div>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="enable_billing_address" value="1" <?= !empty($brand['enable_billing_address']) ? 'checked' : '' ?>>
+                                <span>Enable billing address for orders</span>
+                            </label>
+                        </div>
+
+                        <!-- Fulfilment Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading">Fulfilment</div>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="enable_delivery" value="1" <?= !empty($brand['enable_delivery']) ? 'checked' : '' ?>>
+                                <span>Enable delivery</span>
+                            </label>
+                            <div class="pref-sub-row">
+                                <span>Minimum order value for delivery</span>
+                                <div style="display:inline-flex;align-items:center;">
+                                    <span class="pref-curr-box"><?= e($currencySymbol ?? 'INR') ?></span>
+                                    <input class="pref-min-input" type="number" step="1" name="min_delivery_order_value" value="<?= (int)($brand['min_delivery_order_value'] ?? 50) ?>">
+                                </div>
+                            </div>
+                            <label class="pref-check-item">
+                                <input type="checkbox" name="enable_pickup" value="1" <?= !empty($brand['enable_pickup']) ? 'checked' : '' ?>>
+                                <span>Enable pickup</span>
+                            </label>
+                        </div>
+
+                        <!-- Customer Care Details Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Customer Care Details</div>
+                            <div class="pref-help-sub">This information will be shown on your store's customer care section and in QR code poster</div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Customer care contact number</label>
+                                <input class="pref-field-input" type="text" name="customer_care_phone" value="<?= e($brand['customer_care_phone'] ?? '') ?>" placeholder="Enter your customer care number">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Customer Care Email Id</label>
+                                <input class="pref-field-input" type="email" name="customer_care_email" value="<?= e($brand['customer_care_email'] ?? '') ?>" placeholder="Enter your customer care email id">
+                            </div>
+                        </div>
+
+                        <button class="pref-save-btn" type="submit">Save</button>
+                    </form>
                 </div>
-                <form class="os-card" method="post" enctype="multipart/form-data" style="max-width:720px">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="save_preferences">
-                    <input type="hidden" name="tab" value="preferences">
-                    <input type="hidden" name="show_banner" value="<?= $brand['show_banner'] ? '1' : '' ?>">
-                    <input type="hidden" name="show_categories" value="<?= $brand['show_categories'] ? '1' : '' ?>">
-                    <input type="hidden" name="show_items" value="<?= $brand['show_items'] ? '1' : '' ?>">
-                    <input type="hidden" name="banner_title" value="<?= e($brand['banner_title']) ?>">
-                    <input type="hidden" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>">
-                    <input type="hidden" name="search_placeholder" value="<?= e($brand['search_placeholder']) ?>">
-
-                    <label class="os-label">Display name</label>
-                    <input class="os-input" type="text" name="display_name" value="<?= e($brand['display_name']) ?>" required>
-
-                    <label class="os-label">Store logo (your brand only)</label>
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-                        <div class="os-logo-preview">
-                            <?php if ($brand['logo_path']): ?>
-                                <img src="<?= asset($brand['logo_path']) ?>" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">
-                            <?php else: ?>
-                                <?= e($brand['initials']) ?>
-                            <?php endif; ?>
-                        </div>
-                        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
-                    </div>
-                    <?php if ($brand['logo_path']): ?>
-                        <label class="os-check"><input type="checkbox" name="remove_logo" value="1"> Remove logo and use initials</label>
-                    <?php endif; ?>
-
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                        <div>
-                            <label class="os-label">Header color</label>
-                            <input class="os-input" type="color" name="header_color" value="<?= e($brand['header_color']) ?>">
-                        </div>
-                        <div>
-                            <label class="os-label">Button color</label>
-                            <input class="os-input" type="color" name="accent_color" value="<?= e($brand['accent_color']) ?>">
-                        </div>
-                    </div>
-
-                    <label class="os-check"><input type="checkbox" name="show_location" value="1" <?= $brand['show_location'] ? 'checked' : '' ?>> Show “Set delivery location”</label>
-                    <label class="os-check"><input type="checkbox" name="store_published" value="1" <?= $published ? 'checked' : '' ?>> Store is Open</label>
-                    <p class="os-help">Closed stores show “coming soon” to customers. POS billing still works.</p>
-                    <button class="btn-primary" type="submit" style="margin-top:16px">Save preferences</button>
-                </form>
-                <form method="post" style="max-width:720px;margin-top:12px" class="os-card">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="save_slug">
-                    <input type="hidden" name="tab" value="preferences">
-                    <label class="os-label">Store slug</label>
-                    <input class="os-input" type="text" name="store_slug" value="<?= e($slug) ?>" required>
-                    <label class="os-check"><input type="checkbox" name="store_published" value="1" <?= $published ? 'checked' : '' ?>> Published / Open</label>
-                    <button class="btn-secondary" type="submit" style="margin-top:10px">Save URL</button>
-                </form>
 
             <?php elseif ($tab === 'customize'): ?>
                 <div class="page-header-row" style="margin-bottom:18px">
