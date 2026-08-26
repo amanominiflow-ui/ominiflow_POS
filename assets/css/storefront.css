@@ -11,21 +11,37 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body.ms-body {
     font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--ms-bg);
     color: var(--ms-ink);
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: rgba(37, 99, 235, 0.12);
 }
 
 .ms-app {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     background: #ffffff;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
+}
+
+img {
+    max-width: 100%;
 }
 
 /* ==========================================================================
@@ -39,20 +55,16 @@ body.ms-body {
     top: 0;
     z-index: 100;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    padding-top: env(safe-area-inset-top);
 }
 
 .ms-top-container {
-    max-width: 1380px;
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 12px 24px;
+    padding: 14px 28px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-}
-
-.ms-top-row {
-    display: contents; /* Flattens on desktop so brand and actions align with search */
+    gap: 22px;
 }
 
 .ms-brand-left {
@@ -60,42 +72,43 @@ body.ms-body {
     align-items: center;
     gap: 10px;
     text-decoration: none;
-    color: #ffffff;
+    color: inherit;
     flex-shrink: 0;
 }
 
 .ms-logo, .ms-initials {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.18);
-    color: #ffffff;
+    color: inherit;
     font-weight: 800;
     font-size: 12px;
     flex-shrink: 0;
 }
+.ms-logo { background: transparent; }
+.ms-initials { background: rgba(255, 255, 255, 0.18); }
 .ms-logo img { width: 100%; height: 100%; object-fit: cover; }
 .ms-title {
-    font-size: 15px;
-    font-weight: 900;
-    letter-spacing: 0.4px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
     text-transform: uppercase;
-    color: #ffffff;
+    color: inherit;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 260px;
+    max-width: 240px;
 }
 
-/* Search Bar */
 .ms-search-wrap {
-    flex: 1;
-    max-width: 600px;
-    margin: 0 10px;
+    flex: 1 1 auto;
+    max-width: 560px;
+    min-width: 0;
+    margin: 0;
 }
 .ms-search-box {
     position: relative;
@@ -105,76 +118,113 @@ body.ms-body {
 }
 .ms-search-icon {
     position: absolute;
-    left: 14px;
-    color: #64748b;
+    left: 16px;
+    color: #94a3b8;
     pointer-events: none;
 }
 .ms-search {
     width: 100%;
     border: 0;
-    border-radius: 8px;
-    padding: 9px 14px 9px 38px;
+    border-radius: 999px;
+    padding: 11px 18px 11px 42px;
     font: inherit;
-    font-size: 13.5px;
+    font-size: 14px;
     background: #ffffff;
     color: #0f172a;
     outline: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .ms-search::placeholder {
-    color: #64748b;
+    color: #94a3b8;
 }
 
-/* Right Nav Widgets */
 .ms-top-actions {
     display: flex;
     align-items: center;
     gap: 18px;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 .ms-location-widget {
     display: flex;
     flex-direction: column;
+    justify-content: center;
     text-decoration: none;
-    color: #ffffff;
+    color: inherit;
     cursor: pointer;
+    line-height: 1.15;
+    padding-right: 4px;
 }
 .ms-location-sub {
-    font-size: 10.5px;
-    opacity: 0.85;
-    display: flex;
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.95;
+    display: inline-flex;
     align-items: center;
     gap: 3px;
 }
+.ms-location-sub svg {
+    display: block;
+}
 .ms-location-main {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration-style: dashed;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    white-space: nowrap;
+}
+
+.ms-nav-divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.35);
+    flex-shrink: 0;
 }
 
 .ms-nav-item {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    color: #ffffff;
+    justify-content: center;
+    gap: 3px;
+    color: inherit;
     text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 500;
     transition: opacity 0.15s;
-    position: relative;
+    min-width: 44px;
 }
-.ms-nav-item:hover {
-    opacity: 0.9;
+.ms-nav-item:hover { opacity: 0.88; }
+.ms-nav-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+}
+.ms-nav-label {
+    line-height: 1;
+    white-space: nowrap;
 }
 .ms-cart-badge {
-    background: #ef4444;
-    color: #ffffff;
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background: #ffffff;
+    color: var(--ms-header, #083d30);
     font-size: 10px;
     font-weight: 800;
-    padding: 1px 6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
     border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 /* ==========================================================================
@@ -184,8 +234,9 @@ body.ms-body {
     max-width: 1380px;
     width: 100%;
     margin: 0 auto;
-    padding: 24px 24px 80px;
+    padding: 24px 24px calc(80px + env(safe-area-inset-bottom));
     flex: 1;
+    min-width: 0;
 }
 
 /* ==========================================================================
@@ -276,7 +327,7 @@ body.ms-body {
    ========================================================================== */
 .ms-cat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    grid-template-columns: repeat(var(--ms-cat-cols, 2), minmax(0, 1fr));
     gap: 14px;
     margin-bottom: 30px;
 }
@@ -388,6 +439,11 @@ body.ms-body {
     text-transform: uppercase;
     line-height: 1.3;
     margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
 }
 .ms-product-variant {
     font-size: 11px;
@@ -452,10 +508,13 @@ body.ms-body {
 .ms-product-hero { width: 100%; max-width: 450px; height: 320px; background: #f1f5f9; border-radius: 12px; overflow: hidden; margin-bottom: 18px; display:flex; align-items:center; justify-content:center; }
 .ms-product-hero img { width: 100%; height: 100%; object-fit: cover; }
 
-.ms-cart-line { display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--ms-line); font-size: 14px; }
-.ms-total { font-weight: 800; font-size: 18px; display: flex; justify-content: space-between; margin: 16px 0; }
+.ms-cart-line { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--ms-line); font-size: 14px; }
+.ms-cart-line > div:first-child { min-width: 0; flex: 1; }
+.ms-cart-line strong { word-break: break-word; }
+.ms-total { font-weight: 800; font-size: 18px; display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
 .ms-form-card {
     max-width: 600px;
+    width: 100%;
     margin: 20px auto;
     background: #ffffff;
     border: 1px solid var(--ms-line);
@@ -465,28 +524,47 @@ body.ms-body {
 }
 
 /* ==========================================================================
+   TABLET
+   ========================================================================== */
+@media (max-width: 1100px) {
+    .ms-top-container {
+        padding: 12px 16px;
+        gap: 14px;
+    }
+    .ms-title { max-width: 180px; }
+    .ms-search-wrap { max-width: 420px; }
+    .ms-banners-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ms-item-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .ms-product-img-wrap { height: 160px; }
+}
+
+/* ==========================================================================
    MOBILE & SMALL SCREEN RESPONSIVENESS (Phone Preview & Mobile Devices)
    ========================================================================== */
 @media (max-width: 768px) {
     .ms-top-container {
         display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        padding: 10px 14px 12px;
-        gap: 8px;
-    }
-    .ms-top-row {
-        display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        justify-content: space-between;
-        width: 100%;
+        padding: 10px max(14px, env(safe-area-inset-right)) 12px max(14px, env(safe-area-inset-left));
+        gap: 8px 10px;
     }
     .ms-brand-left {
+        order: 1;
         gap: 8px;
+        min-width: 0;
+        flex: 1;
     }
     .ms-title {
         font-size: 13.5px;
-        max-width: 160px;
+        max-width: none;
+        flex: 1;
+        min-width: 0;
     }
     .ms-logo, .ms-initials {
         width: 28px;
@@ -494,29 +572,38 @@ body.ms-body {
         font-size: 11px;
     }
     .ms-top-actions {
+        order: 2;
         gap: 12px;
+        margin-left: 0;
     }
-    .ms-location-widget {
-        display: none; /* Hidden on compact header */
+    .ms-location-widget,
+    .ms-nav-divider {
+        display: none;
     }
-    .ms-nav-item span {
-        display: none; /* Show only icon + badge on mobile header for clean layout */
+    .ms-nav-item {
+        min-width: 36px;
+        min-height: 36px;
+        gap: 0;
+    }
+    .ms-nav-label {
+        display: none;
     }
     .ms-search-wrap {
+        order: 3;
         width: 100%;
         max-width: 100%;
+        flex: 1 1 100%;
         margin: 0;
     }
     .ms-search {
-        padding: 8px 12px 8px 34px;
-        font-size: 12.5px;
-        border-radius: 6px;
+        padding: 10px 12px 10px 38px;
+        font-size: 16px;
+        border-radius: 999px;
     }
     .ms-search-icon {
-        left: 10px;
+        left: 14px;
     }
 
-    /* Horizontal scrollable / swipeable banners on mobile */
     .ms-banners-grid {
         display: flex;
         overflow-x: auto;
@@ -526,6 +613,7 @@ body.ms-body {
         padding-bottom: 4px;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
+        grid-template-columns: none;
     }
     .ms-banners-grid::-webkit-scrollbar {
         display: none;
@@ -533,6 +621,7 @@ body.ms-body {
     .ms-banner-card {
         min-width: 86%;
         max-width: 86%;
+        flex: 0 0 86%;
         scroll-snap-align: start;
         min-height: 115px;
         padding: 14px;
@@ -541,30 +630,29 @@ body.ms-body {
     .ms-banner-title {
         font-size: 16px;
         margin-bottom: 3px;
+        word-break: break-word;
     }
-    .ms-banner-tag {
-        font-size: 11px;
-    }
+    .ms-banner-tag { font-size: 11px; }
     .ms-banner-sub {
         font-size: 10.5px;
+        word-break: break-word;
     }
     .ms-banner-art {
-        width: 85px;
-        height: 80px;
+        width: 72px;
+        height: 72px;
+        flex-shrink: 0;
     }
 
-    /* Main Body Padding */
     .ms-body-pad {
-        padding: 12px 10px 60px;
+        padding: 12px max(10px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     }
     .ms-sec-title {
         font-size: 15px;
         margin: 18px 0 10px;
     }
 
-    /* 2 Columns for Categories on Mobile */
     .ms-cat-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
         margin-bottom: 20px;
     }
@@ -580,47 +668,101 @@ body.ms-body {
     }
     .ms-cat-title {
         font-size: 10.5px;
+        line-height: 1.25;
     }
 
-    /* 2 Columns for Products on Mobile */
     .ms-item-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
         margin-bottom: 30px;
     }
-    .ms-product-card {
-        border-radius: 10px;
-    }
-    .ms-product-img-wrap {
-        height: 125px;
-    }
+    .ms-product-card { border-radius: 10px; min-width: 0; }
+    .ms-product-img-wrap { height: 125px; }
     .ms-product-badge {
         font-size: 9px;
         padding: 2px 5px;
         top: 5px;
         left: 5px;
     }
-    .ms-product-body {
-        padding: 8px 8px 10px;
-    }
-    .ms-product-name {
-        font-size: 11.5px;
-        margin-bottom: 2px;
-    }
-    .ms-product-variant {
-        font-size: 9.5px;
-        margin-bottom: 4px;
-    }
+    .ms-product-body { padding: 8px 8px 10px; }
+    .ms-product-name { font-size: 11.5px; margin-bottom: 2px; }
+    .ms-product-variant { font-size: 9.5px; margin-bottom: 4px; }
     .ms-product-foot {
-        margin-top: 4px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+        gap: 6px;
     }
-    .ms-product-price {
-        font-size: 13.5px;
-    }
+    .ms-product-price { font-size: 13px; }
     .ms-add-btn {
-        padding: 4px 8px;
-        font-size: 11px;
-        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 12px;
+        border-radius: 6px;
+        min-height: 32px;
+    }
+
+    .ms-form-card {
+        margin: 8px 0 20px;
+        padding: 16px 14px;
+        border-radius: 12px;
+    }
+    .ms-form-card h1 { font-size: 18px !important; word-break: break-word; }
+    .ms-product-hero {
+        max-width: 100%;
+        height: 240px;
+        margin-bottom: 14px;
+    }
+    .ms-input, .ms-textarea, .ms-select {
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+    .ms-cart-line {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .ms-cart-line form {
+        flex-wrap: wrap;
+    }
+    .ms-btn, .ms-btn-ghost {
+        min-height: 44px;
+        width: 100% !important;
+        padding: 12px 16px;
+    }
+    .ms-empty { padding: 28px 8px; font-size: 14px; }
+}
+
+@media (max-width: 420px) {
+    .ms-banner-card {
+        min-width: 92%;
+        max-width: 92%;
+        flex-basis: 92%;
+        min-height: 108px;
+        padding: 12px;
+    }
+    .ms-banner-art { width: 64px; height: 64px; }
+    .ms-product-img-wrap { height: 110px; }
+    .ms-product-foot {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ms-add-btn { width: 100%; }
+}
+
+@media (max-width: 360px) {
+    .ms-title { font-size: 12.5px; }
+    .ms-cat-title { font-size: 10px; }
+    .ms-product-name { font-size: 11px; }
+    .ms-product-hero { height: 200px; }
+}
+
+@media (max-width: 768px) and (orientation: landscape) {
+    .ms-item-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .ms-product-hero { height: 180px; }
+    .ms-banner-card {
+        min-width: 62%;
+        max-width: 62%;
+        flex-basis: 62%;
     }
 }
 

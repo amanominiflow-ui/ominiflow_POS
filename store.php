@@ -136,12 +136,12 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title><?= e($pageTitle) ?></title>
     <?php if ($favicon): ?>
         <link rel="icon" href="<?= e($favicon) ?>">
     <?php endif; ?>
-    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=5">
     <style>
         :root {
             --ms-header: <?= e($brand['header_color']) ?>;
@@ -165,54 +165,57 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                     <div class="ms-title">Store</div>
                 </div>
             <?php else: ?>
-                <div class="ms-top-row">
-                    <a class="ms-brand-left" href="<?= e($homeUrl) ?>">
-                        <?php if (!empty($brand['show_logo_header'])): ?>
-                        <span class="<?= $brand['logo_path'] ? 'ms-logo' : 'ms-initials' ?>">
-                            <?php if ($brand['logo_path']): ?>
-                                <img src="<?= asset($brand['logo_path']) ?>" alt="<?= e($pageTitle) ?>">
-                            <?php else: ?>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                            <?php endif; ?>
-                        </span>
+                <a class="ms-brand-left" href="<?= e($homeUrl) ?>">
+                    <?php if (!empty($brand['show_logo_header'])): ?>
+                    <span class="<?= $brand['logo_path'] ? 'ms-logo' : 'ms-initials' ?>">
+                        <?php if ($brand['logo_path']): ?>
+                            <img src="<?= asset($brand['logo_path']) ?>" alt="<?= e($pageTitle) ?>">
+                        <?php else: ?>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
                         <?php endif; ?>
-                        <?php if (!empty($brand['show_name_with_logo'])): ?>
-                        <span class="ms-title"><?= e($pageTitle) ?></span>
-                        <?php endif; ?>
-                    </a>
-
-                    <div class="ms-top-actions">
-                        <?php if (!empty($brand['show_location'])): ?>
-                            <div class="ms-location-widget">
-                                <span class="ms-location-sub">Delivery to ▾</span>
-                                <span class="ms-location-main">Set delivery location</span>
-                            </div>
-                        <?php endif; ?>
-
-                        <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Cart">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                            <span>Cart</span>
-                            <?php if ($cartCount > 0): ?>
-                                <span class="ms-cart-badge"><?= (int) $cartCount ?></span>
-                            <?php endif; ?>
-                        </a>
-
-                        <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Account">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
-                            <span>Account</span>
-                        </a>
-                    </div>
-                </div>
+                    </span>
+                    <?php endif; ?>
+                    <?php if (!empty($brand['show_name_with_logo'])): ?>
+                    <span class="ms-title"><?= e($pageTitle) ?></span>
+                    <?php endif; ?>
+                </a>
 
                 <form class="ms-search-wrap" method="get" action="<?= e($homeUrl) ?>">
                     <?php if (!store_is_on_custom_domain($storeBiz) && !empty($storeBiz['store_slug'])): ?>
                         <input type="hidden" name="slug" value="<?= e((string) $storeBiz['store_slug']) ?>">
                     <?php endif; ?>
                     <div class="ms-search-box">
-                        <svg class="ms-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input class="ms-search" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="<?= e($brand['search_placeholder'] ?: 'Search by category or item') ?>">
+                        <svg class="ms-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input class="ms-search" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="<?= e($brand['search_placeholder'] ?: 'Search by') ?>">
                     </div>
                 </form>
+
+                <div class="ms-top-actions">
+                    <?php if (!empty($brand['show_location'])): ?>
+                        <div class="ms-location-widget">
+                            <span class="ms-location-sub">Delivery to <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>
+                            <span class="ms-location-main">Set delivery location</span>
+                        </div>
+                        <span class="ms-nav-divider" aria-hidden="true"></span>
+                    <?php endif; ?>
+
+                    <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Cart">
+                        <span class="ms-nav-icon">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 12H7L6 7z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg>
+                            <?php if ($cartCount > 0): ?>
+                                <span class="ms-cart-badge"><?= (int) $cartCount ?></span>
+                            <?php endif; ?>
+                        </span>
+                        <span class="ms-nav-label">Cart</span>
+                    </a>
+
+                    <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Account">
+                        <span class="ms-nav-icon">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3"/><path d="M6.8 18.2c1.4-2.2 3.2-3.2 5.2-3.2s3.8 1 5.2 3.2"/></svg>
+                        </span>
+                        <span class="ms-nav-label">Account</span>
+                    </a>
+                </div>
             <?php endif; ?>
         </div>
     </header>
@@ -242,7 +245,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
 
                 <?php foreach ($homeSections as $homeSec): ?>
                 <?php if ($homeSec === 'banner' && $brand['show_banner'] && $q === '' && !$catId): ?>
-                    <div class="ms-banners-grid">
+                    <div class="ms-banners-grid" id="msBanners">
                         <!-- Banner 1: Online Now -->
                         <div class="ms-banner-card ms-banner-1">
                             <div class="ms-banner-info">
@@ -329,7 +332,7 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
 
                 <?php elseif ($homeSec === 'category' && $brand['show_categories'] && $categories && $q === ''): ?>
                     <div class="ms-sec-title"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
-                    <div class="ms-cat-grid" style="grid-template-columns: repeat(<?= $catCols ?>, minmax(0, 1fr));">
+                    <div class="ms-cat-grid" style="--ms-cat-cols: <?= $catCols ?>;">
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
                             $thumb = !empty($cat['image_path']) ? (string) $cat['image_path'] : '';
@@ -538,5 +541,70 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
         <?php endif; ?>
     </main>
 </div>
+<script>
+(function () {
+    var track = document.getElementById('msBanners');
+    if (!track) return;
+
+    var cards = track.querySelectorAll('.ms-banner-card');
+    if (cards.length < 2) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    var index = 0;
+    var timer = null;
+    var resumeTimer = null;
+
+    function isCarousel() {
+        var style = window.getComputedStyle(track);
+        return style.display === 'flex' && track.scrollWidth > track.clientWidth + 12;
+    }
+
+    function slideTo(next) {
+        if (!isCarousel()) return;
+        var wrap = next >= cards.length;
+        index = wrap ? 0 : next;
+        var left = cards[index].offsetLeft - cards[0].offsetLeft;
+        track.scrollTo({ left: left, behavior: wrap ? 'auto' : 'smooth' });
+    }
+
+    function stop() {
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+        if (resumeTimer) {
+            clearTimeout(resumeTimer);
+            resumeTimer = null;
+        }
+    }
+
+    function start() {
+        stop();
+        if (!isCarousel()) return;
+        timer = setInterval(function () {
+            slideTo(index + 1);
+        }, 2000);
+    }
+
+    function pauseThenResume() {
+        stop();
+        resumeTimer = setTimeout(start, 5000);
+    }
+
+    track.addEventListener('pointerdown', pauseThenResume);
+    track.addEventListener('touchstart', pauseThenResume, { passive: true });
+    track.addEventListener('wheel', pauseThenResume, { passive: true });
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) stop();
+        else start();
+    });
+    window.addEventListener('resize', function () {
+        stop();
+        start();
+    });
+
+    start();
+})();
+</script>
 </body>
 </html>

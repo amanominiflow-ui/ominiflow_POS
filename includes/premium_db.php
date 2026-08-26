@@ -247,11 +247,18 @@ function submit_premium_payment(int $businessId, int $userId, array $payload): a
     }
 }
 
+function premium_gate_enabled(): bool {
+    return false;
+}
+
 function premium_free_pages(): array {
     return ['dashboard.php', 'pricing.php', 'premium-checkout.php', 'logout.php', 'login.php', 'signup.php'];
 }
 
 function enforce_premium_gate(): void {
+    if (!premium_gate_enabled()) {
+        return;
+    }
     ensure_premium_schema();
     $script = strtolower(basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')));
     if (in_array($script, premium_free_pages(), true)) {
