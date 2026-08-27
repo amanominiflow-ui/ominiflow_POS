@@ -9,6 +9,7 @@ require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/storefront_db.php';
+require_once __DIR__ . '/includes/variants_db.php';
 
 ensure_online_store_schema();
 
@@ -730,7 +731,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                 <?php elseif ($homeSec === 'category' && $brand['show_categories'] && $categories && $q === ''): ?>
                     <div id="msCategories" class="ms-sec-title"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
-                    <div class="ms-cat-grid" style="--ms-cat-cols: <?= $catCols ?>;">
+                    <div class="ms-cat-grid">
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
                             $thumb = !empty($cat['image_path']) ? (string) $cat['image_path'] : '';
@@ -746,14 +747,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?php if ($thumb): ?>
                                         <img src="<?= asset($thumb) ?>" alt="<?= e((string) $cat['name']) ?>">
                                     <?php else: ?>
-                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                             <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
-                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
-                                            <polyline points="21 15 16 10 5 21" fill="#f1f5f9" stroke="#cbd5e1"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#94a3b8"/>
+                                            <polyline points="21 15 16 10 5 21" fill="none" stroke="#94a3b8"/>
                                         </svg>
                                     <?php endif; ?>
                                 </div>
-                                <div class="ms-cat-title"><?= e(strtoupper((string) $cat['name'])) ?></div>
+                                <div class="ms-cat-title"><?= e((string) $cat['name']) ?></div>
                             </a>
                         <?php endforeach; ?>
                     </div>
@@ -769,41 +770,46 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
 
-                                $stockText = 'In stock';
+                                $badgeClass = 'ms-product-badge';
+                                $badgeText = '';
+                                if (!$inStock) {
+                                    $badgeClass .= ' ms-badge-out';
+                                    $badgeText = 'Out of Stock';
+                                } elseif (!empty($brand['display_low_stock_below_10']) && (int)$p['stock_quantity'] < 10) {
+                                    $badgeClass .= ' ms-badge-low';
+                                    $badgeText = 'Only ' . (int)$p['stock_quantity'] . ' left';
+                                }
+
+                                $stockText = 'In Stock';
                                 if (!empty($brand['display_stock_count'])) {
-                                    $stockText = $inStock ? ((int)$p['stock_quantity'] . ' units available') : 'Out of stock';
-                                } elseif (!empty($brand['display_low_stock_below_10'])) {
-                                    if ($inStock && (int)$p['stock_quantity'] < 10) {
-                                        $stockText = 'Only ' . (int)$p['stock_quantity'] . ' left in stock';
-                                    } else {
-                                        $stockText = $inStock ? 'In stock' : 'Out of stock';
-                                    }
-                                } else {
-                                    $stockText = $inStock ? 'In stock' : 'Out of stock';
+                                    $stockText = $inStock ? ((int)$p['stock_quantity'] . ' available') : 'Out of stock';
+                                } elseif (!$inStock) {
+                                    $stockText = 'Out of stock';
                                 }
                                 ?>
                                 <div class="ms-product-card">
                                     <a class="ms-product-img-wrap" href="<?= e($pUrl) ?>">
-                                        <?php if ($inStock): ?>
-                                            <span class="ms-product-badge">In Stock</span>
-                                        <?php else: ?>
-                                            <span class="ms-product-badge" style="background:#dc2626">Out of Stock</span>
+                                        <?php if ($badgeText !== ''): ?>
+                                            <span class="<?= $badgeClass ?>"><?= e($badgeText) ?></span>
                                         <?php endif; ?>
 
                                         <?php if ($img): ?>
                                             <img src="<?= e($img) ?>" alt="<?= e((string) $p['name']) ?>">
                                         <?php else: ?>
-                                            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                                 <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
                                                 <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
-                                                <polyline points="21 15 16 10 5 21" fill="#f8fafc" stroke="#cbd5e1"/>
+                                                <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
                                             </svg>
                                         <?php endif; ?>
                                     </a>
                                     <div class="ms-product-body">
                                         <div>
-                                            <a class="ms-product-name" href="<?= e($pUrl) ?>" style="text-decoration:none;color:inherit"><?= e((string) $p['name']) ?></a>
-                                            <div class="ms-product-variant"><?= e($stockText) ?></div>
+                                            <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
+                                            <div class="ms-product-variant">
+                                                <span class="ms-stock-dot <?= $inStock ? '' : 'is-out' ?>"></span>
+                                                <span><?= e($stockText) ?></span>
+                                            </div>
                                         </div>
                                         <div class="ms-product-foot">
                                             <?php if (empty($brand['hide_product_price'])): ?>
@@ -811,14 +817,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                             <?php else: ?>
                                                 <div></div>
                                             <?php endif; ?>
-                                            <form method="post" style="margin:0">
-                                                <?= csrf_field() ?>
-                                                <input type="hidden" name="action" value="add_to_cart">
-                                                <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
-                                                <input type="hidden" name="qty" value="1">
-                                                <input type="hidden" name="redirect_page" value="home">
-                                                <button class="ms-add-btn" type="submit" <?= $inStock ? '' : 'disabled' ?>>Add</button>
-                                            </form>
+                                            <a class="ms-add-btn" href="<?= e($pUrl) ?>" style="text-decoration:none;">
+                                                <span><?= $inStock ? 'View' : 'Out of Stock' ?></span>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                                            </a>
                                         </div>
                                     </div>
                                 </div>
@@ -836,33 +838,180 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 if (!$product || ($product['status'] ?? '') !== 'active'): ?>
                     <div class="ms-empty">This product is not available.</div>
                 <?php else:
-                    $inStock = (int) $product['stock_quantity'] > 0;
+                    $variants = function_exists('get_product_variants') ? get_product_variants((int) $product['id'], $bid) : [];
+                    $selectedVariantId = !empty($_GET['variant_id']) ? (int) $_GET['variant_id'] : (!empty($variants[0]['id']) ? (int) $variants[0]['id'] : null);
+                    
+                    $activeVariant = null;
+                    if ($variants) {
+                        foreach ($variants as $v) {
+                            if ((int)$v['id'] === $selectedVariantId) {
+                                $activeVariant = $v;
+                                break;
+                            }
+                        }
+                        if (!$activeVariant) {
+                            $activeVariant = $variants[0];
+                            $selectedVariantId = (int)$variants[0]['id'];
+                        }
+                    }
+
+                    $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
+                    $inStock = $activeVariant ? ((int)$activeVariant['stock_quantity'] > 0) : ((int)$product['stock_quantity'] > 0);
+                    $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
                     $img = sf_product_image($product['image_path'] ?? null);
                     ?>
-                    <div class="ms-form-card">
-                        <a href="<?= e($homeUrl) ?>" class="ms-btn-ghost" style="margin-bottom:14px;width:auto;display:inline-flex">← Back to store</a>
-                        <div class="ms-product-hero">
-                            <?php if ($img): ?><img src="<?= e($img) ?>" alt="<?= e((string) $product['name']) ?>"><?php else: ?>No image<?php endif; ?>
+                    <div class="ms-pdp-wrap">
+                        <a href="<?= e($homeUrl) ?>" class="ms-legal-back" style="display:inline-flex;margin-bottom:16px;">← Back to Store</a>
+
+                        <!-- Top 2-Column Product Detail Card -->
+                        <div class="ms-pdp-top-card">
+                            <!-- Left: High-Res Image Gallery -->
+                            <div class="ms-pdp-gallery">
+                                <?php if ($img): ?>
+                                    <img src="<?= e($img) ?>" alt="<?= e((string) $product['name']) ?>" id="pdpMainImg">
+                                <?php else: ?>
+                                    <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
+                                        <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
+                                    </svg>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Right: Product Information & Actions -->
+                            <div class="ms-pdp-info">
+                                <h1 class="ms-pdp-title"><?= e((string) $product['name']) ?></h1>
+
+                                <?php if (empty($brand['hide_product_price'])): ?>
+                                    <div class="ms-pdp-price"><?= sf_money($currency, $currentPrice) ?></div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($variants)): ?>
+                                    <div class="ms-pdp-opt-title">Options / Variants</div>
+                                    <div class="ms-pdp-variants-wrap">
+                                        <?php foreach ($variants as $v):
+                                            $isActiveVar = ((int)$v['id'] === $selectedVariantId);
+                                            $varUrl = public_store_url($storeBiz, 'product', ['id' => (int)$product['id'], 'variant_id' => (int)$v['id']]);
+                                            ?>
+                                            <a href="<?= e($varUrl) ?>" class="ms-pdp-var-btn<?= $isActiveVar ? ' is-active' : '' ?>">
+                                                <span class="ms-pdp-var-name"><?= e((string)$v['variant_name']) ?></span>
+                                                <span class="ms-pdp-var-price"><?= sf_money($currency, (float)$v['selling_price']) ?></span>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+
+                                <form method="post" style="margin-top:auto;">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="add_to_cart">
+                                    <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                                    <?php if ($selectedVariantId): ?>
+                                        <input type="hidden" name="variant_id" value="<?= (int) $selectedVariantId ?>">
+                                    <?php endif; ?>
+                                    <input type="hidden" name="redirect_page" value="product">
+                                    <input type="hidden" name="return_id" value="<?= (int) $product['id'] ?>">
+
+                                    <div class="ms-pdp-action-row">
+                                        <div class="ms-pdp-stepper">
+                                            <button type="button" class="ms-pdp-step-btn" id="pdpMinus" aria-label="Decrease quantity">−</button>
+                                            <input type="number" name="qty" id="pdpQty" class="ms-pdp-qty-val" value="1" min="1" max="<?= $inStock ? max(1, $stockQty) : 1 ?>" <?= $inStock ? '' : 'disabled' ?>>
+                                            <button type="button" class="ms-pdp-step-btn" id="pdpPlus" aria-label="Increase quantity">+</button>
+                                        </div>
+
+                                        <button type="submit" class="ms-pdp-add-btn" <?= $inStock ? '' : 'disabled' ?>>
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                                            <span><?= $inStock ? 'Go To Cart' : 'Out of Stock' ?></span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
-                        <h1 style="font-size:20px;font-weight:800;margin-bottom:6px;text-transform:uppercase"><?= e((string) $product['name']) ?></h1>
-                        <?php if (empty($brand['hide_product_price'])): ?>
-                            <div class="ms-product-price" style="font-size:20px;margin-bottom:8px"><?= sf_money($currency, (float) $product['selling_price']) ?></div>
-                        <?php endif; ?>
-                        <p class="ms-item-meta" style="margin-bottom:16px;color:#64748b"><?= $inStock ? ((int) $product['stock_quantity'] . ' in stock') : 'Out of stock' ?></p>
-                        <form method="post">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="action" value="add_to_cart">
-                            <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                            <input type="hidden" name="redirect_page" value="product">
-                            <?php if (!empty($brand['allow_custom_quantity'])): ?>
-                                <label class="ms-label">Quantity</label>
-                                <input class="ms-input" type="number" name="qty" min="1" value="1" <?= $inStock ? '' : 'disabled' ?>>
-                            <?php else: ?>
-                                <input type="hidden" name="qty" value="1">
+
+                        <!-- Specifications Section -->
+                        <div class="ms-pdp-sec-title">Specifications</div>
+                        <div class="ms-pdp-specs-card">
+                            <div class="ms-pdp-spec-row">
+                                <div class="ms-pdp-spec-key">Unit</div>
+                                <div class="ms-pdp-spec-val"><?= e((string)($product['unit'] ?: 'pcs')) ?></div>
+                            </div>
+                            <?php if (!empty($product['manufacturer']) || !empty($product['brand'])): ?>
+                                <div class="ms-pdp-spec-row">
+                                    <div class="ms-pdp-spec-key">Manufacturer</div>
+                                    <div class="ms-pdp-spec-val"><?= e((string)($product['manufacturer'] ?: $product['brand'])) ?></div>
+                                </div>
                             <?php endif; ?>
-                            <button class="ms-btn" type="submit" <?= $inStock ? '' : 'disabled' ?>>Add to cart</button>
-                        </form>
+                            <?php if (!empty($product['category_name'])): ?>
+                                <div class="ms-pdp-spec-row">
+                                    <div class="ms-pdp-spec-key">Category</div>
+                                    <div class="ms-pdp-spec-val"><?= e((string)$product['category_name']) ?></div>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($product['sku'])): ?>
+                                <div class="ms-pdp-spec-row">
+                                    <div class="ms-pdp-spec-key">SKU / Item Code</div>
+                                    <div class="ms-pdp-spec-val"><?= e((string)$product['sku']) ?></div>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($product['description'])): ?>
+                                <div class="ms-pdp-spec-row">
+                                    <div class="ms-pdp-spec-key">Description</div>
+                                    <div class="ms-pdp-spec-val" style="font-weight:400;line-height:1.6;"><?= nl2br(e((string)$product['description'])) ?></div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Highlights Section -->
+                        <div class="ms-pdp-sec-title">Highlights</div>
+                        <div class="ms-pdp-highlights-grid">
+                            <div class="ms-pdp-hl-item">
+                                <div class="ms-pdp-hl-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+                                </div>
+                                <div class="ms-pdp-hl-label">Pay on Delivery</div>
+                            </div>
+                            <div class="ms-pdp-hl-item">
+                                <div class="ms-pdp-hl-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                                </div>
+                                <div class="ms-pdp-hl-label">Fast Delivery</div>
+                            </div>
+                            <div class="ms-pdp-hl-item">
+                                <div class="ms-pdp-hl-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                </div>
+                                <div class="ms-pdp-hl-label">100% Genuine</div>
+                            </div>
+                            <div class="ms-pdp-hl-item">
+                                <div class="ms-pdp-hl-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                </div>
+                                <div class="ms-pdp-hl-label">Easy Returns</div>
+                            </div>
+                        </div>
                     </div>
+
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        var minusBtn = document.getElementById('pdpMinus');
+                        var plusBtn = document.getElementById('pdpPlus');
+                        var qtyInput = document.getElementById('pdpQty');
+                        if (minusBtn && plusBtn && qtyInput) {
+                            minusBtn.addEventListener('click', function() {
+                                var val = parseInt(qtyInput.value, 10) || 1;
+                                if (val > 1) {
+                                    qtyInput.value = val - 1;
+                                }
+                            });
+                            plusBtn.addEventListener('click', function() {
+                                var val = parseInt(qtyInput.value, 10) || 1;
+                                var max = parseInt(qtyInput.getAttribute('max'), 10) || 999;
+                                if (val < max) {
+                                    qtyInput.value = val + 1;
+                                }
+                            });
+                        }
+                    });
+                    </script>
                 <?php endif; ?>
 
             <?php elseif ($page === 'cart'):
