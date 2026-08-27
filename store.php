@@ -968,12 +968,6 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <?php foreach ($categories as $cat):
                             $catUrl = public_store_url($storeBiz, 'home', ['category_id' => (int) $cat['id']]);
                             $thumb = !empty($cat['image_path']) ? (string) $cat['image_path'] : '';
-                            if (!$thumb) {
-                                $catProducts = get_products('', (int) $cat['id'], 'active', '', $bid);
-                                foreach ($catProducts as $cp) {
-                                    if (!empty($cp['image_path'])) { $thumb = (string) $cp['image_path']; break; }
-                                }
-                            }
                             $isCatActive = ((int)$catId === (int)$cat['id']);
                             ?>
                             <a class="ms-cat-card<?= $isCatActive ? ' ms-cat-active' : '' ?>" href="<?= e($catUrl) ?>">
@@ -981,10 +975,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?php if ($thumb): ?>
                                         <img src="<?= asset($thumb) ?>" alt="<?= e((string) $cat['name']) ?>">
                                     <?php else: ?>
-                                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                                            <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
-                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
-                                            <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
+                                        <svg width="48" height="40" viewBox="0 0 24 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="12" cy="5" r="2.2" fill="#cbd5e1"/>
+                                            <path d="M3.2 16.5 L7.8 9.5 C8.3 8.8 9.3 8.8 9.8 9.5 L12.5 13.5 L14.2 11 C14.7 10.3 15.7 10.3 16.2 11 L20.8 16.5 C21.4 17.3 20.8 18.5 19.8 18.5 L4.2 18.5 C3.2 18.5 2.6 17.3 3.2 16.5 Z" fill="#cbd5e1"/>
                                         </svg>
                                     <?php endif; ?>
                                 </div>
