@@ -174,8 +174,13 @@ function register_user(string $name, string $email, string $phone, string $passw
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
     try {
+        require_once __DIR__ . '/storefront_db.php';
+        ensure_online_store_schema();
+
         $db = get_db();
-        $db->beginTransaction();
+        if (!$db->inTransaction()) {
+            $db->beginTransaction();
+        }
 
         // 1. Create Business Record
         $stmtBiz = $db->prepare('
@@ -191,8 +196,6 @@ function register_user(string $name, string $email, string $phone, string $passw
         $businessId = (int)$db->lastInsertId();
 
         try {
-            require_once __DIR__ . '/storefront_db.php';
-            ensure_online_store_schema();
             $slug = generate_unique_store_slug($businessName, $businessId);
             $db->prepare('UPDATE businesses SET store_slug = :slug, store_published = 1 WHERE id = :id')
                 ->execute(['slug' => $slug, 'id' => $businessId]);
@@ -294,7 +297,9 @@ function register_user(string $name, string $email, string $phone, string $passw
             seed_default_payment_options_if_needed($businessId);
         } catch (Exception $ePay) {}
 
-        $db->commit();
+        if ($db->inTransaction()) {
+            $db->commit();
+        }
         return ['success' => true, 'errors' => [], 'user_id' => $userId, 'business_id' => $businessId];
     } catch (PDOException $e) {
         if (isset($db) && $db->inTransaction()) {
