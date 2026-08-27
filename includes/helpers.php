@@ -47,10 +47,14 @@ function clear_old_input(): void {
 }
 
 function redirect(string $path): void {
+    if (str_starts_with($path, '//') && !preg_match('#^//[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/|$)#', $path)) {
+        $path = '/' . ltrim($path, '/');
+    }
     header('Location: ' . $path);
     exit;
 }
 
 function asset(string $path): string {
-    return APP_URL . '/' . ltrim($path, '/');
+    $base = rtrim(defined('APP_URL') ? (string) APP_URL : '', '/');
+    return ($base !== '' ? $base : '') . '/' . ltrim($path, '/');
 }

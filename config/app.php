@@ -11,8 +11,8 @@ if (!defined('APP_URL')) {
     $docRoot = isset($_SERVER['DOCUMENT_ROOT']) ? str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT']) ?: $_SERVER['DOCUMENT_ROOT']) : '';
     $currentDir = str_replace('\\', '/', realpath(__DIR__ . '/..') ?: '');
     if ($docRoot && str_starts_with($currentDir, $docRoot)) {
-        $rel = substr($currentDir, strlen($docRoot));
-        define('APP_URL', '/' . trim($rel, '/'));
+        $rel = trim(substr($currentDir, strlen($docRoot)), '/\\');
+        define('APP_URL', $rel !== '' ? ('/' . $rel) : '');
     } else {
         define('APP_URL', '/ominiflow_POS-main');
     }
