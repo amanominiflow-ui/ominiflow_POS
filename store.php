@@ -209,7 +209,7 @@ if (!empty($bid)) {
         }
     } catch (Throwable $e) {}
 
-    if (empty($searchCategories)) {
+    if (count($searchCategories) < 4) {
         try {
             $rawProds = get_products('', null, 'active', '', $bid);
             foreach ($rawProds as $rp) {
@@ -225,8 +225,12 @@ if (!empty($bid)) {
     }
 }
 if (empty($searchCategories)) {
-    $searchCategories = ['items', 'categories'];
+    $searchCategories = ['All Products', 'Fresh Items', 'Best Sellers'];
+} elseif (count($searchCategories) === 1) {
+    $searchCategories[] = 'All Products';
+    $searchCategories[] = 'Best Sellers';
 }
+$cssVersion = @filemtime(__DIR__ . '/assets/css/storefront.css') ?: 15;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -237,7 +241,7 @@ if (empty($searchCategories)) {
     <?php if ($favicon): ?>
         <link rel="icon" href="<?= e($favicon) ?>">
     <?php endif; ?>
-    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=9">
+    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=<?= $cssVersion ?>">
     <style>
         :root {
             --ms-header: <?= e($brand['header_color']) ?>;
@@ -249,6 +253,114 @@ if (empty($searchCategories)) {
         body.ms-body { font-size: var(--ms-font); }
         .ms-top-nav, .ms-title, .ms-nav-item, .ms-location-widget { color: var(--ms-header-text, #ffffff); }
         .ms-add-btn, .ms-btn { color: var(--ms-btn-text, #ffffff); }
+
+        /* Critical Search Overlay Styles to eliminate caching/rendering glitches */
+        .ms-search-wrap {
+            position: relative;
+            flex: 1 1 auto;
+            max-width: 560px;
+            min-width: 0;
+            margin: 0;
+        }
+        .ms-search-box {
+            position: relative;
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+        .ms-search {
+            width: 100%;
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 16px 10px 40px;
+            font: inherit;
+            font-size: 14px;
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            position: relative;
+            z-index: 1;
+        }
+        .ms-search::placeholder {
+            color: transparent !important;
+        }
+        .ms-search-placeholder {
+            position: absolute !important;
+            left: 40px !important;
+            right: 16px !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            display: flex !important;
+            align-items: center !important;
+            pointer-events: none !important;
+            z-index: 2 !important;
+            font-size: 13.5px !important;
+            color: #94a3b8 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            height: 22px !important;
+        }
+        .ms-search-wrap.is-active .ms-search-placeholder,
+        .ms-search-wrap.has-val .ms-search-placeholder {
+            display: none !important;
+        }
+        .ms-sp-prefix {
+            font-weight: 500;
+            color: #94a3b8;
+            flex-shrink: 0;
+        }
+        .ms-sp-track {
+            position: relative;
+            display: inline-block;
+            height: 22px;
+            overflow: hidden;
+            vertical-align: middle;
+            margin-left: 2px;
+            flex: 1;
+            min-width: 0;
+        }
+        .ms-sp-word {
+            display: block;
+            line-height: 22px;
+            font-weight: 600;
+            color: #475569;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transform: translate3d(0, 0, 0);
+            will-change: transform, opacity;
+        }
+        .ms-sp-word.ms-slide-in {
+            animation: msSearchSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .ms-sp-word.ms-slide-out {
+            animation: msSearchSlideOut 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes msSearchSlideIn {
+            0% { transform: translate3d(0, 80%, 0); opacity: 0; }
+            100% { transform: translate3d(0, 0, 0); opacity: 1; }
+        }
+        @keyframes msSearchSlideOut {
+            0% { transform: translate3d(0, 0, 0); opacity: 1; }
+            100% { transform: translate3d(0, -80%, 0); opacity: 0; }
+        }
+        @media (max-width: 768px) {
+            .ms-search-wrap {
+                order: 3;
+                width: 100%;
+                max-width: 100%;
+                flex: 1 1 100%;
+            }
+            .ms-search {
+                padding: 9px 14px 9px 38px;
+                font-size: 13.5px;
+            }
+            .ms-search-placeholder {
+                left: 38px !important;
+                right: 14px !important;
+                font-size: 13px !important;
+            }
+        }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
