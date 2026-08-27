@@ -371,6 +371,31 @@ function store_initials_from_name(string $name): string {
     return $out;
 }
 
+function get_storefront_dynamic_favicon_url(array $brand, string $storeName): string {
+    if (!empty($brand['favicon_path'])) {
+        return asset((string) $brand['favicon_path']);
+    }
+    if (!empty($brand['logo_path']) && !is_platform_logo((string) $brand['logo_path'])) {
+        return asset((string) $brand['logo_path']);
+    }
+    $bgColor = !empty($brand['header_color']) ? (string) $brand['header_color'] : '#0f4c3a';
+    $textColor = !empty($brand['header_text_color']) ? (string) $brand['header_text_color'] : '#ffffff';
+    $nameClean = trim($storeName) !== '' ? trim($storeName) : 'Store';
+    $initials = store_initials_from_name($nameClean);
+
+    $fontSize = strlen($initials) > 1 ? 26 : 34;
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
+         . '<rect width="64" height="64" rx="16" fill="' . htmlspecialchars($bgColor, ENT_QUOTES, 'UTF-8') . '"/>'
+         . '<text x="50%" y="54%" dominant-baseline="central" text-anchor="middle" '
+         . 'fill="' . htmlspecialchars($textColor, ENT_QUOTES, 'UTF-8') . '" '
+         . 'font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" '
+         . 'font-size="' . $fontSize . '" font-weight="800">'
+         . htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') . '</text>'
+         . '</svg>';
+
+    return 'data:image/svg+xml;utf8,' . rawurlencode($svg);
+}
+
 function ensure_mobile_store_row(int $businessId): void {
     ensure_online_store_schema();
     $db = get_db();

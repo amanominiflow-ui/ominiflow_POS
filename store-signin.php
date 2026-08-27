@@ -232,12 +232,7 @@ if ($mode === 'forgot') {
     $pageSub = 'set a new password for your account';
 }
 
-$favicon = '';
-if (!empty($brand['favicon_path'])) {
-    $favicon = asset((string) $brand['favicon_path']);
-} elseif (!empty($brand['logo_path']) && !is_platform_logo((string) $brand['logo_path'])) {
-    $favicon = asset((string) $brand['logo_path']);
-}
+$favicon = get_storefront_dynamic_favicon_url($brand, $storeName);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -245,9 +240,9 @@ if (!empty($brand['favicon_path'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageHeading) ?> — <?= e($storeName) ?></title>
-    <?php if ($favicon): ?>
-        <link rel="icon" href="<?= e($favicon) ?>">
-    <?php endif; ?>
+    <link rel="icon" type="image/svg+xml" href="<?= e($favicon) ?>">
+    <link rel="alternate icon" href="<?= asset('assets/images/favicon-32x32.png') ?>">
+    <link rel="apple-touch-icon" href="<?= e($favicon) ?>">
     <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=10">
     <style>
         :root { --ms-header: <?= e($headerColor) ?>; }
