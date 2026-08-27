@@ -1206,6 +1206,33 @@ function clear_storefront_shopper(int $businessId): void {
     unset($_SESSION[storefront_shopper_key($businessId)]);
 }
 
+function clean_customer_phone(string $phone): string {
+    $digits = preg_replace('/\D+/', '', $phone) ?? '';
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        $digits = substr($digits, 2);
+    } elseif (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+        $digits = substr($digits, 1);
+    }
+    return $digits;
+}
+
+function find_store_customer_by_phone(int $businessId, string $phone): ?array {
+    $clean = clean_customer_phone($phone);
+    if ($clean === '') {
+        return null;
+    }
+    $db = get_db();
+    $stmt = $db->prepare('SELECT * FROM customers WHERE business_id = :bid AND (phone = :raw OR phone = :clean OR phone LIKE :like) LIMIT 1');
+    $stmt->execute([
+        'bid' => $businessId,
+        'raw' => trim($phone),
+        'clean' => $clean,
+        'like' => '%' . $clean,
+    ]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
 function find_store_customer_by_email(int $businessId, string $email): ?array {
     $email = strtolower(trim($email));
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -1217,27 +1244,53 @@ function find_store_customer_by_email(int $businessId, string $email): ?array {
     return $row ?: null;
 }
 
-function login_storefront_shopper(int $businessId, string $email, string $password): array {
-    $email = strtolower(trim($email));
-    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        return ['success' => false, 'error' => 'Enter a valid email address.'];
+function find_store_customer_by_identifier(int $businessId, string $identifier): ?array {
+    $identifier = trim($identifier);
+    if ($identifier === '') {
+        return null;
+    }
+    if (str_contains($identifier, '@')) {
+        return find_store_customer_by_email($businessId, strtolower($identifier));
+    }
+    return find_store_customer_by_phone($businessId, $identifier);
+}
+
+function login_storefront_shopper(int $businessId, string $identifier, string $password): array {
+    $identifier = trim($identifier);
+    if ($identifier === '') {
+        return ['success' => false, 'error' => 'Please enter your mobile number or email.'];
     }
     if ($password === '') {
-        return ['success' => false, 'error' => 'Enter your password.'];
+        return ['success' => false, 'error' => 'Please enter your password.'];
     }
-    $cust = find_store_customer_by_email($businessId, $email);
+    $cust = find_store_customer_by_identifier($businessId, $identifier);
     if (!$cust) {
-        return ['success' => false, 'error' => 'No account found for this email. Create an account to continue.'];
+        return ['success' => false, 'error' => 'No account found for this mobile number / email. Create an account to continue.'];
     }
     $hash = (string) ($cust['password'] ?? '');
     if ($hash === '') {
-        return ['success' => false, 'error' => 'This account has no password yet. Use Create Account or Forgot Password to set one.'];
+        return ['success' => false, 'error' => 'This account has no password set yet. Use Create Account to set one.'];
     }
     if (!password_verify($password, $hash)) {
-        return ['success' => false, 'error' => 'Incorrect password. Try again or use Forgot Password.'];
+        return ['success' => false, 'error' => 'Incorrect password. Try again or reset password.'];
     }
     set_storefront_shopper($businessId, $cust);
     return ['success' => true];
+}
+
+function send_storefront_otp_sms(string $phone, string $otp, string $storeName): bool {
+    $cleanPhone = clean_customer_phone($phone);
+    if (strlen($cleanPhone) < 10) {
+        return false;
+    }
+    $message = "Your {$storeName} verification code is: {$otp}. Valid for 10 minutes. Powered by OminiFlow POS.";
+    $_SESSION['sf_last_sms_otp'] = [
+        'phone' => $cleanPhone,
+        'otp' => $otp,
+        'message' => $message,
+        'time' => time(),
+    ];
+    return true;
 }
 
 function send_storefront_otp_email(string $toEmail, string $toName, string $otp, string $storeName): bool {
@@ -1257,23 +1310,23 @@ function send_storefront_otp_email(string $toEmail, string $toName, string $otp,
     $html = <<<HTML
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Email Verification</title></head>
+<head><meta charset="utf-8"><title>OTP Verification</title></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 28px 12px;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 460px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 6px 24px rgba(15,23,42,0.06);">
     <tr>
       <td style="background: #0f4c3a; padding: 24px; text-align: center;">
         <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;">{$storeName}</h2>
-        <p style="margin: 4px 0 0; font-size: 13px; color: #e2e8f0;">Storefront Email Verification</p>
+        <p style="margin: 4px 0 0; font-size: 13px; color: #e2e8f0;">Storefront Mobile & Email Verification</p>
       </td>
     </tr>
     <tr>
       <td style="padding: 32px 24px 28px; text-align: center;">
         <h3 style="margin: 0 0 12px; color: #0f172a; font-size: 18px; font-weight: 700;">Hello {$toName},</h3>
-        <p style="color: #64748b; font-size: 14.5px; line-height: 1.6; margin: 0 0 24px;">Please use the following 6-digit One-Time Password (OTP) to verify your email and activate your account:</p>
+        <p style="color: #64748b; font-size: 14.5px; line-height: 1.6; margin: 0 0 24px;">Please use the following 6-digit One-Time Password (OTP) to verify your mobile number and activate your account:</p>
         <div style="background: #f8fafc; border: 2px dashed #94a3b8; border-radius: 10px; padding: 14px 24px; display: inline-block; margin-bottom: 24px;">
           <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0f172a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding-left: 8px;">{$otp}</span>
         </div>
-        <p style="color: #94a3b8; font-size: 12.5px; line-height: 1.5; margin: 0;">This OTP is valid for <strong>10 minutes</strong>. If you did not request this account creation, please disregard this email.</p>
+        <p style="color: #94a3b8; font-size: 12.5px; line-height: 1.5; margin: 0;">This OTP is valid for <strong>10 minutes</strong>.</p>
       </td>
     </tr>
     <tr>
@@ -1295,38 +1348,43 @@ HTML;
 
 function register_storefront_shopper(int $businessId, array $data): array {
     $name = storefront_clean_person_name((string) ($data['name'] ?? ''));
+    $phone = clean_customer_phone((string) ($data['phone'] ?? ''));
     $email = strtolower(trim((string) ($data['email'] ?? '')));
-    $phone = trim((string) ($data['phone'] ?? ''));
     $password = (string) ($data['password'] ?? '');
 
     if ($name === '') {
-        return ['success' => false, 'error' => 'Name is required.'];
+        return ['success' => false, 'error' => 'Full name is required.'];
     }
-    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        return ['success' => false, 'error' => 'Enter a valid email address.'];
+    if (strlen($phone) < 10) {
+        return ['success' => false, 'error' => 'Please enter a valid 10-digit mobile number.'];
     }
     if (strlen($password) < 6) {
         return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
     }
 
-    $existing = find_store_customer_by_email($businessId, $email);
+    $existing = find_store_customer_by_phone($businessId, $phone);
+    if (!$existing && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $existing = find_store_customer_by_email($businessId, $email);
+    }
     $hash = password_hash($password, PASSWORD_DEFAULT);
     $db = get_db();
 
     if ($existing) {
         if (!empty($existing['password'])) {
-            return ['success' => false, 'error' => 'An account already exists for this email. Please sign in.'];
+            return ['success' => false, 'error' => 'An account already exists for this mobile number. Please sign in.'];
         }
-        $db->prepare('UPDATE customers SET name = :name, phone = COALESCE(:phone, phone), password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+        $db->prepare('UPDATE customers SET name = :name, phone = :phone, email = COALESCE(:email, email), password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
             ->execute([
                 'name' => $name,
-                'phone' => $phone !== '' ? $phone : null,
+                'phone' => $phone,
+                'email' => $email !== '' ? $email : null,
                 'password' => $hash,
                 'id' => (int) $existing['id'],
                 'bid' => $businessId,
             ]);
         $existing['name'] = $name;
-        $existing['phone'] = $phone !== '' ? $phone : ($existing['phone'] ?? '');
+        $existing['phone'] = $phone;
+        if ($email !== '') $existing['email'] = $email;
         set_storefront_shopper($businessId, $existing);
         return ['success' => true];
     }

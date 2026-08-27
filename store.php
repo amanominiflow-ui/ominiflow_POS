@@ -74,17 +74,6 @@ if (!$storeBiz) {
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
-            $shopper = get_storefront_shopper($bid);
-            if (!$shopper) {
-                $_SESSION['sf_pending_cart_' . $bid] = [
-                    'product_id' => $pid,
-                    'qty' => $qty,
-                    'back' => $back,
-                ];
-                set_flash('error', 'Please sign in or create an account to add items to your cart.');
-                redirect(public_store_signin_url($storeBiz));
-            }
-
             $res = add_to_storefront_cart($bid, $pid, $qty);
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
             $params = $back === 'product' ? ['id' => $pid] : [];
@@ -144,11 +133,16 @@ if (!$storeBiz) {
         }
 
         if ($action === 'place_order') {
+            $shopper = get_storefront_shopper($bid);
+            if (!$shopper) {
+                set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
+                redirect(public_store_signin_url($storeBiz, ['return' => 'checkout']));
+            }
             $result = place_online_store_order($bid, [
-                'name' => (string) ($_POST['name'] ?? ''),
-                'phone' => (string) ($_POST['phone'] ?? ''),
-                'email' => (string) ($_POST['email'] ?? ''),
-                'address' => (string) ($_POST['address'] ?? ''),
+                'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
+                'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
+                'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
+                'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
                 'notes' => (string) ($_POST['notes'] ?? ''),
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
             ]);
@@ -174,8 +168,9 @@ if (!$storeBiz) {
     $storeShopper = refresh_storefront_shopper($bid);
     $openAccountDrawer = !empty($_GET['account']);
     $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $page === 'cart');
-    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile'], true) && !$storeShopper) {
-        redirect(public_store_signin_url($storeBiz));
+    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
+        $ret = $page === 'checkout' ? 'checkout' : 'account';
+        redirect(public_store_signin_url($storeBiz, ['return' => $ret]));
     }
 }
 
