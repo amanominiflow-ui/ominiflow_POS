@@ -858,6 +858,9 @@ function verify_custom_domain(int $businessId, int $domainId, bool $forceLocal =
         ];
     }
 
+    // Automatically register domain alias on Cloudways web server via API
+    cloudways_add_domain_alias($domain);
+
     $db->prepare('
         UPDATE custom_domains
         SET status = "verified", ssl_status = :ssl, verified_at = NOW(), updated_at = NOW()
@@ -871,6 +874,74 @@ function verify_custom_domain(int $businessId, int $domainId, bool $forceLocal =
     return ['success' => true, 'message' => 'DNS verified successfully! SSL certificate is active. ' . $reason];
 }
 
+function cloudways_api_request(string $endpoint, string $method = 'GET', array $params = []): ?array {
+    if (!defined('CLOUDWAYS_API_KEY') || CLOUDWAYS_API_KEY === '') {
+        return null;
+    }
+    $url = 'https://api.cloudways.com/api/v1/' . ltrim($endpoint, '/');
+    if ($method === 'GET' && !empty($params)) {
+        $url .= '?' . http_build_query($params);
+    }
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . CLOUDWAYS_API_KEY,
+    ]);
+    if ($method !== 'GET') {
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+    }
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($code >= 200 && $code < 300 && is_string($res)) {
+        return json_decode($res, true) ?: ['status' => true];
+    }
+    return null;
+}
+
+function cloudways_get_app_aliases(): array {
+    if (!defined('CLOUDWAYS_APP_ID') || !defined('CLOUDWAYS_SERVER_ID')) {
+        return [];
+    }
+    $res = cloudways_api_request('app/' . CLOUDWAYS_APP_ID, 'GET', [
+        'server_id' => CLOUDWAYS_SERVER_ID,
+    ]);
+    $aliases = $res['app']['aliases'] ?? [];
+    return is_array($aliases) ? $aliases : [];
+}
+
+function cloudways_add_domain_alias(string $domain): bool {
+    $domain = strtolower(trim($domain));
+    if ($domain === '' || !defined('CLOUDWAYS_APP_ID')) return false;
+    $existing = cloudways_get_app_aliases();
+    $domainsToAdd = [$domain];
+    if (!str_starts_with($domain, 'www.') && substr_count($domain, '.') === 1) {
+        $domainsToAdd[] = 'www.' . $domain;
+    }
+    $merged = array_unique(array_merge($existing, $domainsToAdd));
+    $res = cloudways_api_request('app/manage/aliases', 'POST', [
+        'server_id' => CLOUDWAYS_SERVER_ID,
+        'app_id' => CLOUDWAYS_APP_ID,
+        'aliases' => array_values($merged),
+    ]);
+    return !empty($res['status']);
+}
+
+function cloudways_remove_domain_alias(string $domain): bool {
+    $domain = strtolower(trim($domain));
+    if ($domain === '' || !defined('CLOUDWAYS_APP_ID')) return false;
+    $existing = cloudways_get_app_aliases();
+    $toRemove = [$domain, 'www.' . ltrim($domain, 'w.')];
+    $remaining = array_values(array_diff($existing, $toRemove));
+    $res = cloudways_api_request('app/manage/aliases', 'POST', [
+        'server_id' => CLOUDWAYS_SERVER_ID,
+        'app_id' => CLOUDWAYS_APP_ID,
+        'aliases' => $remaining,
+    ]);
+    return !empty($res['status']);
+}
+
 function set_custom_domain_status(int $businessId, int $domainId, string $status): bool {
     if (!in_array($status, ['pending', 'verified', 'disabled'], true)) {
         return false;
@@ -882,8 +953,14 @@ function set_custom_domain_status(int $businessId, int $domainId, string $status
 
 function delete_custom_domain(int $businessId, int $domainId): bool {
     $db = get_db();
-    $stmt = $db->prepare('DELETE FROM custom_domains WHERE id = :id AND business_id = :bid');
-    return $stmt->execute(['id' => $domainId, 'bid' => $businessId]);
+    $stmt = $db->prepare('SELECT domain FROM custom_domains WHERE id = :id AND business_id = :bid LIMIT 1');
+    $stmt->execute(['id' => $domainId, 'bid' => $businessId]);
+    $dom = $stmt->fetchColumn();
+    if ($dom) {
+        cloudways_remove_domain_alias((string) $dom);
+    }
+    $del = $db->prepare('DELETE FROM custom_domains WHERE id = :id AND business_id = :bid');
+    return $del->execute(['id' => $domainId, 'bid' => $businessId]);
 }
 
 function storefront_cart_key(int $businessId): string {
