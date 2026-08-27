@@ -1889,3 +1889,140 @@ body.sf-auth-body {
     font-weight: 500;
     line-height: 1.5;
 }
+
+/* ==========================================================================
+   DELIVERY LOCATION DRAWER (Matching Reference Mockups)
+   ========================================================================== */
+.ms-loc-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    background: #ffffff;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.ms-loc-head-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #f1f5f9;
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0f172a;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+.ms-loc-head-btn:hover {
+    background: #e2e8f0;
+}
+.ms-loc-head-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+}
+
+.ms-loc-body {
+    padding: 28px 24px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Prompt / Empty State */
+.ms-loc-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 30px 10px;
+    margin: auto 0;
+}
+.ms-loc-art-wrap {
+    width: 170px;
+    height: 170px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ms-loc-prompt-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 8px;
+}
+.ms-loc-prompt-sub {
+    font-size: 14px;
+    color: #64748b;
+    margin: 0 0 32px;
+    line-height: 1.4;
+}
+
+/* Form Styles */
+.ms-loc-form-group {
+    margin-bottom: 22px;
+    position: relative;
+}
+.ms-loc-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 4px;
+}
+.ms-loc-label .ms-req {
+    color: #ef4444;
+    margin-left: 2px;
+}
+.ms-loc-input, .ms-loc-select {
+    width: 100%;
+    border: 0;
+    border-bottom: 1.5px solid #cbd5e1;
+    border-radius: 0;
+    padding: 8px 0 10px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #0f172a;
+    background: transparent;
+    transition: border-color 0.15s;
+    outline: none;
+}
+.ms-loc-input:focus, .ms-loc-select:focus {
+    border-bottom-color: var(--ms-header, #083d30);
+}
+.ms-loc-input::placeholder {
+    color: #94a3b8;
+    font-weight: 400;
+}
+.ms-loc-btn {
+    width: 100%;
+    height: 48px;
+    background: var(--ms-header, #083d30);
+    color: #ffffff;
+    border: 0;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s, transform 0.15s;
+}
+.ms-loc-btn:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+}
+.ms-loc-save-btn {
+    margin-top: 16px;
+}

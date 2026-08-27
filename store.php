@@ -118,6 +118,46 @@ if (!$storeBiz) {
             redirect(public_store_url($storeBiz, 'home'));
         }
 
+        if ($action === 'save_delivery_location') {
+            $delName = storefront_clean_person_name((string) ($_POST['name'] ?? ''));
+            $doorNo = trim((string) ($_POST['door_no'] ?? ''));
+            $street = trim((string) ($_POST['street_area'] ?? ''));
+            $city = trim((string) ($_POST['city'] ?? ''));
+            $state = trim((string) ($_POST['state'] ?? ''));
+            $pincode = trim((string) ($_POST['pincode'] ?? ''));
+            $country = trim((string) ($_POST['country'] ?? 'India'));
+            $phone = trim((string) ($_POST['phone'] ?? ''));
+
+            $addrParts = array_filter([$doorNo, $street, $city, $state ? ($state . ($pincode ? ' - ' . $pincode : '')) : $pincode, $country]);
+            $fullAddress = implode(', ', $addrParts);
+
+            $_SESSION['sf_delivery_location_' . $bid] = [
+                'name' => $delName,
+                'door_no' => $doorNo,
+                'street_area' => $street,
+                'city' => $city,
+                'state' => $state,
+                'pincode' => $pincode,
+                'country' => $country,
+                'phone' => $phone,
+                'formatted' => $fullAddress,
+                'display' => $city !== '' ? ($street !== '' ? ($street . ', ' . $city) : $city) : ($state !== '' ? $state : ($doorNo !== '' ? $doorNo : $fullAddress)),
+            ];
+
+            $shopper = get_storefront_shopper($bid);
+            if ($shopper) {
+                update_storefront_shopper_profile($bid, (int)$shopper['id'], [
+                    'name' => $delName !== '' ? $delName : ($shopper['name'] ?? ''),
+                    'phone' => $phone !== '' ? $phone : ($shopper['phone'] ?? ''),
+                    'address' => $fullAddress,
+                ]);
+            }
+
+            set_flash('success', 'Delivery address saved.');
+            $retPage = (string)($_POST['return_page'] ?? $page);
+            redirect(public_store_url($storeBiz, $retPage));
+        }
+
         if ($action === 'update_profile' || $action === 'update_address') {
             $shopper = get_storefront_shopper($bid);
             if (!$shopper) {
@@ -590,10 +630,16 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 </form>
 
                 <div class="ms-top-actions">
-                    <?php if (!empty($brand['show_location'])): ?>
-                        <div class="ms-location-widget">
+                    <?php if (!empty($brand['show_location'])):
+                        $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                        $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
+                        if (mb_strlen($locDisplay) > 28) {
+                            $locDisplay = mb_substr($locDisplay, 0, 26) . '...';
+                        }
+                        ?>
+                        <div class="ms-location-widget" id="msLocationToggle" style="cursor:pointer;" title="Set delivery location">
                             <span class="ms-location-sub">Delivery to <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></span>
-                            <span class="ms-location-main">Set delivery location</span>
+                            <span class="ms-location-main" id="msLocationMainText"><?= e($locDisplay) ?></span>
                         </div>
                         <span class="ms-nav-divider" aria-hidden="true"></span>
                     <?php endif; ?>
@@ -1057,13 +1103,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="place_order">
                             <label class="ms-label">Full name</label>
-                            <input class="ms-input" type="text" name="name" required value="<?= e((string) ($storeShopper['name'] ?? '')) ?>">
+                            <input class="ms-input" type="text" name="name" required value="<?= e(storefront_clean_person_name((string)($_SESSION['sf_delivery_location_' . $bid]['name'] ?? $storeShopper['name'] ?? ''))) ?>">
                             <label class="ms-label">Phone</label>
-                            <input class="ms-input" type="tel" name="phone" required value="<?= e((string) ($storeShopper['phone'] ?? '')) ?>">
+                            <input class="ms-input" type="tel" name="phone" required value="<?= e((string)($_SESSION['sf_delivery_location_' . $bid]['phone'] ?? $storeShopper['phone'] ?? '')) ?>">
                             <label class="ms-label">Email</label>
                             <input class="ms-input" type="email" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
                             <label class="ms-label">Delivery address</label>
-                            <textarea class="ms-textarea" name="address" rows="3" required></textarea>
+                            <textarea class="ms-textarea" name="address" rows="3" required><?= e((string)($_SESSION['sf_delivery_location_' . $bid]['formatted'] ?? $storeShopper['address'] ?? '')) ?></textarea>
                             <label class="ms-label">Payment Method</label>
                             <select class="ms-select" name="payment_method">
                                 <option value="cod">Cash on Delivery</option>
@@ -1509,6 +1555,131 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         <?php endif; ?>
     </aside>
 </div>
+
+<div class="ms-cart-overlay" id="msLocationOverlay" hidden aria-hidden="true">
+    <aside class="ms-cart-drawer" id="msLocationDrawer" role="dialog" aria-labelledby="msLocTitle" style="max-width:460px;">
+        <!-- Header (Dynamic based on View 1 or View 2) -->
+        <div class="ms-loc-head" id="msLocHead">
+            <button type="button" class="ms-loc-head-btn" id="msLocTopActionBtn" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <div class="ms-loc-head-title" id="msLocTitle">Set Delivery Location</div>
+        </div>
+
+        <div class="ms-loc-body">
+            <!-- View 1: Graphic Illustration & "Add Address" Button (Screenshot 2) -->
+            <div class="ms-loc-prompt" id="msLocPromptView">
+                <div class="ms-loc-art-wrap">
+                    <svg viewBox="0 0 200 200" width="160" height="160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Soft background clouds & dots -->
+                        <circle cx="100" cy="100" r="75" fill="#f8fafc"/>
+                        <circle cx="55" cy="65" r="2.5" fill="#cbd5e1"/>
+                        <circle cx="145" cy="55" r="2" fill="#cbd5e1"/>
+                        <circle cx="150" cy="140" r="3" fill="#cbd5e1"/>
+                        <path d="M40 145 C60 140, 75 148, 95 145 C115 142, 135 148, 160 145" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
+                        
+                        <!-- Secondary Pins in background -->
+                        <g transform="translate(56, 62) scale(0.65)" opacity="0.6">
+                            <path d="M40 0 C17.9 0 0 17.9 0 40 C0 70 40 100 40 100 C40 100 80 70 80 40 C80 17.9 62.1 0 40 0 Z" fill="#94a3b8"/>
+                            <circle cx="40" cy="38" r="18" fill="#ffffff"/>
+                        </g>
+                        <g transform="translate(108, 72) scale(0.6)" opacity="0.6">
+                            <path d="M40 0 C17.9 0 0 17.9 0 40 C0 70 40 100 40 100 C40 100 80 70 80 40 C80 17.9 62.1 0 40 0 Z" fill="#94a3b8"/>
+                            <circle cx="40" cy="38" r="18" fill="#ffffff"/>
+                        </g>
+
+                        <!-- Main Central Map Pin with Plus icon -->
+                        <g transform="translate(70, 36)">
+                            <path d="M30 0 C13.4 0 0 13.4 0 30 C0 55 30 84 30 84 C30 84 60 55 60 30 C60 13.4 46.6 0 30 0 Z" fill="#818cf8" opacity="0.15"/>
+                            <path d="M30 4 C15.6 4 4 15.6 4 30 C4 52 30 78 30 78 C30 78 56 52 56 30 C56 15.6 44.4 4 30 4 Z" fill="#64748b"/>
+                            <circle cx="30" cy="28" r="14" fill="#ffffff"/>
+                            <!-- Add/Plus circle badge -->
+                            <circle cx="48" cy="12" r="10" fill="#94a3b8"/>
+                            <path d="M48 7v10M43 12h10" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+                        </g>
+                        <!-- Base shadow -->
+                        <ellipse cx="100" cy="155" rx="30" ry="6" fill="#cbd5e1" opacity="0.6"/>
+                    </svg>
+                </div>
+                <div class="ms-loc-prompt-title">Add Delivery Location</div>
+                <div class="ms-loc-prompt-sub">Let us know where we should send your orders</div>
+                <button type="button" class="ms-loc-btn" id="msBtnOpenAddressForm">Add Address</button>
+            </div>
+
+            <!-- View 2: Address Details Form (Screenshot 1) -->
+            <?php
+            $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+            $prefillName = $savedLoc['name'] ?? storefront_clean_person_name((string)($storeShopper['name'] ?? ''));
+            $prefillPhone = $savedLoc['phone'] ?? (string)($storeShopper['phone'] ?? '');
+            $prefillDoor = $savedLoc['door_no'] ?? '';
+            $prefillStreet = $savedLoc['street_area'] ?? '';
+            $prefillCity = $savedLoc['city'] ?? '';
+            $prefillState = $savedLoc['state'] ?? 'West Bengal';
+            $prefillPincode = $savedLoc['pincode'] ?? '';
+            $indianStates = [
+                'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh',
+                'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana',
+                'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep',
+                'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry',
+                'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
+            ];
+            ?>
+            <div class="ms-loc-form-view" id="msLocFormView" style="display:none;">
+                <form method="post" id="msDeliveryAddressForm">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="save_delivery_location">
+                    <input type="hidden" name="return_page" value="<?= e($page) ?>">
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">Name<span class="ms-req">*</span></label>
+                        <input type="text" name="name" class="ms-loc-input" required value="<?= e($prefillName) ?>">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">Door No/Floor/Apartments<span class="ms-req">*</span></label>
+                        <input type="text" name="door_no" class="ms-loc-input" required value="<?= e($prefillDoor) ?>">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">Street/Area/Landmark<span class="ms-req">*</span></label>
+                        <input type="text" name="street_area" class="ms-loc-input" required value="<?= e($prefillStreet) ?>">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">City<span class="ms-req">*</span></label>
+                        <input type="text" name="city" class="ms-loc-input" required value="<?= e($prefillCity) ?>">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">Country<span class="ms-req">*</span></label>
+                        <input type="text" name="country" class="ms-loc-input" readonly value="India">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">State/Union Territory<span class="ms-req">*</span></label>
+                        <select name="state" class="ms-loc-select" required>
+                            <?php foreach ($indianStates as $st): ?>
+                                <option value="<?= e($st) ?>" <?= ($st === $prefillState) ? 'selected' : '' ?>><?= e($st) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">ZIP/Postal Code<span class="ms-req">*</span></label>
+                        <input type="text" name="pincode" class="ms-loc-input" required value="<?= e($prefillPincode) ?>">
+                    </div>
+
+                    <div class="ms-loc-form-group">
+                        <label class="ms-loc-label">Mobile Number<span class="ms-req">*</span></label>
+                        <input type="tel" name="phone" class="ms-loc-input" required value="<?= e($prefillPhone) ?>">
+                    </div>
+
+                    <button type="submit" class="ms-loc-btn ms-loc-save-btn">Save Address</button>
+                </form>
+            </div>
+        </div>
+    </aside>
+</div>
 <?php endif; ?>
 <script>
 (function () {
@@ -1518,9 +1689,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     function unlockIfNoneOpen() {
         var cart = document.getElementById('msCartOverlay');
         var acc = document.getElementById('msAccountOverlay');
+        var loc = document.getElementById('msLocationOverlay');
         var cartOpen = cart && cart.classList.contains('is-open');
         var accOpen = acc && acc.classList.contains('is-open');
-        if (!cartOpen && !accOpen) {
+        var locOpen = loc && loc.classList.contains('is-open');
+        if (!cartOpen && !accOpen && !locOpen) {
             document.body.classList.remove('ms-cart-lock');
         }
     }
@@ -1533,9 +1706,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     }
     function openDrawer(overlay) {
         if (!overlay) return;
-        closeDrawer(document.getElementById('msCartOverlay') === overlay
-            ? document.getElementById('msAccountOverlay')
-            : document.getElementById('msCartOverlay'));
+        var overlays = [document.getElementById('msCartOverlay'), document.getElementById('msAccountOverlay'), document.getElementById('msLocationOverlay')];
+        overlays.forEach(function (o) {
+            if (o && o !== overlay) closeDrawer(o);
+        });
         overlay.hidden = false;
         overlay.classList.add('is-open');
         overlay.setAttribute('aria-hidden', 'false');
@@ -1568,10 +1742,56 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
     var cartOverlay = bindDrawer('msCartOverlay', 'msCartToggle', 'msCartClose');
     var accOverlay = bindDrawer('msAccountOverlay', 'msAccountToggle', 'msAccountClose');
+    var locOverlay = bindDrawer('msLocationOverlay', 'msLocationToggle', null);
+
+    // Location Drawer View Switching (Prompt vs Form)
+    var promptView = document.getElementById('msLocPromptView');
+    var formView = document.getElementById('msLocFormView');
+    var locHeadBtn = document.getElementById('msLocTopActionBtn');
+    var locTitle = document.getElementById('msLocTitle');
+    var btnOpenForm = document.getElementById('msBtnOpenAddressForm');
+
+    function showLocPrompt() {
+        if (promptView && formView) {
+            promptView.style.display = 'flex';
+            formView.style.display = 'none';
+            if (locTitle) locTitle.textContent = 'Set Delivery Location';
+            if (locHeadBtn) {
+                locHeadBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+                locHeadBtn.setAttribute('aria-label', 'Close');
+            }
+        }
+    }
+
+    function showLocForm() {
+        if (promptView && formView) {
+            promptView.style.display = 'none';
+            formView.style.display = 'block';
+            if (locTitle) locTitle.textContent = 'Address Details';
+            if (locHeadBtn) {
+                locHeadBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
+                locHeadBtn.setAttribute('aria-label', 'Back');
+            }
+        }
+    }
+
+    if (btnOpenForm) {
+        btnOpenForm.addEventListener('click', showLocForm);
+    }
+    if (locHeadBtn) {
+        locHeadBtn.addEventListener('click', function () {
+            if (formView && formView.style.display !== 'none') {
+                showLocPrompt();
+            } else {
+                closeDrawer(locOverlay);
+            }
+        });
+    }
 
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
-        if (accOverlay && accOverlay.classList.contains('is-open')) closeDrawer(accOverlay);
+        if (locOverlay && locOverlay.classList.contains('is-open')) closeDrawer(locOverlay);
+        else if (accOverlay && accOverlay.classList.contains('is-open')) closeDrawer(accOverlay);
         else if (cartOverlay && cartOverlay.classList.contains('is-open')) closeDrawer(cartOverlay);
     });
 
