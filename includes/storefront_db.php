@@ -822,13 +822,22 @@ function verify_custom_domain(int $businessId, int $domainId, bool $forceLocal =
     // 3. Real Global DNS CNAME lookup (Zoho Production Lifecycle)
     if (!$verified && function_exists('dns_get_record')) {
         $cnameTarget = strtolower((string) STORE_CNAME_TARGET);
-        $records = @dns_get_record($domain, DNS_CNAME) ?: [];
-        foreach ($records as $rec) {
-            $target = strtolower(rtrim((string) ($rec['target'] ?? ''), '.'));
-            if ($target === $cnameTarget || $target === 'localhost' || strpos($target, $token) !== false) {
-                $verified = true;
-                $reason = 'CNAME record verified on global DNS.';
-                break;
+        $lookupDomains = [$domain];
+        if (!str_starts_with(strtolower($domain), 'www.') && substr_count($domain, '.') === 1) {
+            $lookupDomains[] = 'www.' . $domain;
+        } elseif (str_starts_with(strtolower($domain), 'www.')) {
+            $lookupDomains[] = substr($domain, 4);
+        }
+
+        foreach ($lookupDomains as $d) {
+            $records = @dns_get_record($d, DNS_CNAME) ?: [];
+            foreach ($records as $rec) {
+                $target = strtolower(rtrim((string) ($rec['target'] ?? ''), '.'));
+                if ($target === $cnameTarget || $target === 'localhost' || strpos($target, $token) !== false) {
+                    $verified = true;
+                    $reason = 'CNAME record verified on global DNS (' . $d . ').';
+                    break 2;
+                }
             }
         }
     }

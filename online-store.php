@@ -1688,7 +1688,12 @@ if (in_array($tab, ['customize', 'branding'], true)) {
 
                                 <div class="cd-step-body" id="stepBody2" style="<?= $initialStep === 2 ? '' : 'display:none;' ?>">
                                     <?php if ($currentDomain): ?>
-                                        <p class="cd-step-desc">Add the following <strong>CNAME</strong> record in your domain registrar's DNS settings:</p>
+                                        <?php
+                                        $dName = (string) $currentDomain['domain'];
+                                        $dParts = explode('.', $dName);
+                                        $hostVal = count($dParts) > 2 ? $dParts[0] : 'www';
+                                        ?>
+                                        <p class="cd-step-desc">Add the following <strong>CNAME</strong> record in your domain registrar's DNS settings (GoDaddy, Cloudflare, Namecheap, etc.):</p>
                                         <div class="cd-dns-table">
                                             <div class="cd-dns-row cd-dns-header">
                                                 <div>Type</div>
@@ -1697,10 +1702,13 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                             </div>
                                             <div class="cd-dns-row">
                                                 <div><span class="cd-type-badge">CNAME</span></div>
-                                                <div class="cd-dns-val"><code><?= e(explode('.', (string)$currentDomain['domain'])[0] ?? 'shop') ?></code></div>
+                                                <div class="cd-dns-val"><code><?= e($hostVal) ?></code></div>
                                                 <div class="cd-dns-val"><code><?= e($cnameTarget) ?></code></div>
                                             </div>
                                         </div>
+                                        <?php if (count($dParts) <= 2): ?>
+                                            <p style="font-size:12.5px;color:#64748b;margin:8px 0 14px;">💡 <em>Note: For root domains, use <strong>www</strong> as the Host in your DNS registrar.</em></p>
+                                        <?php endif; ?>
 
                                         <div class="cd-dns-actions">
                                             <form method="post" style="display:inline;">
