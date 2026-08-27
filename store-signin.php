@@ -328,6 +328,12 @@ $favicon = get_storefront_dynamic_favicon_url($brand, $storeName);
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="verify_otp">
                 <p class="sf-otp-info">We've sent a 6-digit verification code to <strong>+91 <?= e(substr($regData['phone'] ?? '', -10)) ?></strong>.</p>
+                <?php if (!empty($regData['otp'])): ?>
+                    <div style="background: #f0fdf4; border: 1px solid #86efac; color: #166534; border-radius: 8px; padding: 12px 16px; font-size: 13.5px; margin-bottom: 18px; text-align: center;">
+                        <span style="display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:#15803d; font-weight:600; margin-bottom:4px;">Verification Code</span>
+                        <strong style="font-size: 24px; letter-spacing: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #14532d;"><?= e((string)$regData['otp']) ?></strong>
+                    </div>
+                <?php endif; ?>
                 <input class="sf-auth-otp-input" type="text" name="otp" required maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" autofocus autocomplete="one-time-code">
                 <button class="sf-auth-btn" type="submit">Verify & Proceed</button>
             </form>

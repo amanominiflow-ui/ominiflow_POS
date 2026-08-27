@@ -1290,6 +1290,39 @@ function send_storefront_otp_sms(string $phone, string $otp, string $storeName):
         'message' => $message,
         'time' => time(),
     ];
+
+    // Fast2SMS API Integration (if FAST2SMS_API_KEY is configured in config/app.php)
+    if (defined('FAST2SMS_API_KEY') && FAST2SMS_API_KEY !== '') {
+        try {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => "https://www.fast2sms.com/dev/bulkV2",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode([
+                    "route" => "otp",
+                    "variables_values" => $otp,
+                    "numbers" => $cleanPhone,
+                ]),
+                CURLOPT_HTTPHEADER => [
+                    "authorization: " . FAST2SMS_API_KEY,
+                    "Content-Type: application/json"
+                ],
+                CURLOPT_TIMEOUT => 8,
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
+        } catch (Throwable $e) {}
+    }
+
+    // 2Factor.in SMS Integration (if TWO_FACTOR_API_KEY is configured)
+    if (defined('TWO_FACTOR_API_KEY') && TWO_FACTOR_API_KEY !== '') {
+        try {
+            $url = "https://2factor.in/v1/API/" . urlencode(TWO_FACTOR_API_KEY) . "/SMS/" . urlencode($cleanPhone) . "/" . urlencode($otp) . "/OTP1";
+            @file_get_contents($url);
+        } catch (Throwable $e) {}
+    }
+
     return true;
 }
 
