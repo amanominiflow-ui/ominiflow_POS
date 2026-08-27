@@ -130,7 +130,15 @@ function studio_cat_placeholder(): string {
         .st-ph-name { font-weight: 800; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.05em; }
         .st-ph-avatar { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.45); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .st-ph-loc { font-size: .82em; opacity: .88; display: flex; align-items: center; gap: 3px; margin-bottom: 8px; }
-        .st-ph-search { background: #fff; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; color: #64748b; font-size: .9em; }
+        .st-ph-search { background: #fff; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 7px; color: #64748b; font-size: .9em; overflow: hidden; height: 34px; box-sizing: border-box; }
+        .st-ph-search-content { display: flex; align-items: center; white-space: nowrap; overflow: hidden; flex: 1; height: 20px; line-height: 20px; }
+        .st-ph-sp-prefix { color: #94a3b8; font-weight: 500; }
+        .st-ph-sp-track { display: inline-block; position: relative; height: 20px; overflow: hidden; margin-left: 2px; flex: 1; }
+        .st-ph-sp-word { display: block; height: 20px; line-height: 20px; font-weight: 600; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transform: translate3d(0,0,0); backface-visibility: hidden; will-change: transform, opacity; }
+        .st-ph-sp-word.st-slide-in { animation: msSearchSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .st-ph-sp-word.st-slide-out { animation: msSearchSlideOut 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes msSearchSlideIn { 0% { transform: translate3d(0, 80%, 0); opacity: 0; } 100% { transform: translate3d(0, 0, 0); opacity: 1; } }
+        @keyframes msSearchSlideOut { 0% { transform: translate3d(0, 0, 0); opacity: 1; } 100% { transform: translate3d(0, -80%, 0); opacity: 0; } }
 
         .st-sec { position: relative; padding: 12px; border: 2px dashed transparent; cursor: pointer; }
         .st-sec:hover, .st-sec.selected { border-color: #2563eb; }
@@ -355,7 +363,10 @@ function studio_cat_placeholder(): string {
                             <?php endif; ?>
                             <div class="st-ph-search">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                <span>Search by "<?= e($builderCategories[0]['name'] ?? 'WOMEN') ?>"</span>
+                                <div class="st-ph-search-content">
+                                    <span class="st-ph-sp-prefix">Search by </span>
+                                    <span class="st-ph-sp-track"><span class="st-ph-sp-word" id="stPhSearchWord">"<?= e($builderCategories[0]['name'] ?? 'WOMEN') ?>"</span></span>
+                                </div>
                             </div>
                         </div>
 
@@ -929,6 +940,37 @@ if (STUDIO_MODE === 'page') {
     if (canvas) canvas.addEventListener('scroll', placeFloatMenu);
     window.addEventListener('resize', placeFloatMenu);
 }
+
+// Phone preview search whole word slide autoplay effect
+(function () {
+    const wordEl = document.getElementById('stPhSearchWord');
+    if (!wordEl) return;
+
+    let cats = <?= json_encode(array_values(array_filter(array_map(static fn($c) => trim((string)($c['name'] ?? '')), $builderCategories ?? []))), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    if (!cats || cats.length === 0) {
+        cats = ['WOMEN', 'MENS', 'ELECTRONIC', 'GROCERY'];
+    }
+
+    let catIndex = 0;
+    let timer = null;
+
+    function switchWord() {
+        wordEl.classList.remove('st-slide-in');
+        wordEl.classList.add('st-slide-out');
+
+        setTimeout(function () {
+            catIndex = (catIndex + 1) % cats.length;
+            wordEl.textContent = '"' + cats[catIndex] + '"';
+
+            wordEl.classList.remove('st-slide-out');
+            wordEl.classList.add('st-slide-in');
+
+            timer = setTimeout(switchWord, 1700);
+        }, 260);
+    }
+
+    timer = setTimeout(switchWord, 1700);
+})();
 </script>
 </body>
 </html>

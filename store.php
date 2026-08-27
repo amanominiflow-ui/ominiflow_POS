@@ -184,6 +184,37 @@ if (!empty($brand['favicon_path'])) {
 $fontSize = in_array(($brand['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? $brand['font_size'] : 'medium';
 $headerText = (string) ($brand['header_text_color'] ?? '#ffffff');
 $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
+
+$searchCategories = [];
+if (!empty($bid)) {
+    try {
+        $rawCats = get_categories('', 'active', $bid);
+        foreach ($rawCats as $rc) {
+            $cName = trim((string) ($rc['name'] ?? ''));
+            if ($cName !== '' && !in_array($cName, $searchCategories, true)) {
+                $searchCategories[] = $cName;
+            }
+        }
+    } catch (Throwable $e) {}
+
+    if (empty($searchCategories)) {
+        try {
+            $rawProds = get_products('', null, 'active', '', $bid);
+            foreach ($rawProds as $rp) {
+                $pName = trim((string) ($rp['name'] ?? ''));
+                if ($pName !== '' && !in_array($pName, $searchCategories, true)) {
+                    $searchCategories[] = $pName;
+                }
+                if (count($searchCategories) >= 6) {
+                    break;
+                }
+            }
+        } catch (Throwable $e) {}
+    }
+}
+if (empty($searchCategories)) {
+    $searchCategories = ['items', 'categories'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -239,7 +270,11 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
                     <?php endif; ?>
                     <div class="ms-search-box">
                         <svg class="ms-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input class="ms-search" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="<?= e($brand['search_placeholder'] ?: 'Search by') ?>">
+                        <input class="ms-search" id="msSearchInput" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="Search by &quot;<?= e($searchCategories[0] ?? 'items') ?>&quot;" autocomplete="off">
+                        <div class="ms-search-placeholder" id="msSearchPlaceholder" aria-hidden="true">
+                            <span class="ms-sp-prefix">Search by </span>
+                            <span class="ms-sp-track"><span class="ms-sp-word" id="msSearchWord">"<?= e($searchCategories[0] ?? 'items') ?>"</span></span>
+                        </div>
                     </div>
                 </form>
 
@@ -1008,6 +1043,80 @@ $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
     });
 
     start();
+})();
+
+// Animated search placeholder slot-machine / slide effect
+(function () {
+    var searchWrap = document.querySelector('.ms-search-wrap');
+    var searchInput = document.getElementById('msSearchInput');
+    var wordEl = document.getElementById('msSearchWord');
+    if (!searchInput || !wordEl || !searchWrap) return;
+
+    var categories = <?= json_encode(array_values($searchCategories), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    if (!Array.isArray(categories) || categories.length === 0) return;
+
+    var catIndex = 0;
+    var timer = null;
+    var isFocused = false;
+
+    function checkValue() {
+        if (searchInput.value && searchInput.value.trim() !== '') {
+            searchWrap.classList.add('has-val');
+        } else {
+            searchWrap.classList.remove('has-val');
+        }
+    }
+
+    function switchWord() {
+        if (isFocused || (searchInput.value && searchInput.value.trim() !== '')) {
+            return;
+        }
+
+        // 1. Slide OUT current word
+        wordEl.classList.remove('ms-slide-in');
+        wordEl.classList.add('ms-slide-out');
+
+        setTimeout(function () {
+            // 2. Change text to next category
+            catIndex = (catIndex + 1) % categories.length;
+            wordEl.textContent = '"' + categories[catIndex] + '"';
+
+            // 3. Slide IN next word
+            wordEl.classList.remove('ms-slide-out');
+            wordEl.classList.add('ms-slide-in');
+
+            // Schedule next switch in 1.7 seconds
+            timer = setTimeout(switchWord, 1700);
+        }, 260);
+    }
+
+    searchInput.addEventListener('focus', function () {
+        isFocused = true;
+        searchWrap.classList.add('is-active');
+        if (timer) clearTimeout(timer);
+    });
+
+    searchInput.addEventListener('blur', function () {
+        isFocused = false;
+        searchWrap.classList.remove('is-active');
+        checkValue();
+        if (!searchInput.value || searchInput.value.trim() === '') {
+            timer = setTimeout(switchWord, 1400);
+        }
+    });
+
+    searchInput.addEventListener('input', checkValue);
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            if (timer) clearTimeout(timer);
+        } else if (!isFocused && (!searchInput.value || searchInput.value.trim() === '')) {
+            switchWord();
+        }
+    });
+
+    checkValue();
+    timer = setTimeout(switchWord, 1700);
 })();
 </script>
 </body>

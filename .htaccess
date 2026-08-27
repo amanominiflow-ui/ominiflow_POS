@@ -1,5 +1,5 @@
 RewriteEngine On
-RewriteBase /ominiflow-pos/
+RewriteBase /ominiflow_POS-main/
 
 # Pretty public store URLs. Query-string URLs (store.php?slug=) still work if rewrite is off.
 RewriteCond %{REQUEST_FILENAME} !-f
