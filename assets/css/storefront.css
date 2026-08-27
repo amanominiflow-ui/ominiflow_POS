@@ -1404,6 +1404,54 @@ body.sf-auth-body {
     opacity: 0.85;
 }
 
+.sf-auth-otp-input {
+    letter-spacing: 8px;
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: #f1f5f9;
+    border: 2px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: #0f172a;
+    width: 100%;
+    margin-bottom: 16px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.sf-auth-otp-input:focus {
+    border-color: #2563eb;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.sf-otp-info {
+    font-size: 13.5px;
+    color: #64748b;
+    margin-bottom: 16px;
+    line-height: 1.5;
+    text-align: center;
+}
+.sf-otp-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+    font-size: 13.5px;
+}
+.sf-resend-btn {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: #2563eb;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
 .sf-auth-btn {
     display: flex;
     width: 100%;

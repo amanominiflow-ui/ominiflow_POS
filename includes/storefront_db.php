@@ -1129,12 +1129,64 @@ function login_storefront_shopper(int $businessId, string $email, string $passwo
     return ['success' => true];
 }
 
+function send_storefront_otp_email(string $toEmail, string $toName, string $otp, string $storeName): bool {
+    $toEmail = trim($toEmail);
+    if ($toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+    $subject = "Your {$storeName} Verification Code: {$otp}";
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-type: text/html; charset=UTF-8',
+        'From: ' . mb_encode_mimeheader($storeName, 'UTF-8') . ' <noreply@ominiflow.com>',
+        'Reply-To: noreply@ominiflow.com',
+        'X-Mailer: PHP/' . phpversion(),
+    ];
+
+    $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Email Verification</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 28px 12px;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 460px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 6px 24px rgba(15,23,42,0.06);">
+    <tr>
+      <td style="background: #0f4c3a; padding: 24px; text-align: center;">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;">{$storeName}</h2>
+        <p style="margin: 4px 0 0; font-size: 13px; color: #e2e8f0;">Storefront Email Verification</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 32px 24px 28px; text-align: center;">
+        <h3 style="margin: 0 0 12px; color: #0f172a; font-size: 18px; font-weight: 700;">Hello {$toName},</h3>
+        <p style="color: #64748b; font-size: 14.5px; line-height: 1.6; margin: 0 0 24px;">Please use the following 6-digit One-Time Password (OTP) to verify your email and activate your account:</p>
+        <div style="background: #f8fafc; border: 2px dashed #94a3b8; border-radius: 10px; padding: 14px 24px; display: inline-block; margin-bottom: 24px;">
+          <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0f172a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding-left: 8px;">{$otp}</span>
+        </div>
+        <p style="color: #94a3b8; font-size: 12.5px; line-height: 1.5; margin: 0;">This OTP is valid for <strong>10 minutes</strong>. If you did not request this account creation, please disregard this email.</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8;">
+        &copy; {$storeName} &bull; Powered by OminiFlow POS
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+HTML;
+
+    try {
+        return @mail($toEmail, $subject, $html, implode("\r\n", $headers));
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function register_storefront_shopper(int $businessId, array $data): array {
     $name = storefront_clean_person_name((string) ($data['name'] ?? ''));
     $email = strtolower(trim((string) ($data['email'] ?? '')));
     $phone = trim((string) ($data['phone'] ?? ''));
     $password = (string) ($data['password'] ?? '');
-    $confirm = (string) ($data['password_confirmation'] ?? '');
 
     if ($name === '') {
         return ['success' => false, 'error' => 'Name is required.'];
@@ -1144,9 +1196,6 @@ function register_storefront_shopper(int $businessId, array $data): array {
     }
     if (strlen($password) < 6) {
         return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
-    }
-    if ($password !== $confirm) {
-        return ['success' => false, 'error' => 'Passwords do not match.'];
     }
 
     $existing = find_store_customer_by_email($businessId, $email);

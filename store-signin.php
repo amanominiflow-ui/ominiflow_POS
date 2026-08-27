@@ -1,6 +1,6 @@
 <?php
 /**
- * Customer store sign-in / create account (not POS admin login).
+ * Customer store sign-in / create account with Email OTP verification (not POS admin login).
  */
 
 declare(strict_types=1);
@@ -27,6 +27,7 @@ $headerColor = (string) ($brand['header_color'] ?? '#0f4c3a');
 $homeUrl = public_store_url($storeBiz, 'home');
 $signinUrl = public_store_signin_url($storeBiz);
 $signupUrl = public_store_signin_url($storeBiz, ['mode' => 'signup']);
+$verifyOtpUrl = public_store_signin_url($storeBiz, ['mode' => 'verify_otp']);
 $forgotUrl = public_store_signin_url($storeBiz, ['mode' => 'forgot']);
 
 if (get_storefront_shopper($bid)) {
@@ -34,11 +35,12 @@ if (get_storefront_shopper($bid)) {
 }
 
 $mode = (string) ($_GET['mode'] ?? 'signin');
-if (!in_array($mode, ['signin', 'signup', 'forgot'], true)) {
+if (!in_array($mode, ['signin', 'signup', 'verify_otp', 'forgot'], true)) {
     $mode = 'signin';
 }
 
 $emailKey = 'sf_auth_email_' . $bid;
+$otpKey = 'sf_reg_otp_' . $bid;
 $errors = [];
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -80,20 +82,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'register') {
+            $name = storefront_clean_person_name((string) ($_POST['name'] ?? ''));
+            $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+            $phone = trim((string) ($_POST['phone'] ?? ''));
+            $password = (string) ($_POST['password'] ?? '');
+
             set_old_input($_POST);
-            $res = register_storefront_shopper($bid, [
-                'name' => (string) ($_POST['name'] ?? ''),
-                'email' => (string) ($_POST['email'] ?? ''),
-                'phone' => (string) ($_POST['phone'] ?? ''),
-                'password' => (string) ($_POST['password'] ?? ''),
-                'password_confirmation' => (string) ($_POST['password_confirmation'] ?? ''),
-            ]);
-            if (!empty($res['success'])) {
-                unset($_SESSION[$emailKey]);
-                clear_old_input();
-                redirect(public_store_url($storeBiz, 'home', ['account' => '1']));
+
+            if ($name === '') {
+                $errors['general'] = 'Full name is required.';
+            } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors['general'] = 'Enter a valid email address.';
+            } elseif (strlen($password) < 6) {
+                $errors['general'] = 'Password must be at least 6 characters.';
+            } else {
+                $existing = find_store_customer_by_email($bid, $email);
+                if ($existing && !empty($existing['password'])) {
+                    $errors['general'] = 'An account already exists for this email. Please sign in.';
+                } else {
+                    $otp = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                    $_SESSION[$otpKey] = [
+                        'otp' => $otp,
+                        'expires' => time() + 600,
+                        'email' => $email,
+                        'name' => $name,
+                        'data' => [
+                            'name' => $name,
+                            'email' => $email,
+                            'phone' => $phone,
+                            'password' => $password,
+                        ],
+                    ];
+                    send_storefront_otp_email($email, $name, $otp, $storeName);
+                    set_flash('success', 'A 6-digit verification code has been sent to ' . $email . '.');
+                    redirect($verifyOtpUrl);
+                }
             }
-            $errors['general'] = $res['error'] ?? 'Could not create account.';
+        }
+
+        if ($action === 'verify_otp') {
+            $regData = $_SESSION[$otpKey] ?? null;
+            if (!$regData || empty($regData['otp'])) {
+                set_flash('error', 'Session expired. Please enter your details again.');
+                redirect($signupUrl);
+            } elseif (time() > ($regData['expires'] ?? 0)) {
+                unset($_SESSION[$otpKey]);
+                set_flash('error', 'OTP has expired. Please register again.');
+                redirect($signupUrl);
+            } else {
+                $enteredOtp = trim((string) ($_POST['otp'] ?? ''));
+                if ($enteredOtp === '' || $enteredOtp !== (string) $regData['otp']) {
+                    $errors['general'] = 'Invalid verification code. Please check your email and try again.';
+                    $mode = 'verify_otp';
+                } else {
+                    $res = register_storefront_shopper($bid, $regData['data']);
+                    if (!empty($res['success'])) {
+                        unset($_SESSION[$otpKey]);
+                        unset($_SESSION[$emailKey]);
+                        clear_old_input();
+                        set_flash('success', 'Email verified and account created successfully! Welcome to ' . $storeName);
+                        redirect(public_store_url($storeBiz, 'home', ['account' => '1']));
+                    }
+                    $errors['general'] = $res['error'] ?? 'Could not create account.';
+                    $mode = 'verify_otp';
+                }
+            }
+        }
+
+        if ($action === 'resend_otp') {
+            $regData = $_SESSION[$otpKey] ?? null;
+            if ($regData && !empty($regData['email'])) {
+                $otp = str_pad((string) random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                $_SESSION[$otpKey]['otp'] = $otp;
+                $_SESSION[$otpKey]['expires'] = time() + 600;
+                send_storefront_otp_email($regData['email'], (string)($regData['name'] ?? 'Customer'), $otp, $storeName);
+                set_flash('success', 'A new verification code has been sent to ' . $regData['email'] . '.');
+                redirect($verifyOtpUrl);
+            } else {
+                set_flash('error', 'Session expired. Please fill in your registration details again.');
+                redirect($signupUrl);
+            }
+        }
+
+        if ($action === 'cancel_otp') {
+            unset($_SESSION[$otpKey]);
+            redirect($signupUrl);
         }
 
         if ($action === 'reset_password') {
@@ -122,6 +195,12 @@ if ($mode === 'signup') {
     $pageHeading = 'Create Account';
     $pageSub = 'to shop at ' . $storeName;
 }
+if ($mode === 'verify_otp') {
+    $regData = $_SESSION[$otpKey] ?? null;
+    $regEmail = (string) ($regData['email'] ?? '');
+    $pageHeading = 'Verify Email';
+    $pageSub = $regEmail ? 'Enter the 6-digit code sent to ' . $regEmail : 'Enter the 6-digit verification code';
+}
 if ($mode === 'forgot') {
     $pageHeading = 'Forgot Password';
     $pageSub = 'set a new password for your account';
@@ -143,7 +222,7 @@ if (!empty($brand['favicon_path'])) {
     <?php if ($favicon): ?>
         <link rel="icon" href="<?= e($favicon) ?>">
     <?php endif; ?>
-    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=8">
+    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=10">
     <style>
         :root { --ms-header: <?= e($headerColor) ?>; }
     </style>
@@ -166,10 +245,32 @@ if (!empty($brand['favicon_path'])) {
                 <input class="sf-auth-input" type="email" name="email" required placeholder="Email address" value="<?= e(old('email', $stepEmail)) ?>" autocomplete="email">
                 <input class="sf-auth-input" type="tel" name="phone" placeholder="Phone (optional)" value="<?= e(old('phone')) ?>" autocomplete="tel">
                 <input class="sf-auth-input" type="password" name="password" required placeholder="Password (min 6 characters)" autocomplete="new-password">
-                <input class="sf-auth-input" type="password" name="password_confirmation" required placeholder="Confirm password" autocomplete="new-password">
                 <button class="sf-auth-btn" type="submit">Create Account</button>
             </form>
             <p class="sf-auth-foot">Already have an account? <a href="<?= e($signinUrl) ?>">Sign in</a></p>
+
+        <?php elseif ($mode === 'verify_otp'): ?>
+            <?php $regData = $_SESSION[$otpKey] ?? null; ?>
+            <form method="post" autocomplete="off">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="verify_otp">
+                <p class="sf-otp-info">We've sent a 6-digit verification code to <strong><?= e($regData['email'] ?? 'your email') ?></strong>.</p>
+                <input class="sf-auth-otp-input" type="text" name="otp" required maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="••••••" autofocus autocomplete="one-time-code">
+                <button class="sf-auth-btn" type="submit">Verify & Activate Account</button>
+            </form>
+
+            <div class="sf-otp-actions">
+                <form method="post" style="display:inline;">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="resend_otp">
+                    <button type="submit" class="sf-resend-btn">Resend Code</button>
+                </form>
+                <form method="post" style="display:inline;">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="cancel_otp">
+                    <button type="submit" class="sf-resend-btn" style="color:#64748b;">Change details</button>
+                </form>
+            </div>
 
         <?php elseif ($mode === 'forgot'): ?>
             <form method="post" autocomplete="on">
