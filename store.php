@@ -74,17 +74,6 @@ if (!$storeBiz) {
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
-            $shopper = get_storefront_shopper($bid);
-            if (!$shopper) {
-                $_SESSION['sf_pending_cart_' . $bid] = [
-                    'product_id' => $pid,
-                    'qty' => $qty,
-                    'back' => $back,
-                ];
-                set_flash('error', 'Please sign in or create an account to add items to your cart.');
-                redirect(public_store_signin_url($storeBiz));
-            }
-
             $res = add_to_storefront_cart($bid, $pid, $qty);
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
             $params = $back === 'product' ? ['id' => $pid] : [];
@@ -144,11 +133,16 @@ if (!$storeBiz) {
         }
 
         if ($action === 'place_order') {
+            $shopper = get_storefront_shopper($bid);
+            if (!$shopper) {
+                set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
+                redirect(public_store_signin_url($storeBiz, ['return' => 'checkout']));
+            }
             $result = place_online_store_order($bid, [
-                'name' => (string) ($_POST['name'] ?? ''),
-                'phone' => (string) ($_POST['phone'] ?? ''),
-                'email' => (string) ($_POST['email'] ?? ''),
-                'address' => (string) ($_POST['address'] ?? ''),
+                'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
+                'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
+                'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
+                'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
                 'notes' => (string) ($_POST['notes'] ?? ''),
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
             ]);
@@ -174,8 +168,9 @@ if (!$storeBiz) {
     $storeShopper = refresh_storefront_shopper($bid);
     $openAccountDrawer = !empty($_GET['account']);
     $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $page === 'cart');
-    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile'], true) && !$storeShopper) {
-        redirect(public_store_signin_url($storeBiz));
+    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
+        $ret = $page === 'checkout' ? 'checkout' : 'account';
+        redirect(public_store_signin_url($storeBiz, ['return' => $ret]));
     }
 }
 
@@ -187,12 +182,7 @@ function sf_product_image(?string $path): string {
     return $path ? asset($path) : '';
 }
 
-$favicon = '';
-if (!empty($brand['favicon_path'])) {
-    $favicon = asset((string) $brand['favicon_path']);
-} elseif (!empty($brand['logo_path'])) {
-    $favicon = asset((string) $brand['logo_path']);
-}
+$favicon = get_storefront_dynamic_favicon_url($brand, $pageTitle);
 $fontSize = in_array(($brand['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? $brand['font_size'] : 'medium';
 $headerText = (string) ($brand['header_text_color'] ?? '#ffffff');
 $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
@@ -209,7 +199,7 @@ if (!empty($bid)) {
         }
     } catch (Throwable $e) {}
 
-    if (empty($searchCategories)) {
+    if (count($searchCategories) < 4) {
         try {
             $rawProds = get_products('', null, 'active', '', $bid);
             foreach ($rawProds as $rp) {
@@ -225,8 +215,12 @@ if (!empty($bid)) {
     }
 }
 if (empty($searchCategories)) {
-    $searchCategories = ['items', 'categories'];
+    $searchCategories = ['All Products', 'Fresh Items', 'Best Sellers'];
+} elseif (count($searchCategories) === 1) {
+    $searchCategories[] = 'All Products';
+    $searchCategories[] = 'Best Sellers';
 }
+$cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' . 102;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -234,10 +228,10 @@ if (empty($searchCategories)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title><?= e($pageTitle) ?></title>
-    <?php if ($favicon): ?>
-        <link rel="icon" href="<?= e($favicon) ?>">
-    <?php endif; ?>
-    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=9">
+    <link rel="icon" type="image/svg+xml" href="<?= e($favicon) ?>">
+    <link rel="alternate icon" href="<?= asset('assets/images/favicon-32x32.png') ?>">
+    <link rel="apple-touch-icon" href="<?= e($favicon) ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=<?= $cssVersion ?>">
     <style>
         :root {
             --ms-header: <?= e($brand['header_color']) ?>;
@@ -249,6 +243,114 @@ if (empty($searchCategories)) {
         body.ms-body { font-size: var(--ms-font); }
         .ms-top-nav, .ms-title, .ms-nav-item, .ms-location-widget { color: var(--ms-header-text, #ffffff); }
         .ms-add-btn, .ms-btn { color: var(--ms-btn-text, #ffffff); }
+
+        /* Critical Search Overlay Styles to eliminate caching/rendering glitches */
+        .ms-search-wrap {
+            position: relative;
+            flex: 1 1 auto;
+            max-width: 560px;
+            min-width: 0;
+            margin: 0;
+        }
+        .ms-search-box {
+            position: relative;
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+        .ms-search {
+            width: 100%;
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 16px 10px 40px;
+            font: inherit;
+            font-size: 14px;
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            position: relative;
+            z-index: 1;
+        }
+        .ms-search::placeholder {
+            color: transparent !important;
+        }
+        .ms-search-placeholder {
+            position: absolute !important;
+            left: 40px !important;
+            right: 16px !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            display: flex !important;
+            align-items: center !important;
+            pointer-events: none !important;
+            z-index: 2 !important;
+            font-size: 13.5px !important;
+            color: #94a3b8 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            height: 22px !important;
+        }
+        .ms-search-wrap.is-active .ms-search-placeholder,
+        .ms-search-wrap.has-val .ms-search-placeholder {
+            display: none !important;
+        }
+        .ms-sp-prefix {
+            font-weight: 500;
+            color: #94a3b8;
+            flex-shrink: 0;
+        }
+        .ms-sp-track {
+            position: relative;
+            display: inline-block;
+            height: 22px;
+            overflow: hidden;
+            vertical-align: middle;
+            margin-left: 2px;
+            flex: 1;
+            min-width: 0;
+        }
+        .ms-sp-word {
+            display: block;
+            line-height: 22px;
+            font-weight: 600;
+            color: #475569;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transform: translate3d(0, 0, 0);
+            will-change: transform, opacity;
+        }
+        .ms-sp-word.ms-slide-in {
+            animation: msSearchSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .ms-sp-word.ms-slide-out {
+            animation: msSearchSlideOut 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes msSearchSlideIn {
+            0% { transform: translate3d(0, 80%, 0); opacity: 0; }
+            100% { transform: translate3d(0, 0, 0); opacity: 1; }
+        }
+        @keyframes msSearchSlideOut {
+            0% { transform: translate3d(0, 0, 0); opacity: 1; }
+            100% { transform: translate3d(0, -80%, 0); opacity: 0; }
+        }
+        @media (max-width: 768px) {
+            .ms-search-wrap {
+                order: 3;
+                width: 100%;
+                max-width: 100%;
+                flex: 1 1 100%;
+            }
+            .ms-search {
+                padding: 9px 14px 9px 38px;
+                font-size: 13.5px;
+            }
+            .ms-search-placeholder {
+                left: 38px !important;
+                right: 14px !important;
+                font-size: 13px !important;
+            }
+        }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
@@ -276,16 +378,18 @@ if (empty($searchCategories)) {
                     <?php endif; ?>
                 </a>
 
-                <form class="ms-search-wrap" method="get" action="<?= e($homeUrl) ?>">
+                <form class="ms-search-wrap" method="get" action="<?= e($homeUrl) ?>" style="position:relative;flex:1 1 auto;max-width:560px;min-width:0;margin:0;">
                     <?php if (!store_is_on_custom_domain($storeBiz) && !empty($storeBiz['store_slug'])): ?>
                         <input type="hidden" name="slug" value="<?= e((string) $storeBiz['store_slug']) ?>">
                     <?php endif; ?>
-                    <div class="ms-search-box">
-                        <svg class="ms-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input class="ms-search" id="msSearchInput" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="Search by &quot;<?= e($searchCategories[0] ?? 'items') ?>&quot;" autocomplete="off">
-                        <div class="ms-search-placeholder" id="msSearchPlaceholder" aria-hidden="true">
-                            <span class="ms-sp-prefix">Search by </span>
-                            <span class="ms-sp-track"><span class="ms-sp-word" id="msSearchWord">"<?= e($searchCategories[0] ?? 'items') ?>"</span></span>
+                    <div class="ms-search-box" style="position:relative;width:100%;display:flex;align-items:center;">
+                        <svg class="ms-search-icon" style="position:absolute;left:16px;color:#94a3b8;pointer-events:none;z-index:3;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input class="ms-search" id="msSearchInput" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" style="width:100%;border:0;border-radius:999px;padding:10px 18px 10px 42px;font:inherit;font-size:14px;background:#ffffff;color:#0f172a;outline:none;position:relative;z-index:1;" autocomplete="off">
+                        <div class="ms-search-placeholder" id="msSearchPlaceholder" aria-hidden="true" style="position:absolute;left:42px;right:18px;top:50%;transform:translateY(-50%);display:flex;align-items:center;pointer-events:none;z-index:2;font-size:14px;color:#94a3b8;white-space:nowrap;overflow:hidden;height:22px;">
+                            <span class="ms-sp-prefix" style="font-weight:500;color:#94a3b8;flex-shrink:0;">Search by </span>
+                            <span class="ms-sp-track" style="position:relative;display:inline-block;height:22px;overflow:hidden;vertical-align:middle;margin-left:2px;flex:1;min-width:0;">
+                                <span class="ms-sp-word" id="msSearchWord" style="display:block;line-height:22px;font-weight:600;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">"<?= e($searchCategories[0] ?? 'items') ?>"</span>
+                            </span>
                         </div>
                     </div>
                 </form>
