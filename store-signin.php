@@ -75,6 +75,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!empty($res['success'])) {
                 unset($_SESSION[$emailKey]);
                 clear_old_input();
+
+                // Check pending cart item
+                $pendingKey = 'sf_pending_cart_' . $bid;
+                $pending = $_SESSION[$pendingKey] ?? null;
+                if ($pending && !empty($pending['product_id'])) {
+                    add_to_storefront_cart($bid, (int) $pending['product_id'], (int) ($pending['qty'] ?? 1));
+                    unset($_SESSION[$pendingKey]);
+                    set_flash('success', 'Item added to your cart! Welcome back.');
+                    $back = (string) ($pending['back'] ?? 'home');
+                    $params = $back === 'product' ? ['id' => (int) $pending['product_id'], 'cart' => '1'] : ['cart' => '1'];
+                    redirect(public_store_url($storeBiz, $back === 'product' ? 'product' : 'home', $params));
+                }
+
                 redirect(public_store_url($storeBiz, 'home', ['account' => '1']));
             }
             $errors['general'] = $res['error'] ?? 'Could not sign in.';
@@ -140,6 +153,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         unset($_SESSION[$otpKey]);
                         unset($_SESSION[$emailKey]);
                         clear_old_input();
+
+                        // Check pending cart item
+                        $pendingKey = 'sf_pending_cart_' . $bid;
+                        $pending = $_SESSION[$pendingKey] ?? null;
+                        if ($pending && !empty($pending['product_id'])) {
+                            add_to_storefront_cart($bid, (int) $pending['product_id'], (int) ($pending['qty'] ?? 1));
+                            unset($_SESSION[$pendingKey]);
+                            set_flash('success', 'Email verified and item added to your cart! Welcome to ' . $storeName);
+                            $back = (string) ($pending['back'] ?? 'home');
+                            $params = $back === 'product' ? ['id' => (int) $pending['product_id'], 'cart' => '1'] : ['cart' => '1'];
+                            redirect(public_store_url($storeBiz, $back === 'product' ? 'product' : 'home', $params));
+                        }
+
                         set_flash('success', 'Email verified and account created successfully! Welcome to ' . $storeName);
                         redirect(public_store_url($storeBiz, 'home', ['account' => '1']));
                     }

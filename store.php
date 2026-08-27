@@ -72,9 +72,21 @@ if (!$storeBiz) {
         if ($action === 'add_to_cart') {
             $pid = (int) ($_POST['product_id'] ?? 0);
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
+            $back = (string) ($_POST['redirect_page'] ?? 'home');
+
+            $shopper = get_storefront_shopper($bid);
+            if (!$shopper) {
+                $_SESSION['sf_pending_cart_' . $bid] = [
+                    'product_id' => $pid,
+                    'qty' => $qty,
+                    'back' => $back,
+                ];
+                set_flash('error', 'Please sign in or create an account to add items to your cart.');
+                redirect(public_store_signin_url($storeBiz));
+            }
+
             $res = add_to_storefront_cart($bid, $pid, $qty);
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
-            $back = (string) ($_POST['redirect_page'] ?? 'home');
             $params = $back === 'product' ? ['id' => $pid] : [];
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
