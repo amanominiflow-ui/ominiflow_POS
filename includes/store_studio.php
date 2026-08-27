@@ -340,7 +340,7 @@ function studio_cat_placeholder(): string {
                 <div class="st-phone-wrap">
                     <div class="st-phone font-<?= e($fontSize) ?>" id="stPhone">
                         <div class="st-notch"><span></span></div>
-                        <div class="st-ph-head" id="stPhHead">
+                        <div class="st-ph-head" id="stPhHead" onclick="openHeaderEdit(event)" style="cursor:pointer;" title="Click to edit Header & Business Name">
                             <div class="st-ph-brand">
                                 <div class="st-ph-brand-left">
                                     <div class="st-ph-logo" id="stPhLogo" style="<?= $showLogo ? '' : 'display:none' ?>">
@@ -463,10 +463,14 @@ function studio_cat_placeholder(): string {
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="save_branding">
                     <input type="hidden" name="tab" value="branding">
-                    <input type="hidden" name="display_name" value="<?= e($displayName) ?>">
                     <input type="hidden" name="font_size" id="inputFontSize" value="<?= e($fontSize) ?>">
                     <div class="st-panel-head"><h3>Branding</h3></div>
                     <div class="st-panel-body">
+                        <div class="st-sec-title" style="margin-top:0;">Business Details</div>
+                        <label class="st-label">Business / Store Display Name <span class="st-req">*</span></label>
+                        <input class="st-input" type="text" name="display_name" id="brandingDisplayName" value="<?= e($displayName) ?>" placeholder="e.g. ASH COLLECTIVE" oninput="updateCanvasDisplayName(this.value)" style="margin-bottom:18px;">
+
+                        <div class="st-sec-title">Header Logo</div>
                         <label class="st-check">
                             <input type="checkbox" name="show_logo_header" value="1" <?= $showLogo ? 'checked' : '' ?> onchange="previewLogoName()">
                             <span>Show logo on the header</span>
@@ -668,6 +672,27 @@ function studio_cat_placeholder(): string {
                             </div>
                             <div class="st-info">All Items from the inventory will be listed in this section</div>
                         </div>
+
+                        <div id="editHeader" class="st-hidden">
+                            <label class="st-label">Business / Store Display Name <span class="st-req">*</span></label>
+                            <input class="st-input" type="text" name="display_name" id="layoutDisplayName" value="<?= e($displayName) ?>" placeholder="e.g. ASH COLLECTIVE" oninput="updateCanvasDisplayName(this.value)" style="margin-bottom:16px;">
+
+                            <div class="st-sec-title">Header Elements</div>
+                            <label class="st-check" style="margin-bottom:10px">
+                                <input type="checkbox" name="show_name_with_logo" id="layoutShowName" value="1" <?= $showName ? 'checked' : '' ?> onchange="previewLogoName(this)">
+                                <span>Show business name on header</span>
+                            </label>
+                            <label class="st-check" style="margin-bottom:12px">
+                                <input type="checkbox" name="show_logo_header" id="layoutShowLogo" value="1" <?= $showLogo ? 'checked' : '' ?> onchange="previewLogoName(this)">
+                                <span>Show logo on header</span>
+                            </label>
+                            <label class="st-check" style="margin-bottom:18px">
+                                <input type="checkbox" name="show_location" value="1" <?= !empty($brand['show_location']) ? 'checked' : '' ?>>
+                                <span>Show delivery location selector</span>
+                            </label>
+
+                            <div class="st-hint" style="margin-top:10px">You can upload logo and customize theme colors in the <strong>Branding</strong> tab on the left.</div>
+                        </div>
                     </div>
                     <div class="st-panel-foot">
                         <button type="submit" class="st-save">Save</button>
@@ -743,19 +768,40 @@ function openDrawer(kind) {
     if (STUDIO_MODE === 'branding') return;
     const panel = document.getElementById('panelLayout');
     panel.classList.add('open');
-    ['editCategory','themeCategory','editBanner','editItem'].forEach(id => document.getElementById(id).classList.add('st-hidden'));
+    ['editCategory','themeCategory','editBanner','editItem','editHeader'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('st-hidden');
+    });
     const map = {
         'edit-category': ['editCategory', 'Edit Category Component'],
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
         'theme-banner': ['editBanner', 'Edit Banner Component'],
         'edit-item': ['editItem', 'Edit Item Component'],
-        'theme-item': ['editItem', 'Edit Item Component']
+        'theme-item': ['editItem', 'Edit Item Component'],
+        'edit-header': ['editHeader', 'Edit Header Component']
     };
     const cfg = map[kind] || map['edit-category'];
-    document.getElementById(cfg[0]).classList.remove('st-hidden');
+    const target = document.getElementById(cfg[0]);
+    if (target) target.classList.remove('st-hidden');
     document.getElementById('layoutHeading').textContent = cfg[1];
     requestAnimationFrame(placeFloatMenu);
+}
+function openHeaderEdit(ev) {
+    if (ev) ev.stopPropagation();
+    if (STUDIO_MODE === 'branding') return;
+    document.querySelectorAll('.st-sec').forEach(s => s.classList.remove('selected'));
+    hideFloatMenu();
+    openDrawer('edit-header');
+}
+function updateCanvasDisplayName(val) {
+    val = val || '';
+    const phName = document.getElementById('stPhName');
+    if (phName) phName.textContent = val.toUpperCase();
+    const b1 = document.getElementById('brandingDisplayName');
+    if (b1 && b1.value !== val) b1.value = val;
+    const b2 = document.getElementById('layoutDisplayName');
+    if (b2 && b2.value !== val) b2.value = val;
 }
 function menuAction(kind) {
     const selected = document.querySelector('.st-sec.selected');

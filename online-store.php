@@ -1501,7 +1501,6 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="save_preferences">
                         <input type="hidden" name="tab" value="preferences">
-                        <input type="hidden" name="display_name" value="<?= e($brand['display_name']) ?>">
                         <input type="hidden" name="header_color" value="<?= e($brand['header_color']) ?>">
                         <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
                         <input type="hidden" name="show_banner" value="<?= $brand['show_banner'] ? '1' : '' ?>">
@@ -1511,6 +1510,15 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <input type="hidden" name="banner_title" value="<?= e($brand['banner_title']) ?>">
                         <input type="hidden" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>">
                         <input type="hidden" name="search_placeholder" value="<?= e($brand['search_placeholder']) ?>">
+
+                        <!-- Store Details Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading">Store Details</div>
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Business / Store Display Name <span style="color:#ef4444">*</span></label>
+                                <input class="pref-field-input" type="text" name="display_name" value="<?= e($brand['display_name']) ?>" placeholder="e.g. ASH COLLECTIVE" required>
+                            </div>
+                        </div>
 
                         <!-- Items Section -->
                         <div class="pref-section">
