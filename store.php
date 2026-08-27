@@ -225,7 +225,7 @@ if (empty($searchCategories)) {
     $searchCategories[] = 'All Products';
     $searchCategories[] = 'Best Sellers';
 }
-$cssVersion = @filemtime(__DIR__ . '/assets/css/storefront.css') ?: 15;
+$cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' . 102;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -383,16 +383,18 @@ $cssVersion = @filemtime(__DIR__ . '/assets/css/storefront.css') ?: 15;
                     <?php endif; ?>
                 </a>
 
-                <form class="ms-search-wrap" method="get" action="<?= e($homeUrl) ?>">
+                <form class="ms-search-wrap" method="get" action="<?= e($homeUrl) ?>" style="position:relative;flex:1 1 auto;max-width:560px;min-width:0;margin:0;">
                     <?php if (!store_is_on_custom_domain($storeBiz) && !empty($storeBiz['store_slug'])): ?>
                         <input type="hidden" name="slug" value="<?= e((string) $storeBiz['store_slug']) ?>">
                     <?php endif; ?>
-                    <div class="ms-search-box">
-                        <svg class="ms-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input class="ms-search" id="msSearchInput" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" placeholder="Search by &quot;<?= e($searchCategories[0] ?? 'items') ?>&quot;" autocomplete="off">
-                        <div class="ms-search-placeholder" id="msSearchPlaceholder" aria-hidden="true">
-                            <span class="ms-sp-prefix">Search by </span>
-                            <span class="ms-sp-track"><span class="ms-sp-word" id="msSearchWord">"<?= e($searchCategories[0] ?? 'items') ?>"</span></span>
+                    <div class="ms-search-box" style="position:relative;width:100%;display:flex;align-items:center;">
+                        <svg class="ms-search-icon" style="position:absolute;left:16px;color:#94a3b8;pointer-events:none;z-index:3;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7.2"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input class="ms-search" id="msSearchInput" type="search" name="q" value="<?= e(trim((string) ($_GET['q'] ?? ''))) ?>" style="width:100%;border:0;border-radius:999px;padding:10px 18px 10px 42px;font:inherit;font-size:14px;background:#ffffff;color:#0f172a;outline:none;position:relative;z-index:1;" autocomplete="off">
+                        <div class="ms-search-placeholder" id="msSearchPlaceholder" aria-hidden="true" style="position:absolute;left:42px;right:18px;top:50%;transform:translateY(-50%);display:flex;align-items:center;pointer-events:none;z-index:2;font-size:14px;color:#94a3b8;white-space:nowrap;overflow:hidden;height:22px;">
+                            <span class="ms-sp-prefix" style="font-weight:500;color:#94a3b8;flex-shrink:0;">Search by </span>
+                            <span class="ms-sp-track" style="position:relative;display:inline-block;height:22px;overflow:hidden;vertical-align:middle;margin-left:2px;flex:1;min-width:0;">
+                                <span class="ms-sp-word" id="msSearchWord" style="display:block;line-height:22px;font-weight:600;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">"<?= e($searchCategories[0] ?? 'items') ?>"</span>
+                            </span>
                         </div>
                     </div>
                 </form>
