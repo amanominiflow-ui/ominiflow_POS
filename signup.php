@@ -44,7 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account - OminiFlow POS</title>
+    <title>Create POS Account — Smart Cloud POS Billing Software — OminiFlow POS</title>
+    <meta name="description" content="Register your retail store on OminiFlow POS. Start fast barcode billing, multi-store inventory management, and customer GST invoicing in minutes.">
+    <meta name="keywords" content="POS billing software signup, create POS account, retail billing software, point of sale register, cloud POS India">
     
     <link rel="apple-touch-icon" sizes="180x180" href="<?= asset('assets/images/apple-touch-icon.png') ?>">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= asset('assets/images/favicon-32x32.png') ?>">
@@ -68,8 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <h1 class="of-title">Point of Sale & Billing at SaaS scale.</h1>
-                    <p class="of-subtitle">Streamline in-store billing, inventory sync, multi-counter orders, and customer messaging workflows in one unified POS platform.</p>
+                    <h1 class="of-title">Smart Cloud POS Billing & Retail Store Management at SaaS Scale.</h1>
+                    <p class="of-subtitle">Supercharge counter billing, rapid barcode checkout, real-time inventory tracking, and GST receipt printing — built for modern retail businesses.</p>
 
                     <div class="of-kpi-grid">
                         <div class="of-kpi">

@@ -42,7 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - OminiFlow POS</title>
+    <title>Smart Cloud POS Billing & Retail Store Management Software — OminiFlow POS</title>
+    <meta name="description" content="All-in-one cloud POS billing software for retail stores. Superfast barcode billing, multi-counter checkout, real-time inventory tracking, and GST invoicing at SaaS scale.">
+    <meta name="keywords" content="POS billing software, retail point of sale, cloud POS system, barcode billing software, multi-counter retail POS, inventory management POS">
     
     <link rel="apple-touch-icon" sizes="180x180" href="<?= asset('assets/images/apple-touch-icon.png') ?>">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= asset('assets/images/favicon-32x32.png') ?>">
@@ -66,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
 
-                    <h1 class="of-title">Run POS billing and store ops at SaaS scale.</h1>
-                    <p class="of-subtitle">OminiFlow POS centralizes counter sales, barcode billing, multi-store stock, and receipt dispatch so your retail team operates faster every day.</p>
+                    <h1 class="of-title">Smart Cloud POS Billing & Retail Store Management at SaaS Scale.</h1>
+                    <p class="of-subtitle">Supercharge counter billing, rapid barcode checkout, real-time inventory tracking, and GST receipt printing — built for modern retail businesses.</p>
 
                     <div class="of-kpi-grid">
                         <div class="of-kpi">
