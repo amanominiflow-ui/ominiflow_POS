@@ -227,6 +227,69 @@ if (!function_exists('sf_product_image')) {
     }
 }
 
+if (!function_exists('storefront_parse_product_display_info')) {
+    function storefront_parse_product_display_info(array $p, int $businessId): array {
+        $variants = function_exists('get_product_variants') ? get_product_variants((int) $p['id'], $businessId) : [];
+        $varCount = count($variants);
+        
+        $attrText = '';
+        $mrp = (float) ($p['mrp'] ?? 0);
+        $sellingPrice = (float) ($p['selling_price'] ?? 0);
+        
+        if ($varCount > 0) {
+            $firstVar = $variants[0];
+            $vName = trim((string) ($firstVar['variant_name'] ?? ''));
+            
+            if (!empty($firstVar['selling_price']) && (float) $firstVar['selling_price'] > 0) {
+                $sellingPrice = (float) $firstVar['selling_price'];
+            }
+            
+            if ($vName !== '') {
+                if (stripos($vName, 'COLOUR:') !== false || stripos($vName, 'SIZE:') !== false) {
+                    $attrText = strtoupper($vName);
+                } elseif (strpos($vName, '/') !== false) {
+                    $parts = array_map('trim', explode('/', $vName));
+                    if (count($parts) >= 2) {
+                        $attrText = 'COLOUR: ' . strtoupper($parts[0]) . ', SIZES: ' . strtoupper($parts[1]);
+                    } else {
+                        $attrText = 'COLOUR: ' . strtoupper($vName);
+                    }
+                } elseif (strpos($vName, '-') !== false && !is_numeric($vName)) {
+                    $parts = array_map('trim', explode('-', $vName));
+                    if (count($parts) >= 2 && !is_numeric($parts[0])) {
+                        $attrText = 'COLOUR: ' . strtoupper($parts[0]) . ', SIZES: ' . strtoupper($parts[1]);
+                    } else {
+                        $attrText = 'COLOUR: ' . strtoupper($vName);
+                    }
+                } else {
+                    $attrText = 'COLOUR: ' . strtoupper($vName);
+                }
+            }
+        } else {
+            $pName = (string) ($p['name'] ?? '');
+            if (preg_match('/-([a-zA-Z\s]+)-([a-zA-Z0-9]+)$/i', $pName, $m)) {
+                $attrText = 'COLOUR: ' . strtoupper(trim($m[1])) . ', SIZES: ' . strtoupper(trim($m[2]));
+            } elseif (preg_match('/-([a-zA-Z\s]+)$/i', $pName, $m)) {
+                $attrText = 'COLOUR: ' . strtoupper(trim($m[1]));
+            }
+        }
+
+        $discountPercent = 0;
+        if ($mrp > $sellingPrice && $mrp > 0) {
+            $discountPercent = (int) round((($mrp - $sellingPrice) / $mrp) * 100);
+        }
+
+        return [
+            'variants' => $variants,
+            'variant_count' => $varCount,
+            'attr_text' => $attrText,
+            'selling_price' => $sellingPrice,
+            'mrp' => $mrp,
+            'discount_percent' => $discountPercent,
+        ];
+    }
+}
+
 $favicon = get_storefront_dynamic_favicon_url($brand, $pageTitle);
 $fontSize = in_array(($brand['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? $brand['font_size'] : 'medium';
 $headerText = (string) ($brand['header_text_color'] ?? '#ffffff');
@@ -646,7 +709,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                     <a class="ms-nav-item" href="<?= e($cartUrl) ?>" title="Cart" id="msCartToggle">
                         <span class="ms-nav-icon">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 12H7L6 7z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 12H7L6 7z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/></svg>
                             <?php if ($cartCount > 0): ?>
                                 <span class="ms-cart-badge"><?= (int) $cartCount ?></span>
                             <?php endif; ?>
@@ -656,9 +719,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                     <a class="ms-nav-item" href="#account" title="Account" id="msAccountToggle">
                         <span class="ms-nav-icon">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3"/><path d="M6.8 18.2c1.4-2.2 3.2-3.2 5.2-3.2s3.8 1 5.2 3.2"/></svg>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="10" r="3"/><path d="M6.8 18.2c1.4-2.2 3.2-3.2 5.2-3.2s3.8 1 5.2 3.2"/></svg>
                         </span>
-                        <span class="ms-nav-label">Account</span>
+                        <span class="ms-nav-label"><?= !empty($storeShopper) ? e(storefront_clean_person_name((string)($storeShopper['name'] ?? 'Account')) ?: 'Account') : 'Account' ?></span>
                     </a>
                 </div>
             <?php endif; ?>
@@ -691,27 +754,82 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php foreach ($homeSections as $homeSec): ?>
                 <?php if ($homeSec === 'banner' && $brand['show_banner'] && $q === '' && !$catId): ?>
                     <div class="ms-banners-grid" id="msBanners">
-                        <!-- Banner 1: Online Now -->
+                        <!-- Banner 1: We're online now! -->
                         <div class="ms-banner-card ms-banner-1">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-title"><?= e($brand['banner_title'] ?: "We're online now!") ?></div>
-                                <div class="ms-banner-sub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></div>
+                                <div class="ms-banner-tag">We're</div>
+                                <div class="ms-banner-title">online now!</div>
+                                <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
                             </div>
                             <div class="ms-banner-art">
-                                <svg viewBox="0 0 140 120" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="35" y="15" width="60" height="95" rx="8" fill="#ffffff"/>
-                                    <path d="M30 30 L100 30 L95 48 L35 48 Z" fill="#ef4444"/>
-                                    <path d="M35 30 L48 30 L45 48 L35 48 Z" fill="#ffffff" opacity="0.9"/>
-                                    <path d="M60 30 L73 30 L70 48 L60 48 Z" fill="#ffffff" opacity="0.9"/>
-                                    <path d="M85 30 L98 30 L95 48 L85 48 Z" fill="#ffffff" opacity="0.9"/>
-                                    <circle cx="42" cy="22" r="6" fill="#dc2626"/>
-                                    <circle cx="42" cy="22" r="2.5" fill="#ffffff"/>
-                                    <rect x="75" y="12" width="22" height="18" rx="2" fill="#d97706"/>
-                                    <line x1="86" y1="12" x2="86" y2="30" stroke="#b45309" stroke-width="2"/>
-                                    <circle cx="108" cy="72" r="10" fill="#fed7aa"/>
-                                    <path d="M102 68 Q108 60 114 68 Z" fill="#1e293b"/>
-                                    <path d="M96 84 C96 78, 120 78, 120 84 L118 105 L98 105 Z" fill="#f43f5e"/>
-                                    <path d="M98 90 L85 86" stroke="#fed7aa" stroke-width="4" stroke-linecap="round"/>
+                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="20" cy="30" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                    <circle cx="140" cy="20" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="35" cy="110" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="150" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                    <ellipse cx="80" cy="120" rx="60" ry="12" fill="#00695c" opacity="0.6"/>
+
+                                    <g transform="translate(48, 12)">
+                                        <rect x="0" y="0" width="56" height="105" rx="8" fill="#1e293b"/>
+                                        <rect x="2.5" y="2.5" width="51" height="100" rx="6" fill="#ffffff"/>
+                                        
+                                        <g transform="translate(0, 8)">
+                                            <path d="M-2 0 L58 0 L54 18 L2 18 Z" fill="#fb7185"/>
+                                            <path d="M7 0 L19 0 L17 18 L5 18 Z" fill="#ffffff"/>
+                                            <path d="M29 0 L41 0 L39 18 L27 18 Z" fill="#ffffff"/>
+                                            <path d="M51 0 L58 0 L54 18 L47 18 Z" fill="#ffffff"/>
+                                            <circle cx="6" cy="18" r="5" fill="#fb7185"/>
+                                            <circle cx="17" cy="18" r="5" fill="#ffffff"/>
+                                            <circle cx="28" cy="18" r="5" fill="#fb7185"/>
+                                            <circle cx="39" cy="18" r="5" fill="#ffffff"/>
+                                            <circle cx="50" cy="18" r="5" fill="#fb7185"/>
+                                        </g>
+                                        
+                                        <rect x="6" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                        <rect x="28" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                        <rect x="6" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                        <rect x="28" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
+
+                                        <g transform="translate(11, 84)">
+                                            <rect x="0" y="0" width="34" height="13" rx="6.5" fill="#e11d48"/>
+                                            <text x="17" y="9.5" fill="#ffffff" font-size="6.5" font-weight="900" text-anchor="middle" font-family="sans-serif">ORDER!</text>
+                                        </g>
+                                    </g>
+
+                                    <g transform="translate(26, 26)">
+                                        <path d="M10 0 C4.5 0 0 4.5 0 10 C0 17 10 24 10 24 C10 24 20 17 20 10 C20 4.5 15.5 0 10 0 Z" fill="#e11d48"/>
+                                        <circle cx="10" cy="9" r="4" fill="#ffffff"/>
+                                    </g>
+
+                                    <g transform="translate(100, 10) rotate(8)">
+                                        <path d="M12 0 L32 6 L20 15 L0 9 Z" fill="#f59e0b"/>
+                                        <path d="M0 9 L20 15 L20 32 L0 26 Z" fill="#d97706"/>
+                                        <path d="M20 15 L32 6 L32 23 L20 32 Z" fill="#b45309"/>
+                                        <path d="M6 11 L14 13 L14 29 L6 27 Z" fill="#fef3c7" opacity="0.6"/>
+                                    </g>
+
+                                    <g transform="translate(24, 60)">
+                                        <circle cx="9" cy="9" r="9" fill="#fbbf24"/>
+                                        <circle cx="6" cy="7" r="1.2" fill="#1e293b"/>
+                                        <circle cx="12" cy="7" r="1.2" fill="#1e293b"/>
+                                        <path d="M6 11 Q9 15 12 11" stroke="#1e293b" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+                                    </g>
+
+                                    <g transform="translate(112, 54)">
+                                        <circle cx="8" cy="8" r="8" fill="#fb7185"/>
+                                        <path d="M8 12.5 L3.5 8 C2.2 6.7 2.2 4.5 3.5 3.2 C4.8 1.9 7 1.9 8.3 3.2 L8 3.5 L8.7 3.2 C10 1.9 12.2 1.9 13.5 3.2 C14.8 4.5 14.8 6.7 13.5 8 Z" fill="#ffffff" transform="scale(0.8) translate(1, 1)"/>
+                                    </g>
+
+                                    <g transform="translate(94, 48)">
+                                        <circle cx="18" cy="10" r="8" fill="#fed7aa"/>
+                                        <path d="M12 8 C12 2, 24 2, 26 8 C26 5, 23 3, 19 3 C15 3, 12 5, 12 8 Z" fill="#0f172a"/>
+                                        <circle cx="14" cy="9" r="1" fill="#0f172a"/>
+                                        <path d="M8 20 C8 16, 26 16, 26 20 L30 38 L4 38 Z" fill="#fda4af"/>
+                                        <path d="M4 38 L30 38 L34 68 L18 68 L14 50 L-2 50 L-2 42 Z" fill="#312e81"/>
+                                        <path d="M8 24 L-4 32 L-2 36 L10 28 Z" fill="#fda4af"/>
+                                        <rect x="-8" y="28" width="6" height="10" rx="1.5" fill="#0f172a" transform="rotate(-15)"/>
+                                    </g>
                                 </svg>
                             </div>
                         </div>
@@ -724,51 +842,120 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <div class="ms-banner-sub">and discover the<br>best deals!</div>
                             </div>
                             <div class="ms-banner-art">
-                                <svg viewBox="0 0 140 120" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <circle cx="105" cy="18" r="2.5" fill="#ffffff" opacity="0.8"/>
-                                    <circle cx="35" cy="24" r="2" fill="#ffffff" opacity="0.6"/>
-                                    <g transform="translate(80, 12)">
-                                        <circle cx="10" cy="10" r="10" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M8 7v4l2 3 3-1v-4h-2V6c0-.8-.4-1.5-1.2-1.5S8 5.8 8 7z" fill="#3b82f6"/>
+                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="18" cy="24" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                    <circle cx="145" cy="22" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="28" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="152" cy="98" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                    <ellipse cx="95" cy="118" rx="55" ry="12" fill="#1d4ed8" opacity="0.5"/>
+
+                                    <g transform="translate(98, 12)">
+                                        <circle cx="14" cy="14" r="14" fill="#ffffff" opacity="0.95"/>
+                                        <path d="M10 13 L10 20 L7 20 C6.4 20 6 19.6 6 19 L6 14 C6 13.4 6.4 13 7 13 Z" fill="#3b82f6"/>
+                                        <path d="M11 13 L15 6 C15.5 5 17 5.5 17 7 L17 11 L21 11 C22.1 11 23 11.9 23 13 L21 19 C20.7 19.6 20.1 20 19.5 20 L11 20 Z" fill="#3b82f6"/>
                                     </g>
-                                    <g transform="translate(48, 22)">
-                                        <rect x="0" y="0" width="18" height="18" rx="5" fill="#f43f5e"/>
-                                        <path d="M9 13l-1-1C5 9 3 7 3 5.5a2.5 2.5 0 0 1 4-1.5 2.5 2.5 0 0 1 4 1.5 2.5 2.5 0 0 1 4-1.5 2.5 2.5 0 0 1 4 1.5c0 1.5-2 3.5-5 6.5l-1 1z" fill="#ffffff"/>
+
+                                    <g transform="translate(68, 22)">
+                                        <rect x="0" y="0" width="22" height="18" rx="6" fill="#f43f5e"/>
+                                        <path d="M11 15 L7 19 L9 15 Z" fill="#f43f5e"/>
+                                        <path d="M11 12.5 L7.5 9 C6.5 8 6.5 6.4 7.5 5.4 C8.5 4.4 10.1 4.4 11.1 5.4 L11 5.6 L11.5 5.4 C12.5 4.4 14.1 4.4 15.1 5.4 C16.1 6.4 16.1 8 15.1 9 Z" fill="#ffffff" transform="scale(0.85) translate(2, 1)"/>
                                     </g>
-                                    <g transform="translate(110, 46)">
-                                        <circle cx="8" cy="8" r="8" fill="#22c55e"/>
-                                        <polyline points="4 8 7 11 12 5" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+                                    <g transform="translate(48, 48) rotate(-12)">
+                                        <rect x="0" y="0" width="16" height="24" rx="3" fill="#a855f7"/>
+                                        <circle cx="8" cy="5" r="2" fill="#1e60d5"/>
+                                        <text x="8" y="18" fill="#ffffff" font-size="9" font-weight="900" text-anchor="middle" font-family="sans-serif">%</text>
                                     </g>
-                                    <rect x="42" y="44" width="24" height="30" rx="3" fill="#a855f7" transform="rotate(-10 42 44)"/>
-                                    <path d="M58 40 L98 40 L95 86 L61 86 Z" fill="#e09f67"/>
-                                    <path d="M58 40 L98 40 L96 45 L60 45 Z" fill="#c8834c"/>
-                                    <path d="M70 40 C70 28, 86 28, 86 40" fill="none" stroke="#f8fafc" stroke-width="2.2" stroke-linecap="round"/>
-                                    <path d="M46 54 L80 54 L78 90 L48 90 Z" fill="#f2b279"/>
-                                    <path d="M85 58 L110 58 L108 90 L87 90 Z" fill="#e09f67"/>
+
+                                    <g transform="translate(130, 48)">
+                                        <circle cx="10" cy="10" r="10" fill="#22c55e"/>
+                                        <polyline points="6 10 9 13 14 7" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                                    </g>
+
+                                    <g transform="translate(74, 46)">
+                                        <path d="M14 18 C14 2, 28 2, 28 18" fill="none" stroke="#fef3c7" stroke-width="2.5" stroke-linecap="round"/>
+                                        <path d="M4 18 L38 18 L34 68 L6 68 Z" fill="#e09f67"/>
+                                        <path d="M4 18 L38 18 L36 24 L5 24 Z" fill="#c8834c"/>
+                                        <path d="M38 18 L50 24 L46 74 L34 68 Z" fill="#b45309"/>
+                                        <line x1="20" y1="24" x2="20" y2="68" stroke="#c8834c" stroke-width="1.2" opacity="0.6"/>
+                                    </g>
+
+                                    <g transform="translate(52, 60)">
+                                        <path d="M10 14 C10 2, 20 2, 20 14" fill="none" stroke="#fef3c7" stroke-width="2" stroke-linecap="round"/>
+                                        <path d="M2 14 L28 14 L25 54 L4 54 Z" fill="#f2b279"/>
+                                        <path d="M2 14 L28 14 L26 19 L3 19 Z" fill="#d97706"/>
+                                        <path d="M28 14 L36 18 L33 58 L25 54 Z" fill="#b45309"/>
+                                    </g>
+
+                                    <g transform="translate(108, 66)">
+                                        <path d="M8 10 C8 0, 16 0, 16 10" fill="none" stroke="#fef3c7" stroke-width="1.8" stroke-linecap="round"/>
+                                        <path d="M2 10 L22 10 L20 44 L3 44 Z" fill="#e09f67"/>
+                                        <path d="M2 10 L22 10 L21 14 L3 14 Z" fill="#c8834c"/>
+                                        <path d="M22 10 L28 14 L26 48 L20 44 Z" fill="#a16207"/>
+                                    </g>
                                 </svg>
                             </div>
                         </div>
 
-                        <!-- Banner 3: Order with Ease -->
+                        <!-- Banner 3: Order with Ease, Receive with Speed -->
                         <div class="ms-banner-card ms-banner-3">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-title">Order<br>with Ease</div>
-                                <div class="ms-banner-sub">Receive<br>with Speed</div>
+                                <div class="ms-banner-tag" style="font-size:16px;">Order</div>
+                                <div class="ms-banner-title" style="font-style:italic;">with Ease</div>
+                                <div class="ms-banner-tag" style="font-size:16px;margin-top:6px;">Receive</div>
+                                <div class="ms-banner-title" style="font-style:italic;">with Speed</div>
                             </div>
                             <div class="ms-banner-art">
-                                <svg viewBox="0 0 140 120" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <g transform="translate(30, 20)">
-                                        <rect x="25" y="15" width="28" height="24" rx="3" fill="#f59e0b" transform="rotate(-12 25 15)"/>
-                                        <path d="M22 26 L12 18 M20 34 L8 28" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
-                                        <g transform="translate(45, 10)">
-                                            <path d="M10 20 L40 10 L55 26 L25 36 Z" fill="#fbbf24"/>
-                                            <path d="M10 20 L25 36 L25 56 L10 40 Z" fill="#d97706"/>
-                                            <path d="M25 36 L55 26 L55 46 L25 56 Z" fill="#b45309"/>
-                                            <path d="M10 20 C0 10, -5 20, 5 28 Z" fill="#ffffff" opacity="0.9"/>
-                                            <path d="M40 10 C50 0, 55 10, 45 18 Z" fill="#ffffff" opacity="0.9"/>
+                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="22" cy="25" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                    <circle cx="145" cy="18" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="30" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                    <circle cx="150" cy="105" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                    <path d="M40 35 C40 25, 60 25, 65 35 C70 28, 85 28, 90 35 C95 30, 110 30, 115 35 L120 45 L35 45 Z" fill="#ffffff" opacity="0.12"/>
+                                    <path d="M80 85 C80 75, 100 75, 105 85 C110 78, 125 78, 130 85 L135 95 L75 95 Z" fill="#ffffff" opacity="0.12"/>
+
+                                    <g transform="translate(118, 48)">
+                                        <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
+                                        <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
+                                    </g>
+                                    <g transform="translate(142, 78) scale(0.85)">
+                                        <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
+                                        <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
+                                    </g>
+
+                                    <g transform="translate(25, 15) rotate(-10)">
+                                        <path d="M0 12 C-8 4, -18 8, -20 18 C-16 18, -12 22, -6 18 Z" fill="#ffffff" opacity="0.95"/>
+                                        <path d="M22 6 C28 0, 38 2, 42 12 C38 13, 34 18, 28 14 Z" fill="#ffffff" opacity="0.95"/>
+                                        <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
+                                        <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
+                                        <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
+                                        <line x1="-8" y1="24" x2="-2" y2="22" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+                                    </g>
+
+                                    <g transform="translate(85, 26)">
+                                        <g transform="translate(-18, 12)">
+                                            <path d="M18 10 C8 -2, -6 0, -12 14 C-4 15, 2 22, 10 18 C14 22, 18 18, 18 10 Z" fill="#ffffff"/>
+                                            <path d="M6 10 C0 4, -8 6, -10 14" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
                                         </g>
-                                        <rect x="35" y="55" width="24" height="20" rx="3" fill="#fbbf24" transform="rotate(8 35 55)"/>
-                                        <path d="M30 65 L18 62 M32 72 L20 74" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+                                        <g transform="translate(36, 4)">
+                                            <path d="M0 14 C10 0, 26 2, 32 16 C24 17, 18 24, 10 20 C6 24, 2 20, 0 14 Z" fill="#ffffff"/>
+                                            <path d="M14 12 C20 6, 28 8, 30 16" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
+                                        </g>
+                                        <path d="M18 0 L42 8 L24 20 L0 12 Z" fill="#fbbf24"/>
+                                        <path d="M0 12 L24 20 L24 44 L0 36 Z" fill="#d97706"/>
+                                        <path d="M24 20 L42 8 L42 32 L24 44 Z" fill="#b45309"/>
+                                        <path d="M9 6 L21 10 L21 34 L9 30 Z" fill="#ffffff" opacity="0.5"/>
+                                    </g>
+
+                                    <g transform="translate(68, 76) rotate(6)">
+                                        <path d="M0 10 C-8 2, -18 4, -20 14 C-14 15, -10 19, -4 15 Z" fill="#ffffff" opacity="0.95"/>
+                                        <path d="M22 6 C30 0, 38 2, 42 12 C36 13, 32 18, 26 14 Z" fill="#ffffff" opacity="0.95"/>
+                                        <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
+                                        <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
+                                        <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
+                                        <line x1="-10" y1="22" x2="-4" y2="20" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
                                     </g>
                                 </svg>
                             </div>
@@ -787,16 +974,17 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     if (!empty($cp['image_path'])) { $thumb = (string) $cp['image_path']; break; }
                                 }
                             }
+                            $isCatActive = ((int)$catId === (int)$cat['id']);
                             ?>
-                            <a class="ms-cat-card" href="<?= e($catUrl) ?>">
+                            <a class="ms-cat-card<?= $isCatActive ? ' ms-cat-active' : '' ?>" href="<?= e($catUrl) ?>">
                                 <div class="ms-cat-img-box">
                                     <?php if ($thumb): ?>
                                         <img src="<?= asset($thumb) ?>" alt="<?= e((string) $cat['name']) ?>">
                                     <?php else: ?>
-                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                                             <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
-                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#94a3b8"/>
-                                            <polyline points="21 15 16 10 5 21" fill="none" stroke="#94a3b8"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
+                                            <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
                                         </svg>
                                     <?php endif; ?>
                                 </div>
@@ -815,28 +1003,17 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 $img = sf_product_image($p['image_path'] ?? null);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
-
-                                $badgeClass = 'ms-product-badge';
-                                $badgeText = '';
-                                if (!$inStock) {
-                                    $badgeClass .= ' ms-badge-out';
-                                    $badgeText = 'Out of Stock';
-                                } elseif (!empty($brand['display_low_stock_below_10']) && (int)$p['stock_quantity'] < 10) {
-                                    $badgeClass .= ' ms-badge-low';
-                                    $badgeText = 'Only ' . (int)$p['stock_quantity'] . ' left';
-                                }
-
-                                $stockText = 'In Stock';
-                                if (!empty($brand['display_stock_count'])) {
-                                    $stockText = $inStock ? ((int)$p['stock_quantity'] . ' available') : 'Out of stock';
-                                } elseif (!$inStock) {
-                                    $stockText = 'Out of stock';
-                                }
+                                $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $attrText = $pInfo['attr_text'];
+                                $varCount = $pInfo['variant_count'];
+                                $sellingPrice = $pInfo['selling_price'];
+                                $mrp = $pInfo['mrp'];
+                                $discountPct = $pInfo['discount_percent'];
                                 ?>
                                 <div class="ms-product-card">
                                     <a class="ms-product-img-wrap" href="<?= e($pUrl) ?>">
-                                        <?php if ($badgeText !== ''): ?>
-                                            <span class="<?= $badgeClass ?>"><?= e($badgeText) ?></span>
+                                        <?php if ($discountPct > 0): ?>
+                                            <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
                                         <?php endif; ?>
 
                                         <?php if ($img): ?>
@@ -852,21 +1029,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <div class="ms-product-body">
                                         <div>
                                             <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
-                                            <div class="ms-product-variant">
-                                                <span class="ms-stock-dot <?= $inStock ? '' : 'is-out' ?>"></span>
-                                                <span><?= e($stockText) ?></span>
-                                            </div>
-                                        </div>
-                                        <div class="ms-product-foot">
-                                            <?php if (empty($brand['hide_product_price'])): ?>
-                                                <div class="ms-product-price"><?= sf_money($currency, (float) $p['selling_price']) ?></div>
-                                            <?php else: ?>
-                                                <div></div>
+                                            <?php if ($attrText !== ''): ?>
+                                                <div class="ms-product-attr"><?= e($attrText) ?></div>
                                             <?php endif; ?>
-                                            <a class="ms-add-btn" href="<?= e($pUrl) ?>" style="text-decoration:none;">
-                                                <span><?= $inStock ? 'View' : 'Out of Stock' ?></span>
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                                            </a>
+                                            <?php if ($varCount > 0): ?>
+                                                <a href="<?= e($pUrl) ?>" class="ms-product-variants-link">+<?= max(1, $varCount - 1) ?> variants</a>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="ms-product-price-row">
+                                            <?php if (empty($brand['hide_product_price'])): ?>
+                                                <span class="ms-product-price"><?= sf_money($currency, (float) $sellingPrice) ?></span>
+                                                <?php if ($mrp > $sellingPrice && $mrp > 0): ?>
+                                                    <span class="ms-product-mrp"><?= sf_money($currency, (float) $mrp) ?></span>
+                                                <?php endif; ?>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>

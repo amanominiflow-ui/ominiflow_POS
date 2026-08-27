@@ -54,31 +54,32 @@ img {
     position: sticky;
     top: 0;
     z-index: 100;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     padding-top: env(safe-area-inset-top);
 }
 
 .ms-top-container {
-    max-width: 1280px;
+    max-width: 1320px;
     margin: 0 auto;
-    padding: 14px 28px;
+    padding: 16px 28px;
+    min-height: 72px;
     display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 24px;
 }
 
 .ms-brand-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     text-decoration: none;
     color: inherit;
     flex-shrink: 0;
 }
 
 .ms-logo, .ms-initials {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -86,27 +87,27 @@ img {
     overflow: hidden;
     color: inherit;
     font-weight: 800;
-    font-size: 12px;
+    font-size: 13px;
     flex-shrink: 0;
 }
 .ms-logo { background: transparent; }
 .ms-initials { background: rgba(255, 255, 255, 0.18); }
 .ms-logo img { width: 100%; height: 100%; object-fit: cover; }
 .ms-title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 800;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.8px;
     text-transform: uppercase;
     color: inherit;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 240px;
+    max-width: 260px;
 }
 
 .ms-search-wrap {
     flex: 1 1 auto;
-    max-width: 560px;
+    max-width: 580px;
     min-width: 0;
     margin: 0;
 }
@@ -118,27 +119,28 @@ img {
 }
 .ms-search-icon {
     position: absolute;
-    left: 16px;
+    left: 18px;
     color: #94a3b8;
     pointer-events: none;
-    z-index: 2;
+    z-index: 3;
 }
 .ms-search {
     width: 100%;
     border: 0;
     border-radius: 999px;
-    padding: 11px 18px 11px 42px;
+    padding: 12px 20px 12px 46px;
     font: inherit;
     font-size: 14px;
     background: #ffffff;
     color: #0f172a;
     outline: none;
+    height: 44px;
     transition: box-shadow 0.2s ease;
     position: relative;
     z-index: 1;
 }
 .ms-search:focus {
-    box-shadow: 0 0 0 2.5px rgba(37, 99, 235, 0.25);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 .ms-search::placeholder {
     color: transparent;
@@ -147,7 +149,7 @@ img {
 /* Modern Animated Search Placeholder Overlay */
 .ms-search-placeholder {
     position: absolute;
-    left: 42px;
+    left: 46px;
     right: 18px;
     top: 50%;
     transform: translateY(-50%);
@@ -226,7 +228,7 @@ img {
 .ms-top-actions {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 22px;
     flex-shrink: 0;
     margin-left: auto;
 }
@@ -238,34 +240,34 @@ img {
     text-decoration: none;
     color: inherit;
     cursor: pointer;
-    line-height: 1.15;
-    padding-right: 4px;
+    line-height: 1.2;
+    padding-right: 6px;
 }
 .ms-location-sub {
-    font-size: 12px;
-    font-weight: 400;
+    font-size: 13px;
+    font-weight: 500;
     opacity: 0.95;
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
 }
 .ms-location-sub svg {
     display: block;
 }
 .ms-location-main {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     text-decoration: underline;
     text-decoration-style: dashed;
-    text-underline-offset: 3px;
-    text-decoration-thickness: 1px;
+    text-underline-offset: 3.5px;
+    text-decoration-thickness: 1.5px;
     white-space: nowrap;
 }
 
 .ms-nav-divider {
     width: 1px;
-    height: 32px;
-    background: rgba(255, 255, 255, 0.35);
+    height: 34px;
+    background: rgba(255, 255, 255, 0.4);
     flex-shrink: 0;
 }
 
@@ -274,26 +276,35 @@ img {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
     color: inherit;
     text-decoration: none;
-    font-size: 11px;
-    font-weight: 500;
-    transition: opacity 0.15s;
-    min-width: 44px;
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: opacity 0.15s, transform 0.15s;
+    min-width: 48px;
 }
-.ms-nav-item:hover { opacity: 0.88; }
+.ms-nav-item:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+}
 .ms-nav-icon {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
+}
+.ms-nav-icon svg {
+    width: 26px;
+    height: 26px;
 }
 .ms-nav-label {
     line-height: 1;
     white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 600;
 }
 .ms-cart-badge {
     position: absolute;
@@ -301,16 +312,17 @@ img {
     right: -8px;
     background: #ffffff;
     color: var(--ms-header, #083d30);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
-    min-width: 16px;
-    height: 16px;
+    min-width: 18px;
+    height: 18px;
     padding: 0 4px;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 /* ==========================================================================
@@ -326,75 +338,86 @@ img {
 }
 
 /* ==========================================================================
-   PROMO BANNERS GRID / CAROUSEL
+   PROMO BANNERS GRID - Large, Immersive Reference Architecture
    ========================================================================== */
 .ms-banners-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin-bottom: 30px;
+    gap: 22px;
+    margin-bottom: 36px;
+}
+@media (max-width: 1024px) {
+    .ms-banners-grid {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
 }
 
 .ms-banner-card {
-    border-radius: 14px;
+    border-radius: 16px;
     overflow: hidden;
     color: #ffffff;
-    min-height: 155px;
+    min-height: 225px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 18px 16px 18px 20px;
+    padding: 26px 22px 24px 28px;
     position: relative;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 .ms-banner-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
 }
 
 .ms-banner-1 {
-    background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%);
+    background: linear-gradient(135deg, #028476 0%, #009688 100%);
 }
 .ms-banner-2 {
-    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+    background: linear-gradient(135deg, #1e60d5 0%, #2563eb 100%);
 }
 .ms-banner-3 {
-    background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%);
+    background: linear-gradient(135deg, #582098 0%, #7c3aed 100%);
 }
 
 .ms-banner-info {
-    flex: 1;
+    flex: 1 1 auto;
     z-index: 2;
+    min-width: 0;
 }
 .ms-banner-tag {
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.9);
-    margin-bottom: 3px;
+    color: rgba(255, 255, 255, 0.95);
+    margin-bottom: 4px;
+    letter-spacing: 0.01em;
 }
 .ms-banner-title {
-    font-size: 21px;
+    font-size: 29px;
     font-weight: 800;
-    line-height: 1.15;
-    margin: 0 0 5px;
+    line-height: 1.12;
+    margin: 0 0 8px;
     color: #ffffff;
+    letter-spacing: -0.02em;
 }
 .ms-banner-sub {
-    font-size: 12px;
+    font-size: 14.5px;
     font-weight: 400;
-    color: rgba(255, 255, 255, 0.88);
-    line-height: 1.35;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.38;
+    margin: 0;
 }
 .ms-banner-art {
-    width: 130px;
-    height: 120px;
+    width: 210px;
+    height: 180px;
     flex-shrink: 0;
+    margin-left: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    z-index: 2;
+    z-index: 1;
 }
 
 /* ==========================================================================
@@ -421,223 +444,252 @@ img {
     margin-bottom: 36px;
 }
 
+/* ==========================================================================
+   CATEGORY CARDS - 4-Column Rectangular Architecture
+   ========================================================================== */
+.ms-cat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 36px;
+}
+@media (max-width: 960px) {
+    .ms-cat-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+    }
+}
+@media (max-width: 640px) {
+    .ms-cat-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+}
+
 .ms-cat-card {
     background: #ffffff;
-    border: 1px solid #f1f5f9;
-    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
     padding: 16px 12px 14px;
     text-decoration: none;
     color: inherit;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-    min-height: 120px;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+    justify-content: space-between;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    min-height: 130px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
 }
 .ms-cat-card:hover {
     border-color: #cbd5e1;
-    transform: translateY(-3px);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
     background: #fafbfc;
 }
 .ms-cat-card.ms-cat-active {
-    border-color: var(--ms-accent, #0f4c3a);
+    border-color: var(--ms-header, #083d30);
     background: #f0fdf4;
 }
 .ms-cat-img-box {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: #f8fafc;
-    border: 1px solid #f1f5f9;
+    width: 100%;
+    height: 70px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     overflow: hidden;
-    padding: 8px;
-    transition: transform 0.2s ease;
-}
-.ms-cat-card:hover .ms-cat-img-box {
-    transform: scale(1.08);
 }
 .ms-cat-img-box img {
-    width: 100%;
-    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
+}
+.ms-cat-img-box svg {
+    width: 44px;
+    height: 44px;
+    color: #cbd5e1;
 }
 .ms-cat-title {
     font-size: 12.5px;
     font-weight: 700;
-    color: #1e293b;
-    letter-spacing: 0.01em;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
     text-align: center;
     word-break: break-word;
     line-height: 1.3;
+    margin: 0;
 }
 
 /* ==========================================================================
-   PRODUCT ITEMS GRID - Spaced, High-End Card Architecture
+   PRODUCT ITEMS GRID - 4-Column Clean E-Commerce Architecture
    ========================================================================== */
 .ms-item-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
     margin-bottom: 48px;
+}
+@media (max-width: 1080px) {
+    .ms-item-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+    }
+}
+@media (max-width: 768px) {
+    .ms-item-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
+@media (max-width: 480px) {
+    .ms-item-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
 }
 
 .ms-product-card {
     background: #ffffff;
-    border: 1px solid #f1f5f9;
-    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     text-decoration: none;
     color: inherit;
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
 }
 .ms-product-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.09);
-    border-color: #e2e8f0;
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    border-color: #cbd5e1;
 }
 
 .ms-product-img-wrap {
     width: 100%;
-    aspect-ratio: 1 / 1;
+    height: 310px;
     background: #f8fafc;
     position: relative;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 14px;
-    border-bottom: 1px solid #f8fafc;
+    text-decoration: none;
+    border-bottom: 1px solid #f1f5f9;
+    padding: 8px;
+}
+@media (max-width: 960px) {
+    .ms-product-img-wrap {
+        height: 260px;
+    }
+}
+@media (max-width: 640px) {
+    .ms-product-img-wrap {
+        height: 210px;
+        padding: 6px;
+    }
 }
 .ms-product-img-wrap img {
     width: 100%;
     height: 100%;
     object-fit: contain;
+    object-position: center;
     transition: transform 0.3s ease;
 }
 .ms-product-card:hover .ms-product-img-wrap img {
-    transform: scale(1.05);
+    transform: scale(1.03);
 }
 
-.ms-product-badge {
+.ms-card-discount-badge {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    background: #ecfdf5;
-    color: #059669;
-    border: 1px solid #a7f3d0;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 999px;
+    top: 8px;
+    left: 8px;
+    background: var(--ms-header, #083d30);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.15;
+    padding: 3px 6px;
+    border-radius: 4px;
+    text-align: center;
     z-index: 2;
-    letter-spacing: 0.02em;
-}
-.ms-product-badge.ms-badge-out {
-    background: #fef2f2;
-    color: #dc2626;
-    border-color: #fecaca;
-}
-.ms-product-badge.ms-badge-low {
-    background: #fffbeb;
-    color: #d97706;
-    border-color: #fde68a;
+    text-transform: uppercase;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
 }
 
 .ms-product-body {
-    padding: 16px 16px 16px;
+    padding: 12px 14px 14px;
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
 }
 .ms-product-name {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     color: #0f172a;
-    line-height: 1.4;
-    margin-bottom: 8px;
+    text-transform: uppercase;
+    line-height: 1.35;
+    margin-bottom: 5px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     word-break: break-word;
+    text-decoration: none;
     transition: color 0.15s;
 }
-.ms-product-card:hover .ms-product-name {
-    color: var(--ms-accent, #0f4c3a);
-}
-.ms-product-variant {
-    font-size: 12px;
-    color: #64748b;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.ms-stock-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #10b981;
-    display: inline-block;
-}
-.ms-stock-dot.is-out {
-    background: #ef4444;
+.ms-product-name:hover {
+    color: var(--ms-header, #083d30);
 }
 
-.ms-product-foot {
+.ms-product-attr {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    line-height: 1.35;
+    margin-bottom: 3px;
+    letter-spacing: 0.01em;
+}
+
+.ms-product-variants-link {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #0284c7;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    margin-bottom: 6px;
+    display: inline-block;
+    cursor: pointer;
+}
+.ms-product-variants-link:hover {
+    color: #0369a1;
+}
+
+.ms-product-price-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    align-items: baseline;
+    gap: 6px;
     margin-top: auto;
-    padding-top: 10px;
-    border-top: 1px solid #f8fafc;
+    padding-top: 4px;
 }
 .ms-product-price {
-    font-size: 16.5px;
+    font-size: 14.5px;
     font-weight: 800;
     color: #0f172a;
     white-space: nowrap;
-    letter-spacing: -0.3px;
 }
-.ms-add-btn {
-    padding: 7px 16px;
-    font-size: 12.5px;
-    font-weight: 700;
-    background: var(--ms-accent, #0f4c3a);
-    color: #ffffff;
-    border: 0;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: all 0.15s ease;
+.ms-product-mrp {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #94a3b8;
+    text-decoration: line-through;
     white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-}
-.ms-add-btn:hover {
-    background: #0f172a;
-    transform: scale(1.04);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-.ms-add-btn[disabled] {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
 }
 
 /* ==========================================================================
