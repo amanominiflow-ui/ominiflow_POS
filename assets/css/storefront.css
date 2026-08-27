@@ -1527,6 +1527,29 @@ body.sf-auth-body {
     .sf-auth-title { font-size: 24px; }
 }
 
-
-
-
+/* Storefront Footer */
+.ms-footer {
+    width: 100%;
+    background-color: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 36px 24px 48px;
+    margin-top: 48px;
+}
+.ms-footer-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.ms-footer-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+.ms-footer-location {
+    font-size: 13.5px;
+    color: #64748b;
+    font-weight: 500;
+    line-height: 1.5;
+}

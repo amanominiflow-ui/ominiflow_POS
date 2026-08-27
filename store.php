@@ -54,7 +54,7 @@ if (!$storeBiz) {
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
     $page = trim((string) ($_GET['page'] ?? 'home'));
-    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'], true)) {
+    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true)) {
         $page = 'home';
     }
 
@@ -174,12 +174,16 @@ if (!$storeBiz) {
     }
 }
 
-function sf_money(string $symbol, float $amount): string {
-    return e($symbol) . number_format($amount, 2);
+if (!function_exists('sf_money')) {
+    function sf_money(string $symbol, float $amount): string {
+        return e($symbol) . number_format($amount, 2);
+    }
 }
 
-function sf_product_image(?string $path): string {
-    return $path ? asset($path) : '';
+if (!function_exists('sf_product_image')) {
+    function sf_product_image(?string $path): string {
+        return $path ? asset($path) : '';
+    }
 }
 
 $favicon = get_storefront_dynamic_favicon_url($brand, $pageTitle);
@@ -350,6 +354,196 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 right: 14px !important;
                 font-size: 13px !important;
             }
+        }
+
+        /* Storefront Footer */
+        .ms-footer {
+            width: 100%;
+            background-color: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            padding: 36px 24px 44px;
+            margin-top: 48px;
+        }
+        .ms-footer-wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .ms-footer-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .ms-footer-brand-box {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .ms-footer-name {
+            font-size: 15px;
+            font-weight: 800;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 0;
+        }
+        .ms-footer-location {
+            font-size: 13px;
+            color: #64748b;
+            font-weight: 500;
+            line-height: 1.4;
+        }
+        .ms-footer-links-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .ms-footer-nav-link {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #475569;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .ms-footer-nav-link:hover {
+            color: #0f172a;
+            text-decoration: underline;
+        }
+        .ms-footer-nav-dot {
+            color: #94a3b8;
+            font-weight: bold;
+        }
+
+        /* Legal & Contact Us Pages */
+        .ms-legal-card {
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 36px 32px;
+            max-width: 860px;
+            margin: 20px auto 40px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .ms-legal-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #64748b;
+            text-decoration: none;
+            margin-bottom: 20px;
+            transition: color 0.15s;
+        }
+        .ms-legal-back:hover {
+            color: #0f172a;
+        }
+        .ms-legal-title {
+            font-size: 26px;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 0 0 6px;
+            line-height: 1.25;
+        }
+        .ms-legal-subtitle {
+            font-size: 14.5px;
+            color: #64748b;
+            margin: 0 0 24px;
+        }
+        .ms-legal-meta {
+            font-size: 12.5px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .ms-legal-content {
+            font-size: 14.5px;
+            color: #334155;
+            line-height: 1.7;
+        }
+        .ms-legal-content h3 {
+            font-size: 16.5px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 24px 0 8px;
+        }
+        .ms-legal-content p {
+            margin: 0 0 14px;
+        }
+        .ms-legal-content ul {
+            margin: 0 0 16px 20px;
+            padding: 0;
+        }
+        .ms-legal-content li {
+            margin-bottom: 6px;
+        }
+
+        /* Contact Us Grid */
+        .ms-contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .ms-contact-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 18px 20px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            transition: border-color 0.15s, transform 0.15s;
+        }
+        .ms-contact-card:hover {
+            border-color: #cbd5e1;
+            transform: translateY(-1px);
+        }
+        .ms-contact-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            background: #e2e8f0;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .ms-contact-label {
+            font-size: 12.5px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 4px;
+        }
+        .ms-contact-val {
+            font-size: 14.5px;
+            font-weight: 600;
+            color: #0f172a;
+            text-decoration: none;
+            line-height: 1.4;
+            display: block;
+        }
+        a.ms-contact-val:hover {
+            color: var(--ms-accent, #2563eb);
+            text-decoration: underline;
+        }
+        .ms-contact-card-wa {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+        .ms-contact-icon-wa {
+            background: #22c55e;
+            color: #ffffff;
+        }
+        .ms-contact-val-wa {
+            color: #166534 !important;
+            font-weight: 700;
         }
     </style>
 </head>
@@ -813,9 +1007,160 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <a class="ms-btn" href="<?= e($homeUrl) ?>" style="margin-top:20px;display:inline-flex;width:auto">Continue Shopping</a>
                     </div>
                 </div>
+
+            <?php elseif ($page === 'privacy'):
+                $customPolicy = trim((string)($brand['privacy_policy'] ?? ''));
+                ?>
+                <div class="ms-legal-card">
+                    <a href="<?= e($homeUrl) ?>" class="ms-legal-back">← Back to Store</a>
+                    <h1 class="ms-legal-title">Privacy Policy</h1>
+                    <div class="ms-legal-meta">Last updated for <?= e($pageTitle) ?></div>
+
+                    <div class="ms-legal-content">
+                        <?php if ($customPolicy !== ''): ?>
+                            <?= nl2br(e($customPolicy)) ?>
+                        <?php else: ?>
+                            <p>Welcome to <strong><?= e($pageTitle) ?></strong>. We value your privacy and are committed to protecting your personal information. This Privacy Policy explains how we collect, use, and safeguard your details when you visit our store or make a purchase.</p>
+                            
+                            <h3>1. Information We Collect</h3>
+                            <p>When you create an account, place an order, or browse our store, we may collect the following information:</p>
+                            <ul>
+                                <li>Contact details such as your name, email address, and phone number.</li>
+                                <li>Delivery and shipping address to fulfill your orders.</li>
+                                <li>Order history, transaction details, and cart preferences.</li>
+                            </ul>
+
+                            <h3>2. How We Use Your Information</h3>
+                            <p>We use the information we collect for the following purposes:</p>
+                            <ul>
+                                <li>To process, confirm, and deliver your orders accurately.</li>
+                                <li>To provide order status updates and customer support.</li>
+                                <li>To improve our products, services, and online shopping experience.</li>
+                            </ul>
+
+                            <h3>3. Data Security</h3>
+                            <p>We implement strict technical and security measures to protect your personal information against unauthorized access, loss, or misuse.</p>
+
+                            <h3>4. Contact Us</h3>
+                            <p>If you have any questions or concerns regarding our Privacy Policy or your personal information, please reach out through our <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" style="color:var(--ms-accent,#2563eb);text-decoration:underline;">Contact Us</a> page.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+            <?php elseif ($page === 'contact'):
+                $carePhone = trim((string)($brand['customer_care_phone'] ?? $storeBiz['phone'] ?? ''));
+                $careEmail = trim((string)($brand['customer_care_email'] ?? $storeBiz['email'] ?? ''));
+                $careWhatsapp = preg_replace('/[^0-9]/', '', (string)($brand['contact_whatsapp'] ?? ''));
+                $careNote = trim((string)($brand['contact_us_text'] ?? ''));
+                $storeAddress = trim((string)($storeBiz['address'] ?? ''));
+                if (!empty($storeBiz['city'])) $storeAddress .= ($storeAddress ? ', ' : '') . $storeBiz['city'];
+                if (!empty($storeBiz['state'])) $storeAddress .= ($storeAddress ? ', ' : '') . $storeBiz['state'];
+                if (!empty($storeBiz['pincode'])) $storeAddress .= ' - ' . $storeBiz['pincode'];
+                if (!empty($storeBiz['country'])) $storeAddress .= ($storeAddress ? ', ' : '') . $storeBiz['country'];
+                ?>
+                <div class="ms-legal-card">
+                    <a href="<?= e($homeUrl) ?>" class="ms-legal-back">← Back to Store</a>
+                    <h1 class="ms-legal-title">Contact Us</h1>
+                    <p class="ms-legal-subtitle">Have questions or need assistance with your order? We're here to help!</p>
+
+                    <div class="ms-contact-grid">
+                        <?php if ($carePhone !== ''): ?>
+                            <div class="ms-contact-card">
+                                <div class="ms-contact-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                </div>
+                                <div>
+                                    <div class="ms-contact-label">Phone Support</div>
+                                    <a href="tel:<?= e(preg_replace('/[^0-9+]/', '', $carePhone)) ?>" class="ms-contact-val"><?= e($carePhone) ?></a>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($careEmail !== ''): ?>
+                            <div class="ms-contact-card">
+                                <div class="ms-contact-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                </div>
+                                <div>
+                                    <div class="ms-contact-label">Email Support</div>
+                                    <a href="mailto:<?= e($careEmail) ?>" class="ms-contact-val"><?= e($careEmail) ?></a>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($careWhatsapp !== ''): ?>
+                            <div class="ms-contact-card ms-contact-card-wa">
+                                <div class="ms-contact-icon ms-contact-icon-wa">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2z"/></svg>
+                                </div>
+                                <div>
+                                    <div class="ms-contact-label">WhatsApp Support</div>
+                                    <a href="https://wa.me/<?= e($careWhatsapp) ?>" target="_blank" rel="noopener" class="ms-contact-val ms-contact-val-wa">Chat on WhatsApp →</a>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($storeAddress !== ''): ?>
+                            <div class="ms-contact-card">
+                                <div class="ms-contact-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                </div>
+                                <div>
+                                    <div class="ms-contact-label">Store Location</div>
+                                    <div class="ms-contact-val" style="color:#334155;cursor:default;"><?= e($storeAddress) ?></div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($careNote !== ''): ?>
+                            <div class="ms-contact-card">
+                                <div class="ms-contact-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                </div>
+                                <div>
+                                    <div class="ms-contact-label">Working Hours / Note</div>
+                                    <div class="ms-contact-val" style="color:#334155;cursor:default;"><?= e($careNote) ?></div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             <?php endif; ?>
         <?php endif; ?>
     </main>
+    <?php if (empty($storeNotFound)):
+        $footerLocStr = trim((string) ($brand['footer_location'] ?? ''));
+        if ($footerLocStr === '') {
+            $footerLocs = [];
+            if (!empty($storeBiz['city'])) $footerLocs[] = $storeBiz['city'];
+            if (!empty($storeBiz['state'])) $footerLocs[] = $storeBiz['state'];
+            $footerLocStr = implode(', ', $footerLocs);
+            if ($footerLocStr === '' && !empty($storeBiz['country'])) {
+                $footerLocStr = $storeBiz['country'];
+            }
+            if ($footerLocStr === '' && !empty($storeBiz['address'])) {
+                $footerLocStr = $storeBiz['address'];
+            }
+        }
+        ?>
+        <footer class="ms-footer">
+            <div class="ms-footer-wrap">
+                <div class="ms-footer-content">
+                    <div class="ms-footer-brand-box">
+                        <div class="ms-footer-name"><?= e($pageTitle) ?></div>
+                        <?php if ($footerLocStr !== ''): ?>
+                            <div class="ms-footer-location"><?= e($footerLocStr) ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="ms-footer-links-box">
+                        <a href="<?= e(public_store_url($storeBiz, 'privacy')) ?>" class="ms-footer-nav-link">Privacy Policy</a>
+                        <span class="ms-footer-nav-dot">·</span>
+                        <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" class="ms-footer-nav-link">Contact Us</a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    <?php endif; ?>
 </div>
 <?php if (empty($storeNotFound)):
     $cdLines = $drawerCart['lines'] ?? [];
@@ -824,7 +1169,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdSub = (float) ($drawerCart['subtotal'] ?? 0);
     $cdTax = (float) ($drawerCart['tax'] ?? 0);
     $cdTotal = (float) ($drawerCart['total'] ?? 0);
-    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'], true) ? $page : 'home';
+    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">

@@ -99,6 +99,10 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_pickup', "TINYINT(1) NOT NULL DEFAULT 0");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'customer_care_phone', "VARCHAR(50) NOT NULL DEFAULT ''");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'customer_care_email', "VARCHAR(191) NOT NULL DEFAULT ''");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_location', "VARCHAR(255) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'privacy_policy', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_us_text', "TEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_whatsapp', "VARCHAR(50) NULL");
 
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
@@ -501,6 +505,10 @@ function get_mobile_store_settings(int $businessId): array {
         'enable_pickup' => (int) ($row['enable_pickup'] ?? 0) === 1,
         'customer_care_phone' => (string) ($row['customer_care_phone'] ?? ''),
         'customer_care_email' => (string) ($row['customer_care_email'] ?? ''),
+        'contact_whatsapp' => (string) ($row['contact_whatsapp'] ?? ''),
+        'contact_us_text' => (string) ($row['contact_us_text'] ?? ''),
+        'privacy_policy' => (string) ($row['privacy_policy'] ?? ''),
+        'footer_location' => (string) ($row['footer_location'] ?? ''),
         // Visual Builder / Home Layout Components
         'category_section_name' => (string) ($row['category_section_name'] ?? 'All Categories'),
         'category_bg_color' => (string) ($row['category_bg_color'] ?? '#ffffff'),
@@ -642,6 +650,10 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             enable_pickup = :ep,
             customer_care_phone = :ccp,
             customer_care_email = :cce,
+            contact_whatsapp = :cw,
+            contact_us_text = :cut,
+            privacy_policy = :pp,
+            footer_location = :floc,
             category_section_name = :csn,
             category_bg_color = :cbg,
             category_text_color = :ctc,
@@ -687,6 +699,10 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'ep' => array_key_exists('enable_pickup', $data) ? (!empty($data['enable_pickup']) ? 1 : 0) : ($current['enable_pickup'] ? 1 : 0),
         'ccp' => trim((string)($data['customer_care_phone'] ?? $current['customer_care_phone'])),
         'cce' => trim((string)($data['customer_care_email'] ?? $current['customer_care_email'])),
+        'cw' => array_key_exists('contact_whatsapp', $data) ? trim((string)$data['contact_whatsapp']) : ($current['contact_whatsapp'] ?? null),
+        'cut' => array_key_exists('contact_us_text', $data) ? trim((string)$data['contact_us_text']) : ($current['contact_us_text'] ?? null),
+        'pp' => array_key_exists('privacy_policy', $data) ? trim((string)$data['privacy_policy']) : ($current['privacy_policy'] ?? null),
+        'floc' => array_key_exists('footer_location', $data) ? trim((string)$data['footer_location']) : ($current['footer_location'] ?? null),
         'csn' => trim((string)($data['category_section_name'] ?? $current['category_section_name'])),
         'cbg' => normalize_hex_color((string)($data['category_bg_color'] ?? $current['category_bg_color']), '#ffffff'),
         'ctc' => normalize_hex_color((string)($data['category_text_color'] ?? $current['category_text_color']), '#000000'),
@@ -1381,43 +1397,43 @@ HTML;
 
 function register_storefront_shopper(int $businessId, array $data): array {
     $name = storefront_clean_person_name((string) ($data['name'] ?? ''));
-    $phone = clean_customer_phone((string) ($data['phone'] ?? ''));
     $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $phone = clean_customer_phone((string) ($data['phone'] ?? ''));
     $password = (string) ($data['password'] ?? '');
 
     if ($name === '') {
         return ['success' => false, 'error' => 'Full name is required.'];
     }
-    if (strlen($phone) < 10) {
-        return ['success' => false, 'error' => 'Please enter a valid 10-digit mobile number.'];
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Please enter a valid email address.'];
     }
     if (strlen($password) < 6) {
         return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
     }
 
-    $existing = find_store_customer_by_phone($businessId, $phone);
-    if (!$existing && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $existing = find_store_customer_by_email($businessId, $email);
+    $existing = find_store_customer_by_email($businessId, $email);
+    if (!$existing && $phone !== '') {
+        $existing = find_store_customer_by_phone($businessId, $phone);
     }
     $hash = password_hash($password, PASSWORD_DEFAULT);
     $db = get_db();
 
     if ($existing) {
         if (!empty($existing['password'])) {
-            return ['success' => false, 'error' => 'An account already exists for this mobile number. Please sign in.'];
+            return ['success' => false, 'error' => 'An account already exists for this email. Please sign in.'];
         }
-        $db->prepare('UPDATE customers SET name = :name, phone = :phone, email = COALESCE(:email, email), password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+        $db->prepare('UPDATE customers SET name = :name, phone = COALESCE(:phone, phone), email = :email, password = :password, updated_at = NOW() WHERE id = :id AND business_id = :bid')
             ->execute([
                 'name' => $name,
-                'phone' => $phone,
-                'email' => $email !== '' ? $email : null,
+                'phone' => $phone !== '' ? $phone : null,
+                'email' => $email,
                 'password' => $hash,
                 'id' => (int) $existing['id'],
                 'bid' => $businessId,
             ]);
         $existing['name'] = $name;
-        $existing['phone'] = $phone;
-        if ($email !== '') $existing['email'] = $email;
+        $existing['email'] = $email;
+        if ($phone !== '') $existing['phone'] = $phone;
         set_storefront_shopper($businessId, $existing);
         return ['success' => true];
     }

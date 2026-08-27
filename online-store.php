@@ -122,6 +122,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['enable_pickup'] = !empty($_POST['enable_pickup']);
             $saveData['customer_care_phone'] = $_POST['customer_care_phone'] ?? '';
             $saveData['customer_care_email'] = $_POST['customer_care_email'] ?? '';
+            $saveData['contact_whatsapp'] = $_POST['contact_whatsapp'] ?? '';
+            $saveData['contact_us_text'] = $_POST['contact_us_text'] ?? '';
+            $saveData['privacy_policy'] = $_POST['privacy_policy'] ?? '';
+            $saveData['footer_location'] = $_POST['footer_location'] ?? '';
         }
 
         if ($action === 'save_customize' || $action === 'publish_layout') {
@@ -1566,19 +1570,45 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                             </label>
                         </div>
 
-                        <!-- Customer Care Details Section -->
+                        <!-- Customer Care & Contact Us Details Section -->
                         <div class="pref-section">
-                            <div class="pref-sec-heading" style="margin-bottom:4px">Customer Care Details</div>
-                            <div class="pref-help-sub">This information will be shown on your store's customer care section and in QR code poster</div>
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Contact Us & Customer Support</div>
+                            <div class="pref-help-sub">This information is displayed on your store's "Contact Us" page, footer, and QR code poster</div>
 
                             <div class="pref-form-grid">
                                 <label class="pref-field-label">Customer care contact number</label>
-                                <input class="pref-field-input" type="text" name="customer_care_phone" value="<?= e($brand['customer_care_phone'] ?? '') ?>" placeholder="Enter your customer care number">
+                                <input class="pref-field-input" type="text" name="customer_care_phone" value="<?= e($brand['customer_care_phone'] ?? '') ?>" placeholder="e.g. +91 98765 43210">
                             </div>
 
                             <div class="pref-form-grid">
-                                <label class="pref-field-label">Customer Care Email Id</label>
-                                <input class="pref-field-input" type="email" name="customer_care_email" value="<?= e($brand['customer_care_email'] ?? '') ?>" placeholder="Enter your customer care email id">
+                                <label class="pref-field-label">Customer Care Email Address</label>
+                                <input class="pref-field-input" type="email" name="customer_care_email" value="<?= e($brand['customer_care_email'] ?? '') ?>" placeholder="e.g. support@yourstore.com">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">WhatsApp Support Number (Optional)</label>
+                                <input class="pref-field-input" type="text" name="contact_whatsapp" value="<?= e($brand['contact_whatsapp'] ?? '') ?>" placeholder="e.g. 919876543210 (with country code, no +)">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Store Hours / Support Note</label>
+                                <input class="pref-field-input" type="text" name="contact_us_text" value="<?= e($brand['contact_us_text'] ?? '') ?>" placeholder="e.g. Mon - Sat: 10:00 AM - 8:00 PM">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Footer Location / Subtitle</label>
+                                <input class="pref-field-input" type="text" name="footer_location" value="<?= e($brand['footer_location'] ?? '') ?>" placeholder="e.g. West Bengal (or leave empty to auto-use State/City from Settings)">
+                            </div>
+                        </div>
+
+                        <!-- Privacy Policy & Legal Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Privacy Policy & Legal</div>
+                            <div class="pref-help-sub">Your store's Privacy Policy will be accessible to customers from the footer link.</div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Privacy Policy Content</label>
+                                <textarea class="pref-field-input" name="privacy_policy" rows="7" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter your custom Privacy Policy here. If left blank, a standard privacy policy based on your store name will be automatically provided."><?= e($brand['privacy_policy'] ?? '') ?></textarea>
                             </div>
                         </div>
 
