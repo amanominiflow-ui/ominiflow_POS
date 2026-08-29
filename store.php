@@ -1613,33 +1613,70 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <div class="ms-empty">Your cart is empty.</div>
                         <a class="ms-btn" href="<?= e($homeUrl) ?>" style="margin-top:12px">Start Shopping</a>
                     </div>
-                <?php else: ?>
-                    <div class="ms-form-card">
-                        <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Checkout</h1>
-                        <form method="post">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="action" value="place_order">
-                            <label class="ms-label">Full name</label>
-                            <input class="ms-input" type="text" name="name" required value="<?= e(storefront_clean_person_name((string)($_SESSION['sf_delivery_location_' . $bid]['name'] ?? $storeShopper['name'] ?? ''))) ?>">
-                            <label class="ms-label">Phone</label>
-                            <input class="ms-input" type="tel" name="phone" required value="<?= e((string)($_SESSION['sf_delivery_location_' . $bid]['phone'] ?? $storeShopper['phone'] ?? '')) ?>">
-                            <label class="ms-label">Email</label>
-                            <input class="ms-input" type="email" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:6px;">
-                                <label class="ms-label" style="margin:0;">Delivery address <span class="ms-req">*</span></label>
-                                <button type="button" onclick="openLocationDrawerFromCheckout()" style="background:none;border:none;color:#2563eb;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;">Change / Set Location</button>
+                <?php else: 
+                    $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                    $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
+                    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
+                    $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
+                    $locEmail = trim((string)($storeShopper['email'] ?? ''));
+                    $hasDeliveryLoc = ($locAddress !== '');
+                    ?>
+                    <?php if (!$hasDeliveryLoc): ?>
+                        <div class="ms-form-card" style="text-align:center;padding:40px 24px;max-width:520px;">
+                            <div class="ms-loc-art-wrap" style="margin:0 auto 16px;display:flex;justify-content:center;">
+                                <svg viewBox="0 0 200 200" width="150" height="150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="100" cy="100" r="75" fill="#f8fafc"/>
+                                    <g transform="translate(70, 36)">
+                                        <path d="M30 0 C13.4 0 0 13.4 0 30 C0 55 30 84 30 84 C30 84 60 55 60 30 C60 13.4 46.6 0 30 0 Z" fill="#818cf8" opacity="0.15"/>
+                                        <path d="M30 4 C15.6 4 4 15.6 4 30 C4 52 30 78 30 78 C30 78 56 52 56 30 C56 15.6 44.4 4 30 4 Z" fill="var(--ms-header, #083d30)"/>
+                                        <circle cx="30" cy="28" r="14" fill="#ffffff"/>
+                                        <circle cx="48" cy="12" r="10" fill="var(--ms-header, #083d30)"/>
+                                        <path d="M48 7v10M43 12h10" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+                                    </g>
+                                    <ellipse cx="100" cy="155" rx="30" ry="6" fill="#cbd5e1" opacity="0.6"/>
+                                </svg>
                             </div>
-                            <textarea class="ms-textarea" name="address" rows="3" required placeholder="Enter full delivery address"><?= e((string)($_SESSION['sf_delivery_location_' . $bid]['formatted'] ?? $storeShopper['address'] ?? '')) ?></textarea>
-                            <label class="ms-label">Payment Method</label>
-                            <select class="ms-select" name="payment_method">
-                                <option value="cod">Cash on Delivery</option>
-                                <option value="upi">UPI</option>
-                                <option value="pickup">Pay at store / Pickup</option>
-                            </select>
-                            <div class="ms-total"><span>Total</span><span><?= sf_money($currency, $hydrated['total']) ?></span></div>
-                            <button class="ms-btn" type="submit">Place Order</button>
-                        </form>
-                    </div>
+                            <h1 style="font-size:22px;font-weight:800;color:#0f172a;margin:0 0 6px;">Add Delivery Location</h1>
+                            <p style="font-size:14px;color:#64748b;margin:0 0 24px;">Let us know where we should send your orders</p>
+                            <button type="button" class="ms-btn" style="max-width:280px;margin:0 auto;" onclick="openLocationDrawerFromCheckout()">Add Address</button>
+                        </div>
+                    <?php else: ?>
+                        <div class="ms-form-card" style="max-width:580px;">
+                            <h1 style="font-size:20px;font-weight:800;margin-bottom:18px;color:#0f172a;">Review & Place Order</h1>
+                            <form method="post">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="place_order">
+                                <input type="hidden" name="name" value="<?= e($locName) ?>">
+                                <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
+                                <input type="hidden" name="email" value="<?= e($locEmail) ?>">
+                                <input type="hidden" name="address" value="<?= e($locAddress) ?>">
+
+                                <!-- Delivery Address Card -->
+                                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:20px;">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                                        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;color:#0f172a;">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                                            <span>Delivering to</span>
+                                        </div>
+                                        <button type="button" onclick="openLocationDrawerFromCheckout()" style="background:none;border:none;color:#2563eb;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;">Change Location</button>
+                                    </div>
+                                    <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:4px;"><?= e($locName) ?> <?= $locPhone ? ('· ' . e($locPhone)) : '' ?></div>
+                                    <div style="font-size:13.5px;color:#475569;line-height:1.45;"><?= e($locAddress) ?></div>
+                                </div>
+
+                                <!-- Payment Method -->
+                                <label class="ms-label">Payment Method</label>
+                                <select class="ms-select" name="payment_method" style="margin-bottom:18px;">
+                                    <option value="cod">Cash on Delivery</option>
+                                    <option value="upi">UPI</option>
+                                    <option value="pickup">Pay at store / Pickup</option>
+                                </select>
+
+                                <div class="ms-total"><span>Total</span><span><?= sf_money($currency, $hydrated['total']) ?></span></div>
+                                <button class="ms-btn" type="submit" style="margin-top:14px;">Place Order</button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
 
             <?php elseif ($page === 'profile' && $storeShopper): ?>
@@ -2050,7 +2087,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php endif; ?>
             </div>
             <?php if ($cdLines): ?>
-                <a class="ms-cd-checkout" href="<?= e($checkoutUrl) ?>">Proceed to checkout</a>
+                <?php
+                $hasLoc = !empty($_SESSION['sf_delivery_location_' . $bid]['formatted']) || !empty($storeShopper['address']);
+                ?>
+                <a class="ms-cd-checkout" href="<?= e($checkoutUrl) ?>" onclick="if (!<?= $hasLoc ? 'true' : 'false' ?>) { event.preventDefault(); openLocationDrawerFromCart(); }">Proceed to checkout</a>
             <?php else: ?>
                 <a class="ms-cd-checkout" href="<?= e($homeUrl) ?>">Start shopping</a>
             <?php endif; ?>
@@ -2390,6 +2430,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             closeDrawer(accOverlay);
         });
     });
+
+    window.openLocationDrawerFromCheckout = function(returnPage) {
+        var rPage = returnPage || 'checkout';
+        if (locOverlay) {
+            var retInput = locOverlay.querySelector('input[name="return_page"]');
+            if (retInput) retInput.value = rPage;
+            showLocPrompt();
+            openDrawer(locOverlay);
+        }
+    };
+
+    window.openLocationDrawerFromCart = function() {
+        window.openLocationDrawerFromCheckout('checkout');
+    };
 })();
 </script>
 <script>
@@ -2627,26 +2681,6 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
-}
-
-function openLocationDrawerFromCheckout() {
-    var loc = document.getElementById('msLocationOverlay');
-    if (loc) {
-        loc.hidden = false;
-        loc.setAttribute('aria-hidden', 'false');
-        var retInput = loc.querySelector('input[name="return_page"]');
-        if (retInput) retInput.value = 'checkout';
-        var promptView = document.getElementById('msLocPromptView');
-        var formView = document.getElementById('msLocFormView');
-        if (promptView && formView) {
-            promptView.style.display = 'none';
-            formView.style.display = 'block';
-            var topBtn = document.getElementById('msLocTopActionBtn');
-            if (topBtn) topBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
-            var title = document.getElementById('msLocTitle');
-            if (title) title.textContent = 'Set Delivery Location';
-        }
-    }
 }
 </script>
 </body>
