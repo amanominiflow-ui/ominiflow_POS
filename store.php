@@ -763,6 +763,39 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             overflow: hidden;
             word-break: break-word;
         }
+        .ms-card-add-btn {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: var(--ms-header, #083d30);
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            box-sizing: border-box;
+        }
+        .ms-card-add-btn:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+            color: #ffffff;
+        }
+        .ms-card-add-btn.is-disabled, .ms-card-add-btn:disabled {
+            background: #f1f5f9 !important;
+            color: #94a3b8 !important;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
 
         /* PDP Gallery Multi-Image Carousel & Thumbnails */
         .ms-pdp-gallery-card {
@@ -1292,12 +1325,35 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                 <a href="<?= e($pUrl) ?>" class="ms-product-variants-link">+<?= max(1, $varCount - 1) ?> variants</a>
                                             <?php endif; ?>
                                         </div>
-                                        <div class="ms-product-price-row">
-                                            <?php if (empty($brand['hide_product_price'])): ?>
-                                                <span class="ms-product-price"><?= sf_money($currency, (float) $sellingPrice) ?></span>
-                                                <?php if ($mrp > $sellingPrice && $mrp > 0): ?>
-                                                    <span class="ms-product-mrp"><?= sf_money($currency, (float) $mrp) ?></span>
+                                        <div>
+                                            <div class="ms-product-price-row">
+                                                <?php if (empty($brand['hide_product_price'])): ?>
+                                                    <span class="ms-product-price"><?= sf_money($currency, (float) $sellingPrice) ?></span>
+                                                    <?php if ($mrp > $sellingPrice && $mrp > 0): ?>
+                                                        <span class="ms-product-mrp"><?= sf_money($currency, (float) $mrp) ?></span>
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
+                                            </div>
+
+                                            <?php if (!$inStock): ?>
+                                                <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
+                                            <?php elseif ($varCount > 0): ?>
+                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
+                                                    <span>View Options</span>
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                                                </a>
+                                            <?php else: ?>
+                                                <form method="post" class="ms-card-add-form" style="margin:0;">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="add_to_cart">
+                                                    <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="qty" value="1">
+                                                    <input type="hidden" name="redirect_page" value="home">
+                                                    <button type="submit" class="ms-card-add-btn">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                                        <span>Add to Cart</span>
+                                                    </button>
+                                                </form>
                                             <?php endif; ?>
                                         </div>
                                     </div>
