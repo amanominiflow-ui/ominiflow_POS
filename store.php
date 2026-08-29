@@ -752,16 +752,33 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 ?>
 
                 <?php foreach ($homeSections as $homeSec): ?>
-                <?php if ($homeSec === 'banner' && $brand['show_banner'] && $q === '' && !$catId): ?>
+                <?php if ($homeSec === 'banner' && !empty($brand['show_banner']) && $q === '' && !$catId): ?>
+                    <?php if (!empty($brand['show_banner_section_name'])): ?>
+                        <div id="msBannersSectionName" class="ms-sec-title"><?= e($brand['banner_section_name'] ?: 'Banners') ?></div>
+                    <?php endif; ?>
                     <div class="ms-banners-grid" id="msBanners">
-                        <!-- Banner 1: We're online now! -->
+                        <!-- Banner 1: Merchant Custom / Default Banner -->
                         <div class="ms-banner-card ms-banner-1">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-tag">We're</div>
-                                <div class="ms-banner-title">online now!</div>
-                                <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
+                                <?php
+                                $bTitle = trim((string)($brand['banner_title'] ?? ''));
+                                $bSub = trim((string)($brand['banner_subtitle'] ?? ''));
+                                ?>
+                                <?php if ($bTitle !== ''): ?>
+                                    <div class="ms-banner-title"><?= nl2br(e($bTitle)) ?></div>
+                                <?php else: ?>
+                                    <div class="ms-banner-title">We're online now!</div>
+                                <?php endif; ?>
+                                <?php if ($bSub !== ''): ?>
+                                    <div class="ms-banner-sub"><?= nl2br(e($bSub)) ?></div>
+                                <?php else: ?>
+                                    <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
+                                <?php endif; ?>
                             </div>
                             <div class="ms-banner-art">
+                                <?php if (!empty($brand['banner_image']) && store_logo_file_exists((string) $brand['banner_image'])): ?>
+                                    <img src="<?= asset($brand['banner_image']) ?>" alt="Banner" style="max-width:100%;max-height:100%;object-fit:contain;">
+                                <?php else: ?>
                                 <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <circle cx="20" cy="30" r="1.5" fill="#ffffff" opacity="0.8"/>
                                     <circle cx="140" cy="20" r="1.5" fill="#ffffff" opacity="0.7"/>
@@ -831,6 +848,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         <rect x="-8" y="28" width="6" height="10" rx="1.5" fill="#0f172a" transform="rotate(-15)"/>
                                     </g>
                                 </svg>
+                                <?php endif; ?>
                             </div>
                         </div>
 

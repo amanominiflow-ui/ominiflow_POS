@@ -402,8 +402,8 @@ function studio_cat_placeholder(): string {
                                         <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-h" id="canvasBannerName" style="<?= !empty($brand['show_banner_section_name']) ? '' : 'display:none' ?>"><?= e($brand['banner_section_name'] ?: 'Banners') ?></div>
                                         <div class="st-banner">
-                                            <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: 'Order with Ease') ?></h4>
-                                            <p id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: 'Receive with Speed') ?></p>
+                                            <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "We're online now!") ?></h4>
+                                            <p id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></p>
                                             <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
                                                 <rect x="18" y="28" width="28" height="22" rx="2" fill="#fbbf24" transform="rotate(-12 18 28)"/>
                                                 <path d="M40 18 L68 10 L80 28 L52 36 Z" fill="#f59e0b"/>
