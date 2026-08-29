@@ -25,6 +25,33 @@ $brand = [
     'banner_title' => "We're online now!",
     'banner_subtitle' => 'Stay at home and shop online.',
     'banner_image' => null,
+    'banner_bg_color' => '#7c3aed',
+    'banner_text_color' => '#ffffff',
+    'banner_2_tag' => 'Best deal,',
+    'banner_2_title' => 'Start Shopping',
+    'banner_2_subtitle' => 'and discover the best deals!',
+    'banner_2_bg_color' => '#2563eb',
+    'banner_2_text_color' => '#ffffff',
+    'banner_3_tag' => 'Order',
+    'banner_3_title' => 'with Ease',
+    'banner_3_subtitle' => 'with Speed',
+    'banner_3_bg_color' => '#028476',
+    'banner_3_text_color' => '#ffffff',
+    'banner_4_tag' => 'Special Offer,',
+    'banner_4_title' => 'Super Savings',
+    'banner_4_subtitle' => 'Get exclusive discounts today!',
+    'banner_4_bg_color' => '#ea580c',
+    'banner_4_text_color' => '#ffffff',
+    'banner_5_tag' => 'Fresh Deals,',
+    'banner_5_title' => 'Top Quality Picks',
+    'banner_5_subtitle' => 'Handpicked best products for you.',
+    'banner_5_bg_color' => '#0891b2',
+    'banner_5_text_color' => '#ffffff',
+    'banner_6_tag' => 'Fast & Reliable,',
+    'banner_6_title' => 'Express Delivery',
+    'banner_6_subtitle' => 'Direct to your doorstep quickly.',
+    'banner_6_bg_color' => '#9333ea',
+    'banner_6_text_color' => '#ffffff',
     'search_placeholder' => 'Search by item or category',
     'show_location' => true,
     'show_banner' => true,
@@ -1005,257 +1032,442 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php if (!empty($brand['show_banner_section_name'])): ?>
                         <div id="msBannersSectionName" class="ms-sec-title"><?= e($brand['banner_section_name'] ?: 'Banners') ?></div>
                     <?php endif; ?>
-                    <div class="ms-banners-grid" id="msBanners">
-                        <!-- Banner 1: Merchant Custom / Default Banner -->
-                        <?php
-                        $b1Bg = !empty($brand['banner_bg_color']) ? $brand['banner_bg_color'] : '';
-                        $b1Txt = !empty($brand['banner_text_color']) ? $brand['banner_text_color'] : '';
-                        $b1Style = '';
-                        if ($b1Bg) $b1Style .= 'background:' . e($b1Bg) . ';';
-                        if ($b1Txt) $b1Style .= 'color:' . e($b1Txt) . ';';
-                        ?>
-                        <div class="ms-banner-card ms-banner-1" style="<?= $b1Style ?>">
-                            <div class="ms-banner-info" style="<?= $b1Txt ? 'color:' . e($b1Txt) . ';' : '' ?>">
-                                <?php
-                                $bTitle = trim((string)($brand['banner_title'] ?? ''));
-                                $bSub = trim((string)($brand['banner_subtitle'] ?? ''));
-                                ?>
-                                <?php if ($bTitle !== ''): ?>
-                                    <div class="ms-banner-title"><?= nl2br(e($bTitle)) ?></div>
-                                <?php else: ?>
-                                    <div class="ms-banner-title">We're online now!</div>
-                                <?php endif; ?>
-                                <?php if ($bSub !== ''): ?>
-                                    <div class="ms-banner-sub"><?= nl2br(e($bSub)) ?></div>
-                                <?php else: ?>
-                                    <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
-                                <?php endif; ?>
+                    <div class="ms-banners-carousel-wrap" id="msBannersWrapper">
+                        <button type="button" class="ms-banner-arrow ms-banner-prev" id="msBannerPrev" onclick="sfBannerMove(-1)" aria-label="Previous">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                        </button>
+
+                        <div class="ms-banners-grid" id="msBanners">
+                            <!-- Banner 1: Merchant Custom / Default Banner -->
+                            <?php
+                            $b1Bg = !empty($brand['banner_bg_color']) ? $brand['banner_bg_color'] : '';
+                            $b1Txt = !empty($brand['banner_text_color']) ? $brand['banner_text_color'] : '';
+                            $b1Style = '';
+                            if ($b1Bg) $b1Style .= 'background:' . e($b1Bg) . ';';
+                            if ($b1Txt) $b1Style .= 'color:' . e($b1Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-1" style="<?= $b1Style ?>" data-slide="0">
+                                <div class="ms-banner-info" style="<?= $b1Txt ? 'color:' . e($b1Txt) . ';' : '' ?>">
+                                    <?php
+                                    $bTitle = trim((string)($brand['banner_title'] ?? ''));
+                                    $bSub = trim((string)($brand['banner_subtitle'] ?? ''));
+                                    ?>
+                                    <?php if ($bTitle !== ''): ?>
+                                        <div class="ms-banner-title"><?= nl2br(e($bTitle)) ?></div>
+                                    <?php else: ?>
+                                        <div class="ms-banner-title">We're online now!</div>
+                                    <?php endif; ?>
+                                    <?php if ($bSub !== ''): ?>
+                                        <div class="ms-banner-sub"><?= nl2br(e($bSub)) ?></div>
+                                    <?php else: ?>
+                                        <div class="ms-banner-sub">Stay at home and<br>shop online.</div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <?php if (!empty($brand['banner_image']) && store_logo_file_exists((string) $brand['banner_image'])): ?>
+                                        <img src="<?= asset($brand['banner_image']) ?>" alt="Banner" style="max-width:100%;max-height:100%;object-fit:contain;">
+                                    <?php else: ?>
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="20" cy="30" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="140" cy="20" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="35" cy="110" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="150" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                        <ellipse cx="80" cy="120" rx="60" ry="12" fill="#00695c" opacity="0.6"/>
+
+                                        <g transform="translate(48, 12)">
+                                            <rect x="0" y="0" width="56" height="105" rx="8" fill="#1e293b"/>
+                                            <rect x="2.5" y="2.5" width="51" height="100" rx="6" fill="#ffffff"/>
+                                            
+                                            <g transform="translate(0, 8)">
+                                                <path d="M-2 0 L58 0 L54 18 L2 18 Z" fill="#fb7185"/>
+                                                <path d="M7 0 L19 0 L17 18 L5 18 Z" fill="#ffffff"/>
+                                                <path d="M29 0 L41 0 L39 18 L27 18 Z" fill="#ffffff"/>
+                                                <path d="M51 0 L58 0 L54 18 L47 18 Z" fill="#ffffff"/>
+                                                <circle cx="6" cy="18" r="5" fill="#fb7185"/>
+                                                <circle cx="17" cy="18" r="5" fill="#ffffff"/>
+                                                <circle cx="28" cy="18" r="5" fill="#fb7185"/>
+                                                <circle cx="39" cy="18" r="5" fill="#ffffff"/>
+                                                <circle cx="50" cy="18" r="5" fill="#fb7185"/>
+                                            </g>
+                                            
+                                            <rect x="6" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                            <rect x="28" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                            <rect x="6" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                            <rect x="28" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
+
+                                            <g transform="translate(11, 84)">
+                                                <rect x="0" y="0" width="34" height="13" rx="6.5" fill="#e11d48"/>
+                                                <text x="17" y="9.5" fill="#ffffff" font-size="6.5" font-weight="900" text-anchor="middle" font-family="sans-serif">ORDER!</text>
+                                            </g>
+                                        </g>
+
+                                        <g transform="translate(26, 26)">
+                                            <path d="M10 0 C4.5 0 0 4.5 0 10 C0 17 10 24 10 24 C10 24 20 17 20 10 C20 4.5 15.5 0 10 0 Z" fill="#e11d48"/>
+                                            <circle cx="10" cy="9" r="4" fill="#ffffff"/>
+                                        </g>
+
+                                        <g transform="translate(100, 10) rotate(8)">
+                                            <path d="M12 0 L32 6 L20 15 L0 9 Z" fill="#f59e0b"/>
+                                            <path d="M0 9 L20 15 L20 32 L0 26 Z" fill="#d97706"/>
+                                            <path d="M20 15 L32 6 L32 23 L20 32 Z" fill="#b45309"/>
+                                            <path d="M6 11 L14 13 L14 29 L6 27 Z" fill="#fef3c7" opacity="0.6"/>
+                                        </g>
+
+                                        <g transform="translate(24, 60)">
+                                            <circle cx="9" cy="9" r="9" fill="#fbbf24"/>
+                                            <circle cx="6" cy="7" r="1.2" fill="#1e293b"/>
+                                            <circle cx="12" cy="7" r="1.2" fill="#1e293b"/>
+                                            <path d="M6 11 Q9 15 12 11" stroke="#1e293b" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+                                        </g>
+
+                                        <g transform="translate(112, 54)">
+                                            <circle cx="8" cy="8" r="8" fill="#fb7185"/>
+                                            <path d="M8 12.5 L3.5 8 C2.2 6.7 2.2 4.5 3.5 3.2 C4.8 1.9 7 1.9 8.3 3.2 L8 3.5 L8.7 3.2 C10 1.9 12.2 1.9 13.5 3.2 C14.8 4.5 14.8 6.7 13.5 8 Z" fill="#ffffff" transform="scale(0.8) translate(1, 1)"/>
+                                        </g>
+
+                                        <g transform="translate(94, 48)">
+                                            <circle cx="18" cy="10" r="8" fill="#fed7aa"/>
+                                            <path d="M12 8 C12 2, 24 2, 26 8 C26 5, 23 3, 19 3 C15 3, 12 5, 12 8 Z" fill="#0f172a"/>
+                                            <circle cx="14" cy="9" r="1" fill="#0f172a"/>
+                                            <path d="M8 20 C8 16, 26 16, 26 20 L30 38 L4 38 Z" fill="#fda4af"/>
+                                            <path d="M4 38 L30 38 L34 68 L18 68 L14 50 L-2 50 L-2 42 Z" fill="#312e81"/>
+                                            <path d="M8 24 L-4 32 L-2 36 L10 28 Z" fill="#fda4af"/>
+                                            <rect x="-8" y="28" width="6" height="10" rx="1.5" fill="#0f172a" transform="rotate(-15)"/>
+                                        </g>
+                                    </svg>
+                                    <?php endif; ?>
+                                </div>
                             </div>
-                            <div class="ms-banner-art">
-                                <?php if (!empty($brand['banner_image']) && store_logo_file_exists((string) $brand['banner_image'])): ?>
-                                    <img src="<?= asset($brand['banner_image']) ?>" alt="Banner" style="max-width:100%;max-height:100%;object-fit:contain;">
-                                <?php else: ?>
-                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <circle cx="20" cy="30" r="1.5" fill="#ffffff" opacity="0.8"/>
-                                    <circle cx="140" cy="20" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="35" cy="110" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="150" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
 
-                                    <ellipse cx="80" cy="120" rx="60" ry="12" fill="#00695c" opacity="0.6"/>
+                            <!-- Banner 2: Start Shopping -->
+                            <?php
+                            $b2Bg = !empty($brand['banner_2_bg_color']) ? $brand['banner_2_bg_color'] : '';
+                            $b2Txt = !empty($brand['banner_2_text_color']) ? $brand['banner_2_text_color'] : '';
+                            $b2Style = '';
+                            if ($b2Bg) $b2Style .= 'background:' . e($b2Bg) . ';';
+                            if ($b2Txt) $b2Style .= 'color:' . e($b2Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-2" style="<?= $b2Style ?>" data-slide="1">
+                                <div class="ms-banner-info" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>">
+                                    <?php
+                                    $b2Tag = trim((string)($brand['banner_2_tag'] ?? ''));
+                                    $b2Title = trim((string)($brand['banner_2_title'] ?? ''));
+                                    $b2Sub = trim((string)($brand['banner_2_subtitle'] ?? ''));
+                                    ?>
+                                    <div class="ms-banner-tag" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>"><?= e($b2Tag !== '' ? $b2Tag : 'Best deal,') ?></div>
+                                    <div class="ms-banner-title"><?= nl2br(e($b2Title !== '' ? $b2Title : 'Start Shopping')) ?></div>
+                                    <div class="ms-banner-sub"><?= nl2br(e($b2Sub !== '' ? $b2Sub : 'and discover the best deals!')) ?></div>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="18" cy="24" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="145" cy="22" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="28" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="152" cy="98" r="1.5" fill="#ffffff" opacity="0.6"/>
 
-                                    <g transform="translate(48, 12)">
-                                        <rect x="0" y="0" width="56" height="105" rx="8" fill="#1e293b"/>
-                                        <rect x="2.5" y="2.5" width="51" height="100" rx="6" fill="#ffffff"/>
-                                        
-                                        <g transform="translate(0, 8)">
-                                            <path d="M-2 0 L58 0 L54 18 L2 18 Z" fill="#fb7185"/>
-                                            <path d="M7 0 L19 0 L17 18 L5 18 Z" fill="#ffffff"/>
-                                            <path d="M29 0 L41 0 L39 18 L27 18 Z" fill="#ffffff"/>
-                                            <path d="M51 0 L58 0 L54 18 L47 18 Z" fill="#ffffff"/>
-                                            <circle cx="6" cy="18" r="5" fill="#fb7185"/>
-                                            <circle cx="17" cy="18" r="5" fill="#ffffff"/>
-                                            <circle cx="28" cy="18" r="5" fill="#fb7185"/>
-                                            <circle cx="39" cy="18" r="5" fill="#ffffff"/>
-                                            <circle cx="50" cy="18" r="5" fill="#fb7185"/>
+                                        <ellipse cx="95" cy="118" rx="55" ry="12" fill="#1d4ed8" opacity="0.5"/>
+
+                                        <g transform="translate(98, 12)">
+                                            <circle cx="14" cy="14" r="14" fill="#ffffff" opacity="0.95"/>
+                                            <path d="M10 13 L10 20 L7 20 C6.4 20 6 19.6 6 19 L6 14 C6 13.4 6.4 13 7 13 Z" fill="#3b82f6"/>
+                                            <path d="M11 13 L15 6 C15.5 5 17 5.5 17 7 L17 11 L21 11 C22.1 11 23 11.9 23 13 L21 19 C20.7 19.6 20.1 20 19.5 20 L11 20 Z" fill="#3b82f6"/>
+                                        </g>
+
+                                        <g transform="translate(68, 22)">
+                                            <rect x="0" y="0" width="22" height="18" rx="6" fill="#f43f5e"/>
+                                            <path d="M11 15 L7 19 L9 15 Z" fill="#f43f5e"/>
+                                            <path d="M11 12.5 L7.5 9 C6.5 8 6.5 6.4 7.5 5.4 C8.5 4.4 10.1 4.4 11.1 5.4 L11 5.6 L11.5 5.4 C12.5 4.4 14.1 4.4 15.1 5.4 C16.1 6.4 16.1 8 15.1 9 Z" fill="#ffffff" transform="scale(0.85) translate(2, 1)"/>
+                                        </g>
+
+                                        <g transform="translate(48, 48) rotate(-12)">
+                                            <rect x="0" y="0" width="16" height="24" rx="3" fill="#a855f7"/>
+                                            <circle cx="8" cy="5" r="2" fill="#1e60d5"/>
+                                            <text x="8" y="18" fill="#ffffff" font-size="9" font-weight="900" text-anchor="middle" font-family="sans-serif">%</text>
+                                        </g>
+
+                                        <g transform="translate(130, 48)">
+                                            <circle cx="10" cy="10" r="10" fill="#22c55e"/>
+                                            <polyline points="6 10 9 13 14 7" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                                        </g>
+
+                                        <g transform="translate(74, 46)">
+                                            <path d="M14 18 C14 2, 28 2, 28 18" fill="none" stroke="#fef3c7" stroke-width="2.5" stroke-linecap="round"/>
+                                            <path d="M4 18 L38 18 L34 68 L6 68 Z" fill="#e09f67"/>
+                                            <path d="M4 18 L38 18 L36 24 L5 24 Z" fill="#c8834c"/>
+                                            <path d="M38 18 L50 24 L46 74 L34 68 Z" fill="#b45309"/>
+                                            <line x1="20" y1="24" x2="20" y2="68" stroke="#c8834c" stroke-width="1.2" opacity="0.6"/>
+                                        </g>
+
+                                        <g transform="translate(52, 60)">
+                                            <path d="M10 14 C10 2, 20 2, 20 14" fill="none" stroke="#fef3c7" stroke-width="2" stroke-linecap="round"/>
+                                            <path d="M2 14 L28 14 L25 54 L4 54 Z" fill="#f2b279"/>
+                                            <path d="M2 14 L28 14 L26 19 L3 19 Z" fill="#d97706"/>
+                                            <path d="M28 14 L36 18 L33 58 L25 54 Z" fill="#b45309"/>
+                                        </g>
+
+                                        <g transform="translate(108, 66)">
+                                            <path d="M8 10 C8 0, 16 0, 16 10" fill="none" stroke="#fef3c7" stroke-width="1.8" stroke-linecap="round"/>
+                                            <path d="M2 10 L22 10 L20 44 L3 44 Z" fill="#e09f67"/>
+                                            <path d="M2 10 L22 10 L21 14 L3 14 Z" fill="#c8834c"/>
+                                            <path d="M22 10 L28 14 L26 48 L20 44 Z" fill="#a16207"/>
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Banner 3: Order with Ease, Receive with Speed -->
+                            <?php
+                            $b3Bg = !empty($brand['banner_3_bg_color']) ? $brand['banner_3_bg_color'] : '';
+                            $b3Txt = !empty($brand['banner_3_text_color']) ? $brand['banner_3_text_color'] : '';
+                            $b3Style = '';
+                            if ($b3Bg) $b3Style .= 'background:' . e($b3Bg) . ';';
+                            if ($b3Txt) $b3Style .= 'color:' . e($b3Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-3" style="<?= $b3Style ?>" data-slide="2">
+                                <div class="ms-banner-info" style="<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>">
+                                    <?php
+                                    $b3Tag = trim((string)($brand['banner_3_tag'] ?? ''));
+                                    $b3Title = trim((string)($brand['banner_3_title'] ?? ''));
+                                    $b3Sub = trim((string)($brand['banner_3_subtitle'] ?? ''));
+                                    ?>
+                                    <div class="ms-banner-tag" style="font-size:16px;<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>"><?= e($b3Tag !== '' ? $b3Tag : 'Order') ?></div>
+                                    <div class="ms-banner-title" style="font-style:italic;"><?= nl2br(e($b3Title !== '' ? $b3Title : 'with Ease')) ?></div>
+                                    <div class="ms-banner-sub" style="margin-top:6px;font-weight:600;"><?= nl2br(e($b3Sub !== '' ? $b3Sub : 'with Speed')) ?></div>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="22" cy="25" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="145" cy="18" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="30" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="150" cy="105" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                        <path d="M40 35 C40 25, 60 25, 65 35 C70 28, 85 28, 90 35 C95 30, 110 30, 115 35 L120 45 L35 45 Z" fill="#ffffff" opacity="0.12"/>
+                                        <path d="M80 85 C80 75, 100 75, 105 85 C110 78, 125 78, 130 85 L135 95 L75 95 Z" fill="#ffffff" opacity="0.12"/>
+
+                                        <g transform="translate(118, 48)">
+                                            <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
+                                            <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
+                                        </g>
+                                        <g transform="translate(142, 78) scale(0.85)">
+                                            <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
+                                            <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
+                                        </g>
+
+                                        <g transform="translate(25, 15) rotate(-10)">
+                                            <path d="M0 12 C-8 4, -18 8, -20 18 C-16 18, -12 22, -6 18 Z" fill="#ffffff" opacity="0.95"/>
+                                            <path d="M22 6 C28 0, 38 2, 42 12 C38 13, 34 18, 28 14 Z" fill="#ffffff" opacity="0.95"/>
+                                            <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
+                                            <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
+                                            <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
+                                            <line x1="-8" y1="24" x2="-2" y2="22" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+                                        </g>
+
+                                        <g transform="translate(85, 26)">
+                                            <g transform="translate(-18, 12)">
+                                                <path d="M18 10 C8 -2, -6 0, -12 14 C-4 15, 2 22, 10 18 C14 22, 18 18, 18 10 Z" fill="#ffffff"/>
+                                                <path d="M6 10 C0 4, -8 6, -10 14" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
+                                            </g>
+                                            <g transform="translate(36, 4)">
+                                                <path d="M0 14 C10 0, 26 2, 32 16 C24 17, 18 24, 10 20 C6 24, 2 20, 0 14 Z" fill="#ffffff"/>
+                                                <path d="M14 12 C20 6, 28 8, 30 16" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
+                                            </g>
+                                            <path d="M18 0 L42 8 L24 20 L0 12 Z" fill="#fbbf24"/>
+                                            <path d="M0 12 L24 20 L24 44 L0 36 Z" fill="#d97706"/>
+                                            <path d="M24 20 L42 8 L42 32 L24 44 Z" fill="#b45309"/>
+                                            <path d="M9 6 L21 10 L21 34 L9 30 Z" fill="#ffffff" opacity="0.5"/>
+                                        </g>
+
+                                        <g transform="translate(68, 76) rotate(6)">
+                                            <path d="M0 10 C-8 2, -18 4, -20 14 C-14 15, -10 19, -4 15 Z" fill="#ffffff" opacity="0.95"/>
+                                            <path d="M22 6 C30 0, 38 2, 42 12 C36 13, 32 18, 26 14 Z" fill="#ffffff" opacity="0.95"/>
+                                            <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
+                                            <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
+                                            <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
+                                            <line x1="-10" y1="22" x2="-4" y2="20" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Banner 4: Special Offer / Super Savings -->
+                            <?php
+                            $b4Bg = !empty($brand['banner_4_bg_color']) ? $brand['banner_4_bg_color'] : '';
+                            $b4Txt = !empty($brand['banner_4_text_color']) ? $brand['banner_4_text_color'] : '';
+                            $b4Style = '';
+                            if ($b4Bg) $b4Style .= 'background:' . e($b4Bg) . ';';
+                            if ($b4Txt) $b4Style .= 'color:' . e($b4Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-4" style="<?= $b4Style ?>" data-slide="3">
+                                <div class="ms-banner-info" style="<?= $b4Txt ? 'color:' . e($b4Txt) . ';' : '' ?>">
+                                    <?php
+                                    $b4Tag = trim((string)($brand['banner_4_tag'] ?? ''));
+                                    $b4Title = trim((string)($brand['banner_4_title'] ?? ''));
+                                    $b4Sub = trim((string)($brand['banner_4_subtitle'] ?? ''));
+                                    ?>
+                                    <div class="ms-banner-tag" style="<?= $b4Txt ? 'color:' . e($b4Txt) . ';' : '' ?>"><?= e($b4Tag !== '' ? $b4Tag : 'Special Offer,') ?></div>
+                                    <div class="ms-banner-title"><?= nl2br(e($b4Title !== '' ? $b4Title : 'Super Savings')) ?></div>
+                                    <div class="ms-banner-sub"><?= nl2br(e($b4Sub !== '' ? $b4Sub : 'Get exclusive discounts today!')) ?></div>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="20" cy="25" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="140" cy="18" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="25" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="148" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                        <ellipse cx="85" cy="118" rx="55" ry="12" fill="#c2410c" opacity="0.4"/>
+
+                                        <g transform="translate(55, 38)">
+                                            <rect x="0" y="20" width="60" height="56" rx="6" fill="#f59e0b"/>
+                                            <rect x="-4" y="10" width="68" height="15" rx="4" fill="#fbbf24"/>
+                                            <rect x="25" y="10" width="10" height="66" fill="#ef4444"/>
+                                            <rect x="-4" y="15" width="68" height="6" fill="#ef4444"/>
+                                            
+                                            <path d="M30 10 C20 -6, 8 2, 26 10 Z" fill="#ef4444"/>
+                                            <path d="M30 10 C40 -6, 52 2, 34 10 Z" fill="#ef4444"/>
+                                            <circle cx="30" cy="10" r="4.5" fill="#b91c1c"/>
+                                        </g>
+
+                                        <g transform="translate(18, 26) rotate(-15)">
+                                            <polygon points="18,0 23,11 35,13 26,22 28,34 18,28 8,34 10,22 1,13 13,11" fill="#fef08a"/>
+                                            <text x="18" y="21" fill="#b45309" font-size="9" font-weight="900" text-anchor="middle" font-family="sans-serif">%</text>
+                                        </g>
+
+                                        <g transform="translate(112, 28) rotate(12)">
+                                            <path d="M0 0 L18 0 L28 10 L10 10 Z" fill="#ef4444"/>
+                                            <rect x="0" y="0" width="22" height="16" rx="3" fill="#f43f5e"/>
+                                            <circle cx="6" cy="8" r="2.5" fill="#ffffff"/>
+                                            <text x="14" y="12" fill="#ffffff" font-size="7.5" font-weight="800" font-family="sans-serif">SALE</text>
                                         </g>
                                         
-                                        <rect x="6" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
-                                        <rect x="28" y="38" width="18" height="18" rx="3" fill="#f1f5f9"/>
-                                        <rect x="6" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
-                                        <rect x="28" y="60" width="18" height="18" rx="3" fill="#f1f5f9"/>
+                                        <path d="M35 85 L37 91 L43 93 L37 95 L35 101 L33 95 L27 93 L33 91 Z" fill="#ffffff" opacity="0.85"/>
+                                        <path d="M125 75 L126.5 80 L131.5 81.5 L126.5 83 L125 88 L123.5 83 L118.5 81.5 L123.5 80 Z" fill="#ffffff" opacity="0.85"/>
+                                    </svg>
+                                </div>
+                            </div>
 
-                                        <g transform="translate(11, 84)">
-                                            <rect x="0" y="0" width="34" height="13" rx="6.5" fill="#e11d48"/>
-                                            <text x="17" y="9.5" fill="#ffffff" font-size="6.5" font-weight="900" text-anchor="middle" font-family="sans-serif">ORDER!</text>
+                            <!-- Banner 5: Fresh Deals / Top Quality Picks -->
+                            <?php
+                            $b5Bg = !empty($brand['banner_5_bg_color']) ? $brand['banner_5_bg_color'] : '';
+                            $b5Txt = !empty($brand['banner_5_text_color']) ? $brand['banner_5_text_color'] : '';
+                            $b5Style = '';
+                            if ($b5Bg) $b5Style .= 'background:' . e($b5Bg) . ';';
+                            if ($b5Txt) $b5Style .= 'color:' . e($b5Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-5" style="<?= $b5Style ?>" data-slide="4">
+                                <div class="ms-banner-info" style="<?= $b5Txt ? 'color:' . e($b5Txt) . ';' : '' ?>">
+                                    <?php
+                                    $b5Tag = trim((string)($brand['banner_5_tag'] ?? ''));
+                                    $b5Title = trim((string)($brand['banner_5_title'] ?? ''));
+                                    $b5Sub = trim((string)($brand['banner_5_subtitle'] ?? ''));
+                                    ?>
+                                    <div class="ms-banner-tag" style="<?= $b5Txt ? 'color:' . e($b5Txt) . ';' : '' ?>"><?= e($b5Tag !== '' ? $b5Tag : 'Fresh Deals,') ?></div>
+                                    <div class="ms-banner-title"><?= nl2br(e($b5Title !== '' ? $b5Title : 'Top Quality Picks')) ?></div>
+                                    <div class="ms-banner-sub"><?= nl2br(e($b5Sub !== '' ? $b5Sub : 'Handpicked best products for you.')) ?></div>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="24" cy="22" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="142" cy="20" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="28" cy="112" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="150" cy="95" r="1.5" fill="#ffffff" opacity="0.6"/>
+
+                                        <ellipse cx="88" cy="118" rx="55" ry="12" fill="#0e7490" opacity="0.4"/>
+
+                                        <g transform="translate(48, 20)">
+                                            <path d="M35 0 L68 12 C68 45, 35 68, 35 68 C35 68, 2 45, 2 12 Z" fill="#0891b2"/>
+                                            <path d="M35 4 L64 15 C64 42, 35 63, 35 63 C35 63, 6 42, 6 15 Z" fill="#06b6d4"/>
+                                            
+                                            <polygon points="35,16 40,27 52,29 43,38 45,50 35,44 25,50 27,38 18,29 30,27" fill="#facc15"/>
+                                            <polygon points="35,21 38,29 47,30 40,37 42,46 35,41 28,46 30,37 23,30 32,29" fill="#fef08a"/>
                                         </g>
-                                    </g>
 
-                                    <g transform="translate(26, 26)">
-                                        <path d="M10 0 C4.5 0 0 4.5 0 10 C0 17 10 24 10 24 C10 24 20 17 20 10 C20 4.5 15.5 0 10 0 Z" fill="#e11d48"/>
-                                        <circle cx="10" cy="9" r="4" fill="#ffffff"/>
-                                    </g>
+                                        <g transform="translate(98, 54)">
+                                            <circle cx="15" cy="15" r="15" fill="#10b981"/>
+                                            <circle cx="15" cy="15" r="12" fill="#34d399"/>
+                                            <polyline points="9 15 13 19 21 11" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                                        </g>
 
-                                    <g transform="translate(100, 10) rotate(8)">
-                                        <path d="M12 0 L32 6 L20 15 L0 9 Z" fill="#f59e0b"/>
-                                        <path d="M0 9 L20 15 L20 32 L0 26 Z" fill="#d97706"/>
-                                        <path d="M20 15 L32 6 L32 23 L20 32 Z" fill="#b45309"/>
-                                        <path d="M6 11 L14 13 L14 29 L6 27 Z" fill="#fef3c7" opacity="0.6"/>
-                                    </g>
+                                        <g transform="translate(20, 52)">
+                                            <circle cx="12" cy="12" r="12" fill="#ffffff" opacity="0.2"/>
+                                            <path d="M6 14 Q12 6 18 14" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round"/>
+                                            <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>
 
-                                    <g transform="translate(24, 60)">
-                                        <circle cx="9" cy="9" r="9" fill="#fbbf24"/>
-                                        <circle cx="6" cy="7" r="1.2" fill="#1e293b"/>
-                                        <circle cx="12" cy="7" r="1.2" fill="#1e293b"/>
-                                        <path d="M6 11 Q9 15 12 11" stroke="#1e293b" stroke-width="1.2" stroke-linecap="round" fill="none"/>
-                                    </g>
+                            <!-- Banner 6: Fast & Reliable / Express Delivery -->
+                            <?php
+                            $b6Bg = !empty($brand['banner_6_bg_color']) ? $brand['banner_6_bg_color'] : '';
+                            $b6Txt = !empty($brand['banner_6_text_color']) ? $brand['banner_6_text_color'] : '';
+                            $b6Style = '';
+                            if ($b6Bg) $b6Style .= 'background:' . e($b6Bg) . ';';
+                            if ($b6Txt) $b6Style .= 'color:' . e($b6Txt) . ';';
+                            ?>
+                            <div class="ms-banner-card ms-banner-6" style="<?= $b6Style ?>" data-slide="5">
+                                <div class="ms-banner-info" style="<?= $b6Txt ? 'color:' . e($b6Txt) . ';' : '' ?>">
+                                    <?php
+                                    $b6Tag = trim((string)($brand['banner_6_tag'] ?? ''));
+                                    $b6Title = trim((string)($brand['banner_6_title'] ?? ''));
+                                    $b6Sub = trim((string)($brand['banner_6_subtitle'] ?? ''));
+                                    ?>
+                                    <div class="ms-banner-tag" style="<?= $b6Txt ? 'color:' . e($b6Txt) . ';' : '' ?>"><?= e($b6Tag !== '' ? $b6Tag : 'Fast & Reliable,') ?></div>
+                                    <div class="ms-banner-title"><?= nl2br(e($b6Title !== '' ? $b6Title : 'Express Delivery')) ?></div>
+                                    <div class="ms-banner-sub"><?= nl2br(e($b6Sub !== '' ? $b6Sub : 'Direct to your doorstep quickly.')) ?></div>
+                                </div>
+                                <div class="ms-banner-art">
+                                    <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="20" cy="20" r="1.5" fill="#ffffff" opacity="0.8"/>
+                                        <circle cx="140" cy="22" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="25" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
+                                        <circle cx="152" cy="100" r="1.5" fill="#ffffff" opacity="0.6"/>
 
-                                    <g transform="translate(112, 54)">
-                                        <circle cx="8" cy="8" r="8" fill="#fb7185"/>
-                                        <path d="M8 12.5 L3.5 8 C2.2 6.7 2.2 4.5 3.5 3.2 C4.8 1.9 7 1.9 8.3 3.2 L8 3.5 L8.7 3.2 C10 1.9 12.2 1.9 13.5 3.2 C14.8 4.5 14.8 6.7 13.5 8 Z" fill="#ffffff" transform="scale(0.8) translate(1, 1)"/>
-                                    </g>
+                                        <ellipse cx="80" cy="120" rx="60" ry="12" fill="#581c87" opacity="0.4"/>
 
-                                    <g transform="translate(94, 48)">
-                                        <circle cx="18" cy="10" r="8" fill="#fed7aa"/>
-                                        <path d="M12 8 C12 2, 24 2, 26 8 C26 5, 23 3, 19 3 C15 3, 12 5, 12 8 Z" fill="#0f172a"/>
-                                        <circle cx="14" cy="9" r="1" fill="#0f172a"/>
-                                        <path d="M8 20 C8 16, 26 16, 26 20 L30 38 L4 38 Z" fill="#fda4af"/>
-                                        <path d="M4 38 L30 38 L34 68 L18 68 L14 50 L-2 50 L-2 42 Z" fill="#312e81"/>
-                                        <path d="M8 24 L-4 32 L-2 36 L10 28 Z" fill="#fda4af"/>
-                                        <rect x="-8" y="28" width="6" height="10" rx="1.5" fill="#0f172a" transform="rotate(-15)"/>
-                                    </g>
-                                </svg>
-                                <?php endif; ?>
+                                        <g transform="translate(30, 42)">
+                                            <rect x="0" y="10" width="58" height="42" rx="4" fill="#a855f7"/>
+                                            <rect x="4" y="14" width="50" height="34" rx="2" fill="#9333ea"/>
+                                            
+                                            <polygon points="32,18 20,33 29,33 24,45 38,30 29,30" fill="#facc15"/>
+
+                                            <path d="M58 22 L76 22 L86 36 L86 52 L58 52 Z" fill="#c084fc"/>
+                                            <path d="M62 26 L74 26 L80 36 L62 36 Z" fill="#e9d5ff"/>
+                                            <rect x="80" y="42" width="6" height="5" rx="1.5" fill="#facc15"/>
+
+                                            <circle cx="18" cy="54" r="10" fill="#1e1b4b"/>
+                                            <circle cx="18" cy="54" r="4" fill="#cbd5e1"/>
+                                            <circle cx="70" cy="54" r="10" fill="#1e1b4b"/>
+                                            <circle cx="70" cy="54" r="4" fill="#cbd5e1"/>
+                                        </g>
+
+                                        <g transform="translate(8, 56)">
+                                            <line x1="0" y1="0" x2="16" y2="0" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/>
+                                            <line x1="6" y1="8" x2="18" y2="8" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+                                            <line x1="2" y1="16" x2="14" y2="16" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+                                        </g>
+
+                                        <g transform="translate(122, 24)">
+                                            <path d="M10 0 C4.5 0 0 4.5 0 10 C0 17 10 24 10 24 C10 24 20 17 20 10 C20 4.5 15.5 0 10 0 Z" fill="#ef4444"/>
+                                            <circle cx="10" cy="9" r="4" fill="#ffffff"/>
+                                        </g>
+                                    </svg>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Banner 2: Start Shopping -->
-                        <?php
-                        $b2Bg = !empty($brand['banner_2_bg_color']) ? $brand['banner_2_bg_color'] : '';
-                        $b2Txt = !empty($brand['banner_2_text_color']) ? $brand['banner_2_text_color'] : '';
-                        $b2Style = '';
-                        if ($b2Bg) $b2Style .= 'background:' . e($b2Bg) . ';';
-                        if ($b2Txt) $b2Style .= 'color:' . e($b2Txt) . ';';
-                        ?>
-                        <div class="ms-banner-card ms-banner-2" style="<?= $b2Style ?>">
-                            <div class="ms-banner-info" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>">
-                                <?php
-                                $b2Tag = trim((string)($brand['banner_2_tag'] ?? ''));
-                                $b2Title = trim((string)($brand['banner_2_title'] ?? ''));
-                                $b2Sub = trim((string)($brand['banner_2_subtitle'] ?? ''));
-                                ?>
-                                <div class="ms-banner-tag" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>"><?= e($b2Tag !== '' ? $b2Tag : 'Best deal,') ?></div>
-                                <div class="ms-banner-title"><?= nl2br(e($b2Title !== '' ? $b2Title : 'Start Shopping')) ?></div>
-                                <div class="ms-banner-sub"><?= nl2br(e($b2Sub !== '' ? $b2Sub : 'and discover the best deals!')) ?></div>
-                            </div>
-                            <div class="ms-banner-art">
-                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <circle cx="18" cy="24" r="1.5" fill="#ffffff" opacity="0.8"/>
-                                    <circle cx="145" cy="22" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="28" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="152" cy="98" r="1.5" fill="#ffffff" opacity="0.6"/>
+                        <button type="button" class="ms-banner-arrow ms-banner-next" id="msBannerNext" onclick="sfBannerMove(1)" aria-label="Next">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </button>
 
-                                    <ellipse cx="95" cy="118" rx="55" ry="12" fill="#1d4ed8" opacity="0.5"/>
-
-                                    <g transform="translate(98, 12)">
-                                        <circle cx="14" cy="14" r="14" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M10 13 L10 20 L7 20 C6.4 20 6 19.6 6 19 L6 14 C6 13.4 6.4 13 7 13 Z" fill="#3b82f6"/>
-                                        <path d="M11 13 L15 6 C15.5 5 17 5.5 17 7 L17 11 L21 11 C22.1 11 23 11.9 23 13 L21 19 C20.7 19.6 20.1 20 19.5 20 L11 20 Z" fill="#3b82f6"/>
-                                    </g>
-
-                                    <g transform="translate(68, 22)">
-                                        <rect x="0" y="0" width="22" height="18" rx="6" fill="#f43f5e"/>
-                                        <path d="M11 15 L7 19 L9 15 Z" fill="#f43f5e"/>
-                                        <path d="M11 12.5 L7.5 9 C6.5 8 6.5 6.4 7.5 5.4 C8.5 4.4 10.1 4.4 11.1 5.4 L11 5.6 L11.5 5.4 C12.5 4.4 14.1 4.4 15.1 5.4 C16.1 6.4 16.1 8 15.1 9 Z" fill="#ffffff" transform="scale(0.85) translate(2, 1)"/>
-                                    </g>
-
-                                    <g transform="translate(48, 48) rotate(-12)">
-                                        <rect x="0" y="0" width="16" height="24" rx="3" fill="#a855f7"/>
-                                        <circle cx="8" cy="5" r="2" fill="#1e60d5"/>
-                                        <text x="8" y="18" fill="#ffffff" font-size="9" font-weight="900" text-anchor="middle" font-family="sans-serif">%</text>
-                                    </g>
-
-                                    <g transform="translate(130, 48)">
-                                        <circle cx="10" cy="10" r="10" fill="#22c55e"/>
-                                        <polyline points="6 10 9 13 14 7" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                                    </g>
-
-                                    <g transform="translate(74, 46)">
-                                        <path d="M14 18 C14 2, 28 2, 28 18" fill="none" stroke="#fef3c7" stroke-width="2.5" stroke-linecap="round"/>
-                                        <path d="M4 18 L38 18 L34 68 L6 68 Z" fill="#e09f67"/>
-                                        <path d="M4 18 L38 18 L36 24 L5 24 Z" fill="#c8834c"/>
-                                        <path d="M38 18 L50 24 L46 74 L34 68 Z" fill="#b45309"/>
-                                        <line x1="20" y1="24" x2="20" y2="68" stroke="#c8834c" stroke-width="1.2" opacity="0.6"/>
-                                    </g>
-
-                                    <g transform="translate(52, 60)">
-                                        <path d="M10 14 C10 2, 20 2, 20 14" fill="none" stroke="#fef3c7" stroke-width="2" stroke-linecap="round"/>
-                                        <path d="M2 14 L28 14 L25 54 L4 54 Z" fill="#f2b279"/>
-                                        <path d="M2 14 L28 14 L26 19 L3 19 Z" fill="#d97706"/>
-                                        <path d="M28 14 L36 18 L33 58 L25 54 Z" fill="#b45309"/>
-                                    </g>
-
-                                    <g transform="translate(108, 66)">
-                                        <path d="M8 10 C8 0, 16 0, 16 10" fill="none" stroke="#fef3c7" stroke-width="1.8" stroke-linecap="round"/>
-                                        <path d="M2 10 L22 10 L20 44 L3 44 Z" fill="#e09f67"/>
-                                        <path d="M2 10 L22 10 L21 14 L3 14 Z" fill="#c8834c"/>
-                                        <path d="M22 10 L28 14 L26 48 L20 44 Z" fill="#a16207"/>
-                                    </g>
-                                </svg>
-                            </div>
-                        </div>
-
-                        <!-- Banner 3: Order with Ease, Receive with Speed -->
-                        <?php
-                        $b3Bg = !empty($brand['banner_3_bg_color']) ? $brand['banner_3_bg_color'] : '';
-                        $b3Txt = !empty($brand['banner_3_text_color']) ? $brand['banner_3_text_color'] : '';
-                        $b3Style = '';
-                        if ($b3Bg) $b3Style .= 'background:' . e($b3Bg) . ';';
-                        if ($b3Txt) $b3Style .= 'color:' . e($b3Txt) . ';';
-                        ?>
-                        <div class="ms-banner-card ms-banner-3" style="<?= $b3Style ?>">
-                            <div class="ms-banner-info" style="<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>">
-                                <?php
-                                $b3Tag = trim((string)($brand['banner_3_tag'] ?? ''));
-                                $b3Title = trim((string)($brand['banner_3_title'] ?? ''));
-                                $b3Sub = trim((string)($brand['banner_3_subtitle'] ?? ''));
-                                ?>
-                                <div class="ms-banner-tag" style="font-size:16px;<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>"><?= e($b3Tag !== '' ? $b3Tag : 'Order') ?></div>
-                                <div class="ms-banner-title" style="font-style:italic;"><?= nl2br(e($b3Title !== '' ? $b3Title : 'with Ease')) ?></div>
-                                <div class="ms-banner-sub" style="margin-top:6px;font-weight:600;"><?= nl2br(e($b3Sub !== '' ? $b3Sub : 'with Speed')) ?></div>
-                            </div>
-                            <div class="ms-banner-art">
-                                <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <circle cx="22" cy="25" r="1.5" fill="#ffffff" opacity="0.8"/>
-                                    <circle cx="145" cy="18" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="30" cy="115" r="1.5" fill="#ffffff" opacity="0.7"/>
-                                    <circle cx="150" cy="105" r="1.5" fill="#ffffff" opacity="0.6"/>
-
-                                    <path d="M40 35 C40 25, 60 25, 65 35 C70 28, 85 28, 90 35 C95 30, 110 30, 115 35 L120 45 L35 45 Z" fill="#ffffff" opacity="0.12"/>
-                                    <path d="M80 85 C80 75, 100 75, 105 85 C110 78, 125 78, 130 85 L135 95 L75 95 Z" fill="#ffffff" opacity="0.12"/>
-
-                                    <g transform="translate(118, 48)">
-                                        <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
-                                        <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
-                                    </g>
-                                    <g transform="translate(142, 78) scale(0.85)">
-                                        <path d="M7 0 C3.1 0 0 3.1 0 7 C0 12 7 17 7 17 C7 17 14 12 14 7 C14 3.1 10.9 0 7 0 Z" fill="#ef4444"/>
-                                        <circle cx="7" cy="6" r="2.8" fill="#ffffff"/>
-                                    </g>
-
-                                    <g transform="translate(25, 15) rotate(-10)">
-                                        <path d="M0 12 C-8 4, -18 8, -20 18 C-16 18, -12 22, -6 18 Z" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M22 6 C28 0, 38 2, 42 12 C38 13, 34 18, 28 14 Z" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
-                                        <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
-                                        <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
-                                        <line x1="-8" y1="24" x2="-2" y2="22" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
-                                    </g>
-
-                                    <g transform="translate(85, 26)">
-                                        <g transform="translate(-18, 12)">
-                                            <path d="M18 10 C8 -2, -6 0, -12 14 C-4 15, 2 22, 10 18 C14 22, 18 18, 18 10 Z" fill="#ffffff"/>
-                                            <path d="M6 10 C0 4, -8 6, -10 14" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
-                                        </g>
-                                        <g transform="translate(36, 4)">
-                                            <path d="M0 14 C10 0, 26 2, 32 16 C24 17, 18 24, 10 20 C6 24, 2 20, 0 14 Z" fill="#ffffff"/>
-                                            <path d="M14 12 C20 6, 28 8, 30 16" stroke="#e2e8f0" stroke-width="1.2" fill="none"/>
-                                        </g>
-                                        <path d="M18 0 L42 8 L24 20 L0 12 Z" fill="#fbbf24"/>
-                                        <path d="M0 12 L24 20 L24 44 L0 36 Z" fill="#d97706"/>
-                                        <path d="M24 20 L42 8 L42 32 L24 44 Z" fill="#b45309"/>
-                                        <path d="M9 6 L21 10 L21 34 L9 30 Z" fill="#ffffff" opacity="0.5"/>
-                                    </g>
-
-                                    <g transform="translate(68, 76) rotate(6)">
-                                        <path d="M0 10 C-8 2, -18 4, -20 14 C-14 15, -10 19, -4 15 Z" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M22 6 C30 0, 38 2, 42 12 C36 13, 32 18, 26 14 Z" fill="#ffffff" opacity="0.95"/>
-                                        <path d="M10 0 L24 6 L14 14 L0 8 Z" fill="#fbbf24"/>
-                                        <path d="M0 8 L14 14 L14 26 L0 20 Z" fill="#d97706"/>
-                                        <path d="M14 14 L24 6 L24 18 L14 26 Z" fill="#b45309"/>
-                                        <line x1="-10" y1="22" x2="-4" y2="20" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
-                                    </g>
-                                </svg>
-                            </div>
+                        <div class="ms-banner-dots" id="msBannerDots">
+                            <span class="ms-banner-dot is-active" onclick="sfBannerGoTo(0)"></span>
+                            <span class="ms-banner-dot" onclick="sfBannerGoTo(1)"></span>
+                            <span class="ms-banner-dot" onclick="sfBannerGoTo(2)"></span>
+                            <span class="ms-banner-dot" onclick="sfBannerGoTo(3)"></span>
+                            <span class="ms-banner-dot" onclick="sfBannerGoTo(4)"></span>
+                            <span class="ms-banner-dot" onclick="sfBannerGoTo(5)"></span>
                         </div>
                     </div>
 
@@ -2562,69 +2774,107 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 })();
 </script>
 <script>
+/* ==========================================================================
+   Storefront Banner Smooth Carousel & Auto-Play Engine
+   ========================================================================== */
 (function () {
-    var track = document.getElementById('msBanners');
-    if (!track) return;
+    var sfBannerCurrentIdx = 0;
+    var sfBannerAutoplayTimer = null;
+    var sfBannerIsPaused = false;
 
-    var cards = track.querySelectorAll('.ms-banner-card');
-    if (cards.length < 2) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    var index = 0;
-    var timer = null;
-    var resumeTimer = null;
-
-    function isCarousel() {
-        var style = window.getComputedStyle(track);
-        return style.display === 'flex' && track.scrollWidth > track.clientWidth + 12;
+    function sfBannerGetCards() {
+        var grid = document.getElementById('msBanners');
+        return grid ? grid.querySelectorAll('.ms-banner-card') : [];
     }
 
-    function slideTo(next) {
-        if (!isCarousel()) return;
-        var wrap = next >= cards.length;
-        index = wrap ? 0 : next;
-        var left = cards[index].offsetLeft - cards[0].offsetLeft;
-        track.scrollTo({ left: left, behavior: wrap ? 'auto' : 'smooth' });
-    }
-
-    function stop() {
-        if (timer) {
-            clearInterval(timer);
-            timer = null;
-        }
-        if (resumeTimer) {
-            clearTimeout(resumeTimer);
-            resumeTimer = null;
+    function sfBannerUpdateDots(idx) {
+        var dots = document.querySelectorAll('.ms-banner-dot');
+        for (var i = 0; i < dots.length; i++) {
+            dots[i].classList.toggle('is-active', i === idx);
         }
     }
 
-    function start() {
-        stop();
-        if (!isCarousel()) return;
-        timer = setInterval(function () {
-            slideTo(index + 1);
-        }, 2000);
+    window.sfBannerGoTo = function(idx) {
+        var grid = document.getElementById('msBanners');
+        var cards = sfBannerGetCards();
+        if (!grid || !cards.length) return;
+        idx = Math.max(0, Math.min(idx, cards.length - 1));
+        sfBannerCurrentIdx = idx;
+        var targetCard = cards[idx];
+        if (targetCard) {
+            var scrollLeft = targetCard.offsetLeft - grid.offsetLeft;
+            grid.scrollTo({
+                left: scrollLeft,
+                behavior: 'smooth'
+            });
+        }
+        sfBannerUpdateDots(idx);
+    };
+
+    window.sfBannerMove = function(dir) {
+        var cards = sfBannerGetCards();
+        if (!cards.length) return;
+        var nextIdx = (sfBannerCurrentIdx + dir + cards.length) % cards.length;
+        window.sfBannerGoTo(nextIdx);
+    };
+
+    function sfInitBannerCarousel() {
+        var wrap = document.getElementById('msBannersWrapper');
+        var grid = document.getElementById('msBanners');
+        if (!wrap || !grid) return;
+
+        // Pause on hover
+        wrap.addEventListener('mouseenter', function() { sfBannerIsPaused = true; });
+        wrap.addEventListener('mouseleave', function() { sfBannerIsPaused = false; });
+        wrap.addEventListener('touchstart', function() { sfBannerIsPaused = true; }, { passive: true });
+        wrap.addEventListener('touchend', function() {
+            setTimeout(function() { sfBannerIsPaused = false; }, 5000);
+        }, { passive: true });
+
+        // Sync dots on scroll
+        var scrollTimeout;
+        grid.addEventListener('scroll', function() {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(function() {
+                var cards = sfBannerGetCards();
+                if (!cards.length) return;
+                var scrollLeft = grid.scrollLeft;
+                var closestIdx = 0;
+                var minDiff = Infinity;
+                for (var i = 0; i < cards.length; i++) {
+                    var diff = Math.abs(cards[i].offsetLeft - grid.offsetLeft - scrollLeft);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestIdx = i;
+                    }
+                }
+                sfBannerCurrentIdx = closestIdx;
+                sfBannerUpdateDots(closestIdx);
+            }, 60);
+        }, { passive: true });
+
+        // Auto-play interval
+        clearInterval(sfBannerAutoplayTimer);
+        sfBannerAutoplayTimer = setInterval(function() {
+            if (sfBannerIsPaused) return;
+            var cards = sfBannerGetCards();
+            if (!cards || cards.length <= 1) return;
+            var nextIdx = (sfBannerCurrentIdx + 1) % cards.length;
+            window.sfBannerGoTo(nextIdx);
+        }, 3500);
     }
 
-    function pauseThenResume() {
-        stop();
-        resumeTimer = setTimeout(start, 5000);
-    }
-
-    track.addEventListener('pointerdown', pauseThenResume);
-    track.addEventListener('touchstart', pauseThenResume, { passive: true });
-    track.addEventListener('wheel', pauseThenResume, { passive: true });
     document.addEventListener('visibilitychange', function () {
-        if (document.hidden) stop();
-        else start();
-    });
-    window.addEventListener('resize', function () {
-        stop();
-        start();
+        sfBannerIsPaused = document.hidden;
     });
 
-    start();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', sfInitBannerCarousel);
+    } else {
+        sfInitBannerCarousel();
+    }
 })();
+</script>
 
 // Animated search placeholder slot-machine / slide effect
 (function () {

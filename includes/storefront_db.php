@@ -124,6 +124,22 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_title', "VARCHAR(191) NULL DEFAULT 'with Ease'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_subtitle', "VARCHAR(255) NULL DEFAULT 'with Speed'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#028476'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_4_tag', "VARCHAR(191) NULL DEFAULT 'Special Offer,'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_4_title', "VARCHAR(191) NULL DEFAULT 'Super Savings'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_4_subtitle', "VARCHAR(255) NULL DEFAULT 'Get exclusive discounts today!'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_4_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#ea580c'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_4_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_5_tag', "VARCHAR(191) NULL DEFAULT 'Fresh Deals,'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_5_title', "VARCHAR(191) NULL DEFAULT 'Top Quality Picks'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_5_subtitle', "VARCHAR(255) NULL DEFAULT 'Handpicked best products for you.'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_5_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#0891b2'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_5_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_6_tag', "VARCHAR(191) NULL DEFAULT 'Fast & Reliable,'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_6_title', "VARCHAR(191) NULL DEFAULT 'Express Delivery'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_6_subtitle', "VARCHAR(255) NULL DEFAULT 'Direct to your doorstep quickly.'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_6_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#9333ea'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_6_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
     add_schema_column_if_missing($db, 'products', 'is_trending', "TINYINT(1) NOT NULL DEFAULT 0");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_trending_items', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'trending_section_name', "VARCHAR(191) NOT NULL DEFAULT 'Top Trending Items'");
@@ -546,6 +562,21 @@ function get_mobile_store_settings(int $businessId): array {
         'banner_3_subtitle' => (string) ($row['banner_3_subtitle'] ?? 'with Speed'),
         'banner_3_bg_color' => (string) ($row['banner_3_bg_color'] ?? '#028476'),
         'banner_3_text_color' => (string) ($row['banner_3_text_color'] ?? '#ffffff'),
+        'banner_4_tag' => (string) ($row['banner_4_tag'] ?? 'Special Offer,'),
+        'banner_4_title' => (string) ($row['banner_4_title'] ?? 'Super Savings'),
+        'banner_4_subtitle' => (string) ($row['banner_4_subtitle'] ?? 'Get exclusive discounts today!'),
+        'banner_4_bg_color' => (string) ($row['banner_4_bg_color'] ?? '#ea580c'),
+        'banner_4_text_color' => (string) ($row['banner_4_text_color'] ?? '#ffffff'),
+        'banner_5_tag' => (string) ($row['banner_5_tag'] ?? 'Fresh Deals,'),
+        'banner_5_title' => (string) ($row['banner_5_title'] ?? 'Top Quality Picks'),
+        'banner_5_subtitle' => (string) ($row['banner_5_subtitle'] ?? 'Handpicked best products for you.'),
+        'banner_5_bg_color' => (string) ($row['banner_5_bg_color'] ?? '#0891b2'),
+        'banner_5_text_color' => (string) ($row['banner_5_text_color'] ?? '#ffffff'),
+        'banner_6_tag' => (string) ($row['banner_6_tag'] ?? 'Fast & Reliable,'),
+        'banner_6_title' => (string) ($row['banner_6_title'] ?? 'Express Delivery'),
+        'banner_6_subtitle' => (string) ($row['banner_6_subtitle'] ?? 'Direct to your doorstep quickly.'),
+        'banner_6_bg_color' => (string) ($row['banner_6_bg_color'] ?? '#9333ea'),
+        'banner_6_text_color' => (string) ($row['banner_6_text_color'] ?? '#ffffff'),
         'show_trending_items' => (int) ($row['show_trending_items'] ?? 1) === 1,
         'trending_section_name' => (string) ($row['trending_section_name'] ?? 'Top Trending Items'),
         'trending_bg_color' => (string) ($row['trending_bg_color'] ?? '#ffffff'),
@@ -706,6 +737,21 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             banner_3_subtitle = :b3sub,
             banner_3_bg_color = :b3bg,
             banner_3_text_color = :b3txt,
+            banner_4_tag = :b4tag,
+            banner_4_title = :b4title,
+            banner_4_subtitle = :b4sub,
+            banner_4_bg_color = :b4bg,
+            banner_4_text_color = :b4txt,
+            banner_5_tag = :b5tag,
+            banner_5_title = :b5title,
+            banner_5_subtitle = :b5sub,
+            banner_5_bg_color = :b5bg,
+            banner_5_text_color = :b5txt,
+            banner_6_tag = :b6tag,
+            banner_6_title = :b6title,
+            banner_6_subtitle = :b6sub,
+            banner_6_bg_color = :b6bg,
+            banner_6_text_color = :b6txt,
             show_trending_items = :strend,
             trending_section_name = :tsn,
             trending_bg_color = :tbg,
@@ -773,6 +819,21 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'b3sub' => trim((string)($data['banner_3_subtitle'] ?? $current['banner_3_subtitle'] ?? 'with Speed')),
         'b3bg' => normalize_hex_color((string)($data['banner_3_bg_color'] ?? $current['banner_3_bg_color'] ?? '#028476'), '#028476'),
         'b3txt' => normalize_hex_color((string)($data['banner_3_text_color'] ?? $current['banner_3_text_color'] ?? '#ffffff'), '#ffffff'),
+        'b4tag' => trim((string)($data['banner_4_tag'] ?? $current['banner_4_tag'] ?? 'Special Offer,')),
+        'b4title' => trim((string)($data['banner_4_title'] ?? $current['banner_4_title'] ?? 'Super Savings')),
+        'b4sub' => trim((string)($data['banner_4_subtitle'] ?? $current['banner_4_subtitle'] ?? 'Get exclusive discounts today!')),
+        'b4bg' => normalize_hex_color((string)($data['banner_4_bg_color'] ?? $current['banner_4_bg_color'] ?? '#ea580c'), '#ea580c'),
+        'b4txt' => normalize_hex_color((string)($data['banner_4_text_color'] ?? $current['banner_4_text_color'] ?? '#ffffff'), '#ffffff'),
+        'b5tag' => trim((string)($data['banner_5_tag'] ?? $current['banner_5_tag'] ?? 'Fresh Deals,')),
+        'b5title' => trim((string)($data['banner_5_title'] ?? $current['banner_5_title'] ?? 'Top Quality Picks')),
+        'b5sub' => trim((string)($data['banner_5_subtitle'] ?? $current['banner_5_subtitle'] ?? 'Handpicked best products for you.')),
+        'b5bg' => normalize_hex_color((string)($data['banner_5_bg_color'] ?? $current['banner_5_bg_color'] ?? '#0891b2'), '#0891b2'),
+        'b5txt' => normalize_hex_color((string)($data['banner_5_text_color'] ?? $current['banner_5_text_color'] ?? '#ffffff'), '#ffffff'),
+        'b6tag' => trim((string)($data['banner_6_tag'] ?? $current['banner_6_tag'] ?? 'Fast & Reliable,')),
+        'b6title' => trim((string)($data['banner_6_title'] ?? $current['banner_6_title'] ?? 'Express Delivery')),
+        'b6sub' => trim((string)($data['banner_6_subtitle'] ?? $current['banner_6_subtitle'] ?? 'Direct to your doorstep quickly.')),
+        'b6bg' => normalize_hex_color((string)($data['banner_6_bg_color'] ?? $current['banner_6_bg_color'] ?? '#9333ea'), '#9333ea'),
+        'b6txt' => normalize_hex_color((string)($data['banner_6_text_color'] ?? $current['banner_6_text_color'] ?? '#ffffff'), '#ffffff'),
         'strend' => array_key_exists('show_trending_items', $data) ? (!empty($data['show_trending_items']) ? 1 : 0) : ($current['show_trending_items'] ? 1 : 0),
         'tsn' => trim((string)($data['trending_section_name'] ?? $current['trending_section_name'] ?? 'Top Trending Items')),
         'tbg' => normalize_hex_color((string)($data['trending_bg_color'] ?? $current['trending_bg_color'] ?? '#ffffff'), '#ffffff'),

@@ -338,22 +338,37 @@ img {
 }
 
 /* ==========================================================================
-   PROMO BANNERS GRID - Large, Immersive Reference Architecture
+   PROMO BANNERS CAROUSEL & GRID - 6-Slide Smooth Auto-Play Architecture
    ========================================================================== */
-.ms-banners-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 22px;
+.ms-banners-carousel-wrap {
+    position: relative;
     margin-bottom: 36px;
+    width: 100%;
 }
-@media (max-width: 1024px) {
-    .ms-banners-grid {
-        grid-template-columns: 1fr;
-        gap: 18px;
-    }
+
+.ms-banners-grid {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 12px;
+    padding: 4px 2px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.ms-banners-grid::-webkit-scrollbar {
+    display: none;
 }
 
 .ms-banner-card {
+    flex: 0 0 calc((100% - 40px) / 3);
+    min-width: calc((100% - 40px) / 3);
+    max-width: calc((100% - 40px) / 3);
+    scroll-snap-align: start;
+    box-sizing: border-box;
     border-radius: 16px;
     overflow: hidden;
     color: #ffffff;
@@ -371,15 +386,20 @@ img {
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
 }
 
-.ms-banner-1 {
-    background: linear-gradient(135deg, #028476 0%, #009688 100%);
+@media (max-width: 1080px) {
+    .ms-banner-card {
+        flex: 0 0 calc((100% - 20px) / 2);
+        min-width: calc((100% - 20px) / 2);
+        max-width: calc((100% - 20px) / 2);
+    }
 }
-.ms-banner-2 {
-    background: linear-gradient(135deg, #1e60d5 0%, #2563eb 100%);
-}
-.ms-banner-3 {
-    background: linear-gradient(135deg, #582098 0%, #7c3aed 100%);
-}
+
+.ms-banner-1 { background: linear-gradient(135deg, #028476 0%, #009688 100%); }
+.ms-banner-2 { background: linear-gradient(135deg, #1e60d5 0%, #2563eb 100%); }
+.ms-banner-3 { background: linear-gradient(135deg, #582098 0%, #7c3aed 100%); }
+.ms-banner-4 { background: linear-gradient(135deg, #c2410c 0%, #ea580c 100%); }
+.ms-banner-5 { background: linear-gradient(135deg, #0e7490 0%, #0891b2 100%); }
+.ms-banner-6 { background: linear-gradient(135deg, #6b21a8 0%, #9333ea 100%); }
 
 .ms-banner-info {
     flex: 1 1 auto;
@@ -394,7 +414,7 @@ img {
     letter-spacing: 0.01em;
 }
 .ms-banner-title {
-    font-size: 29px;
+    font-size: 27px;
     font-weight: 800;
     line-height: 1.12;
     margin: 0 0 8px;
@@ -409,15 +429,69 @@ img {
     margin: 0;
 }
 .ms-banner-art {
-    width: 210px;
-    height: 180px;
+    width: 200px;
+    height: 175px;
     flex-shrink: 0;
-    margin-left: 12px;
+    margin-left: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     z-index: 1;
+}
+
+/* Prev / Next Banner Arrows */
+.ms-banner-arrow {
+    position: absolute;
+    top: 48%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0.92;
+}
+.ms-banner-arrow:hover {
+    background: #ffffff;
+    color: #2563eb;
+    transform: translateY(-50%) scale(1.08);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+    opacity: 1;
+}
+.ms-banner-prev { left: -14px; }
+.ms-banner-next { right: -14px; }
+
+/* Navigation Dots */
+.ms-banner-dots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+.ms-banner-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);
+}
+.ms-banner-dot:hover {
+    background: #94a3b8;
+}
+.ms-banner-dot.is-active {
+    width: 26px;
+    background: var(--header-bg, #0f4c3a);
 }
 
 /* ==========================================================================
@@ -1095,12 +1169,18 @@ img {
         line-height: 20px;
     }
 
+    .ms-banners-carousel-wrap {
+        margin-bottom: 24px;
+    }
+    .ms-banner-arrow {
+        display: none !important;
+    }
     .ms-banners-grid {
         display: flex;
         overflow-x: auto;
         scroll-snap-type: x mandatory;
         gap: 12px;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
         padding-bottom: 4px;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
@@ -1110,13 +1190,13 @@ img {
         display: none;
     }
     .ms-banner-card {
-        min-width: 86%;
-        max-width: 86%;
-        flex: 0 0 86%;
+        min-width: 88%;
+        max-width: 88%;
+        flex: 0 0 88%;
         scroll-snap-align: start;
         min-height: 115px;
-        padding: 14px;
-        border-radius: 12px;
+        padding: 14px 16px;
+        border-radius: 14px;
     }
     .ms-banner-title {
         font-size: 16px;
@@ -1125,12 +1205,12 @@ img {
     }
     .ms-banner-tag { font-size: 11px; }
     .ms-banner-sub {
-        font-size: 10.5px;
+        font-size: 11px;
         word-break: break-word;
     }
     .ms-banner-art {
-        width: 72px;
-        height: 72px;
+        width: 80px;
+        height: 80px;
         flex-shrink: 0;
     }
 
