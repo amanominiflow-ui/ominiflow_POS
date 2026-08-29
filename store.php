@@ -3427,6 +3427,8 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
+}
+
 function selectDrawerPaymentMethod(methodKey, methodTitle, labelEl) {
     var hiddenInput = document.getElementById('msDrawerSelectedPaymentMethod');
     if (hiddenInput) hiddenInput.value = methodKey;
