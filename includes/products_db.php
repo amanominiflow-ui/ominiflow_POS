@@ -577,6 +577,7 @@ function collect_product_form_data(): array {
         'weight_unit' => trim((string) ($_POST['weight_unit'] ?? 'kg')) ?: 'kg',
         'extra_identifiers' => json_encode($identifiers, JSON_UNESCAPED_UNICODE),
         'product_type' => $hasVariants ? 'variable' : 'simple',
+        'is_trending' => !empty($_POST['is_trending']) ? 1 : 0,
         'remove_image_ids' => array_map('intval', (array) ($_POST['remove_image_ids'] ?? [])),
     ];
 }
@@ -789,6 +790,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         'extra_identifiers' => (string) ($data['extra_identifiers'] ?? '[]'),
         'image_path' => $imagePath,
         'status' => $status,
+        'is_trending' => array_key_exists('is_trending', $data) ? (!empty($data['is_trending']) ? 1 : 0) : (!empty($oldProduct['is_trending']) ? 1 : 0),
     ];
 
     try {

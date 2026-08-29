@@ -29,6 +29,8 @@ $brand = [
     'show_location' => true,
     'show_banner' => true,
     'show_categories' => true,
+    'show_trending_items' => true,
+    'trending_section_name' => 'Top Trending Items',
     'show_items' => true,
     'phone' => '',
 ];
@@ -989,6 +991,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 if (!empty($brand['hide_out_of_stock'])) {
                     $products = array_values(array_filter($products, static fn($p) => (int) ($p['stock_quantity'] ?? 0) > 0));
                 }
+                $trendingProducts = get_storefront_trending_products($bid, 20);
+                if (!empty($brand['hide_out_of_stock'])) {
+                    $trendingProducts = array_values(array_filter($trendingProducts, static fn($p) => (int) ($p['stock_quantity'] ?? 0) > 0));
+                }
                 $categories = storefront_visible_categories($categories, $brand);
                 $homeSections = storefront_home_sections($brand);
                 $catCols = max(2, min(4, (int) ($brand['category_columns'] ?? 2)));
@@ -1275,6 +1281,115 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <div class="ms-cat-title"><?= e((string) $cat['name']) ?></div>
                             </a>
                         <?php endforeach; ?>
+                    </div>
+
+                <?php elseif ($homeSec === 'trending' && !empty($brand['show_trending_items']) && $trendingProducts && $q === '' && !$catId): ?>
+                    <?php
+                    $trendBg = !empty($brand['trending_bg_color']) && $brand['trending_bg_color'] !== '#ffffff' ? $brand['trending_bg_color'] : '';
+                    $trendTxt = !empty($brand['trending_text_color']) && $brand['trending_text_color'] !== '#000000' ? $brand['trending_text_color'] : '';
+                    $trendStyle = '';
+                    if ($trendBg) $trendStyle .= 'background:' . e($trendBg) . ';padding:14px 10px;border-radius:12px;margin-bottom:20px;';
+                    if ($trendTxt) $trendStyle .= 'color:' . e($trendTxt) . ';';
+                    ?>
+                    <div class="ms-trending-section-wrap" style="<?= $trendStyle ?>">
+                        <div class="ms-sec-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;<?= $trendTxt ? 'color:' . e($trendTxt) . ';' : '' ?>">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span><?= e($brand['trending_section_name'] ?: 'Top Trending Items') ?></span>
+                                <span style="background:#fee2e2;color:#dc2626;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;">🔥 Hot</span>
+                            </div>
+                        </div>
+                        <div class="ms-item-grid">
+                            <?php foreach ($trendingProducts as $p):
+                                $pImages = storefront_get_all_product_images($p, $bid);
+                                $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
+                                $inStock = (int) $p['stock_quantity'] > 0;
+                                $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $attrText = $pInfo['attr_text'];
+                                $varCount = $pInfo['variant_count'];
+                                $sellingPrice = $pInfo['selling_price'];
+                                $mrp = $pInfo['mrp'];
+                                $discountPct = $pInfo['discount_percent'];
+                                ?>
+                                <div class="ms-product-card">
+                                    <div class="ms-product-img-wrap">
+                                        <a class="ms-product-img-link" href="<?= e($pUrl) ?>" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-decoration:none;position:relative;">
+                                            <?php if ($discountPct > 0): ?>
+                                                <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
+                                            <?php endif; ?>
+
+                                            <?php if ($pImages): ?>
+                                                <div class="ms-card-img-track" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+                                                    <?php foreach ($pImages as $idx => $imgSrc): ?>
+                                                        <img src="<?= e($imgSrc) ?>" alt="<?= e((string) $p['name']) ?>" class="<?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                    <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+                                                    <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
+                                                    <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
+                                                </svg>
+                                            <?php endif; ?>
+                                        </a>
+
+                                        <?php if (count($pImages) > 1): ?>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous Image">‹</button>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next Image">›</button>
+                                            <div class="ms-card-dots">
+                                                <?php foreach ($pImages as $dIdx => $d): ?>
+                                                    <span class="ms-card-dot<?= $dIdx === 0 ? ' is-active' : '' ?>"></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="ms-product-body">
+                                        <div>
+                                            <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
+                                            <?php 
+                                            $pDesc = trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                                            $displayAttr = $attrText !== '' ? $attrText : $pDesc;
+                                            if ($displayAttr !== ''): ?>
+                                                <div class="ms-product-attr"><?= e($displayAttr) ?></div>
+                                            <?php endif; ?>
+                                            <?php if ($varCount > 0): ?>
+                                                <a href="<?= e($pUrl) ?>" class="ms-product-variants-link">+<?= max(1, $varCount - 1) ?> variants</a>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div>
+                                            <div class="ms-product-price-row">
+                                                <?php if (empty($brand['hide_product_price'])): ?>
+                                                    <span class="ms-product-price"><?= sf_money($currency, (float) $sellingPrice) ?></span>
+                                                    <?php if ($mrp > $sellingPrice && $mrp > 0): ?>
+                                                        <span class="ms-product-mrp"><?= sf_money($currency, (float) $mrp) ?></span>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <?php if (!$inStock): ?>
+                                                <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
+                                            <?php elseif ($varCount > 0): ?>
+                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
+                                                    <span>View Options</span>
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                                                </a>
+                                            <?php else: ?>
+                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="add_to_cart">
+                                                    <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="qty" value="1">
+                                                    <input type="hidden" name="redirect_page" value="home">
+                                                    <button type="submit" class="ms-card-add-btn">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                                        <span>Add to Cart</span>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
 
                 <?php elseif ($homeSec === 'item' && $brand['show_items']): ?>

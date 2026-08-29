@@ -104,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'show_location' => !empty($_POST['show_location']),
             'show_banner' => !empty($_POST['show_banner']),
             'show_categories' => !empty($_POST['show_categories']),
+            'show_trending_items' => !empty($_POST['show_trending_items']),
             'show_items' => !empty($_POST['show_items']),
             'remove_logo' => !empty($_POST['remove_logo']),
             'remove_banner' => !empty($_POST['remove_banner']),
@@ -149,6 +150,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_POST['banner_3_subtitle'])) $saveData['banner_3_subtitle'] = $_POST['banner_3_subtitle'];
             if (isset($_POST['banner_3_bg_color'])) $saveData['banner_3_bg_color'] = $_POST['banner_3_bg_color'];
             if (isset($_POST['banner_3_text_color'])) $saveData['banner_3_text_color'] = $_POST['banner_3_text_color'];
+            if (isset($_POST['trending_section_name'])) $saveData['trending_section_name'] = $_POST['trending_section_name'];
+            if (isset($_POST['trending_bg_color'])) $saveData['trending_bg_color'] = $_POST['trending_bg_color'];
+            if (isset($_POST['trending_text_color'])) $saveData['trending_text_color'] = $_POST['trending_text_color'];
             if (isset($_POST['item_section_name'])) $saveData['item_section_name'] = $_POST['item_section_name'];
             if (isset($_POST['section_order'])) $saveData['section_order'] = $_POST['section_order'];
             if (isset($_POST['category_mode'])) {
@@ -1517,6 +1521,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <input type="hidden" name="accent_color" value="<?= e($brand['accent_color']) ?>">
                         <input type="hidden" name="show_banner" value="<?= $brand['show_banner'] ? '1' : '' ?>">
                         <input type="hidden" name="show_categories" value="<?= $brand['show_categories'] ? '1' : '' ?>">
+                        <input type="hidden" name="show_trending_items" value="<?= !empty($brand['show_trending_items']) ? '1' : '' ?>">
                         <input type="hidden" name="show_items" value="<?= $brand['show_items'] ? '1' : '' ?>">
                         <input type="hidden" name="show_location" value="<?= $brand['show_location'] ? '1' : '' ?>">
                         <input type="hidden" name="banner_title" value="<?= e($brand['banner_title']) ?>">

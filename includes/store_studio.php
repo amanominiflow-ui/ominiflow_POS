@@ -449,6 +449,41 @@ function studio_cat_placeholder(): string {
                                             <i id="stDot3" onclick="event.stopPropagation(); switchBannerTab(3)"></i>
                                         </div>
                                     </div>
+                                <?php elseif ($secKey === 'trending'): ?>
+                                    <div class="st-sec" id="secTrending" data-sec="trending" onclick="selectSec(event,'trending')" <?= empty($brand['show_trending_items']) ? 'style="display:none"' : '' ?>>
+                                        <div class="st-pill" style="background:#dc2626;">Trending</div>
+                                        <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
+                                        <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
+                                        <div class="st-h" id="canvasTrendingTitle" style="display:flex;align-items:center;gap:6px;">
+                                            <span><?= e($brand['trending_section_name'] ?: 'Top Trending Items') ?></span>
+                                            <span style="background:#fee2e2;color:#dc2626;font-size:9px;font-weight:800;padding:2px 5px;border-radius:8px;">HOT</span>
+                                        </div>
+                                        <div class="st-item-grid">
+                                            <?php 
+                                            $trendingPreview = array_values(array_filter($previewProducts ?: [], static fn($p) => !empty($p['is_trending'])));
+                                            if (!$trendingPreview && $previewProducts) {
+                                                $trendingPreview = array_slice($previewProducts, 0, 2);
+                                            }
+                                            if ($trendingPreview): foreach ($trendingPreview as $tp):
+                                                $tImg = !empty($tp['image_path']) ? asset((string) $tp['image_path']) : ''; ?>
+                                                <div class="st-item">
+                                                    <div class="st-item-img"><?php if ($tImg): ?><img src="<?= e($tImg) ?>" alt=""><?php else: ?><?= studio_cat_placeholder() ?><?php endif; ?></div>
+                                                    <div class="st-item-name"><?= e((string) $tp['name']) ?></div>
+                                                    <div class="st-item-meta" style="color:#dc2626;font-weight:700;">Trending Item</div>
+                                                    <div class="st-item-foot">
+                                                        <span class="st-item-price"><?= e($currency) . number_format((float) $tp['selling_price'], 2) ?></span>
+                                                        <span class="st-add">Add</span>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; else: ?>
+                                                <div class="st-item">
+                                                    <div class="st-item-img"><?= studio_cat_placeholder() ?></div>
+                                                    <div class="st-item-name">TRENDING PRODUCT</div>
+                                                    <div class="st-item-foot"><span class="st-item-price"><?= e($currency) ?>699.00</span><span class="st-add">Add</span></div>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 <?php else: ?>
                                     <div class="st-sec" id="secItem" data-sec="item" onclick="selectSec(event,'item')" <?= empty($brand['show_items']) ? 'style="display:none"' : '' ?>>
                                         <div class="st-pill">Item</div>
@@ -488,6 +523,7 @@ function studio_cat_placeholder(): string {
                     <div class="st-add-pop" id="stAddPop">
                         <button type="button" onclick="restoreSec('category')">Category</button>
                         <button type="button" onclick="restoreSec('banner')">Banner</button>
+                        <button type="button" onclick="restoreSec('trending')">Top Trending Items</button>
                         <button type="button" onclick="restoreSec('item')">Item</button>
                     </div>
                 </div>
@@ -604,6 +640,7 @@ function studio_cat_placeholder(): string {
                     <input type="hidden" name="section_order" id="inputSectionOrder" value="<?= e(implode(',', $sectionOrder)) ?>">
                     <input type="hidden" name="show_banner" id="flagBanner" value="<?= !empty($brand['show_banner']) ? '1' : '' ?>">
                     <input type="hidden" name="show_categories" id="flagCategory" value="<?= !empty($brand['show_categories']) ? '1' : '' ?>">
+                    <input type="hidden" name="show_trending_items" id="flagTrending" value="<?= !empty($brand['show_trending_items']) ? '1' : '' ?>">
                     <input type="hidden" name="show_items" id="flagItem" value="<?= !empty($brand['show_items']) ? '1' : '' ?>">
                     <input type="hidden" name="show_location" value="<?= !empty($brand['show_location']) ? '1' : '' ?>">
                     <input type="hidden" name="category_shape" id="inputCatShape" value="<?= e($brand['category_shape'] ?: 'rectangle') ?>">
@@ -783,6 +820,37 @@ function studio_cat_placeholder(): string {
                             </div>
                         </div>
 
+                        <div id="editTrending" class="st-hidden">
+                            <label class="st-label">Section Name <span class="st-req">*</span></label>
+                            <input class="st-input" type="text" name="trending_section_name" id="inputTrendingSectionName" value="<?= e($brand['trending_section_name'] ?: 'Top Trending Items') ?>" oninput="var ct = document.getElementById('canvasTrendingTitle'); if (ct) { var s = ct.querySelector('span'); if (s) s.textContent = this.value; else ct.textContent = this.value; }" style="margin-bottom:16px">
+
+                            <div class="st-sec-title">Section Theme Colors</div>
+                            <div class="st-color-grid" style="margin-bottom:16px">
+                                <div class="st-color-card">
+                                    <span>Background</span>
+                                    <div class="st-color-row">
+                                        <input type="color" name="trending_bg_color" value="<?= e($brand['trending_bg_color'] ?: '#ffffff') ?>">
+                                        <span style="font-size:12px;font-weight:700"><?= e($brand['trending_bg_color'] ?: '#ffffff') ?></span>
+                                    </div>
+                                </div>
+                                <div class="st-color-card">
+                                    <span>Text Color</span>
+                                    <div class="st-color-row">
+                                        <input type="color" name="trending_text_color" value="<?= e($brand['trending_text_color'] ?: '#000000') ?>">
+                                        <span style="font-size:12px;font-weight:700"><?= e($brand['trending_text_color'] ?: '#000000') ?></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="st-info" style="margin-top:12px;line-height:1.5;">
+                                <strong>How to add items here:</strong><br>
+                                Go to <strong>Inventory &gt; Items</strong>, edit any product, and check <em>Show in "Top Trending Items"</em>.
+                            </div>
+                            <a href="<?= asset('products.php') ?>" target="_blank" class="st-btn st-btn-sec" style="display:inline-flex;align-items:center;justify-content:center;margin-top:10px;text-decoration:none;font-size:13px;font-weight:600;padding:8px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;">
+                                <span>Manage Trending Items in Products ↗</span>
+                            </a>
+                        </div>
+
                         <div id="editItem" class="st-hidden">
                             <label class="st-label">Section Name <span class="st-req">*</span></label>
                             <input class="st-input" type="text" name="item_section_name" value="<?= e($brand['item_section_name'] ?: 'All Items') ?>" oninput="document.getElementById('canvasItemTitle').textContent=this.value">
@@ -889,7 +957,7 @@ function openDrawer(kind) {
     if (STUDIO_MODE === 'branding') return;
     const panel = document.getElementById('panelLayout');
     panel.classList.add('open');
-    ['editCategory','themeCategory','editBanner','editItem','editHeader'].forEach(id => {
+    ['editCategory','themeCategory','editBanner','editTrending','editItem','editHeader'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('st-hidden');
     });
@@ -898,6 +966,8 @@ function openDrawer(kind) {
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
         'theme-banner': ['editBanner', 'Banner Theme & Colors'],
+        'edit-trending': ['editTrending', 'Edit Top Trending Component'],
+        'theme-trending': ['editTrending', 'Top Trending Properties'],
         'edit-item': ['editItem', 'Edit Item Component'],
         'theme-item': ['editItem', 'Edit Item Component'],
         'edit-header': ['editHeader', 'Edit Header Component']
@@ -928,9 +998,9 @@ function menuAction(kind) {
     const selected = document.querySelector('.st-sec.selected');
     const key = selected ? selected.dataset.sec : 'category';
     if (kind === 'edit') {
-        openDrawer(key === 'category' ? 'edit-category' : (key === 'banner' ? 'edit-banner' : 'edit-item'));
+        openDrawer(key === 'category' ? 'edit-category' : (key === 'banner' ? 'edit-banner' : (key === 'trending' ? 'edit-trending' : 'edit-item')));
     } else if (kind === 'theme') {
-        openDrawer(key === 'category' ? 'theme-category' : (key === 'banner' ? 'theme-banner' : 'theme-item'));
+        openDrawer(key === 'category' ? 'theme-category' : (key === 'banner' ? 'theme-banner' : (key === 'trending' ? 'theme-trending' : 'theme-item')));
     } else if (kind === 'move') {
         moveSec(key, 'down');
     } else if (kind === 'rearrange') {
@@ -1083,7 +1153,7 @@ function syncOrder() {
 }
 function openRearrange() {
     const keys = [...document.querySelectorAll('#stSections .st-sec')].map(s => s.dataset.sec);
-    const labels = { category: 'All Categories', banner: 'Banners', item: 'All Items' };
+    const labels = { category: 'All Categories', banner: 'Banners', trending: 'Top Trending Items', item: 'All Items' };
     window._ord = keys.slice();
     drawOrd();
     document.getElementById('rearrangeModal').classList.add('open');
