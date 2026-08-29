@@ -104,14 +104,19 @@ function studio_cat_placeholder(): string {
         }
         .st-phone-wrap {
             width: 340px;
+            max-width: 100%;
             position: relative;
             margin: 0 auto;
             flex-shrink: 0;
             overflow: visible;
+            box-sizing: border-box;
         }
         .st-phone {
+            width: 340px;
+            max-width: 340px;
             background: #fff; border: 1px solid #cbd5e1; border-radius: 28px;
             box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12); overflow: visible;
+            box-sizing: border-box;
             --st-header: <?= e($headerColor) ?>;
             --st-header-text: <?= e($headerText) ?>;
             --st-accent: <?= e($accentColor) ?>;
@@ -122,7 +127,7 @@ function studio_cat_placeholder(): string {
         .st-phone.font-large { font-size: 15px; }
         .st-notch { height: 16px; background: var(--st-header); display: flex; align-items: center; justify-content: center; border-radius: 28px 28px 0 0; }
         .st-notch span { width: 48px; height: 4px; background: rgba(255,255,255,.28); border-radius: 4px; }
-        .st-ph-head { background: var(--st-header); color: var(--st-header-text); padding: 8px 14px 12px; }
+        .st-ph-head { background: var(--st-header); color: var(--st-header-text); padding: 8px 14px 12px; border-radius: 0; }
         .st-ph-brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
         .st-ph-brand-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
         .st-ph-logo { width: 26px; height: 26px; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -140,7 +145,7 @@ function studio_cat_placeholder(): string {
         @keyframes msSearchSlideIn { 0% { transform: translate3d(0, 80%, 0); opacity: 0; } 100% { transform: translate3d(0, 0, 0); opacity: 1; } }
         @keyframes msSearchSlideOut { 0% { transform: translate3d(0, 0, 0); opacity: 1; } 100% { transform: translate3d(0, -80%, 0); opacity: 0; } }
 
-        .st-sec { position: relative; padding: 12px; border: 2px dashed transparent; cursor: pointer; }
+        .st-sec { position: relative; padding: 12px; border: 2px dashed transparent; cursor: pointer; box-sizing: border-box; width: 100%; max-width: 100%; }
         .st-sec:hover, .st-sec.selected { border-color: #2563eb; }
         .st-pill {
             position: absolute; top: -2px; left: -2px; background: #2563eb; color: #fff;
@@ -170,30 +175,30 @@ function studio_cat_placeholder(): string {
         .st-float button.danger:hover { background: rgba(239,68,68,.18); }
         .st-float hr { border: 0; border-top: 1px solid #334155; margin: 4px 0; }
 
-        .st-h { font-weight: 700; color: #0f172a; margin: 0 0 8px; font-size: 1.05em; }
-        .st-cat-grid { display: grid; gap: 8px; }
-        .st-cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 6px; text-align: center; }
-        .st-cat-img { height: 52px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 5px; }
-        .st-cat-img img { width: 100%; height: 100%; object-fit: cover; }
-        .st-cat-name { font-size: .78em; font-weight: 800; text-transform: uppercase; color: #0f172a; }
+        .st-h { font-weight: 700; color: #0f172a; margin: 0 0 8px; font-size: 1.05em; word-break: break-word; }
+        .st-cat-grid { display: grid; gap: 8px; width: 100%; box-sizing: border-box; }
+        .st-cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 6px; text-align: center; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+        .st-cat-img { width: 100%; height: 52px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 5px; box-sizing: border-box; }
+        .st-cat-img img { width: 100%; max-width: 100%; height: 100%; object-fit: cover; display: block; }
+        .st-cat-name { font-size: .78em; font-weight: 800; text-transform: uppercase; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .st-banner { border-radius: 8px; min-height: 108px; padding: 14px 16px; color: #fff; position: relative; overflow: hidden;
-            background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); }
-        .st-banner h4 { margin: 0; font-size: 1.15em; line-height: 1.2; font-weight: 800; }
-        .st-banner p { margin: 4px 0 0; font-size: .85em; opacity: .92; }
+            background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); box-sizing: border-box; width: 100%; max-width: 100%; }
+        .st-banner h4 { margin: 0; font-size: 1.15em; line-height: 1.2; font-weight: 800; word-break: break-word; }
+        .st-banner p { margin: 4px 0 0; font-size: .85em; opacity: .92; word-break: break-word; }
         .st-dots { display: flex; justify-content: center; gap: 5px; margin-top: 7px; }
         .st-dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; display: block; cursor: pointer; transition: all 0.2s ease; }
         .st-dots i.on { background: #2563eb; width: 14px; border-radius: 999px; }
 
-        .st-item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .st-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
-        .st-item-img { height: 78px; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
-        .st-item-img img { width: 100%; height: 100%; object-fit: cover; }
-        .st-item-name { font-size: .82em; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .st-item-meta { font-size: .75em; color: #64748b; margin: 2px 0 6px; }
-        .st-item-foot { display: flex; align-items: center; justify-content: space-between; }
-        .st-item-price { font-size: .85em; font-weight: 800; }
-        .st-add { background: var(--st-accent); color: var(--st-btn-text); font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+        .st-item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; box-sizing: border-box; }
+        .st-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
+        .st-item-img { width: 100%; height: 78px; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-sizing: border-box; }
+        .st-item-img img { width: 100%; max-width: 100%; height: 100%; object-fit: contain; display: block; }
+        .st-item-name { font-size: .82em; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-item-meta { font-size: .75em; color: #64748b; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-item-foot { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; margin-top: auto; }
+        .st-item-price { font-size: .85em; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-add { background: var(--st-accent); color: var(--st-btn-text); font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; flex-shrink: 0; }
 
         .st-panel {
             width: 400px; background: #fff; border-left: 1px solid #e2e8f0; display: none;
@@ -378,7 +383,7 @@ function studio_cat_placeholder(): string {
                                         <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-h" id="canvasCatTitle"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
-                                        <div class="st-cat-grid" id="canvasCatGrid" style="grid-template-columns: repeat(<?= (int) ($brand['category_columns'] ?: 2) ?>, 1fr);">
+                                        <div class="st-cat-grid" id="canvasCatGrid" style="grid-template-columns: repeat(<?= (int) ($brand['category_columns'] ?: 2) ?>, minmax(0, 1fr));">
                                             <?php
                                             $renderCats = $previewCats ?: [['name' => 'MENS'], ['name' => 'WOMEN'], ['name' => 'GORGEOUS 3PCS'], ['name' => 'TWO-PIECE SET']];
                                             foreach (array_slice($renderCats, 0, 4) as $sc): ?>
@@ -1214,7 +1219,7 @@ function refreshCatPreview() {
     const grid = document.getElementById('canvasCatGrid');
     let list = STUDIO_CATS;
     if (mode === 'custom' && selectedIds.size) list = STUDIO_CATS.filter(c => selectedIds.has(c.id));
-    grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
     grid.innerHTML = list.slice(0, 8).map(c => {
         const img = c.image ? `<img src="${c.image}" alt="">` : `<?= studio_cat_placeholder() ?>`;
         return `<div class="st-cat-card"><div class="st-cat-img">${img}</div><div class="st-cat-name">${(c.name || '').toUpperCase()}</div></div>`;

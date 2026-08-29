@@ -527,25 +527,27 @@ img {
    ========================================================================== */
 .ms-item-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 20px;
     margin-bottom: 48px;
+    width: 100%;
+    box-sizing: border-box;
 }
 @media (max-width: 1080px) {
     .ms-item-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 16px;
     }
 }
 @media (max-width: 768px) {
     .ms-item-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
     }
 }
 @media (max-width: 480px) {
     .ms-item-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
     }
 }
@@ -562,6 +564,9 @@ img {
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 .ms-product-card:hover {
     transform: translateY(-4px);
