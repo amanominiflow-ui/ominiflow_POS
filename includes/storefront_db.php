@@ -1763,3 +1763,125 @@ function place_online_store_order(int $businessId, array $checkout): array {
     }
     return $result;
 }
+
+function get_storefront_order_details(int $businessId, string $orderIdentifier, ?int $customerId = null): ?array {
+    $db = get_db();
+    $sql = '
+        SELECT o.*, 
+               c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address,
+               inv.id AS invoice_id, inv.invoice_number
+        FROM orders o
+        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
+        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.business_id = :bid_inv
+        WHERE o.business_id = :bid AND (o.order_number = :num OR CAST(o.id AS CHAR) = :num_id)
+    ';
+    $params = [
+        'bid' => $businessId,
+        'bid_c' => $businessId,
+        'bid_inv' => $businessId,
+        'num' => trim($orderIdentifier),
+        'num_id' => trim($orderIdentifier),
+    ];
+    if ($customerId !== null && $customerId > 0) {
+        $sql .= ' AND o.customer_id = :cid';
+        $params['cid'] = $customerId;
+    }
+    $sql .= ' LIMIT 1';
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $order = $stmt->fetch();
+    if (!$order) {
+        return null;
+    }
+
+    $stmtItems = $db->prepare('
+        SELECT oi.*, p.image_path, p.description, p.product_type, p.sku AS p_sku
+        FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id AND p.business_id = :bid
+        WHERE oi.order_id = :order_id
+        ORDER BY oi.id ASC
+    ');
+    $stmtItems->execute([
+        'bid' => $businessId,
+        'order_id' => (int) $order['id'],
+    ]);
+    $order['items'] = $stmtItems->fetchAll() ?: [];
+
+    // Format human-friendly date
+    $rawDate = $order['created_at'] ?? 'now';
+    $timestamp = strtotime($rawDate);
+    $order['formatted_date'] = $timestamp ? date('M j, l \a\t g:i A', $timestamp) : $rawDate;
+
+    // Normalised payment method label
+    $pm = strtolower((string)($order['payment_method'] ?? ''));
+    if ($pm === 'cod') {
+        $order['payment_method_label'] = 'Pay on Delivery';
+    } elseif ($pm === 'upi') {
+        $order['payment_method_label'] = 'UPI Payment';
+    } elseif ($pm === 'pickup') {
+        $order['payment_method_label'] = 'Pay at store / Pickup';
+    } else {
+        $order['payment_method_label'] = ucfirst($pm ?: 'Cash on Delivery');
+    }
+
+    // Normalised payment status badge
+    $ps = strtolower((string)($order['payment_status'] ?? ''));
+    if ($ps === 'paid') {
+        $order['payment_status_label'] = 'Paid';
+        $order['payment_status_badge'] = 'paid';
+    } else {
+        $order['payment_status_label'] = 'Unpaid';
+        $order['payment_status_badge'] = 'unpaid';
+    }
+
+    // Normalised order status badge
+    $os = strtolower((string)($order['order_status'] ?? 'pending'));
+    $order['order_status_label'] = ucfirst($os ?: 'Pending');
+
+    return $order;
+}
+
+function cancel_storefront_order(int $businessId, int $orderId, ?int $customerId = null): array {
+    $db = get_db();
+    $sql = 'SELECT id, order_status FROM orders WHERE id = :id AND business_id = :bid';
+    $params = ['id' => $orderId, 'bid' => $businessId];
+    if ($customerId !== null && $customerId > 0) {
+        $sql .= ' AND customer_id = :cid';
+        $params['cid'] = $customerId;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $ord = $stmt->fetch();
+    if (!$ord) {
+        return ['success' => false, 'message' => 'Order not found.'];
+    }
+    $status = strtolower((string)($ord['order_status'] ?? ''));
+    if (!in_array($status, ['pending', 'new', 'placed', 'processing'], true)) {
+        return ['success' => false, 'message' => 'This order cannot be cancelled anymore.'];
+    }
+
+    $update = $db->prepare('UPDATE orders SET order_status = "cancelled", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+    $update->execute(['id' => $orderId, 'bid' => $businessId]);
+    return ['success' => true, 'message' => 'Your order has been cancelled successfully.'];
+}
+
+function reorder_storefront_order(int $businessId, int $orderId): array {
+    $db = get_db();
+    $stmt = $db->prepare('SELECT product_id, quantity FROM order_items WHERE order_id = :oid');
+    $stmt->execute(['oid' => $orderId]);
+    $items = $stmt->fetchAll() ?: [];
+    if (!$items) {
+        return ['success' => false, 'message' => 'No items found in this order to reorder.'];
+    }
+
+    $cart = get_storefront_cart($businessId);
+    foreach ($items as $it) {
+        $pid = (int) $it['product_id'];
+        $qty = max(1, (int) $it['quantity']);
+        $cart[$pid] = ($cart[$pid] ?? 0) + $qty;
+    }
+    save_storefront_cart($businessId, $cart);
+    return ['success' => true, 'count' => storefront_cart_count($businessId)];
+}
+

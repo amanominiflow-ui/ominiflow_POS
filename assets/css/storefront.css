@@ -727,13 +727,18 @@ img {
 }
 
 .ms-product-attr {
-    font-size: 11px;
-    font-weight: 600;
-    color: #475569;
-    text-transform: uppercase;
-    line-height: 1.35;
-    margin-bottom: 3px;
-    letter-spacing: 0.01em;
+    font-size: 12px;
+    font-weight: 400;
+    color: #64748b;
+    text-transform: none;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    letter-spacing: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
 }
 
 .ms-product-variants-link {
@@ -2163,3 +2168,344 @@ body.sf-auth-body {
 .ms-loc-save-btn {
     margin-top: 16px;
 }
+
+/* ==========================================================================
+   CONFIRMATION MODALS (Place Order & Cancel Order)
+   ========================================================================== */
+.ms-confirm-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+    padding: 16px;
+}
+.ms-confirm-modal-overlay.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+.ms-confirm-dialog {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 24px 22px 20px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    transform: translateY(12px) scale(0.96);
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+}
+.ms-confirm-modal-overlay.is-open .ms-confirm-dialog {
+    transform: translateY(0) scale(1);
+}
+.ms-confirm-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 10px;
+}
+.ms-confirm-msg {
+    font-size: 14.5px;
+    color: #475569;
+    margin: 0 0 24px;
+    line-height: 1.45;
+}
+.ms-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+}
+.ms-confirm-btn-cancel {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ms-confirm-btn-cancel:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+.ms-confirm-btn-proceed {
+    background: var(--ms-header, #083d30);
+    border: none;
+    color: #ffffff;
+    padding: 9px 22px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ms-confirm-btn-proceed:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   ORDER DETAILS VIEW - Reference Mobile Card Architecture
+   ========================================================================== */
+.ms-order-view-wrap {
+    max-width: 580px;
+    margin: 0 auto;
+    padding: 0 0 40px;
+    width: 100%;
+}
+.ms-order-view-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.ms-order-view-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #0f172a;
+    font-size: 19px;
+    font-weight: 800;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.ms-order-view-back:hover {
+    color: var(--ms-header, #083d30);
+}
+.ms-order-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+.ms-order-top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+.ms-order-id {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f172a;
+}
+.ms-order-total-price {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f172a;
+}
+.ms-order-type {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 14px;
+}
+.ms-order-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+.ms-order-status-pill.status-pending {
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+}
+.ms-order-status-pill.status-completed, .ms-order-status-pill.status-delivered {
+    color: #15803d;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+}
+.ms-order-status-pill.status-cancelled {
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+}
+.ms-order-date {
+    font-size: 12.5px;
+    color: #64748b;
+}
+.ms-order-sec-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 12px;
+}
+.ms-order-payment-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.ms-order-payment-method {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #1e293b;
+}
+.ms-order-payment-badge {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+.ms-order-payment-badge.unpaid {
+    background: #fffbeb;
+    color: #d97706;
+    border: 1px solid #fde68a;
+}
+.ms-order-payment-badge.paid {
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+}
+.ms-order-addr-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+.ms-order-addr-text {
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+.ms-order-addr-phone {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ms-order-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+}
+.ms-order-items-table th {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
+    padding: 8px 4px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.ms-order-items-table td {
+    font-size: 13px;
+    color: #1e293b;
+    padding: 12px 4px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
+.ms-order-item-prod {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ms-order-item-img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #f1f5f9;
+    flex-shrink: 0;
+}
+.ms-order-item-name {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.35;
+}
+.ms-order-item-sku {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+}
+.ms-order-summary-box {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.ms-order-summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #475569;
+}
+.ms-order-summary-row.is-total {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    border-top: 1px dashed #cbd5e1;
+    padding-top: 8px;
+    margin-top: 4px;
+}
+.ms-order-actions-bar {
+    display: flex;
+    gap: 12px;
+    margin-top: 22px;
+}
+.ms-order-btn-cancel {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #fca5a5;
+    background: #ffffff;
+    color: #e11d48;
+    font-weight: 700;
+    font-size: 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.ms-order-btn-cancel:hover {
+    background: #fff1f2;
+    border-color: #f87171;
+}
+.ms-order-btn-reorder {
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    background: #e11d48;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.ms-order-btn-reorder:hover {
+    background: #be123c;
+    transform: translateY(-1px);
+}
+

@@ -84,7 +84,7 @@ if (!$storeBiz) {
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
     $page = trim((string) ($_GET['page'] ?? 'home'));
-    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true)) {
+    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true)) {
         $page = 'home';
     }
 
@@ -136,7 +136,7 @@ if (!$storeBiz) {
             if (empty($res['success']) && !empty($res['error'])) {
                 set_flash('error', $res['error']);
             }
-            $allowedReturn = ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile'];
+            $allowedReturn = ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile'];
             $returnPage = (string) ($_POST['return_page'] ?? $page);
             if (!in_array($returnPage, $allowedReturn, true)) {
                 $returnPage = 'home';
@@ -231,14 +231,39 @@ if (!$storeBiz) {
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
             ]);
             if (!empty($result['success'])) {
-                redirect(public_store_url($storeBiz, 'thanks', [
-                    'order' => (string) ($result['order_number'] ?? ''),
-                    'total' => (string) ($result['total_amount'] ?? ''),
+                redirect(public_store_url($storeBiz, 'order', [
+                    'id' => (string) ($result['order_number'] ?? ''),
+                    'new' => '1',
                 ]));
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
             redirect(public_store_url($storeBiz, 'checkout'));
+        }
+
+        if ($action === 'cancel_order') {
+            $orderId = (int) ($_POST['order_id'] ?? 0);
+            $orderNum = trim((string) ($_POST['order_number'] ?? ''));
+            $shopper = get_storefront_shopper($bid);
+            $res = cancel_storefront_order($bid, $orderId, $shopper ? (int)$shopper['id'] : null);
+            if (!empty($res['success'])) {
+                set_flash('success', $res['message'] ?? 'Order cancelled successfully.');
+            } else {
+                set_flash('error', $res['message'] ?? 'Could not cancel order.');
+            }
+            redirect(public_store_url($storeBiz, 'order', ['id' => $orderNum !== '' ? $orderNum : $orderId]));
+        }
+
+        if ($action === 'reorder') {
+            $orderId = (int) ($_POST['order_id'] ?? 0);
+            $res = reorder_storefront_order($bid, $orderId);
+            if (!empty($res['success'])) {
+                set_flash('success', 'Items added to your cart.');
+                redirect(public_store_url($storeBiz, 'checkout'));
+            } else {
+                set_flash('error', $res['message'] ?? 'Could not reorder items.');
+                redirect(public_store_url($storeBiz, 'orders'));
+            }
         }
     }
 
@@ -787,13 +812,18 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-radius: 999px;
         }
         .ms-product-attr {
-            font-size: 13px;
-            font-weight: 700;
-            color: #0f172a;
-            text-transform: uppercase;
-            line-height: 1.35;
-            margin: 5px 0 6px;
-            letter-spacing: 0.01em;
+            font-size: 12.5px;
+            font-weight: 400;
+            color: #64748b;
+            text-transform: none;
+            line-height: 1.4;
+            margin: 4px 0 6px;
+            letter-spacing: normal;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
         }
         .ms-product-desc {
             font-size: 12px;
@@ -1970,7 +2000,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php else: ?>
                         <div class="ms-form-card" style="max-width:580px;">
                             <h1 style="font-size:20px;font-weight:800;margin-bottom:18px;color:#0f172a;">Review & Place Order</h1>
-                            <form method="post">
+                            <form method="post" id="msCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="place_order">
                                 <input type="hidden" name="name" value="<?= e($locName) ?>">
@@ -2026,19 +2056,27 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <?php elseif ($page === 'orders' && $storeShopper):
                 $myOrders = get_storefront_customer_orders($bid, (int) $storeShopper['id']);
                 ?>
-                <div class="ms-form-card">
-                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Orders</h1>
+                <div class="ms-form-card" style="max-width:600px;">
+                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">My Orders</h1>
                     <?php if (!$myOrders): ?>
                         <div class="ms-empty" style="padding:24px 0">You have no orders yet.</div>
                     <?php else: ?>
-                        <?php foreach ($myOrders as $ord): ?>
-                            <div class="ms-cart-line">
+                        <?php foreach ($myOrders as $ord): 
+                            $ordNum = (string) ($ord['order_number'] ?? ('#' . $ord['id']));
+                            $ordDate = !empty($ord['created_at']) ? date('M j, Y · g:i A', strtotime($ord['created_at'])) : '';
+                            $ordStatus = ucfirst((string) ($ord['order_status'] ?? 'pending'));
+                            $ordUrl = public_store_url($storeBiz, 'order', ['id' => $ord['order_number'] ?: $ord['id']]);
+                        ?>
+                            <a href="<?= e($ordUrl) ?>" class="ms-cart-line" style="text-decoration:none;color:inherit;cursor:pointer;transition:background 0.15s;padding:12px 10px;border-radius:10px;">
                                 <div>
-                                    <strong><?= e((string) ($ord['order_number'] ?? ('#' . $ord['id']))) ?></strong>
-                                    <div class="ms-item-meta"><?= e((string) ($ord['created_at'] ?? '')) ?> · <?= e((string) ($ord['order_status'] ?? '')) ?></div>
+                                    <strong style="color:#0f172a;font-size:14.5px;"><?= e($ordNum) ?></strong>
+                                    <div class="ms-item-meta" style="margin-top:2px;"><?= e($ordDate) ?> · <span style="font-weight:600;color:var(--ms-header,#083d30);"><?= e($ordStatus) ?></span></div>
                                 </div>
-                                <div style="font-weight:700"><?= sf_money($currency, (float) ($ord['total_amount'] ?? 0)) ?></div>
-                            </div>
+                                <div style="display:flex;align-items:center;gap:6px;">
+                                    <span style="font-weight:800;color:#0f172a;font-size:15px;"><?= sf_money($currency, (float) ($ord['total_amount'] ?? 0)) ?></span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                                </div>
+                            </a>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
@@ -2140,14 +2178,182 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     </form>
                 </div>
 
-            <?php elseif ($page === 'thanks'): ?>
-                <div class="ms-form-card" style="text-align:center">
-                    <div class="ms-empty" style="padding:20px 0">
-                        <h1 style="color:#0f172a;font-size:24px;font-weight:800;margin-bottom:8px">Order Placed Successfully! 🎉</h1>
-                        <?php if (!empty($_GET['order'])): ?><p style="font-size:15px;color:#334155">Order ID: <strong><?= e((string) $_GET['order']) ?></strong></p><?php endif; ?>
-                        <a class="ms-btn" href="<?= e($homeUrl) ?>" style="margin-top:20px;display:inline-flex;width:auto">Continue Shopping</a>
+            <?php elseif ($page === 'order' || $page === 'thanks'):
+                $ordParam = trim((string)($_GET['id'] ?? $_GET['order'] ?? ''));
+                $order = $ordParam !== '' ? get_storefront_order_details($bid, $ordParam, $storeShopper ? (int)$storeShopper['id'] : null) : null;
+                $isNewOrder = !empty($_GET['new']);
+                ?>
+                <?php if (!$order): ?>
+                    <div class="ms-order-view-wrap">
+                        <div class="ms-order-card" style="text-align:center;padding:40px 20px;">
+                            <div style="font-size:38px;margin-bottom:12px;">📦</div>
+                            <h1 style="font-size:20px;font-weight:800;color:#0f172a;margin:0 0 6px;">Order Details</h1>
+                            <p style="font-size:14px;color:#64748b;margin:0 0 20px;">We could not find the requested order details.</p>
+                            <a class="ms-btn" href="<?= e(public_store_url($storeBiz, $storeShopper ? 'orders' : 'home')) ?>" style="display:inline-flex;width:auto;">
+                                <?= $storeShopper ? 'View My Orders' : 'Continue Shopping' ?>
+                            </a>
+                        </div>
                     </div>
-                </div>
+                <?php else:
+                    $orderId = (int)$order['id'];
+                    $orderNum = (string)($order['order_number'] ?? ('#' . $orderId));
+                    $ordTotal = (float)($order['total_amount'] ?? 0);
+                    $ordStatus = strtolower((string)($order['order_status'] ?? 'pending'));
+                    $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing'], true);
+                    $ordType = (($order['payment_method'] ?? '') === 'pickup') ? 'Store Pickup' : 'Home Delivery';
+                    $custName = trim((string)($order['customer_name'] ?? $storeShopper['name'] ?? 'Guest Customer'));
+                    $custPhone = trim((string)($order['customer_phone'] ?? $storeShopper['phone'] ?? ''));
+                    $custAddress = trim((string)($order['customer_address'] ?? $storeShopper['address'] ?? ''));
+                    ?>
+                    <div class="ms-order-view-wrap">
+                        <?php if ($isNewOrder): ?>
+                            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                                <div style="width:32px;height:32px;border-radius:50%;background:#16a34a;color:#ffffff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                </div>
+                                <div>
+                                    <div style="font-weight:800;color:#166534;font-size:15px;">Order Placed Successfully! 🎉</div>
+                                    <div style="font-size:13px;color:#15803d;">Thank you for shopping with us.</div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="ms-order-view-header">
+                            <a href="<?= e(public_store_url($storeBiz, $storeShopper ? 'orders' : 'home')) ?>" class="ms-order-view-back">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                <span>Order Details</span>
+                            </a>
+                        </div>
+
+                        <!-- Card 1: Order Meta & Status -->
+                        <div class="ms-order-card">
+                            <div class="ms-order-top-row">
+                                <div class="ms-order-id">Order ID <?= e($orderNum) ?></div>
+                                <div class="ms-order-total-price"><?= sf_money($currency, $ordTotal) ?></div>
+                            </div>
+                            <div class="ms-order-type">Order Type: <?= e($ordType) ?></div>
+                            <div class="ms-order-status-pill status-<?= e($ordStatus) ?>">
+                                <span>📦</span>
+                                <span>Order Status: <?= e($order['order_status_label']) ?></span>
+                            </div>
+                            <div class="ms-order-date">Ordered on <?= e($order['formatted_date']) ?></div>
+                        </div>
+
+                        <!-- Card 2: Payment Status -->
+                        <div class="ms-order-card">
+                            <div class="ms-order-sec-title">Payment Status</div>
+                            <div class="ms-order-payment-row">
+                                <div class="ms-order-payment-method">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                    <span><?= e($order['payment_method_label']) ?></span>
+                                </div>
+                                <span class="ms-order-payment-badge <?= e($order['payment_status_badge']) ?>"><?= e($order['payment_status_label']) ?></span>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Shipping Address -->
+                        <div class="ms-order-card">
+                            <div class="ms-order-sec-title">Shipping Address</div>
+                            <div class="ms-order-addr-name"><?= e($custName) ?></div>
+                            <?php if ($custAddress !== ''): ?>
+                                <div class="ms-order-addr-text"><?= nl2br(e($custAddress)) ?></div>
+                            <?php endif; ?>
+                            <?php if ($custPhone !== ''): ?>
+                                <div class="ms-order-addr-phone">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                    <span><?= e($custPhone) ?></span>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Card 4: Items & Cost Summary -->
+                        <div class="ms-order-card">
+                            <div class="ms-order-sec-title">Items</div>
+                            <table class="ms-order-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Particulars</th>
+                                        <th style="text-align:right;">Rate</th>
+                                        <th style="text-align:center;">Qty</th>
+                                        <th style="text-align:right;">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php 
+                                    $calcSubtotal = 0;
+                                    $calcTax = (float)($order['tax_amount'] ?? 0);
+                                    foreach ($order['items'] as $item): 
+                                        $iPrice = (float)($item['unit_price'] ?? 0);
+                                        $iQty = (int)($item['quantity'] ?? 1);
+                                        $iTotal = (float)($item['line_total'] ?? ($iPrice * $iQty));
+                                        $calcSubtotal += $iTotal;
+                                        $iImg = sf_product_image($item['image_path'] ?? null);
+                                    ?>
+                                        <tr>
+                                            <td>
+                                                <div class="ms-order-item-prod">
+                                                    <?php if ($iImg): ?>
+                                                        <img src="<?= e($iImg) ?>" alt="" class="ms-order-item-img">
+                                                    <?php else: ?>
+                                                        <div class="ms-order-item-img" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:16px;">📦</div>
+                                                    <?php endif; ?>
+                                                    <div>
+                                                        <div class="ms-order-item-name"><?= e((string)$item['product_name']) ?></div>
+                                                        <?php if (!empty($item['product_sku'])): ?>
+                                                            <div class="ms-order-item-sku"><?= e((string)$item['product_sku']) ?></div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td style="text-align:right;white-space:nowrap;font-weight:600;"><?= sf_money($currency, $iPrice) ?></td>
+                                            <td style="text-align:center;font-weight:600;"><?= $iQty ?></td>
+                                            <td style="text-align:right;white-space:nowrap;font-weight:700;"><?= sf_money($currency, $iTotal) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+
+                            <div class="ms-order-summary-box">
+                                <div class="ms-order-summary-row">
+                                    <span>Sub Total (Tax Excluded)</span>
+                                    <span><?= sf_money($currency, max(0, $calcSubtotal - $calcTax)) ?></span>
+                                </div>
+                                <div class="ms-order-summary-row">
+                                    <span>Delivery Charge</span>
+                                    <span style="color:#16a34a;font-weight:600;">Free</span>
+                                </div>
+                                <?php if ($calcTax > 0): ?>
+                                    <div class="ms-order-summary-row">
+                                        <span>Tax</span>
+                                        <span><?= sf_money($currency, $calcTax) ?></span>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="ms-order-summary-row is-total">
+                                    <span>To be Paid</span>
+                                    <span><?= sf_money($currency, $ordTotal) ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Actions: Cancel Order & Reorder -->
+                        <div class="ms-order-actions-bar">
+                            <?php if ($canCancel): ?>
+                                <button type="button" class="ms-order-btn-cancel" onclick="openCancelOrderModal(<?= $orderId ?>, '<?= e(addslashes($orderNum)) ?>')">
+                                    Cancel Order
+                                </button>
+                            <?php endif; ?>
+
+                            <form method="post" style="flex:1;display:flex;margin:0;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="reorder">
+                                <input type="hidden" name="order_id" value="<?= $orderId ?>">
+                                <button type="submit" class="ms-order-btn-reorder">
+                                    Reorder
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
             <?php elseif ($page === 'privacy'):
                 $customPolicy = trim((string)($brand['privacy_policy'] ?? ''));
@@ -2630,6 +2836,38 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     </aside>
 </div>
 <?php endif; ?>
+
+<!-- Place Order Confirmation Modal (Reference Confirm Dialog) -->
+<div class="ms-confirm-modal-overlay" id="msConfirmOrderModal" hidden aria-hidden="true">
+    <div class="ms-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="msConfirmOrderTitle">
+        <h3 class="ms-confirm-title" id="msConfirmOrderTitle">Confirm</h3>
+        <p class="ms-confirm-msg">Do you wish to proceed ?</p>
+        <div class="ms-confirm-actions">
+            <button type="button" class="ms-confirm-btn-cancel" onclick="closeConfirmOrderModal()">Cancel</button>
+            <button type="button" class="ms-confirm-btn-proceed" id="msConfirmProceedBtn" onclick="proceedConfirmOrder()">Proceed</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Order Confirmation Modal -->
+<div class="ms-confirm-modal-overlay" id="msCancelOrderModal" hidden aria-hidden="true">
+    <div class="ms-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="msCancelOrderTitle">
+        <h3 class="ms-confirm-title" id="msCancelOrderTitle" style="color:#e11d48;">Cancel Order</h3>
+        <p class="ms-confirm-msg">Are you sure you want to cancel this order?</p>
+        <div class="ms-confirm-actions">
+            <button type="button" class="ms-confirm-btn-cancel" onclick="closeCancelOrderModal()">Keep Order</button>
+            <button type="button" class="ms-confirm-btn-proceed" id="msCancelProceedBtn" style="background:#e11d48;" onclick="proceedCancelOrder()">Yes, Cancel</button>
+        </div>
+    </div>
+</div>
+
+<form method="post" id="msCancelOrderForm" style="display:none;">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="cancel_order">
+    <input type="hidden" name="order_id" value="">
+    <input type="hidden" name="order_number" value="">
+</form>
+
 <script>
 (function () {
     function lockBody() {
@@ -3045,6 +3283,88 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
+}
+
+var msCheckoutFormPending = null;
+function handleCheckoutSubmit(e, form) {
+    if (form.dataset.confirmed === '1') {
+        return true;
+    }
+    if (e) e.preventDefault();
+    msCheckoutFormPending = form;
+    openConfirmOrderModal();
+    return false;
+}
+
+function openConfirmOrderModal() {
+    var modal = document.getElementById('msConfirmOrderModal');
+    if (modal) {
+        modal.classList.add('is-open');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function closeConfirmOrderModal() {
+    var modal = document.getElementById('msConfirmOrderModal');
+    if (modal) {
+        modal.classList.remove('is-open');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    msCheckoutFormPending = null;
+}
+
+function proceedConfirmOrder() {
+    if (msCheckoutFormPending) {
+        msCheckoutFormPending.dataset.confirmed = '1';
+        var btn = document.getElementById('msConfirmProceedBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Placing order...';
+        }
+        msCheckoutFormPending.submit();
+    }
+}
+
+var msCancelOrderIdPending = null;
+var msCancelOrderNumPending = '';
+
+function openCancelOrderModal(orderId, orderNum) {
+    msCancelOrderIdPending = orderId;
+    msCancelOrderNumPending = orderNum || '';
+    var modal = document.getElementById('msCancelOrderModal');
+    if (modal) {
+        modal.classList.add('is-open');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function closeCancelOrderModal() {
+    var modal = document.getElementById('msCancelOrderModal');
+    if (modal) {
+        modal.classList.remove('is-open');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    msCancelOrderIdPending = null;
+}
+
+function proceedCancelOrder() {
+    if (msCancelOrderIdPending) {
+        var form = document.getElementById('msCancelOrderForm');
+        if (form) {
+            form.querySelector('input[name="order_id"]').value = msCancelOrderIdPending;
+            form.querySelector('input[name="order_number"]').value = msCancelOrderNumPending;
+            var btn = document.getElementById('msCancelProceedBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Cancelling...';
+            }
+            form.submit();
+        }
+    }
 }
 </script>
 </body>
