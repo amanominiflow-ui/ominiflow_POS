@@ -384,7 +384,9 @@ if (!function_exists('storefront_parse_product_display_info')) {
         return [
             'variants' => $variants,
             'variant_count' => $varCount,
+            'variantCount' => $varCount,
             'attr_text' => $attrText,
+            'attrText' => $attrText,
             'selling_price' => $sellingPrice,
             'mrp' => $mrp,
             'discount_percent' => $discountPercent,
@@ -393,7 +395,7 @@ if (!function_exists('storefront_parse_product_display_info')) {
 }
 
 $favicon = get_storefront_dynamic_favicon_url($brand, $pageTitle);
-$fontSize = in_array(($brand['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? $brand['font_size'] : 'medium';
+$fontSize = (isset($brand['font_size']) && in_array($brand['font_size'], ['small', 'medium', 'large'], true)) ? $brand['font_size'] : 'medium';
 $headerText = (string) ($brand['header_text_color'] ?? '#ffffff');
 $buttonText = (string) ($brand['button_text_color'] ?? '#ffffff');
 
@@ -3371,6 +3373,8 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
+}
+
 function goToCartOrderSummary() {
     var hasLocation = <?= (!empty($hasDeliveryLoc)) ? 'true' : 'false' ?>;
     if (!hasLocation) {
