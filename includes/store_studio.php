@@ -181,9 +181,9 @@ function studio_cat_placeholder(): string {
             background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); }
         .st-banner h4 { margin: 0; font-size: 1.15em; line-height: 1.2; font-weight: 800; }
         .st-banner p { margin: 4px 0 0; font-size: .85em; opacity: .92; }
-        .st-dots { display: flex; justify-content: center; gap: 4px; margin-top: 7px; }
-        .st-dots i { width: 5px; height: 5px; border-radius: 50%; background: #cbd5e1; display: block; }
-        .st-dots i.on { background: #2563eb; }
+        .st-dots { display: flex; justify-content: center; gap: 5px; margin-top: 7px; }
+        .st-dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; display: block; cursor: pointer; transition: all 0.2s ease; }
+        .st-dots i.on { background: #2563eb; width: 14px; border-radius: 999px; }
 
         .st-item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .st-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
@@ -401,17 +401,45 @@ function studio_cat_placeholder(): string {
                                         <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-h" id="canvasBannerName" style="<?= !empty($brand['show_banner_section_name']) ? '' : 'display:none' ?>"><?= e($brand['banner_section_name'] ?: 'Banners') ?></div>
-                                        <div class="st-banner">
-                                            <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "We're online now!") ?></h4>
-                                            <p id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></p>
-                                            <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
-                                                <rect x="18" y="28" width="28" height="22" rx="2" fill="#fbbf24" transform="rotate(-12 18 28)"/>
-                                                <path d="M40 18 L68 10 L80 28 L52 36 Z" fill="#f59e0b"/>
-                                                <path d="M40 18 L52 36 L52 52 L40 34 Z" fill="#d97706"/>
-                                                <path d="M20 22 C8 14 6 28 16 32" stroke="#fff" stroke-width="2" fill="none"/>
-                                            </svg>
+                                        <div class="st-banner" id="canvasBannerCard" style="background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); transition: all 0.25s ease;">
+                                            <!-- Banner 1 Slide -->
+                                            <div id="canvasSlide1" class="st-banner-slide">
+                                                <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "We're online now!") ?></h4>
+                                                <p id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <rect x="18" y="28" width="28" height="22" rx="2" fill="#fbbf24" transform="rotate(-12 18 28)"/>
+                                                    <path d="M40 18 L68 10 L80 28 L52 36 Z" fill="#f59e0b"/>
+                                                    <path d="M40 18 L52 36 L52 52 L40 34 Z" fill="#d97706"/>
+                                                    <path d="M20 22 C8 14 6 28 16 32" stroke="#fff" stroke-width="2" fill="none"/>
+                                                </svg>
+                                            </div>
+                                            <!-- Banner 2 Slide -->
+                                            <div id="canvasSlide2" class="st-banner-slide" style="display:none;">
+                                                <div id="canvasBanner2Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_2_tag'] ?? 'Best deal,') ?></div>
+                                                <h4 id="canvasBanner2Title"><?= e($brand['banner_2_title'] ?? 'Start Shopping') ?></h4>
+                                                <p id="canvasBanner2Sub"><?= e($brand['banner_2_subtitle'] ?? 'and discover the best deals!') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <circle cx="60" cy="20" r="10" fill="#ffffff" opacity="0.95"/>
+                                                    <path d="M50 35 C50 20, 68 20, 68 35" fill="none" stroke="#fef3c7" stroke-width="2"/>
+                                                    <path d="M44 35 L74 35 L70 62 L48 62 Z" fill="#e09f67"/>
+                                                </svg>
+                                            </div>
+                                            <!-- Banner 3 Slide -->
+                                            <div id="canvasSlide3" class="st-banner-slide" style="display:none;">
+                                                <div id="canvasBanner3Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_3_tag'] ?? 'Order') ?></div>
+                                                <h4 id="canvasBanner3Title" style="font-style:italic;"><?= e($brand['banner_3_title'] ?? 'with Ease') ?></h4>
+                                                <p id="canvasBanner3Sub" style="margin-top:4px;font-weight:600;"><?= e($brand['banner_3_subtitle'] ?? 'with Speed') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <circle cx="65" cy="22" r="3" fill="#ffffff"/>
+                                                    <path d="M60 16 C57 16, 53 19, 53 23 C53 29, 60 35, 60 35 C60 35, 67 29, 67 23 C67 19, 63 16, 60 16 Z" fill="#ef4444"/>
+                                                </svg>
+                                            </div>
                                         </div>
-                                        <div class="st-dots"><i class="on"></i><i></i><i></i></div>
+                                        <div class="st-dots">
+                                            <i class="on" id="stDot1" onclick="event.stopPropagation(); switchBannerTab(1)"></i>
+                                            <i id="stDot2" onclick="event.stopPropagation(); switchBannerTab(2)"></i>
+                                            <i id="stDot3" onclick="event.stopPropagation(); switchBannerTab(3)"></i>
+                                        </div>
                                     </div>
                                 <?php else: ?>
                                     <div class="st-sec" id="secItem" data-sec="item" onclick="selectSec(event,'item')" <?= empty($brand['show_items']) ? 'style="display:none"' : '' ?>>
@@ -656,10 +684,41 @@ function studio_cat_placeholder(): string {
                                 <input type="checkbox" name="show_banner_section_name" value="1" <?= !empty($brand['show_banner_section_name']) ? 'checked' : '' ?> onchange="document.getElementById('canvasBannerName').style.display=this.checked?'block':'none'">
                                 <span>Show section name</span>
                             </label>
-                            <label class="st-label">Banner title</label>
-                            <input class="st-input" type="text" name="banner_title" value="<?= e($brand['banner_title']) ?>" oninput="document.getElementById('canvasBannerTitle').textContent=this.value" style="margin-bottom:12px">
-                            <label class="st-label">Banner subtitle</label>
-                            <input class="st-input" type="text" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>" oninput="document.getElementById('canvasBannerSub').textContent=this.value">
+
+                            <div class="st-sec-title" style="margin-top:16px">Customize Banners (3 Slides)</div>
+                            <div class="st-tabs" style="margin-bottom:14px">
+                                <button type="button" class="st-tab on" id="tabBanner1" onclick="switchBannerTab(1)">Banner 1</button>
+                                <button type="button" class="st-tab" id="tabBanner2" onclick="switchBannerTab(2)">Banner 2</button>
+                                <button type="button" class="st-tab" id="tabBanner3" onclick="switchBannerTab(3)">Banner 3</button>
+                            </div>
+
+                            <!-- Banner 1 -->
+                            <div id="bannerGroup1">
+                                <label class="st-label">Banner 1 Title</label>
+                                <input class="st-input" type="text" name="banner_title" value="<?= e($brand['banner_title']) ?>" placeholder="e.g. We're online now!" oninput="updateBannerCanvas(1)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 1 Subtitle</label>
+                                <input class="st-input" type="text" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>" placeholder="e.g. Stay at home and shop online." oninput="updateBannerCanvas(1)">
+                            </div>
+
+                            <!-- Banner 2 -->
+                            <div id="bannerGroup2" class="st-hidden">
+                                <label class="st-label">Banner 2 Tag</label>
+                                <input class="st-input" type="text" name="banner_2_tag" value="<?= e($brand['banner_2_tag'] ?? 'Best deal,') ?>" placeholder="e.g. Best deal," oninput="updateBannerCanvas(2)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 2 Title</label>
+                                <input class="st-input" type="text" name="banner_2_title" value="<?= e($brand['banner_2_title'] ?? 'Start Shopping') ?>" placeholder="e.g. Start Shopping" oninput="updateBannerCanvas(2)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 2 Subtitle</label>
+                                <input class="st-input" type="text" name="banner_2_subtitle" value="<?= e($brand['banner_2_subtitle'] ?? 'and discover the best deals!') ?>" placeholder="e.g. and discover the best deals!" oninput="updateBannerCanvas(2)">
+                            </div>
+
+                            <!-- Banner 3 -->
+                            <div id="bannerGroup3" class="st-hidden">
+                                <label class="st-label">Banner 3 Tag / Prefix</label>
+                                <input class="st-input" type="text" name="banner_3_tag" value="<?= e($brand['banner_3_tag'] ?? 'Order') ?>" placeholder="e.g. Order" oninput="updateBannerCanvas(3)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 3 Title</label>
+                                <input class="st-input" type="text" name="banner_3_title" value="<?= e($brand['banner_3_title'] ?? 'with Ease') ?>" placeholder="e.g. with Ease" oninput="updateBannerCanvas(3)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 3 Subtitle / Action</label>
+                                <input class="st-input" type="text" name="banner_3_subtitle" value="<?= e($brand['banner_3_subtitle'] ?? 'with Speed') ?>" placeholder="e.g. with Speed" oninput="updateBannerCanvas(3)">
+                            </div>
                         </div>
 
                         <div id="editItem" class="st-hidden">
@@ -818,6 +877,61 @@ function menuAction(kind) {
         toggleSec(key, false);
     }
 }
+function switchBannerTab(idx) {
+    [1, 2, 3].forEach(i => {
+        const tab = document.getElementById('tabBanner' + i);
+        const group = document.getElementById('bannerGroup' + i);
+        const slide = document.getElementById('canvasSlide' + i);
+        const dot = document.getElementById('stDot' + i);
+        if (tab) tab.classList.toggle('on', i === idx);
+        if (group) group.classList.toggle('st-hidden', i !== idx);
+        if (slide) slide.style.display = (i === idx) ? 'block' : 'none';
+        if (dot) dot.classList.toggle('on', i === idx);
+    });
+
+    const card = document.getElementById('canvasBannerCard');
+    if (card) {
+        if (idx === 1) {
+            card.style.background = 'linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9)';
+        } else if (idx === 2) {
+            card.style.background = 'linear-gradient(135deg, #1e60d5 0%, #2563eb 100%)';
+        } else if (idx === 3) {
+            card.style.background = 'linear-gradient(135deg, #582098 0%, #7c3aed 100%)';
+        }
+    }
+}
+
+function updateBannerCanvas(idx) {
+    if (idx === 1) {
+        const t = document.querySelector('input[name="banner_title"]')?.value || "We're online now!";
+        const s = document.querySelector('input[name="banner_subtitle"]')?.value || 'Stay at home and shop online.';
+        const elT = document.getElementById('canvasBannerTitle');
+        const elS = document.getElementById('canvasBannerSub');
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    } else if (idx === 2) {
+        const tag = document.querySelector('input[name="banner_2_tag"]')?.value || 'Best deal,';
+        const t = document.querySelector('input[name="banner_2_title"]')?.value || 'Start Shopping';
+        const s = document.querySelector('input[name="banner_2_subtitle"]')?.value || 'and discover the best deals!';
+        const elTag = document.getElementById('canvasBanner2Tag');
+        const elT = document.getElementById('canvasBanner2Title');
+        const elS = document.getElementById('canvasBanner2Sub');
+        if (elTag) elTag.textContent = tag;
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    } else if (idx === 3) {
+        const tag = document.querySelector('input[name="banner_3_tag"]')?.value || 'Order';
+        const t = document.querySelector('input[name="banner_3_title"]')?.value || 'with Ease';
+        const s = document.querySelector('input[name="banner_3_subtitle"]')?.value || 'with Speed';
+        const elTag = document.getElementById('canvasBanner3Tag');
+        const elT = document.getElementById('canvasBanner3Title');
+        const elS = document.getElementById('canvasBanner3Sub');
+        if (elTag) elTag.textContent = tag;
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    }
+}
+
 function closeLayoutPanel() {
     document.getElementById('panelLayout').classList.remove('open');
     requestAnimationFrame(placeFloatMenu);

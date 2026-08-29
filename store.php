@@ -855,9 +855,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <!-- Banner 2: Start Shopping -->
                         <div class="ms-banner-card ms-banner-2">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-tag">Best deal,</div>
-                                <div class="ms-banner-title">Start<br>Shopping</div>
-                                <div class="ms-banner-sub">and discover the<br>best deals!</div>
+                                <?php
+                                $b2Tag = trim((string)($brand['banner_2_tag'] ?? ''));
+                                $b2Title = trim((string)($brand['banner_2_title'] ?? ''));
+                                $b2Sub = trim((string)($brand['banner_2_subtitle'] ?? ''));
+                                ?>
+                                <div class="ms-banner-tag"><?= e($b2Tag !== '' ? $b2Tag : 'Best deal,') ?></div>
+                                <div class="ms-banner-title"><?= nl2br(e($b2Title !== '' ? $b2Title : 'Start Shopping')) ?></div>
+                                <div class="ms-banner-sub"><?= nl2br(e($b2Sub !== '' ? $b2Sub : 'and discover the best deals!')) ?></div>
                             </div>
                             <div class="ms-banner-art">
                                 <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -919,10 +924,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <!-- Banner 3: Order with Ease, Receive with Speed -->
                         <div class="ms-banner-card ms-banner-3">
                             <div class="ms-banner-info">
-                                <div class="ms-banner-tag" style="font-size:16px;">Order</div>
-                                <div class="ms-banner-title" style="font-style:italic;">with Ease</div>
-                                <div class="ms-banner-tag" style="font-size:16px;margin-top:6px;">Receive</div>
-                                <div class="ms-banner-title" style="font-style:italic;">with Speed</div>
+                                <?php
+                                $b3Tag = trim((string)($brand['banner_3_tag'] ?? ''));
+                                $b3Title = trim((string)($brand['banner_3_title'] ?? ''));
+                                $b3Sub = trim((string)($brand['banner_3_subtitle'] ?? ''));
+                                ?>
+                                <div class="ms-banner-tag" style="font-size:16px;"><?= e($b3Tag !== '' ? $b3Tag : 'Order') ?></div>
+                                <div class="ms-banner-title" style="font-style:italic;"><?= nl2br(e($b3Title !== '' ? $b3Title : 'with Ease')) ?></div>
+                                <div class="ms-banner-sub" style="margin-top:6px;font-weight:600;"><?= nl2br(e($b3Sub !== '' ? $b3Sub : 'with Speed')) ?></div>
                             </div>
                             <div class="ms-banner-art">
                                 <svg viewBox="0 0 160 135" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
