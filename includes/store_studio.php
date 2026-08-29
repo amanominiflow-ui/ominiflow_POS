@@ -401,9 +401,17 @@ function studio_cat_placeholder(): string {
                                         <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-h" id="canvasBannerName" style="<?= !empty($brand['show_banner_section_name']) ? '' : 'display:none' ?>"><?= e($brand['banner_section_name'] ?: 'Banners') ?></div>
-                                        <div class="st-banner" id="canvasBannerCard" style="background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); transition: all 0.25s ease;">
+                                        <?php
+                                        $b1Bg = !empty($brand['banner_bg_color']) ? $brand['banner_bg_color'] : '#7c3aed';
+                                        $b1Txt = !empty($brand['banner_text_color']) ? $brand['banner_text_color'] : '#ffffff';
+                                        $b2Bg = !empty($brand['banner_2_bg_color']) ? $brand['banner_2_bg_color'] : '#2563eb';
+                                        $b2Txt = !empty($brand['banner_2_text_color']) ? $brand['banner_2_text_color'] : '#ffffff';
+                                        $b3Bg = !empty($brand['banner_3_bg_color']) ? $brand['banner_3_bg_color'] : '#028476';
+                                        $b3Txt = !empty($brand['banner_3_text_color']) ? $brand['banner_3_text_color'] : '#ffffff';
+                                        ?>
+                                        <div class="st-banner" id="canvasBannerCard" style="background: <?= e($b1Bg) ?>; color: <?= e($b1Txt) ?>; transition: all 0.25s ease;">
                                             <!-- Banner 1 Slide -->
-                                            <div id="canvasSlide1" class="st-banner-slide">
+                                            <div id="canvasSlide1" class="st-banner-slide" style="color: <?= e($b1Txt) ?>;">
                                                 <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "We're online now!") ?></h4>
                                                 <p id="canvasBannerSub"><?= e($brand['banner_subtitle'] ?: 'Stay at home and shop online.') ?></p>
                                                 <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
@@ -414,7 +422,7 @@ function studio_cat_placeholder(): string {
                                                 </svg>
                                             </div>
                                             <!-- Banner 2 Slide -->
-                                            <div id="canvasSlide2" class="st-banner-slide" style="display:none;">
+                                            <div id="canvasSlide2" class="st-banner-slide" style="display:none; color: <?= e($b2Txt) ?>;">
                                                 <div id="canvasBanner2Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_2_tag'] ?? 'Best deal,') ?></div>
                                                 <h4 id="canvasBanner2Title"><?= e($brand['banner_2_title'] ?? 'Start Shopping') ?></h4>
                                                 <p id="canvasBanner2Sub"><?= e($brand['banner_2_subtitle'] ?? 'and discover the best deals!') ?></p>
@@ -425,7 +433,7 @@ function studio_cat_placeholder(): string {
                                                 </svg>
                                             </div>
                                             <!-- Banner 3 Slide -->
-                                            <div id="canvasSlide3" class="st-banner-slide" style="display:none;">
+                                            <div id="canvasSlide3" class="st-banner-slide" style="display:none; color: <?= e($b3Txt) ?>;">
                                                 <div id="canvasBanner3Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_3_tag'] ?? 'Order') ?></div>
                                                 <h4 id="canvasBanner3Title" style="font-style:italic;"><?= e($brand['banner_3_title'] ?? 'with Ease') ?></h4>
                                                 <p id="canvasBanner3Sub" style="margin-top:4px;font-weight:600;"><?= e($brand['banner_3_subtitle'] ?? 'with Speed') ?></p>
@@ -697,7 +705,25 @@ function studio_cat_placeholder(): string {
                                 <label class="st-label">Banner 1 Title</label>
                                 <input class="st-input" type="text" name="banner_title" value="<?= e($brand['banner_title']) ?>" placeholder="e.g. We're online now!" oninput="updateBannerCanvas(1)" style="margin-bottom:12px">
                                 <label class="st-label">Banner 1 Subtitle</label>
-                                <input class="st-input" type="text" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>" placeholder="e.g. Stay at home and shop online." oninput="updateBannerCanvas(1)">
+                                <input class="st-input" type="text" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>" placeholder="e.g. Stay at home and shop online." oninput="updateBannerCanvas(1)" style="margin-bottom:14px">
+                                
+                                <div class="st-sec-title">Banner 1 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_bg_color" id="pickerBanner1Bg" value="<?= e($b1Bg) ?>" oninput="syncBannerColor(1, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner1Bg" value="<?= e($b1Bg) ?>" oninput="syncBannerColorHex(1, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_text_color" id="pickerBanner1Txt" value="<?= e($b1Txt) ?>" oninput="syncBannerColor(1, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner1Txt" value="<?= e($b1Txt) ?>" oninput="syncBannerColorHex(1, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Banner 2 -->
@@ -707,7 +733,25 @@ function studio_cat_placeholder(): string {
                                 <label class="st-label">Banner 2 Title</label>
                                 <input class="st-input" type="text" name="banner_2_title" value="<?= e($brand['banner_2_title'] ?? 'Start Shopping') ?>" placeholder="e.g. Start Shopping" oninput="updateBannerCanvas(2)" style="margin-bottom:12px">
                                 <label class="st-label">Banner 2 Subtitle</label>
-                                <input class="st-input" type="text" name="banner_2_subtitle" value="<?= e($brand['banner_2_subtitle'] ?? 'and discover the best deals!') ?>" placeholder="e.g. and discover the best deals!" oninput="updateBannerCanvas(2)">
+                                <input class="st-input" type="text" name="banner_2_subtitle" value="<?= e($brand['banner_2_subtitle'] ?? 'and discover the best deals!') ?>" placeholder="e.g. and discover the best deals!" oninput="updateBannerCanvas(2)" style="margin-bottom:14px">
+
+                                <div class="st-sec-title">Banner 2 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_2_bg_color" id="pickerBanner2Bg" value="<?= e($b2Bg) ?>" oninput="syncBannerColor(2, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner2Bg" value="<?= e($b2Bg) ?>" oninput="syncBannerColorHex(2, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_2_text_color" id="pickerBanner2Txt" value="<?= e($b2Txt) ?>" oninput="syncBannerColor(2, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner2Txt" value="<?= e($b2Txt) ?>" oninput="syncBannerColorHex(2, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Banner 3 -->
@@ -717,7 +761,25 @@ function studio_cat_placeholder(): string {
                                 <label class="st-label">Banner 3 Title</label>
                                 <input class="st-input" type="text" name="banner_3_title" value="<?= e($brand['banner_3_title'] ?? 'with Ease') ?>" placeholder="e.g. with Ease" oninput="updateBannerCanvas(3)" style="margin-bottom:12px">
                                 <label class="st-label">Banner 3 Subtitle / Action</label>
-                                <input class="st-input" type="text" name="banner_3_subtitle" value="<?= e($brand['banner_3_subtitle'] ?? 'with Speed') ?>" placeholder="e.g. with Speed" oninput="updateBannerCanvas(3)">
+                                <input class="st-input" type="text" name="banner_3_subtitle" value="<?= e($brand['banner_3_subtitle'] ?? 'with Speed') ?>" placeholder="e.g. with Speed" oninput="updateBannerCanvas(3)" style="margin-bottom:14px">
+
+                                <div class="st-sec-title">Banner 3 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_3_bg_color" id="pickerBanner3Bg" value="<?= e($b3Bg) ?>" oninput="syncBannerColor(3, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner3Bg" value="<?= e($b3Bg) ?>" oninput="syncBannerColorHex(3, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_3_text_color" id="pickerBanner3Txt" value="<?= e($b3Txt) ?>" oninput="syncBannerColor(3, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner3Txt" value="<?= e($b3Txt) ?>" oninput="syncBannerColorHex(3, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -835,7 +897,7 @@ function openDrawer(kind) {
         'edit-category': ['editCategory', 'Edit Category Component'],
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
-        'theme-banner': ['editBanner', 'Edit Banner Component'],
+        'theme-banner': ['editBanner', 'Banner Theme & Colors'],
         'edit-item': ['editItem', 'Edit Item Component'],
         'theme-item': ['editItem', 'Edit Item Component'],
         'edit-header': ['editHeader', 'Edit Header Component']
@@ -877,7 +939,16 @@ function menuAction(kind) {
         toggleSec(key, false);
     }
 }
+const bannerColors = {
+    1: { bg: '<?= e($b1Bg) ?>', txt: '<?= e($b1Txt) ?>' },
+    2: { bg: '<?= e($b2Bg) ?>', txt: '<?= e($b2Txt) ?>' },
+    3: { bg: '<?= e($b3Bg) ?>', txt: '<?= e($b3Txt) ?>' }
+};
+
+let currentBannerIdx = 1;
+
 function switchBannerTab(idx) {
+    currentBannerIdx = idx;
     [1, 2, 3].forEach(i => {
         const tab = document.getElementById('tabBanner' + i);
         const group = document.getElementById('bannerGroup' + i);
@@ -890,13 +961,49 @@ function switchBannerTab(idx) {
     });
 
     const card = document.getElementById('canvasBannerCard');
-    if (card) {
-        if (idx === 1) {
-            card.style.background = 'linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9)';
-        } else if (idx === 2) {
-            card.style.background = 'linear-gradient(135deg, #1e60d5 0%, #2563eb 100%)';
-        } else if (idx === 3) {
-            card.style.background = 'linear-gradient(135deg, #582098 0%, #7c3aed 100%)';
+    if (card && bannerColors[idx]) {
+        card.style.background = bannerColors[idx].bg;
+        card.style.color = bannerColors[idx].txt;
+    }
+}
+
+function syncBannerColor(idx, type, val) {
+    if (!val) return;
+    if (type === 'bg') {
+        bannerColors[idx].bg = val;
+        const hex = document.getElementById('hexBanner' + idx + 'Bg');
+        if (hex) hex.value = val;
+        if (currentBannerIdx === idx) {
+            const card = document.getElementById('canvasBannerCard');
+            if (card) card.style.background = val;
+        }
+    } else if (type === 'txt') {
+        bannerColors[idx].txt = val;
+        const hex = document.getElementById('hexBanner' + idx + 'Txt');
+        if (hex) hex.value = val;
+        const slide = document.getElementById('canvasSlide' + idx);
+        if (slide) slide.style.color = val;
+        if (currentBannerIdx === idx) {
+            const card = document.getElementById('canvasBannerCard');
+            if (card) card.style.color = val;
+        }
+    }
+}
+
+function syncBannerColorHex(idx, type, val) {
+    if (!val) return;
+    if (!val.startsWith('#')) val = '#' + val;
+    if (type === 'bg') {
+        const picker = document.getElementById('pickerBanner' + idx + 'Bg');
+        if (picker && /^#[0-9A-Fa-f]{6}$/.test(val)) {
+            picker.value = val;
+            syncBannerColor(idx, 'bg', val);
+        }
+    } else if (type === 'txt') {
+        const picker = document.getElementById('pickerBanner' + idx + 'Txt');
+        if (picker && /^#[0-9A-Fa-f]{6}$/.test(val)) {
+            picker.value = val;
+            syncBannerColor(idx, 'txt', val);
         }
     }
 }

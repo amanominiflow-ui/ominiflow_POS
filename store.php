@@ -758,8 +758,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php endif; ?>
                     <div class="ms-banners-grid" id="msBanners">
                         <!-- Banner 1: Merchant Custom / Default Banner -->
-                        <div class="ms-banner-card ms-banner-1">
-                            <div class="ms-banner-info">
+                        <?php
+                        $b1Bg = !empty($brand['banner_bg_color']) ? $brand['banner_bg_color'] : '';
+                        $b1Txt = !empty($brand['banner_text_color']) ? $brand['banner_text_color'] : '';
+                        $b1Style = '';
+                        if ($b1Bg) $b1Style .= 'background:' . e($b1Bg) . ';';
+                        if ($b1Txt) $b1Style .= 'color:' . e($b1Txt) . ';';
+                        ?>
+                        <div class="ms-banner-card ms-banner-1" style="<?= $b1Style ?>">
+                            <div class="ms-banner-info" style="<?= $b1Txt ? 'color:' . e($b1Txt) . ';' : '' ?>">
                                 <?php
                                 $bTitle = trim((string)($brand['banner_title'] ?? ''));
                                 $bSub = trim((string)($brand['banner_subtitle'] ?? ''));
@@ -853,14 +860,21 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         </div>
 
                         <!-- Banner 2: Start Shopping -->
-                        <div class="ms-banner-card ms-banner-2">
-                            <div class="ms-banner-info">
+                        <?php
+                        $b2Bg = !empty($brand['banner_2_bg_color']) ? $brand['banner_2_bg_color'] : '';
+                        $b2Txt = !empty($brand['banner_2_text_color']) ? $brand['banner_2_text_color'] : '';
+                        $b2Style = '';
+                        if ($b2Bg) $b2Style .= 'background:' . e($b2Bg) . ';';
+                        if ($b2Txt) $b2Style .= 'color:' . e($b2Txt) . ';';
+                        ?>
+                        <div class="ms-banner-card ms-banner-2" style="<?= $b2Style ?>">
+                            <div class="ms-banner-info" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>">
                                 <?php
                                 $b2Tag = trim((string)($brand['banner_2_tag'] ?? ''));
                                 $b2Title = trim((string)($brand['banner_2_title'] ?? ''));
                                 $b2Sub = trim((string)($brand['banner_2_subtitle'] ?? ''));
                                 ?>
-                                <div class="ms-banner-tag"><?= e($b2Tag !== '' ? $b2Tag : 'Best deal,') ?></div>
+                                <div class="ms-banner-tag" style="<?= $b2Txt ? 'color:' . e($b2Txt) . ';' : '' ?>"><?= e($b2Tag !== '' ? $b2Tag : 'Best deal,') ?></div>
                                 <div class="ms-banner-title"><?= nl2br(e($b2Title !== '' ? $b2Title : 'Start Shopping')) ?></div>
                                 <div class="ms-banner-sub"><?= nl2br(e($b2Sub !== '' ? $b2Sub : 'and discover the best deals!')) ?></div>
                             </div>
@@ -922,14 +936,21 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         </div>
 
                         <!-- Banner 3: Order with Ease, Receive with Speed -->
-                        <div class="ms-banner-card ms-banner-3">
-                            <div class="ms-banner-info">
+                        <?php
+                        $b3Bg = !empty($brand['banner_3_bg_color']) ? $brand['banner_3_bg_color'] : '';
+                        $b3Txt = !empty($brand['banner_3_text_color']) ? $brand['banner_3_text_color'] : '';
+                        $b3Style = '';
+                        if ($b3Bg) $b3Style .= 'background:' . e($b3Bg) . ';';
+                        if ($b3Txt) $b3Style .= 'color:' . e($b3Txt) . ';';
+                        ?>
+                        <div class="ms-banner-card ms-banner-3" style="<?= $b3Style ?>">
+                            <div class="ms-banner-info" style="<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>">
                                 <?php
                                 $b3Tag = trim((string)($brand['banner_3_tag'] ?? ''));
                                 $b3Title = trim((string)($brand['banner_3_title'] ?? ''));
                                 $b3Sub = trim((string)($brand['banner_3_subtitle'] ?? ''));
                                 ?>
-                                <div class="ms-banner-tag" style="font-size:16px;"><?= e($b3Tag !== '' ? $b3Tag : 'Order') ?></div>
+                                <div class="ms-banner-tag" style="font-size:16px;<?= $b3Txt ? 'color:' . e($b3Txt) . ';' : '' ?>"><?= e($b3Tag !== '' ? $b3Tag : 'Order') ?></div>
                                 <div class="ms-banner-title" style="font-style:italic;"><?= nl2br(e($b3Title !== '' ? $b3Title : 'with Ease')) ?></div>
                                 <div class="ms-banner-sub" style="margin-top:6px;font-weight:600;"><?= nl2br(e($b3Sub !== '' ? $b3Sub : 'with Speed')) ?></div>
                             </div>

@@ -137,12 +137,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_POST['category_rows'])) $saveData['category_rows'] = (int)$_POST['category_rows'];
             if (isset($_POST['banner_section_name'])) $saveData['banner_section_name'] = $_POST['banner_section_name'];
             $saveData['show_banner_section_name'] = !empty($_POST['show_banner_section_name']);
+            if (isset($_POST['banner_bg_color'])) $saveData['banner_bg_color'] = $_POST['banner_bg_color'];
+            if (isset($_POST['banner_text_color'])) $saveData['banner_text_color'] = $_POST['banner_text_color'];
             if (isset($_POST['banner_2_tag'])) $saveData['banner_2_tag'] = $_POST['banner_2_tag'];
             if (isset($_POST['banner_2_title'])) $saveData['banner_2_title'] = $_POST['banner_2_title'];
             if (isset($_POST['banner_2_subtitle'])) $saveData['banner_2_subtitle'] = $_POST['banner_2_subtitle'];
+            if (isset($_POST['banner_2_bg_color'])) $saveData['banner_2_bg_color'] = $_POST['banner_2_bg_color'];
+            if (isset($_POST['banner_2_text_color'])) $saveData['banner_2_text_color'] = $_POST['banner_2_text_color'];
             if (isset($_POST['banner_3_tag'])) $saveData['banner_3_tag'] = $_POST['banner_3_tag'];
             if (isset($_POST['banner_3_title'])) $saveData['banner_3_title'] = $_POST['banner_3_title'];
             if (isset($_POST['banner_3_subtitle'])) $saveData['banner_3_subtitle'] = $_POST['banner_3_subtitle'];
+            if (isset($_POST['banner_3_bg_color'])) $saveData['banner_3_bg_color'] = $_POST['banner_3_bg_color'];
+            if (isset($_POST['banner_3_text_color'])) $saveData['banner_3_text_color'] = $_POST['banner_3_text_color'];
             if (isset($_POST['item_section_name'])) $saveData['item_section_name'] = $_POST['item_section_name'];
             if (isset($_POST['section_order'])) $saveData['section_order'] = $_POST['section_order'];
             if (isset($_POST['category_mode'])) {

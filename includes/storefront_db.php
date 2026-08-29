@@ -113,12 +113,18 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_rows', "INT NOT NULL DEFAULT 2");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_section_name', "VARCHAR(191) NOT NULL DEFAULT 'Banners'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_banner_section_name', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#7c3aed'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_2_tag', "VARCHAR(191) NULL DEFAULT 'Best deal,'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_2_title', "VARCHAR(191) NULL DEFAULT 'Start Shopping'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_2_subtitle', "VARCHAR(255) NULL DEFAULT 'and discover the best deals!'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_2_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#2563eb'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_2_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_tag', "VARCHAR(191) NULL DEFAULT 'Order'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_title', "VARCHAR(191) NULL DEFAULT 'with Ease'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_subtitle', "VARCHAR(255) NULL DEFAULT 'with Speed'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#028476'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'item_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Items'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'section_order', "VARCHAR(191) NOT NULL DEFAULT 'category,banner,item'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'font_size', "VARCHAR(20) NOT NULL DEFAULT 'medium'");
@@ -524,12 +530,18 @@ function get_mobile_store_settings(int $businessId): array {
         'category_rows' => (int) ($row['category_rows'] ?? 2),
         'banner_section_name' => (string) ($row['banner_section_name'] ?? 'Banners'),
         'show_banner_section_name' => (int) ($row['show_banner_section_name'] ?? 0) === 1,
+        'banner_bg_color' => (string) ($row['banner_bg_color'] ?? '#7c3aed'),
+        'banner_text_color' => (string) ($row['banner_text_color'] ?? '#ffffff'),
         'banner_2_tag' => (string) ($row['banner_2_tag'] ?? 'Best deal,'),
         'banner_2_title' => (string) ($row['banner_2_title'] ?? 'Start Shopping'),
         'banner_2_subtitle' => (string) ($row['banner_2_subtitle'] ?? 'and discover the best deals!'),
+        'banner_2_bg_color' => (string) ($row['banner_2_bg_color'] ?? '#2563eb'),
+        'banner_2_text_color' => (string) ($row['banner_2_text_color'] ?? '#ffffff'),
         'banner_3_tag' => (string) ($row['banner_3_tag'] ?? 'Order'),
         'banner_3_title' => (string) ($row['banner_3_title'] ?? 'with Ease'),
         'banner_3_subtitle' => (string) ($row['banner_3_subtitle'] ?? 'with Speed'),
+        'banner_3_bg_color' => (string) ($row['banner_3_bg_color'] ?? '#028476'),
+        'banner_3_text_color' => (string) ($row['banner_3_text_color'] ?? '#ffffff'),
         'item_section_name' => (string) ($row['item_section_name'] ?? 'All Items'),
         'section_order' => (string) ($row['section_order'] ?? 'category,banner,item'),
         'font_size' => in_array(($row['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? (string) $row['font_size'] : 'medium',
@@ -674,12 +686,18 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             category_rows = :crow,
             banner_section_name = :bsn,
             show_banner_section_name = :sbsn,
+            banner_bg_color = :bbg,
+            banner_text_color = :btxt,
             banner_2_tag = :b2tag,
             banner_2_title = :b2title,
             banner_2_subtitle = :b2sub,
+            banner_2_bg_color = :b2bg,
+            banner_2_text_color = :b2txt,
             banner_3_tag = :b3tag,
             banner_3_title = :b3title,
             banner_3_subtitle = :b3sub,
+            banner_3_bg_color = :b3bg,
+            banner_3_text_color = :b3txt,
             item_section_name = :isn,
             section_order = :sord,
             font_size = :fsize,
@@ -731,12 +749,18 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'crow' => isset($data['category_rows']) ? (int)$data['category_rows'] : (int)$current['category_rows'],
         'bsn' => trim((string)($data['banner_section_name'] ?? $current['banner_section_name'])),
         'sbsn' => array_key_exists('show_banner_section_name', $data) ? (!empty($data['show_banner_section_name']) ? 1 : 0) : ($current['show_banner_section_name'] ? 1 : 0),
+        'bbg' => normalize_hex_color((string)($data['banner_bg_color'] ?? $current['banner_bg_color'] ?? '#7c3aed'), '#7c3aed'),
+        'btxt' => normalize_hex_color((string)($data['banner_text_color'] ?? $current['banner_text_color'] ?? '#ffffff'), '#ffffff'),
         'b2tag' => trim((string)($data['banner_2_tag'] ?? $current['banner_2_tag'] ?? 'Best deal,')),
         'b2title' => trim((string)($data['banner_2_title'] ?? $current['banner_2_title'] ?? 'Start Shopping')),
         'b2sub' => trim((string)($data['banner_2_subtitle'] ?? $current['banner_2_subtitle'] ?? 'and discover the best deals!')),
+        'b2bg' => normalize_hex_color((string)($data['banner_2_bg_color'] ?? $current['banner_2_bg_color'] ?? '#2563eb'), '#2563eb'),
+        'b2txt' => normalize_hex_color((string)($data['banner_2_text_color'] ?? $current['banner_2_text_color'] ?? '#ffffff'), '#ffffff'),
         'b3tag' => trim((string)($data['banner_3_tag'] ?? $current['banner_3_tag'] ?? 'Order')),
         'b3title' => trim((string)($data['banner_3_title'] ?? $current['banner_3_title'] ?? 'with Ease')),
         'b3sub' => trim((string)($data['banner_3_subtitle'] ?? $current['banner_3_subtitle'] ?? 'with Speed')),
+        'b3bg' => normalize_hex_color((string)($data['banner_3_bg_color'] ?? $current['banner_3_bg_color'] ?? '#028476'), '#028476'),
+        'b3txt' => normalize_hex_color((string)($data['banner_3_text_color'] ?? $current['banner_3_text_color'] ?? '#ffffff'), '#ffffff'),
         'isn' => trim((string)($data['item_section_name'] ?? $current['item_section_name'])),
         'sord' => trim((string)($data['section_order'] ?? $current['section_order'])),
         'fsize' => in_array(($data['font_size'] ?? $current['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true)
