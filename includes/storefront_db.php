@@ -1216,6 +1216,7 @@ function hydrate_storefront_cart(int $businessId): array {
     $lines = [];
     $subtotal = 0.0;
     $tax = 0.0;
+    $totalSavings = 0.0;
     $changed = false;
     $clean = [];
 
@@ -1236,19 +1237,25 @@ function hydrate_storefront_cart(int $businessId): array {
             $changed = true;
         }
         $unit = (float) $product['selling_price'];
+        $mrp = (float) ($product['mrp'] ?? 0);
         $taxPct = (float) $product['tax_percent'];
         $line = $unit * $qty;
         $lineTax = round($line * ($taxPct / 100), 2);
+        $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
+
         $subtotal += $line;
         $tax += $lineTax;
+        $totalSavings += $lineSavings;
         $clean[(int) $product['id']] = $qty;
         $lines[] = [
             'product' => $product,
             'qty' => $qty,
             'unit_price' => $unit,
+            'mrp' => $mrp,
             'tax_percent' => $taxPct,
             'line_total' => $line,
             'tax_amount' => $lineTax,
+            'savings' => $lineSavings,
         ];
     }
 
@@ -1261,6 +1268,7 @@ function hydrate_storefront_cart(int $businessId): array {
         'subtotal' => round($subtotal, 2),
         'tax' => round($tax, 2),
         'total' => round($subtotal + $tax, 2),
+        'total_savings' => round($totalSavings, 2),
         'count' => storefront_cart_count($businessId),
     ];
 }

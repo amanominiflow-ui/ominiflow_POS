@@ -1399,41 +1399,76 @@ body.ms-cart-lock {
 }
 
 .ms-cd-head {
-    padding: 18px 20px 12px;
+    padding: 16px 18px 12px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.ms-cd-btn-circle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+    padding: 0;
+}
+.ms-cd-btn-circle:hover {
+    background: #e2e8f0;
 }
 
 .ms-cd-title {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 800;
     color: #0f172a;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
 }
 
 .ms-cd-title span {
-    font-size: 14px;
-    font-weight: 600;
-    color: #334155;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: #64748b;
 }
 
-.ms-cd-delivery {
+.ms-cd-delivery-bar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
-    padding: 10px 20px 14px;
+    padding: 10px 18px;
     border-bottom: 1px solid #e8edf3;
     color: #0f172a;
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 600;
     flex-shrink: 0;
+    cursor: pointer;
+    background: #ffffff;
+    transition: background 0.15s;
 }
-
-.ms-cd-delivery svg { color: #64748b; flex-shrink: 0; }
+.ms-cd-delivery-bar:hover {
+    background: #f8fafc;
+}
+.ms-cd-delivery-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #1e293b;
+}
+.ms-cd-delivery-bar svg { color: #64748b; flex-shrink: 0; }
 
 .ms-cd-body {
     flex: 1;
     overflow-y: auto;
-    padding: 0 20px 20px;
+    padding: 0 18px 20px;
     min-height: 0;
 }
 
@@ -1484,26 +1519,44 @@ body.ms-cart-lock {
     font-size: 11.5px;
     color: #64748b;
     margin-top: 3px;
-    text-transform: uppercase;
+}
+
+.ms-cd-price-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 5px;
 }
 
 .ms-cd-price {
     font-size: 14px;
     font-weight: 700;
-    margin-top: 6px;
     color: #0f172a;
 }
 
-.ms-cd-remove { margin-top: 8px; }
+.ms-cd-mrp {
+    font-size: 12.5px;
+    color: #94a3b8;
+    text-decoration: line-through;
+}
+
+.ms-cd-item-save {
+    font-size: 12px;
+    font-weight: 700;
+    color: #16a34a;
+}
+
+.ms-cd-remove { margin-top: 6px; }
 
 .ms-cd-remove button {
     background: none;
     border: 0;
     padding: 0;
     font: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: #334155;
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
     cursor: pointer;
     text-decoration: underline;
     text-decoration-style: dashed;
@@ -1513,25 +1566,33 @@ body.ms-cart-lock {
 .ms-cd-stepper {
     display: inline-flex;
     align-items: center;
-    border: 1px solid #dbe3ee;
-    border-radius: 20px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
     overflow: hidden;
-    height: 34px;
+    height: 32px;
     flex-shrink: 0;
     margin-top: 4px;
+    background: #ffffff;
 }
 
 .ms-cd-stepper form { margin: 0; }
 
 .ms-cd-stepper button {
-    width: 32px;
-    height: 34px;
+    width: 30px;
+    height: 32px;
     border: 0;
-    background: #ffffff;
+    background: transparent;
     color: #334155;
-    font-size: 16px;
+    font-size: 15px;
     cursor: pointer;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.ms-cd-stepper button:hover:not(:disabled) {
+    background: #f1f5f9;
 }
 
 .ms-cd-stepper button:disabled {
@@ -1540,10 +1601,11 @@ body.ms-cart-lock {
 }
 
 .ms-cd-stepper span {
-    min-width: 22px;
+    min-width: 24px;
     text-align: center;
     font-size: 13px;
     font-weight: 700;
+    color: #0f172a;
 }
 
 .ms-cd-summary {
@@ -1551,8 +1613,9 @@ body.ms-cart-lock {
 }
 
 .ms-cd-summary-title {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 800;
+    color: #0f172a;
     margin-bottom: 12px;
 }
 
@@ -1570,8 +1633,60 @@ body.ms-cart-lock {
 .ms-cd-pay {
     font-weight: 800;
     color: #0f172a;
-    font-size: 14.5px;
+    font-size: 15px;
     margin-top: 6px;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 10px;
+}
+
+.ms-cd-savings-strip {
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 13.5px;
+    font-weight: 700;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Order Summary Deliver To section inside Drawer (Screenshot 2) */
+.ms-cd-deliver-section {
+    padding: 14px 0 16px;
+    border-bottom: 1px solid #e8edf3;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.ms-cd-deliver-section:hover {
+    opacity: 0.92;
+}
+.ms-cd-deliver-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.ms-cd-deliver-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+.ms-cd-deliver-addr {
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.45;
+    margin-bottom: 6px;
+}
+.ms-cd-deliver-phone {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .ms-cd-foot {
@@ -1580,13 +1695,18 @@ body.ms-cart-lock {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
     border-top: 1px solid #e8edf3;
     background: #ffffff;
 }
 
+.ms-cd-foot-left {
+    display: flex;
+    flex-direction: column;
+}
+
 .ms-cd-foot-total {
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 800;
     color: #0f172a;
 }
@@ -1600,26 +1720,45 @@ body.ms-cart-lock {
     font: inherit;
     font-size: 12px;
     font-weight: 600;
-    color: #64748b;
-    text-decoration: underline;
-    text-decoration-style: dashed;
-    text-underline-offset: 3px;
+    color: #0284c7;
     cursor: pointer;
+    text-align: left;
+}
+.ms-cd-summary-link:hover {
+    text-decoration: underline;
 }
 
-.ms-cd-checkout {
+.ms-cd-pay-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+}
+.ms-cd-pay-sub {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.ms-cd-checkout-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: var(--ms-header, #083d30);
     color: #ffffff !important;
     text-decoration: none !important;
-    font-size: 14px;
+    font-size: 14.5px;
     font-weight: 700;
-    padding: 12px 18px;
+    padding: 12px 22px;
     border-radius: 8px;
+    border: none;
     white-space: nowrap;
     min-width: 170px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ms-cd-checkout-btn:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
 }
 
 @media (max-width: 768px) {

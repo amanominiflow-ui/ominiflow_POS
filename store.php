@@ -2516,118 +2516,206 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdSub = (float) ($drawerCart['subtotal'] ?? 0);
     $cdTax = (float) ($drawerCart['tax'] ?? 0);
     $cdTotal = (float) ($drawerCart['total'] ?? 0);
-    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true) ? $page : 'home';
+    $cdSavings = (float) ($drawerCart['total_savings'] ?? 0);
+    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
+
+    $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+    $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
+    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
+    $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
+    $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
+    $hasDeliveryLoc = ($locAddress !== '');
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
-    <button type="button" class="ms-cd-close" id="msCartClose" aria-label="Close cart">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
-        <div class="ms-cd-head">
-            <div class="ms-cd-title" id="msCartTitle">My cart <span>( <?= $cdLineCount ?> <?= $cdLineCount === 1 ? 'item' : 'items' ?>, <?= $cdQty ?> Qty)</span></div>
-        </div>
-        <?php if (!empty($brand['show_location'])): ?>
-            <div class="ms-cd-delivery">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
-                <span>Set delivery location</span>
+        
+        <!-- STEP 1: MY CART (Screenshot 1) -->
+        <div class="ms-cd-view-panel" id="msCartViewMain" style="display:flex;flex-direction:column;height:100%;">
+            <div class="ms-cd-head">
+                <button type="button" class="ms-cd-btn-circle" id="msCartClose" aria-label="Close cart">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                <div class="ms-cd-title" id="msCartTitle">My cart <span>( <?= $cdLineCount ?> items, <?= $cdQty ?> Qty)</span></div>
             </div>
-        <?php endif; ?>
 
-        <div class="ms-cd-body">
-            <?php if (!$cdLines): ?>
-                <div class="ms-cd-empty">Your cart is empty.</div>
-            <?php else: ?>
-                <?php foreach ($cdLines as $line):
-                    $p = $line['product'];
-                    $pid = (int) $p['id'];
-                    $qty = (int) $line['qty'];
-                    $stock = (int) ($p['stock_quantity'] ?? 0);
-                    $img = sf_product_image($p['image_path'] ?? null);
-                    $sku = trim((string) ($p['sku'] ?? ''));
-                    ?>
-                    <div class="ms-cd-item">
-                        <div class="ms-cd-thumb">
-                            <?php if ($img): ?>
-                                <img src="<?= e($img) ?>" alt="">
-                            <?php else: ?>
-                                <span></span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="ms-cd-info">
-                            <div class="ms-cd-name"><?= e((string) $p['name']) ?></div>
-                            <?php if ($sku !== ''): ?>
-                                <div class="ms-cd-meta"><?= e($sku) ?></div>
-                            <?php endif; ?>
-                            <?php if (empty($brand['hide_product_price'])): ?>
-                                <div class="ms-cd-price"><?= sf_money($currency, (float) $line['unit_price']) ?></div>
-                            <?php endif; ?>
-                            <form method="post" class="ms-cd-remove">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="update_cart">
-                                <input type="hidden" name="product_id" value="<?= $pid ?>">
-                                <input type="hidden" name="qty" value="0">
-                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
-                                <?php if ($cdReturnPage === 'product'): ?>
-                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
-                                <?php endif; ?>
-                                <button type="submit">Remove</button>
-                            </form>
-                        </div>
-                        <div class="ms-cd-stepper">
-                            <form method="post">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="update_cart">
-                                <input type="hidden" name="product_id" value="<?= $pid ?>">
-                                <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
-                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
-                                <?php if ($cdReturnPage === 'product'): ?>
-                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
-                                <?php endif; ?>
-                                <button type="submit" aria-label="Decrease quantity">−</button>
-                            </form>
-                            <span><?= $qty ?></span>
-                            <form method="post">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="update_cart">
-                                <input type="hidden" name="product_id" value="<?= $pid ?>">
-                                <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
-                                <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
-                                <?php if ($cdReturnPage === 'product'): ?>
-                                    <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
-                                <?php endif; ?>
-                                <button type="submit" aria-label="Increase quantity" <?= $qty >= $stock ? 'disabled' : '' ?>>+</button>
-                            </form>
-                        </div>
+            <?php if (!empty($brand['show_location'])): ?>
+                <div class="ms-cd-delivery-bar" onclick="openLocationDrawerFromCart()">
+                    <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                        <span class="ms-cd-delivery-text">Delivery to <?= e($locDisplay) ?></span>
                     </div>
-                <?php endforeach; ?>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+            <?php endif; ?>
 
-                <div class="ms-cd-summary" id="msCartSummary">
+            <div class="ms-cd-body">
+                <?php if (!$cdLines): ?>
+                    <div class="ms-cd-empty">Your cart is empty.</div>
+                <?php else: ?>
+                    <?php foreach ($cdLines as $line):
+                        $p = $line['product'];
+                        $pid = (int) $p['id'];
+                        $qty = (int) $line['qty'];
+                        $stock = (int) ($p['stock_quantity'] ?? 0);
+                        $img = sf_product_image($p['image_path'] ?? null);
+                        $dispInfo = storefront_parse_product_display_info($p, $bid);
+                        $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        $unitPrice = (float) $line['unit_price'];
+                        $lineMrp = (float) ($line['mrp'] ?? $p['mrp'] ?? 0);
+                        $lineSaving = ($lineMrp > $unitPrice) ? ($lineMrp - $unitPrice) : 0;
+                        ?>
+                        <div class="ms-cd-item">
+                            <div class="ms-cd-thumb">
+                                <?php if ($img): ?>
+                                    <img src="<?= e($img) ?>" alt="">
+                                <?php else: ?>
+                                    <span></span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="ms-cd-info">
+                                <div class="ms-cd-name"><?= e((string) $p['name']) ?></div>
+                                <?php if ($pAttr !== ''): ?>
+                                    <div class="ms-cd-meta"><?= e($pAttr) ?></div>
+                                <?php endif; ?>
+                                <div class="ms-cd-price-row">
+                                    <span class="ms-cd-price"><?= sf_money($currency, $unitPrice) ?></span>
+                                    <?php if ($lineMrp > $unitPrice): ?>
+                                        <span class="ms-cd-mrp"><?= sf_money($currency, $lineMrp) ?></span>
+                                        <span class="ms-cd-item-save">Save <?= sf_money($currency, $lineSaving) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <form method="post" class="ms-cd-remove">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="update_cart">
+                                    <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="qty" value="0">
+                                    <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                    <?php if ($cdReturnPage === 'product'): ?>
+                                        <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                    <?php endif; ?>
+                                    <button type="submit">Remove</button>
+                                </form>
+                            </div>
+                            <div class="ms-cd-stepper">
+                                <form method="post">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="update_cart">
+                                    <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
+                                    <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                    <?php if ($cdReturnPage === 'product'): ?>
+                                        <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                    <?php endif; ?>
+                                    <button type="submit" aria-label="Decrease quantity">−</button>
+                                </form>
+                                <span><?= $qty ?></span>
+                                <form method="post">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="update_cart">
+                                    <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
+                                    <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                    <?php if ($cdReturnPage === 'product'): ?>
+                                        <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                    <?php endif; ?>
+                                    <button type="submit" aria-label="Increase quantity" <?= $qty >= $stock ? 'disabled' : '' ?>>+</button>
+                                </form>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+
+                    <div class="ms-cd-summary" id="msCartSummary">
+                        <div class="ms-cd-summary-title">Summary</div>
+                        <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $cdSub) ?></span></div>
+                        <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
+                        <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $cdTax) ?></span></div>
+                        <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $cdTotal) ?></span></div>
+                    </div>
+
+                    <?php if ($cdSavings > 0): ?>
+                        <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $cdSavings) ?></div>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </div>
+
+            <div class="ms-cd-foot">
+                <div class="ms-cd-foot-left">
+                    <div class="ms-cd-foot-total"><?= sf_money($currency, $cdTotal) ?></div>
+                    <?php if ($cdLines): ?>
+                        <button type="button" class="ms-cd-summary-link" id="msCartSummaryLink">View summary details</button>
+                    <?php endif; ?>
+                </div>
+                <?php if ($cdLines): ?>
+                    <button type="button" class="ms-cd-checkout-btn" onclick="goToCartOrderSummary()">Proceed to Buy</button>
+                <?php else: ?>
+                    <a class="ms-cd-checkout-btn" href="<?= e($homeUrl) ?>">Start shopping</a>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- STEP 2: ORDER SUMMARY (Screenshot 2) -->
+        <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:none;flex-direction:column;height:100%;">
+            <div class="ms-cd-head">
+                <button type="button" class="ms-cd-btn-circle" onclick="goToCartMainView()" aria-label="Back to cart">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                </button>
+                <div class="ms-cd-title">Order Summary</div>
+            </div>
+
+            <div class="ms-cd-body">
+                <!-- Deliver to Section -->
+                <div class="ms-cd-deliver-section" onclick="openLocationDrawerFromCheckout('cart')">
+                    <div class="ms-cd-deliver-head">
+                        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:#0f172a;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                            <span>Deliver to</span>
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="ms-cd-deliver-name"><?= e($locName ?: 'Add Delivery Address') ?></div>
+                    <div class="ms-cd-deliver-addr"><?= e($locAddress ?: 'Tap here to add your delivery location') ?></div>
+                    <?php if ($locPhone !== ''): ?>
+                        <div class="ms-cd-deliver-phone">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            <span><?= e($locPhone) ?></span>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Summary -->
+                <div class="ms-cd-summary" style="padding-top:14px;">
                     <div class="ms-cd-summary-title">Summary</div>
                     <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $cdSub) ?></span></div>
                     <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
                     <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $cdTax) ?></span></div>
                     <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $cdTotal) ?></span></div>
                 </div>
-            <?php endif; ?>
-        </div>
 
-        <div class="ms-cd-foot">
-            <div class="ms-cd-foot-left">
-                <div class="ms-cd-foot-total"><?= sf_money($currency, $cdTotal) ?></div>
-                <?php if ($cdLines): ?>
-                    <button type="button" class="ms-cd-summary-link" id="msCartSummaryLink">View summary details</button>
+                <?php if ($cdSavings > 0): ?>
+                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $cdSavings) ?></div>
                 <?php endif; ?>
             </div>
-            <?php if ($cdLines): ?>
-                <?php
-                $hasLoc = !empty($_SESSION['sf_delivery_location_' . $bid]['formatted']) || !empty($storeShopper['address']);
-                ?>
-                <a class="ms-cd-checkout" href="<?= e($checkoutUrl) ?>" onclick="if (!<?= $hasLoc ? 'true' : 'false' ?>) { event.preventDefault(); openLocationDrawerFromCart(); }">Proceed to checkout</a>
-            <?php else: ?>
-                <a class="ms-cd-checkout" href="<?= e($homeUrl) ?>">Start shopping</a>
-            <?php endif; ?>
+
+            <form method="post" id="msDrawerCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="place_order">
+                <input type="hidden" name="name" value="<?= e($locName) ?>">
+                <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
+                <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
+                <input type="hidden" name="address" value="<?= e($locAddress) ?>">
+                <input type="hidden" name="payment_method" value="cod">
+
+                <div class="ms-cd-foot">
+                    <div class="ms-cd-foot-left">
+                        <div class="ms-cd-pay-title">Pay on Delivery</div>
+                        <div class="ms-cd-pay-sub">Payment Method</div>
+                    </div>
+                    <button type="submit" class="ms-cd-checkout-btn">Place Order</button>
+                </div>
+            </form>
         </div>
+
     </aside>
 </div>
 
@@ -3283,6 +3371,27 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
+function goToCartOrderSummary() {
+    var hasLocation = <?= (!empty($hasDeliveryLoc)) ? 'true' : 'false' ?>;
+    if (!hasLocation) {
+        window.openLocationDrawerFromCheckout('cart');
+        return;
+    }
+    var vMain = document.getElementById('msCartViewMain');
+    var vSummary = document.getElementById('msCartViewOrderSummary');
+    if (vMain && vSummary) {
+        vMain.style.display = 'none';
+        vSummary.style.display = 'flex';
+    }
+}
+
+function goToCartMainView() {
+    var vMain = document.getElementById('msCartViewMain');
+    var vSummary = document.getElementById('msCartViewOrderSummary');
+    if (vMain && vSummary) {
+        vSummary.style.display = 'none';
+        vMain.style.display = 'flex';
+    }
 }
 
 var msCheckoutFormPending = null;
