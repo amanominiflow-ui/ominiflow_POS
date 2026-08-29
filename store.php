@@ -2026,8 +2026,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <!-- Payment Method -->
                                 <label class="ms-label">Payment Method</label>
                                 <select class="ms-select" name="payment_method" style="margin-bottom:18px;">
-                                    <option value="cod">Cash on Delivery</option>
-                                    <option value="upi">UPI</option>
+                                    <option value="cod">Cash on Delivery (COD)</option>
+                                    <option value="upi">UPI (Google Pay, PhonePe, Paytm)</option>
+                                    <option value="card">Credit / Debit Card</option>
                                     <option value="pickup">Pay at store / Pickup</option>
                                 </select>
 
@@ -2697,6 +2698,59 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php if ($cdSavings > 0): ?>
                     <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $cdSavings) ?></div>
                 <?php endif; ?>
+
+                <!-- Payment Method Selector Section -->
+                <div class="ms-cd-pm-section" id="msDrawerPmSection">
+                    <div class="ms-cd-pm-head">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        <span>Payment Method</span>
+                    </div>
+                    <div class="ms-cd-pm-options">
+                        <!-- COD -->
+                        <label class="ms-cd-pm-option is-selected" onclick="selectDrawerPaymentMethod('cod', 'Pay on Delivery', this)">
+                            <input type="radio" name="drawer_pm_choice" value="cod" checked>
+                            <div class="ms-cd-pm-icon">💵</div>
+                            <div class="ms-cd-pm-text">
+                                <div class="ms-cd-pm-name">Pay on Delivery (COD)</div>
+                                <div class="ms-cd-pm-desc">Pay with cash or UPI upon delivery</div>
+                            </div>
+                            <div class="ms-cd-pm-radio"></div>
+                        </label>
+
+                        <!-- UPI -->
+                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('upi', 'Pay with UPI', this)">
+                            <input type="radio" name="drawer_pm_choice" value="upi">
+                            <div class="ms-cd-pm-icon">📱</div>
+                            <div class="ms-cd-pm-text">
+                                <div class="ms-cd-pm-name">Pay with UPI</div>
+                                <div class="ms-cd-pm-desc">Google Pay, PhonePe, Paytm, BHIM</div>
+                            </div>
+                            <div class="ms-cd-pm-radio"></div>
+                        </label>
+
+                        <!-- Card -->
+                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('card', 'Credit / Debit Card', this)">
+                            <input type="radio" name="drawer_pm_choice" value="card">
+                            <div class="ms-cd-pm-icon">💳</div>
+                            <div class="ms-cd-pm-text">
+                                <div class="ms-cd-pm-name">Credit / Debit Card</div>
+                                <div class="ms-cd-pm-desc">Visa, MasterCard, RuPay</div>
+                            </div>
+                            <div class="ms-cd-pm-radio"></div>
+                        </label>
+
+                        <!-- Pay at Store / Pickup -->
+                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('pickup', 'Pay at Store / Pickup', this)">
+                            <input type="radio" name="drawer_pm_choice" value="pickup">
+                            <div class="ms-cd-pm-icon">🏪</div>
+                            <div class="ms-cd-pm-text">
+                                <div class="ms-cd-pm-name">Pay at Store / Pickup</div>
+                                <div class="ms-cd-pm-desc">Collect & pay directly at counter</div>
+                            </div>
+                            <div class="ms-cd-pm-radio"></div>
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <form method="post" id="msDrawerCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
@@ -2706,12 +2760,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
                 <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
                 <input type="hidden" name="address" value="<?= e($locAddress) ?>">
-                <input type="hidden" name="payment_method" value="cod">
+                <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="cod">
 
                 <div class="ms-cd-foot">
-                    <div class="ms-cd-foot-left">
-                        <div class="ms-cd-pay-title">Pay on Delivery</div>
-                        <div class="ms-cd-pay-sub">Payment Method</div>
+                    <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
+                        <div class="ms-cd-pay-title" id="msDrawerPayTitle">Pay on Delivery</div>
+                        <div class="ms-cd-pay-sub" style="color:#2563eb;font-weight:600;">Change Method ⌵</div>
                     </div>
                     <button type="submit" class="ms-cd-checkout-btn">Place Order</button>
                 </div>
@@ -3373,6 +3427,28 @@ function handleAjaxAddToCart(ev, form) {
     .catch(function(err) {
         form.submit();
     });
+function selectDrawerPaymentMethod(methodKey, methodTitle, labelEl) {
+    var hiddenInput = document.getElementById('msDrawerSelectedPaymentMethod');
+    if (hiddenInput) hiddenInput.value = methodKey;
+
+    var titleEl = document.getElementById('msDrawerPayTitle');
+    if (titleEl) titleEl.textContent = methodTitle;
+
+    var options = document.querySelectorAll('.ms-cd-pm-option');
+    options.forEach(function(opt) { opt.classList.remove('is-selected'); });
+
+    if (labelEl) {
+        labelEl.classList.add('is-selected');
+        var r = labelEl.querySelector('input[type="radio"]');
+        if (r) r.checked = true;
+    }
+}
+
+function scrollToPaymentSection() {
+    var pmSec = document.getElementById('msDrawerPmSection');
+    if (pmSec) {
+        pmSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
 function goToCartOrderSummary() {

@@ -1827,6 +1827,10 @@ function get_storefront_order_details(int $businessId, string $orderIdentifier, 
         $order['payment_method_label'] = 'Pay on Delivery';
     } elseif ($pm === 'upi') {
         $order['payment_method_label'] = 'UPI Payment';
+    } elseif ($pm === 'card') {
+        $order['payment_method_label'] = 'Credit / Debit Card';
+    } elseif ($pm === 'netbanking') {
+        $order['payment_method_label'] = 'Net Banking';
     } elseif ($pm === 'pickup') {
         $order['payment_method_label'] = 'Pay at store / Pickup';
     } else {

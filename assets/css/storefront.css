@@ -1689,6 +1689,103 @@ body.ms-cart-lock {
     gap: 6px;
 }
 
+/* Payment Method Selector in Order Summary Drawer */
+.ms-cd-pm-section {
+    padding: 16px 0;
+    border-bottom: 1px solid #e8edf3;
+}
+.ms-cd-pm-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 12px;
+}
+.ms-cd-pm-head svg {
+    color: #2563eb;
+}
+.ms-cd-pm-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ms-cd-pm-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 13px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.ms-cd-pm-option:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+.ms-cd-pm-option.is-selected {
+    background: #f0fdf4;
+    border-color: #22c55e;
+    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.12);
+}
+.ms-cd-pm-option input[type="radio"] {
+    display: none;
+}
+.ms-cd-pm-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+.ms-cd-pm-text {
+    flex: 1;
+    min-width: 0;
+}
+.ms-cd-pm-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+}
+.ms-cd-pm-desc {
+    font-size: 11.5px;
+    color: #64748b;
+    margin-top: 2px;
+}
+.ms-cd-pm-radio {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+.ms-cd-pm-option.is-selected .ms-cd-pm-radio {
+    border-color: #16a34a;
+    background: #16a34a;
+}
+.ms-cd-pm-option.is-selected .ms-cd-pm-radio::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ffffff;
+}
+
 .ms-cd-foot {
     flex-shrink: 0;
     display: flex;
