@@ -2874,7 +2874,6 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         sfInitBannerCarousel();
     }
 })();
-</script>
 
 // Animated search placeholder slot-machine / slide effect
 (function () {
