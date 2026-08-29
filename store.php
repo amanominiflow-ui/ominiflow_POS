@@ -76,6 +76,21 @@ if (!$storeBiz) {
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
             $res = add_to_storefront_cart($bid, $pid, $qty);
+
+            $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                $c = get_storefront_cart($bid);
+                $cnt = 0;
+                foreach ($c as $lineQty) { $cnt += (int)$lineQty; }
+                echo json_encode([
+                    'success' => !empty($res['success']),
+                    'cart_count' => $cnt,
+                    'message' => !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.')
+                ]);
+                exit;
+            }
+
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
             $params = $back === 'product' ? ['id' => $pid] : [];
             if (!empty($_GET['category_id'])) {
@@ -84,7 +99,6 @@ if (!$storeBiz) {
             if (!empty($_GET['q'])) {
                 $params['q'] = (string) $_GET['q'];
             }
-            $params['cart'] = '1';
             redirect(public_store_url($storeBiz, $back === 'product' ? 'product' : 'home', $params));
         }
 
@@ -1343,7 +1357,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                                 </a>
                                             <?php else: ?>
-                                                <form method="post" class="ms-card-add-form" style="margin:0;">
+                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="add_to_cart">
                                                     <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
@@ -1450,7 +1464,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     </div>
                                 <?php endif; ?>
 
-                                <form method="post" style="margin-top:auto;">
+                                <form method="post" style="margin-top:auto;" onsubmit="handleAjaxAddToCart(event, this);">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="add_to_cart">
                                     <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
@@ -1469,7 +1483,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                                         <button type="submit" class="ms-pdp-add-btn" <?= $inStock ? '' : 'disabled' ?>>
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                                            <span><?= $inStock ? 'Go To Cart' : 'Out of Stock' ?></span>
+                                            <span><?= $inStock ? 'Add to Cart' : 'Out of Stock' ?></span>
                                         </button>
                                     </div>
                                 </form>
@@ -1611,8 +1625,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <input class="ms-input" type="tel" name="phone" required value="<?= e((string)($_SESSION['sf_delivery_location_' . $bid]['phone'] ?? $storeShopper['phone'] ?? '')) ?>">
                             <label class="ms-label">Email</label>
                             <input class="ms-input" type="email" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
-                            <label class="ms-label">Delivery address</label>
-                            <textarea class="ms-textarea" name="address" rows="3" required><?= e((string)($_SESSION['sf_delivery_location_' . $bid]['formatted'] ?? $storeShopper['address'] ?? '')) ?></textarea>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:6px;">
+                                <label class="ms-label" style="margin:0;">Delivery address <span class="ms-req">*</span></label>
+                                <button type="button" onclick="openLocationDrawerFromCheckout()" style="background:none;border:none;color:#2563eb;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0;">Change / Set Location</button>
+                            </div>
+                            <textarea class="ms-textarea" name="address" rows="3" required placeholder="Enter full delivery address"><?= e((string)($_SESSION['sf_delivery_location_' . $bid]['formatted'] ?? $storeShopper['address'] ?? '')) ?></textarea>
                             <label class="ms-label">Payment Method</label>
                             <select class="ms-select" name="payment_method">
                                 <option value="cod">Cash on Delivery</option>
@@ -1682,18 +1699,80 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php endif; ?>
                 </div>
 
-            <?php elseif ($page === 'addresses' && $storeShopper): ?>
-                <div class="ms-form-card">
-                    <h1 style="font-size:20px;font-weight:800;margin-bottom:16px">Addresses</h1>
+            <?php elseif ($page === 'addresses' && $storeShopper):
+                $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                $prefillName = $savedLoc['name'] ?? storefront_clean_person_name((string)($storeShopper['name'] ?? ''));
+                $prefillPhone = $savedLoc['phone'] ?? (string)($storeShopper['phone'] ?? '');
+                $prefillDoor = $savedLoc['door_no'] ?? '';
+                $prefillStreet = $savedLoc['street_area'] ?? '';
+                $prefillCity = $savedLoc['city'] ?? '';
+                $prefillState = $savedLoc['state'] ?? 'West Bengal';
+                $prefillPincode = $savedLoc['pincode'] ?? '';
+                $indianStates = [
+                    'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh',
+                    'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana',
+                    'Himachal Pradesh', 'Jammon and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep',
+                    'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry',
+                    'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
+                ];
+                ?>
+                <div class="ms-form-card" style="max-width:560px;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;">
+                        <div style="width:42px;height:42px;border-radius:50%;background:#eff6ff;color:#2563eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                        </div>
+                        <div>
+                            <h1 style="font-size:20px;font-weight:800;color:#0f172a;margin:0 0 2px;">Set Delivery Location</h1>
+                            <p style="font-size:13px;color:#64748b;margin:0;">Manage your primary delivery address for orders</p>
+                        </div>
+                    </div>
+
                     <form method="post">
                         <?= csrf_field() ?>
-                        <input type="hidden" name="action" value="update_address">
-                        <input type="hidden" name="name" value="<?= e((string) ($storeShopper['name'] ?? '')) ?>">
-                        <input type="hidden" name="email" value="<?= e((string) ($storeShopper['email'] ?? '')) ?>">
-                        <input type="hidden" name="phone" value="<?= e((string) ($storeShopper['phone'] ?? '')) ?>">
-                        <label class="ms-label">Delivery address</label>
-                        <textarea class="ms-textarea" name="address" rows="4" required><?= e((string) ($storeShopper['address'] ?? '')) ?></textarea>
-                        <button class="ms-btn" type="submit">Save address</button>
+                        <input type="hidden" name="action" value="save_delivery_location">
+                        <input type="hidden" name="return_page" value="addresses">
+
+                        <div class="ms-loc-form-group">
+                            <label class="ms-loc-label">Full Name<span class="ms-req">*</span></label>
+                            <input type="text" name="name" class="ms-loc-input" required value="<?= e($prefillName) ?>" placeholder="e.g. John Doe">
+                        </div>
+
+                        <div class="ms-loc-form-group">
+                            <label class="ms-loc-label">Phone Number<span class="ms-req">*</span></label>
+                            <input type="tel" name="phone" class="ms-loc-input" required value="<?= e($prefillPhone) ?>" placeholder="e.g. 9876543210">
+                        </div>
+
+                        <div class="ms-loc-form-group">
+                            <label class="ms-loc-label">Door No / Floor / Apartment<span class="ms-req">*</span></label>
+                            <input type="text" name="door_no" class="ms-loc-input" required value="<?= e($prefillDoor) ?>" placeholder="e.g. Flat 4B, Sunshine Towers">
+                        </div>
+
+                        <div class="ms-loc-form-group">
+                            <label class="ms-loc-label">Street / Area / Landmark<span class="ms-req">*</span></label>
+                            <input type="text" name="street_area" class="ms-loc-input" required value="<?= e($prefillStreet) ?>" placeholder="e.g. Near City Center Mall">
+                        </div>
+
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div class="ms-loc-form-group">
+                                <label class="ms-loc-label">City<span class="ms-req">*</span></label>
+                                <input type="text" name="city" class="ms-loc-input" required value="<?= e($prefillCity) ?>" placeholder="e.g. Kolkata">
+                            </div>
+                            <div class="ms-loc-form-group">
+                                <label class="ms-loc-label">Pincode<span class="ms-req">*</span></label>
+                                <input type="text" name="pincode" class="ms-loc-input" required value="<?= e($prefillPincode) ?>" placeholder="e.g. 700001">
+                            </div>
+                        </div>
+
+                        <div class="ms-loc-form-group">
+                            <label class="ms-loc-label">State<span class="ms-req">*</span></label>
+                            <select name="state" class="ms-loc-select" required>
+                                <?php foreach ($indianStates as $st): ?>
+                                    <option value="<?= e($st) ?>" <?= ($prefillState === $st) ? 'selected' : '' ?>><?= e($st) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <button class="ms-btn" type="submit" style="margin-top:16px;">Save Delivery Location</button>
                     </form>
                 </div>
 
@@ -2497,6 +2576,76 @@ function sfPdpSetImage(idx) {
     var thumbs = document.querySelectorAll('.ms-pdp-thumb');
     for (var i = 0; i < thumbs.length; i++) {
         thumbs[i].classList.toggle('is-active', i === idx);
+    }
+}
+
+function handleAjaxAddToCart(ev, form) {
+    if (ev) ev.preventDefault();
+    var btn = form.querySelector('button[type="submit"]');
+    var origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>Adding...</span>';
+    }
+
+    var formData = new FormData(form);
+    formData.append('ajax', '1');
+
+    fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data && data.success) {
+            if (btn) {
+                var prevBg = btn.style.background;
+                btn.style.background = '#16a34a';
+                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> <span>Added!</span>';
+                setTimeout(function() {
+                    btn.disabled = false;
+                    btn.style.background = prevBg;
+                    btn.innerHTML = origHtml;
+                }, 1400);
+            }
+            var badges = document.querySelectorAll('#msCartBadge, .ms-cart-badge, .ms-bottom-cart-badge');
+            badges.forEach(function(b) {
+                b.textContent = data.cart_count;
+                b.style.display = data.cart_count > 0 ? '' : 'none';
+            });
+        } else {
+            alert((data && data.message) ? data.message : 'Could not add item to cart.');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+            }
+        }
+    })
+    .catch(function(err) {
+        form.submit();
+    });
+}
+
+function openLocationDrawerFromCheckout() {
+    var loc = document.getElementById('msLocationOverlay');
+    if (loc) {
+        loc.hidden = false;
+        loc.setAttribute('aria-hidden', 'false');
+        var retInput = loc.querySelector('input[name="return_page"]');
+        if (retInput) retInput.value = 'checkout';
+        var promptView = document.getElementById('msLocPromptView');
+        var formView = document.getElementById('msLocFormView');
+        if (promptView && formView) {
+            promptView.style.display = 'none';
+            formView.style.display = 'block';
+            var topBtn = document.getElementById('msLocTopActionBtn');
+            if (topBtn) topBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
+            var title = document.getElementById('msLocTitle');
+            if (title) title.textContent = 'Set Delivery Location';
+        }
     }
 }
 </script>
