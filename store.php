@@ -743,11 +743,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             width: 13px;
             border-radius: 999px;
         }
+        .ms-product-attr {
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+            line-height: 1.35;
+            margin: 5px 0 6px;
+            letter-spacing: 0.01em;
+        }
         .ms-product-desc {
-            font-size: 11.5px;
+            font-size: 12px;
             color: #64748b;
             line-height: 1.35;
-            margin-bottom: 4px;
+            margin: 4px 0 6px;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
@@ -1275,11 +1284,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                             <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
                                             <?php 
                                             $pDesc = trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
-                                            if ($pDesc !== ''): ?>
-                                                <div class="ms-product-desc"><?= e($pDesc) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($attrText !== ''): ?>
-                                                <div class="ms-product-attr"><?= e($attrText) ?></div>
+                                            $displayAttr = $attrText !== '' ? $attrText : $pDesc;
+                                            if ($displayAttr !== ''): ?>
+                                                <div class="ms-product-attr"><?= e($displayAttr) ?></div>
                                             <?php endif; ?>
                                             <?php if ($varCount > 0): ?>
                                                 <a href="<?= e($pUrl) ?>" class="ms-product-variants-link">+<?= max(1, $varCount - 1) ?> variants</a>
