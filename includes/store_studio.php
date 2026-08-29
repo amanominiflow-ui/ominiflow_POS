@@ -413,8 +413,14 @@ function studio_cat_placeholder(): string {
                                         $b2Txt = !empty($brand['banner_2_text_color']) ? $brand['banner_2_text_color'] : '#ffffff';
                                         $b3Bg = !empty($brand['banner_3_bg_color']) ? $brand['banner_3_bg_color'] : '#028476';
                                         $b3Txt = !empty($brand['banner_3_text_color']) ? $brand['banner_3_text_color'] : '#ffffff';
+                                        $b4Bg = !empty($brand['banner_4_bg_color']) ? $brand['banner_4_bg_color'] : '#ea580c';
+                                        $b4Txt = !empty($brand['banner_4_text_color']) ? $brand['banner_4_text_color'] : '#ffffff';
+                                        $b5Bg = !empty($brand['banner_5_bg_color']) ? $brand['banner_5_bg_color'] : '#0891b2';
+                                        $b5Txt = !empty($brand['banner_5_text_color']) ? $brand['banner_5_text_color'] : '#ffffff';
+                                        $b6Bg = !empty($brand['banner_6_bg_color']) ? $brand['banner_6_bg_color'] : '#9333ea';
+                                        $b6Txt = !empty($brand['banner_6_text_color']) ? $brand['banner_6_text_color'] : '#ffffff';
                                         ?>
-                                        <div class="st-banner" id="canvasBannerCard" style="background: <?= e($b1Bg) ?>; color: <?= e($b1Txt) ?>; transition: all 0.25s ease;">
+                                        <div class="st-banner" id="canvasBannerCard" style="background: <?= e($b1Bg) ?>; color: <?= e($b1Txt) ?>; transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);">
                                             <!-- Banner 1 Slide -->
                                             <div id="canvasSlide1" class="st-banner-slide" style="color: <?= e($b1Txt) ?>;">
                                                 <h4 id="canvasBannerTitle"><?= e($brand['banner_title'] ?: "We're online now!") ?></h4>
@@ -447,11 +453,50 @@ function studio_cat_placeholder(): string {
                                                     <path d="M60 16 C57 16, 53 19, 53 23 C53 29, 60 35, 60 35 C60 35, 67 29, 67 23 C67 19, 63 16, 60 16 Z" fill="#ef4444"/>
                                                 </svg>
                                             </div>
+                                            <!-- Banner 4 Slide -->
+                                            <div id="canvasSlide4" class="st-banner-slide" style="display:none; color: <?= e($b4Txt) ?>;">
+                                                <div id="canvasBanner4Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_4_tag'] ?? 'Special Offer,') ?></div>
+                                                <h4 id="canvasBanner4Title"><?= e($brand['banner_4_title'] ?? 'Super Savings') ?></h4>
+                                                <p id="canvasBanner4Sub" style="margin-top:4px;"><?= e($brand['banner_4_subtitle'] ?? 'Get exclusive discounts today!') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <rect x="36" y="24" width="36" height="34" rx="4" fill="#fbbf24"/>
+                                                    <path d="M36 34 L72 34" stroke="#d97706" stroke-width="3"/>
+                                                    <path d="M54 24 L54 58" stroke="#d97706" stroke-width="3"/>
+                                                    <path d="M46 16 C40 16, 40 24, 54 24 C68 24, 68 16, 62 16" stroke="#fff" stroke-width="2.5" fill="none"/>
+                                                </svg>
+                                            </div>
+                                            <!-- Banner 5 Slide -->
+                                            <div id="canvasSlide5" class="st-banner-slide" style="display:none; color: <?= e($b5Txt) ?>;">
+                                                <div id="canvasBanner5Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_5_tag'] ?? 'Fresh Deals,') ?></div>
+                                                <h4 id="canvasBanner5Title"><?= e($brand['banner_5_title'] ?? 'Top Quality Picks') ?></h4>
+                                                <p id="canvasBanner5Sub" style="margin-top:4px;"><?= e($brand['banner_5_subtitle'] ?? 'Handpicked best products for you.') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <circle cx="56" cy="36" r="20" fill="#22d3ee" opacity="0.4"/>
+                                                    <polygon points="56,18 61,29 73,31 64,40 66,52 56,46 46,52 48,40 39,31 51,29" fill="#facc15"/>
+                                                </svg>
+                                            </div>
+                                            <!-- Banner 6 Slide -->
+                                            <div id="canvasSlide6" class="st-banner-slide" style="display:none; color: <?= e($b6Txt) ?>;">
+                                                <div id="canvasBanner6Tag" style="font-size:0.75em;opacity:0.9;"><?= e($brand['banner_6_tag'] ?? 'Fast & Reliable,') ?></div>
+                                                <h4 id="canvasBanner6Title"><?= e($brand['banner_6_title'] ?? 'Express Delivery') ?></h4>
+                                                <p id="canvasBanner6Sub" style="margin-top:4px;font-weight:600;"><?= e($brand['banner_6_subtitle'] ?? 'Direct to your doorstep quickly.') ?></p>
+                                                <svg viewBox="0 0 90 70" width="90" height="70" style="position:absolute;right:6px;bottom:4px;" fill="none">
+                                                    <rect x="22" y="24" width="38" height="26" rx="3" fill="#a855f7"/>
+                                                    <path d="M60 30 L74 30 L80 40 L80 50 L60 50 Z" fill="#c084fc"/>
+                                                    <circle cx="34" cy="52" r="6" fill="#1e1b4b"/>
+                                                    <circle cx="70" cy="52" r="6" fill="#1e1b4b"/>
+                                                    <line x1="8" y1="28" x2="18" y2="28" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                                                    <line x1="4" y1="36" x2="16" y2="36" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                                                </svg>
+                                            </div>
                                         </div>
                                         <div class="st-dots">
                                             <i class="on" id="stDot1" onclick="event.stopPropagation(); switchBannerTab(1)"></i>
                                             <i id="stDot2" onclick="event.stopPropagation(); switchBannerTab(2)"></i>
                                             <i id="stDot3" onclick="event.stopPropagation(); switchBannerTab(3)"></i>
+                                            <i id="stDot4" onclick="event.stopPropagation(); switchBannerTab(4)"></i>
+                                            <i id="stDot5" onclick="event.stopPropagation(); switchBannerTab(5)"></i>
+                                            <i id="stDot6" onclick="event.stopPropagation(); switchBannerTab(6)"></i>
                                         </div>
                                     </div>
                                 <?php elseif ($secKey === 'trending'): ?>
@@ -735,11 +780,14 @@ function studio_cat_placeholder(): string {
                                 <span>Show section name</span>
                             </label>
 
-                            <div class="st-sec-title" style="margin-top:16px">Customize Banners (3 Slides)</div>
-                            <div class="st-tabs" style="margin-bottom:14px">
+                            <div class="st-sec-title" style="margin-top:16px">Customize Banners (6 Slides)</div>
+                            <div class="st-tabs" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px;">
                                 <button type="button" class="st-tab on" id="tabBanner1" onclick="switchBannerTab(1)">Banner 1</button>
                                 <button type="button" class="st-tab" id="tabBanner2" onclick="switchBannerTab(2)">Banner 2</button>
                                 <button type="button" class="st-tab" id="tabBanner3" onclick="switchBannerTab(3)">Banner 3</button>
+                                <button type="button" class="st-tab" id="tabBanner4" onclick="switchBannerTab(4)">Banner 4</button>
+                                <button type="button" class="st-tab" id="tabBanner5" onclick="switchBannerTab(5)">Banner 5</button>
+                                <button type="button" class="st-tab" id="tabBanner6" onclick="switchBannerTab(6)">Banner 6</button>
                             </div>
 
                             <!-- Banner 1 -->
@@ -819,6 +867,90 @@ function studio_cat_placeholder(): string {
                                         <div class="st-color-row">
                                             <input type="color" name="banner_3_text_color" id="pickerBanner3Txt" value="<?= e($b3Txt) ?>" oninput="syncBannerColor(3, 'txt', this.value)">
                                             <input type="text" class="st-hex" id="hexBanner3Txt" value="<?= e($b3Txt) ?>" oninput="syncBannerColorHex(3, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Banner 4 -->
+                            <div id="bannerGroup4" class="st-hidden">
+                                <label class="st-label">Banner 4 Tag / Prefix</label>
+                                <input class="st-input" type="text" name="banner_4_tag" value="<?= e($brand['banner_4_tag'] ?? 'Special Offer,') ?>" placeholder="e.g. Special Offer," oninput="updateBannerCanvas(4)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 4 Title</label>
+                                <input class="st-input" type="text" name="banner_4_title" value="<?= e($brand['banner_4_title'] ?? 'Super Savings') ?>" placeholder="e.g. Super Savings" oninput="updateBannerCanvas(4)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 4 Subtitle</label>
+                                <input class="st-input" type="text" name="banner_4_subtitle" value="<?= e($brand['banner_4_subtitle'] ?? 'Get exclusive discounts today!') ?>" placeholder="e.g. Get exclusive discounts today!" oninput="updateBannerCanvas(4)" style="margin-bottom:14px">
+
+                                <div class="st-sec-title">Banner 4 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_4_bg_color" id="pickerBanner4Bg" value="<?= e($b4Bg) ?>" oninput="syncBannerColor(4, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner4Bg" value="<?= e($b4Bg) ?>" oninput="syncBannerColorHex(4, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_4_text_color" id="pickerBanner4Txt" value="<?= e($b4Txt) ?>" oninput="syncBannerColor(4, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner4Txt" value="<?= e($b4Txt) ?>" oninput="syncBannerColorHex(4, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Banner 5 -->
+                            <div id="bannerGroup5" class="st-hidden">
+                                <label class="st-label">Banner 5 Tag / Prefix</label>
+                                <input class="st-input" type="text" name="banner_5_tag" value="<?= e($brand['banner_5_tag'] ?? 'Fresh Deals,') ?>" placeholder="e.g. Fresh Deals," oninput="updateBannerCanvas(5)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 5 Title</label>
+                                <input class="st-input" type="text" name="banner_5_title" value="<?= e($brand['banner_5_title'] ?? 'Top Quality Picks') ?>" placeholder="e.g. Top Quality Picks" oninput="updateBannerCanvas(5)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 5 Subtitle</label>
+                                <input class="st-input" type="text" name="banner_5_subtitle" value="<?= e($brand['banner_5_subtitle'] ?? 'Handpicked best products for you.') ?>" placeholder="e.g. Handpicked best products for you." oninput="updateBannerCanvas(5)" style="margin-bottom:14px">
+
+                                <div class="st-sec-title">Banner 5 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_5_bg_color" id="pickerBanner5Bg" value="<?= e($b5Bg) ?>" oninput="syncBannerColor(5, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner5Bg" value="<?= e($b5Bg) ?>" oninput="syncBannerColorHex(5, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_5_text_color" id="pickerBanner5Txt" value="<?= e($b5Txt) ?>" oninput="syncBannerColor(5, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner5Txt" value="<?= e($b5Txt) ?>" oninput="syncBannerColorHex(5, 'txt', this.value)">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Banner 6 -->
+                            <div id="bannerGroup6" class="st-hidden">
+                                <label class="st-label">Banner 6 Tag / Prefix</label>
+                                <input class="st-input" type="text" name="banner_6_tag" value="<?= e($brand['banner_6_tag'] ?? 'Fast & Reliable,') ?>" placeholder="e.g. Fast & Reliable," oninput="updateBannerCanvas(6)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 6 Title</label>
+                                <input class="st-input" type="text" name="banner_6_title" value="<?= e($brand['banner_6_title'] ?? 'Express Delivery') ?>" placeholder="e.g. Express Delivery" oninput="updateBannerCanvas(6)" style="margin-bottom:12px">
+                                <label class="st-label">Banner 6 Subtitle</label>
+                                <input class="st-input" type="text" name="banner_6_subtitle" value="<?= e($brand['banner_6_subtitle'] ?? 'Direct to your doorstep quickly.') ?>" placeholder="e.g. Direct to your doorstep quickly." oninput="updateBannerCanvas(6)" style="margin-bottom:14px">
+
+                                <div class="st-sec-title">Banner 6 Theme Colors</div>
+                                <div class="st-color-grid" style="margin-bottom:12px">
+                                    <div class="st-color-card">
+                                        <span>Background</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_6_bg_color" id="pickerBanner6Bg" value="<?= e($b6Bg) ?>" oninput="syncBannerColor(6, 'bg', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner6Bg" value="<?= e($b6Bg) ?>" oninput="syncBannerColorHex(6, 'bg', this.value)">
+                                        </div>
+                                    </div>
+                                    <div class="st-color-card">
+                                        <span>Text Color</span>
+                                        <div class="st-color-row">
+                                            <input type="color" name="banner_6_text_color" id="pickerBanner6Txt" value="<?= e($b6Txt) ?>" oninput="syncBannerColor(6, 'txt', this.value)">
+                                            <input type="text" class="st-hex" id="hexBanner6Txt" value="<?= e($b6Txt) ?>" oninput="syncBannerColorHex(6, 'txt', this.value)">
                                         </div>
                                     </div>
                                 </div>
@@ -1017,14 +1149,24 @@ function menuAction(kind) {
 const bannerColors = {
     1: { bg: '<?= e($b1Bg) ?>', txt: '<?= e($b1Txt) ?>' },
     2: { bg: '<?= e($b2Bg) ?>', txt: '<?= e($b2Txt) ?>' },
-    3: { bg: '<?= e($b3Bg) ?>', txt: '<?= e($b3Txt) ?>' }
+    3: { bg: '<?= e($b3Bg) ?>', txt: '<?= e($b3Txt) ?>' },
+    4: { bg: '<?= e($b4Bg) ?>', txt: '<?= e($b4Txt) ?>' },
+    5: { bg: '<?= e($b5Bg) ?>', txt: '<?= e($b5Txt) ?>' },
+    6: { bg: '<?= e($b6Bg) ?>', txt: '<?= e($b6Txt) ?>' }
 };
 
 let currentBannerIdx = 1;
+let studioBannerTimer = null;
+let studioBannerPaused = false;
 
-function switchBannerTab(idx) {
+function switchBannerTab(idx, isUserInteraction = true) {
     currentBannerIdx = idx;
-    [1, 2, 3].forEach(i => {
+    if (isUserInteraction) {
+        studioBannerPaused = true;
+        clearTimeout(studioBannerTimer);
+        studioBannerTimer = setTimeout(() => { studioBannerPaused = false; }, 8000);
+    }
+    [1, 2, 3, 4, 5, 6].forEach(i => {
         const tab = document.getElementById('tabBanner' + i);
         const group = document.getElementById('bannerGroup' + i);
         const slide = document.getElementById('canvasSlide' + i);
@@ -1041,6 +1183,15 @@ function switchBannerTab(idx) {
         card.style.color = bannerColors[idx].txt;
     }
 }
+
+// Auto-play preview carousel in Store Studio
+setInterval(() => {
+    if (studioBannerPaused) return;
+    const isFocused = document.activeElement && document.activeElement.closest('#editBanner');
+    if (isFocused) return;
+    let nextIdx = (currentBannerIdx % 6) + 1;
+    switchBannerTab(nextIdx, false);
+}, 3500);
 
 function syncBannerColor(idx, type, val) {
     if (!val) return;
@@ -1084,6 +1235,7 @@ function syncBannerColorHex(idx, type, val) {
 }
 
 function updateBannerCanvas(idx) {
+    switchBannerTab(idx, true);
     if (idx === 1) {
         const t = document.querySelector('input[name="banner_title"]')?.value || "We're online now!";
         const s = document.querySelector('input[name="banner_subtitle"]')?.value || 'Stay at home and shop online.';
@@ -1108,6 +1260,36 @@ function updateBannerCanvas(idx) {
         const elTag = document.getElementById('canvasBanner3Tag');
         const elT = document.getElementById('canvasBanner3Title');
         const elS = document.getElementById('canvasBanner3Sub');
+        if (elTag) elTag.textContent = tag;
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    } else if (idx === 4) {
+        const tag = document.querySelector('input[name="banner_4_tag"]')?.value || 'Special Offer,';
+        const t = document.querySelector('input[name="banner_4_title"]')?.value || 'Super Savings';
+        const s = document.querySelector('input[name="banner_4_subtitle"]')?.value || 'Get exclusive discounts today!';
+        const elTag = document.getElementById('canvasBanner4Tag');
+        const elT = document.getElementById('canvasBanner4Title');
+        const elS = document.getElementById('canvasBanner4Sub');
+        if (elTag) elTag.textContent = tag;
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    } else if (idx === 5) {
+        const tag = document.querySelector('input[name="banner_5_tag"]')?.value || 'Fresh Deals,';
+        const t = document.querySelector('input[name="banner_5_title"]')?.value || 'Top Quality Picks';
+        const s = document.querySelector('input[name="banner_5_subtitle"]')?.value || 'Handpicked best products for you.';
+        const elTag = document.getElementById('canvasBanner5Tag');
+        const elT = document.getElementById('canvasBanner5Title');
+        const elS = document.getElementById('canvasBanner5Sub');
+        if (elTag) elTag.textContent = tag;
+        if (elT) elT.textContent = t;
+        if (elS) elS.textContent = s;
+    } else if (idx === 6) {
+        const tag = document.querySelector('input[name="banner_6_tag"]')?.value || 'Fast & Reliable,';
+        const t = document.querySelector('input[name="banner_6_title"]')?.value || 'Express Delivery';
+        const s = document.querySelector('input[name="banner_6_subtitle"]')?.value || 'Direct to your doorstep quickly.';
+        const elTag = document.getElementById('canvasBanner6Tag');
+        const elT = document.getElementById('canvasBanner6Title');
+        const elS = document.getElementById('canvasBanner6Sub');
         if (elTag) elTag.textContent = tag;
         if (elT) elT.textContent = t;
         if (elS) elS.textContent = s;
