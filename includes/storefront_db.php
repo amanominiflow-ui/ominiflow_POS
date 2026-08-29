@@ -124,9 +124,13 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_title', "VARCHAR(191) NULL DEFAULT 'with Ease'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_subtitle', "VARCHAR(255) NULL DEFAULT 'with Speed'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#028476'");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'banner_3_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'products', 'is_trending', "TINYINT(1) NOT NULL DEFAULT 0");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'show_trending_items', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'trending_section_name', "VARCHAR(191) NOT NULL DEFAULT 'Top Trending Items'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'trending_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'trending_text_color', "VARCHAR(20) NOT NULL DEFAULT '#000000'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'item_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Items'");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'section_order', "VARCHAR(191) NOT NULL DEFAULT 'category,banner,item'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'section_order', "VARCHAR(191) NOT NULL DEFAULT 'category,banner,trending,item'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'font_size', "VARCHAR(20) NOT NULL DEFAULT 'medium'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_mode', "VARCHAR(20) NOT NULL DEFAULT 'all'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'selected_category_ids', "TEXT NULL");
@@ -542,8 +546,12 @@ function get_mobile_store_settings(int $businessId): array {
         'banner_3_subtitle' => (string) ($row['banner_3_subtitle'] ?? 'with Speed'),
         'banner_3_bg_color' => (string) ($row['banner_3_bg_color'] ?? '#028476'),
         'banner_3_text_color' => (string) ($row['banner_3_text_color'] ?? '#ffffff'),
+        'show_trending_items' => (int) ($row['show_trending_items'] ?? 1) === 1,
+        'trending_section_name' => (string) ($row['trending_section_name'] ?? 'Top Trending Items'),
+        'trending_bg_color' => (string) ($row['trending_bg_color'] ?? '#ffffff'),
+        'trending_text_color' => (string) ($row['trending_text_color'] ?? '#000000'),
         'item_section_name' => (string) ($row['item_section_name'] ?? 'All Items'),
-        'section_order' => (string) ($row['section_order'] ?? 'category,banner,item'),
+        'section_order' => (string) ($row['section_order'] ?? 'category,banner,trending,item'),
         'font_size' => in_array(($row['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? (string) $row['font_size'] : 'medium',
         'category_mode' => (($row['category_mode'] ?? 'all') === 'custom') ? 'custom' : 'all',
         'selected_category_ids' => parse_selected_ids($row['selected_category_ids'] ?? ''),
@@ -563,7 +571,7 @@ function parse_selected_ids($value): array {
 
 function storefront_home_sections(array $brand): array {
     $order = array_filter(array_map('trim', explode(',', (string) ($brand['section_order'] ?? ''))));
-    $allowed = ['category', 'banner', 'item'];
+    $allowed = ['category', 'banner', 'trending', 'item'];
     $out = [];
     foreach ($order as $key) {
         if (in_array($key, $allowed, true) && !in_array($key, $out, true)) {
@@ -698,6 +706,10 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             banner_3_subtitle = :b3sub,
             banner_3_bg_color = :b3bg,
             banner_3_text_color = :b3txt,
+            show_trending_items = :strend,
+            trending_section_name = :tsn,
+            trending_bg_color = :tbg,
+            trending_text_color = :ttc,
             item_section_name = :isn,
             section_order = :sord,
             font_size = :fsize,
@@ -761,6 +773,10 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'b3sub' => trim((string)($data['banner_3_subtitle'] ?? $current['banner_3_subtitle'] ?? 'with Speed')),
         'b3bg' => normalize_hex_color((string)($data['banner_3_bg_color'] ?? $current['banner_3_bg_color'] ?? '#028476'), '#028476'),
         'b3txt' => normalize_hex_color((string)($data['banner_3_text_color'] ?? $current['banner_3_text_color'] ?? '#ffffff'), '#ffffff'),
+        'strend' => array_key_exists('show_trending_items', $data) ? (!empty($data['show_trending_items']) ? 1 : 0) : ($current['show_trending_items'] ? 1 : 0),
+        'tsn' => trim((string)($data['trending_section_name'] ?? $current['trending_section_name'] ?? 'Top Trending Items')),
+        'tbg' => normalize_hex_color((string)($data['trending_bg_color'] ?? $current['trending_bg_color'] ?? '#ffffff'), '#ffffff'),
+        'ttc' => normalize_hex_color((string)($data['trending_text_color'] ?? $current['trending_text_color'] ?? '#000000'), '#000000'),
         'isn' => trim((string)($data['item_section_name'] ?? $current['item_section_name'])),
         'sord' => trim((string)($data['section_order'] ?? $current['section_order'])),
         'fsize' => in_array(($data['font_size'] ?? $current['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true)
@@ -779,6 +795,23 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     }
 
     return ['success' => true];
+}
+
+function get_storefront_trending_products(int $businessId, int $limit = 20): array {
+    ensure_online_store_schema();
+    $db = get_db();
+    $stmt = $db->prepare("
+        SELECT * FROM products 
+        WHERE business_id = :bid 
+          AND status = 'active' 
+          AND is_trending = 1 
+        ORDER BY updated_at DESC, id DESC 
+        LIMIT :lim
+    ");
+    $stmt->bindValue(':bid', $businessId, PDO::PARAM_INT);
+    $stmt->bindValue(':lim', max(1, $limit), PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll() ?: [];
 }
 
 function publish_mobile_store(int $businessId): void {

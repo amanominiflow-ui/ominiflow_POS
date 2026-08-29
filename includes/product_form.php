@@ -381,7 +381,21 @@ if ($defaultInter === '' && $igstRates) {
         </div>
     </div>
 
-    <div class="item-row" style="max-width:280px;margin-top:8px">
+    <div class="item-card" style="margin-top:16px;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;background:#f8fafc;">
+        <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span>Online Storefront Highlights</span>
+        </div>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;">
+            <input type="checkbox" name="is_trending" value="1" <?= !empty(product_form_val('is_trending')) ? 'checked' : '' ?> style="width:18px;height:18px;margin-top:2px;accent-color:#083d30;cursor:pointer;">
+            <div>
+                <div style="font-weight:600;font-size:13.5px;color:#0f172a;">Show in "Top Trending Items" section</div>
+                <div style="font-size:12px;color:#64748b;margin-top:2px;">Feature this product in the highlighted Top Trending section on your online store home page.</div>
+            </div>
+        </label>
+    </div>
+
+    <div class="item-row" style="max-width:280px;margin-top:12px">
         <label class="item-label">Status</label>
         <select class="item-select" name="status">
             <option value="active" <?= product_form_val('status', 'active') === 'active' ? 'selected' : '' ?>>Active</option>

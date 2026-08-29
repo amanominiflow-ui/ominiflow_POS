@@ -104,14 +104,19 @@ function studio_cat_placeholder(): string {
         }
         .st-phone-wrap {
             width: 340px;
+            max-width: 100%;
             position: relative;
             margin: 0 auto;
             flex-shrink: 0;
             overflow: visible;
+            box-sizing: border-box;
         }
         .st-phone {
+            width: 340px;
+            max-width: 340px;
             background: #fff; border: 1px solid #cbd5e1; border-radius: 28px;
             box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12); overflow: visible;
+            box-sizing: border-box;
             --st-header: <?= e($headerColor) ?>;
             --st-header-text: <?= e($headerText) ?>;
             --st-accent: <?= e($accentColor) ?>;
@@ -122,7 +127,7 @@ function studio_cat_placeholder(): string {
         .st-phone.font-large { font-size: 15px; }
         .st-notch { height: 16px; background: var(--st-header); display: flex; align-items: center; justify-content: center; border-radius: 28px 28px 0 0; }
         .st-notch span { width: 48px; height: 4px; background: rgba(255,255,255,.28); border-radius: 4px; }
-        .st-ph-head { background: var(--st-header); color: var(--st-header-text); padding: 8px 14px 12px; }
+        .st-ph-head { background: var(--st-header); color: var(--st-header-text); padding: 8px 14px 12px; border-radius: 0; }
         .st-ph-brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
         .st-ph-brand-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
         .st-ph-logo { width: 26px; height: 26px; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -140,7 +145,7 @@ function studio_cat_placeholder(): string {
         @keyframes msSearchSlideIn { 0% { transform: translate3d(0, 80%, 0); opacity: 0; } 100% { transform: translate3d(0, 0, 0); opacity: 1; } }
         @keyframes msSearchSlideOut { 0% { transform: translate3d(0, 0, 0); opacity: 1; } 100% { transform: translate3d(0, -80%, 0); opacity: 0; } }
 
-        .st-sec { position: relative; padding: 12px; border: 2px dashed transparent; cursor: pointer; }
+        .st-sec { position: relative; padding: 12px; border: 2px dashed transparent; cursor: pointer; box-sizing: border-box; width: 100%; max-width: 100%; }
         .st-sec:hover, .st-sec.selected { border-color: #2563eb; }
         .st-pill {
             position: absolute; top: -2px; left: -2px; background: #2563eb; color: #fff;
@@ -170,30 +175,30 @@ function studio_cat_placeholder(): string {
         .st-float button.danger:hover { background: rgba(239,68,68,.18); }
         .st-float hr { border: 0; border-top: 1px solid #334155; margin: 4px 0; }
 
-        .st-h { font-weight: 700; color: #0f172a; margin: 0 0 8px; font-size: 1.05em; }
-        .st-cat-grid { display: grid; gap: 8px; }
-        .st-cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 6px; text-align: center; }
-        .st-cat-img { height: 52px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 5px; }
-        .st-cat-img img { width: 100%; height: 100%; object-fit: cover; }
-        .st-cat-name { font-size: .78em; font-weight: 800; text-transform: uppercase; color: #0f172a; }
+        .st-h { font-weight: 700; color: #0f172a; margin: 0 0 8px; font-size: 1.05em; word-break: break-word; }
+        .st-cat-grid { display: grid; gap: 8px; width: 100%; box-sizing: border-box; }
+        .st-cat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 6px; text-align: center; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+        .st-cat-img { width: 100%; height: 52px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 5px; box-sizing: border-box; }
+        .st-cat-img img { width: 100%; max-width: 100%; height: 100%; object-fit: cover; display: block; }
+        .st-cat-name { font-size: .78em; font-weight: 800; text-transform: uppercase; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .st-banner { border-radius: 8px; min-height: 108px; padding: 14px 16px; color: #fff; position: relative; overflow: hidden;
-            background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); }
-        .st-banner h4 { margin: 0; font-size: 1.15em; line-height: 1.2; font-weight: 800; }
-        .st-banner p { margin: 4px 0 0; font-size: .85em; opacity: .92; }
+            background: linear-gradient(135deg, #5b21b6, #7c3aed 55%, #6d28d9); box-sizing: border-box; width: 100%; max-width: 100%; }
+        .st-banner h4 { margin: 0; font-size: 1.15em; line-height: 1.2; font-weight: 800; word-break: break-word; }
+        .st-banner p { margin: 4px 0 0; font-size: .85em; opacity: .92; word-break: break-word; }
         .st-dots { display: flex; justify-content: center; gap: 5px; margin-top: 7px; }
         .st-dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; display: block; cursor: pointer; transition: all 0.2s ease; }
         .st-dots i.on { background: #2563eb; width: 14px; border-radius: 999px; }
 
-        .st-item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .st-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
-        .st-item-img { height: 78px; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
-        .st-item-img img { width: 100%; height: 100%; object-fit: cover; }
-        .st-item-name { font-size: .82em; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .st-item-meta { font-size: .75em; color: #64748b; margin: 2px 0 6px; }
-        .st-item-foot { display: flex; align-items: center; justify-content: space-between; }
-        .st-item-price { font-size: .85em; font-weight: 800; }
-        .st-add { background: var(--st-accent); color: var(--st-btn-text); font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+        .st-item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; box-sizing: border-box; }
+        .st-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
+        .st-item-img { width: 100%; height: 78px; background: #f8fafc; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-sizing: border-box; }
+        .st-item-img img { width: 100%; max-width: 100%; height: 100%; object-fit: contain; display: block; }
+        .st-item-name { font-size: .82em; font-weight: 700; color: #0f172a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-item-meta { font-size: .75em; color: #64748b; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-item-foot { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; margin-top: auto; }
+        .st-item-price { font-size: .85em; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .st-add { background: var(--st-accent); color: var(--st-btn-text); font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; flex-shrink: 0; }
 
         .st-panel {
             width: 400px; background: #fff; border-left: 1px solid #e2e8f0; display: none;
@@ -378,7 +383,7 @@ function studio_cat_placeholder(): string {
                                         <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                         <div class="st-h" id="canvasCatTitle"><?= e($brand['category_section_name'] ?: 'All Categories') ?></div>
-                                        <div class="st-cat-grid" id="canvasCatGrid" style="grid-template-columns: repeat(<?= (int) ($brand['category_columns'] ?: 2) ?>, 1fr);">
+                                        <div class="st-cat-grid" id="canvasCatGrid" style="grid-template-columns: repeat(<?= (int) ($brand['category_columns'] ?: 2) ?>, minmax(0, 1fr));">
                                             <?php
                                             $renderCats = $previewCats ?: [['name' => 'MENS'], ['name' => 'WOMEN'], ['name' => 'GORGEOUS 3PCS'], ['name' => 'TWO-PIECE SET']];
                                             foreach (array_slice($renderCats, 0, 4) as $sc): ?>
@@ -449,6 +454,41 @@ function studio_cat_placeholder(): string {
                                             <i id="stDot3" onclick="event.stopPropagation(); switchBannerTab(3)"></i>
                                         </div>
                                     </div>
+                                <?php elseif ($secKey === 'trending'): ?>
+                                    <div class="st-sec" id="secTrending" data-sec="trending" onclick="selectSec(event,'trending')" <?= empty($brand['show_trending_items']) ? 'style="display:none"' : '' ?>>
+                                        <div class="st-pill" style="background:#dc2626;">Trending</div>
+                                        <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
+                                        <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
+                                        <div class="st-h" id="canvasTrendingTitle" style="display:flex;align-items:center;gap:6px;">
+                                            <span><?= e($brand['trending_section_name'] ?: 'Top Trending Items') ?></span>
+                                            <span style="background:#fee2e2;color:#dc2626;font-size:9px;font-weight:800;padding:2px 5px;border-radius:8px;">HOT</span>
+                                        </div>
+                                        <div class="st-item-grid">
+                                            <?php 
+                                            $trendingPreview = array_values(array_filter($previewProducts ?: [], static fn($p) => !empty($p['is_trending'])));
+                                            if (!$trendingPreview && $previewProducts) {
+                                                $trendingPreview = array_slice($previewProducts, 0, 2);
+                                            }
+                                            if ($trendingPreview): foreach ($trendingPreview as $tp):
+                                                $tImg = !empty($tp['image_path']) ? asset((string) $tp['image_path']) : ''; ?>
+                                                <div class="st-item">
+                                                    <div class="st-item-img"><?php if ($tImg): ?><img src="<?= e($tImg) ?>" alt=""><?php else: ?><?= studio_cat_placeholder() ?><?php endif; ?></div>
+                                                    <div class="st-item-name"><?= e((string) $tp['name']) ?></div>
+                                                    <div class="st-item-meta" style="color:#dc2626;font-weight:700;">Trending Item</div>
+                                                    <div class="st-item-foot">
+                                                        <span class="st-item-price"><?= e($currency) . number_format((float) $tp['selling_price'], 2) ?></span>
+                                                        <span class="st-add">Add</span>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; else: ?>
+                                                <div class="st-item">
+                                                    <div class="st-item-img"><?= studio_cat_placeholder() ?></div>
+                                                    <div class="st-item-name">TRENDING PRODUCT</div>
+                                                    <div class="st-item-foot"><span class="st-item-price"><?= e($currency) ?>699.00</span><span class="st-add">Add</span></div>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 <?php else: ?>
                                     <div class="st-sec" id="secItem" data-sec="item" onclick="selectSec(event,'item')" <?= empty($brand['show_items']) ? 'style="display:none"' : '' ?>>
                                         <div class="st-pill">Item</div>
@@ -488,6 +528,7 @@ function studio_cat_placeholder(): string {
                     <div class="st-add-pop" id="stAddPop">
                         <button type="button" onclick="restoreSec('category')">Category</button>
                         <button type="button" onclick="restoreSec('banner')">Banner</button>
+                        <button type="button" onclick="restoreSec('trending')">Top Trending Items</button>
                         <button type="button" onclick="restoreSec('item')">Item</button>
                     </div>
                 </div>
@@ -604,6 +645,7 @@ function studio_cat_placeholder(): string {
                     <input type="hidden" name="section_order" id="inputSectionOrder" value="<?= e(implode(',', $sectionOrder)) ?>">
                     <input type="hidden" name="show_banner" id="flagBanner" value="<?= !empty($brand['show_banner']) ? '1' : '' ?>">
                     <input type="hidden" name="show_categories" id="flagCategory" value="<?= !empty($brand['show_categories']) ? '1' : '' ?>">
+                    <input type="hidden" name="show_trending_items" id="flagTrending" value="<?= !empty($brand['show_trending_items']) ? '1' : '' ?>">
                     <input type="hidden" name="show_items" id="flagItem" value="<?= !empty($brand['show_items']) ? '1' : '' ?>">
                     <input type="hidden" name="show_location" value="<?= !empty($brand['show_location']) ? '1' : '' ?>">
                     <input type="hidden" name="category_shape" id="inputCatShape" value="<?= e($brand['category_shape'] ?: 'rectangle') ?>">
@@ -783,6 +825,37 @@ function studio_cat_placeholder(): string {
                             </div>
                         </div>
 
+                        <div id="editTrending" class="st-hidden">
+                            <label class="st-label">Section Name <span class="st-req">*</span></label>
+                            <input class="st-input" type="text" name="trending_section_name" id="inputTrendingSectionName" value="<?= e($brand['trending_section_name'] ?: 'Top Trending Items') ?>" oninput="var ct = document.getElementById('canvasTrendingTitle'); if (ct) { var s = ct.querySelector('span'); if (s) s.textContent = this.value; else ct.textContent = this.value; }" style="margin-bottom:16px">
+
+                            <div class="st-sec-title">Section Theme Colors</div>
+                            <div class="st-color-grid" style="margin-bottom:16px">
+                                <div class="st-color-card">
+                                    <span>Background</span>
+                                    <div class="st-color-row">
+                                        <input type="color" name="trending_bg_color" value="<?= e($brand['trending_bg_color'] ?: '#ffffff') ?>">
+                                        <span style="font-size:12px;font-weight:700"><?= e($brand['trending_bg_color'] ?: '#ffffff') ?></span>
+                                    </div>
+                                </div>
+                                <div class="st-color-card">
+                                    <span>Text Color</span>
+                                    <div class="st-color-row">
+                                        <input type="color" name="trending_text_color" value="<?= e($brand['trending_text_color'] ?: '#000000') ?>">
+                                        <span style="font-size:12px;font-weight:700"><?= e($brand['trending_text_color'] ?: '#000000') ?></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="st-info" style="margin-top:12px;line-height:1.5;">
+                                <strong>How to add items here:</strong><br>
+                                Go to <strong>Inventory &gt; Items</strong>, edit any product, and check <em>Show in "Top Trending Items"</em>.
+                            </div>
+                            <a href="<?= asset('products.php') ?>" target="_blank" class="st-btn st-btn-sec" style="display:inline-flex;align-items:center;justify-content:center;margin-top:10px;text-decoration:none;font-size:13px;font-weight:600;padding:8px 12px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;">
+                                <span>Manage Trending Items in Products ↗</span>
+                            </a>
+                        </div>
+
                         <div id="editItem" class="st-hidden">
                             <label class="st-label">Section Name <span class="st-req">*</span></label>
                             <input class="st-input" type="text" name="item_section_name" value="<?= e($brand['item_section_name'] ?: 'All Items') ?>" oninput="document.getElementById('canvasItemTitle').textContent=this.value">
@@ -889,7 +962,7 @@ function openDrawer(kind) {
     if (STUDIO_MODE === 'branding') return;
     const panel = document.getElementById('panelLayout');
     panel.classList.add('open');
-    ['editCategory','themeCategory','editBanner','editItem','editHeader'].forEach(id => {
+    ['editCategory','themeCategory','editBanner','editTrending','editItem','editHeader'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('st-hidden');
     });
@@ -898,6 +971,8 @@ function openDrawer(kind) {
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
         'theme-banner': ['editBanner', 'Banner Theme & Colors'],
+        'edit-trending': ['editTrending', 'Edit Top Trending Component'],
+        'theme-trending': ['editTrending', 'Top Trending Properties'],
         'edit-item': ['editItem', 'Edit Item Component'],
         'theme-item': ['editItem', 'Edit Item Component'],
         'edit-header': ['editHeader', 'Edit Header Component']
@@ -928,9 +1003,9 @@ function menuAction(kind) {
     const selected = document.querySelector('.st-sec.selected');
     const key = selected ? selected.dataset.sec : 'category';
     if (kind === 'edit') {
-        openDrawer(key === 'category' ? 'edit-category' : (key === 'banner' ? 'edit-banner' : 'edit-item'));
+        openDrawer(key === 'category' ? 'edit-category' : (key === 'banner' ? 'edit-banner' : (key === 'trending' ? 'edit-trending' : 'edit-item')));
     } else if (kind === 'theme') {
-        openDrawer(key === 'category' ? 'theme-category' : (key === 'banner' ? 'theme-banner' : 'theme-item'));
+        openDrawer(key === 'category' ? 'theme-category' : (key === 'banner' ? 'theme-banner' : (key === 'trending' ? 'theme-trending' : 'theme-item')));
     } else if (kind === 'move') {
         moveSec(key, 'down');
     } else if (kind === 'rearrange') {
@@ -1083,7 +1158,7 @@ function syncOrder() {
 }
 function openRearrange() {
     const keys = [...document.querySelectorAll('#stSections .st-sec')].map(s => s.dataset.sec);
-    const labels = { category: 'All Categories', banner: 'Banners', item: 'All Items' };
+    const labels = { category: 'All Categories', banner: 'Banners', trending: 'Top Trending Items', item: 'All Items' };
     window._ord = keys.slice();
     drawOrd();
     document.getElementById('rearrangeModal').classList.add('open');
@@ -1144,7 +1219,7 @@ function refreshCatPreview() {
     const grid = document.getElementById('canvasCatGrid');
     let list = STUDIO_CATS;
     if (mode === 'custom' && selectedIds.size) list = STUDIO_CATS.filter(c => selectedIds.has(c.id));
-    grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
     grid.innerHTML = list.slice(0, 8).map(c => {
         const img = c.image ? `<img src="${c.image}" alt="">` : `<?= studio_cat_placeholder() ?>`;
         return `<div class="st-cat-card"><div class="st-cat-img">${img}</div><div class="st-cat-name">${(c.name || '').toUpperCase()}</div></div>`;
