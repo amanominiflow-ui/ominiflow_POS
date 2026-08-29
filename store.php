@@ -227,21 +227,55 @@ if (!function_exists('sf_product_image')) {
     }
 }
 
+if (!function_exists('storefront_get_all_product_images')) {
+    function storefront_get_all_product_images(array $p, int $businessId): array {
+        $images = [];
+        if (!empty($p['image_path'])) {
+            $url = sf_product_image((string) $p['image_path']);
+            if ($url && !in_array($url, $images, true)) {
+                $images[] = $url;
+            }
+        }
+        if (function_exists('get_product_images')) {
+            $gallery = get_product_images((int) ($p['id'] ?? 0), $businessId);
+            foreach ($gallery as $g) {
+                if (!empty($g['path'])) {
+                    $url = sf_product_image((string) $g['path']);
+                    if ($url && !in_array($url, $images, true)) {
+                        $images[] = $url;
+                    }
+                }
+            }
+        }
+        if (!empty($p['rear_image_path'])) {
+            $url = sf_product_image((string) $p['rear_image_path']);
+            if ($url && !in_array($url, $images, true)) {
+                $images[] = $url;
+            }
+        }
+        return $images;
+    }
+}
+
 if (!function_exists('storefront_parse_product_display_info')) {
     function storefront_parse_product_display_info(array $p, int $businessId): array {
-        $variants = function_exists('get_product_variants') ? get_product_variants((int) $p['id'], $businessId) : [];
+        $isVariable = (($p['product_type'] ?? '') === 'variable');
+        $variants = ($isVariable && function_exists('get_product_variants')) ? get_product_variants((int) $p['id'], $businessId) : [];
         $varCount = count($variants);
         
         $attrText = '';
         $mrp = (float) ($p['mrp'] ?? 0);
         $sellingPrice = (float) ($p['selling_price'] ?? 0);
         
-        if ($varCount > 0) {
+        if ($isVariable && $varCount > 0) {
             $firstVar = $variants[0];
             $vName = trim((string) ($firstVar['variant_name'] ?? ''));
             
             if (!empty($firstVar['selling_price']) && (float) $firstVar['selling_price'] > 0) {
                 $sellingPrice = (float) $firstVar['selling_price'];
+            }
+            if (!empty($firstVar['cost_price']) && (float) ($firstVar['mrp'] ?? 0) > 0) {
+                $mrp = (float) $firstVar['mrp'];
             }
             
             if ($vName !== '') {
@@ -649,6 +683,148 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             color: #166534 !important;
             font-weight: 700;
         }
+
+        /* Product Card Multi-Image Navigation & Arrows */
+        .ms-product-img-wrap {
+            position: relative !important;
+            overflow: hidden;
+            user-select: none;
+        }
+        .ms-card-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.94);
+            color: #0f172a;
+            border: 1px solid rgba(203, 213, 225, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            z-index: 5;
+            opacity: 0.88;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.14);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            padding: 0 0 2px 0;
+        }
+        .ms-card-arrow:hover {
+            opacity: 1;
+            background: #ffffff;
+            transform: translateY(-50%) scale(1.12);
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.22);
+        }
+        .ms-card-arrow-prev { left: 6px; }
+        .ms-card-arrow-next { right: 6px; }
+        .ms-card-dots {
+            position: absolute;
+            bottom: 6px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 4px;
+            z-index: 4;
+            pointer-events: none;
+        }
+        .ms-card-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: rgba(148, 163, 184, 0.6);
+            transition: all 0.2s ease;
+        }
+        .ms-card-dot.is-active {
+            background: #0f172a;
+            width: 13px;
+            border-radius: 999px;
+        }
+
+        /* PDP Gallery Multi-Image Carousel & Thumbnails */
+        .ms-pdp-gallery-card {
+            background: #ffffff;
+            border: 1px solid #f1f5f9;
+            border-radius: 14px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 16px;
+        }
+        .ms-pdp-main-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 320px;
+            max-height: 440px;
+            width: 100%;
+        }
+        .ms-pdp-main-wrap img {
+            max-width: 100%;
+            max-height: 420px;
+            object-fit: contain;
+        }
+        .ms-pdp-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.95);
+            color: #0f172a;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 700;
+            cursor: pointer;
+            z-index: 5;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+            transition: all 0.2s ease;
+            padding: 0 0 2px 0;
+            user-select: none;
+        }
+        .ms-pdp-arrow:hover {
+            background: #ffffff;
+            transform: translateY(-50%) scale(1.1);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22);
+        }
+        .ms-pdp-arrow-prev { left: 8px; }
+        .ms-pdp-arrow-next { right: 8px; }
+        .ms-pdp-thumbs {
+            display: flex;
+            gap: 8px;
+            margin-top: 14px;
+            overflow-x: auto;
+            padding: 4px 2px;
+            justify-content: center;
+        }
+        .ms-pdp-thumb {
+            width: 58px;
+            height: 58px;
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+            overflow: hidden;
+            cursor: pointer;
+            flex-shrink: 0;
+            padding: 3px;
+            background: #fff;
+            transition: all 0.2s ease;
+        }
+        .ms-pdp-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .ms-pdp-thumb.is-active, .ms-pdp-thumb:hover {
+            border-color: #0f172a;
+        }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
@@ -1041,7 +1217,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php else: ?>
                         <div class="ms-item-grid">
                             <?php foreach ($products as $p):
-                                $img = sf_product_image($p['image_path'] ?? null);
+                                $pImages = storefront_get_all_product_images($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
@@ -1052,21 +1228,37 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 $discountPct = $pInfo['discount_percent'];
                                 ?>
                                 <div class="ms-product-card">
-                                    <a class="ms-product-img-wrap" href="<?= e($pUrl) ?>">
-                                        <?php if ($discountPct > 0): ?>
-                                            <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
-                                        <?php endif; ?>
+                                    <div class="ms-product-img-wrap">
+                                        <a class="ms-product-img-link" href="<?= e($pUrl) ?>" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-decoration:none;position:relative;">
+                                            <?php if ($discountPct > 0): ?>
+                                                <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
+                                            <?php endif; ?>
 
-                                        <?php if ($img): ?>
-                                            <img src="<?= e($img) ?>" alt="<?= e((string) $p['name']) ?>">
-                                        <?php else: ?>
-                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                                <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
-                                                <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
-                                                <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
-                                            </svg>
+                                            <?php if ($pImages): ?>
+                                                <div class="ms-card-img-track" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+                                                    <?php foreach ($pImages as $idx => $imgSrc): ?>
+                                                        <img src="<?= e($imgSrc) ?>" alt="<?= e((string) $p['name']) ?>" class="<?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                    <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+                                                    <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
+                                                    <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
+                                                </svg>
+                                            <?php endif; ?>
+                                        </a>
+
+                                        <?php if (count($pImages) > 1): ?>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous Image">‹</button>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next Image">›</button>
+                                            <div class="ms-card-dots">
+                                                <?php foreach ($pImages as $dIdx => $d): ?>
+                                                    <span class="ms-card-dot<?= $dIdx === 0 ? ' is-active' : '' ?>"></span>
+                                                <?php endforeach; ?>
+                                            </div>
                                         <?php endif; ?>
-                                    </a>
+                                    </div>
                                     <div class="ms-product-body">
                                         <div>
                                             <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
@@ -1121,7 +1313,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
                     $inStock = $activeVariant ? ((int)$activeVariant['stock_quantity'] > 0) : ((int)$product['stock_quantity'] > 0);
                     $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
-                    $img = sf_product_image($product['image_path'] ?? null);
+                    $pdpImages = storefront_get_all_product_images($product, $bid);
                     ?>
                     <div class="ms-pdp-wrap">
                         <a href="<?= e($homeUrl) ?>" class="ms-legal-back" style="display:inline-flex;margin-bottom:16px;">← Back to Store</a>
@@ -1129,15 +1321,30 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <!-- Top 2-Column Product Detail Card -->
                         <div class="ms-pdp-top-card">
                             <!-- Left: High-Res Image Gallery -->
-                            <div class="ms-pdp-gallery">
-                                <?php if ($img): ?>
-                                    <img src="<?= e($img) ?>" alt="<?= e((string) $product['name']) ?>" id="pdpMainImg">
-                                <?php else: ?>
-                                    <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                                        <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
-                                        <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
-                                        <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
-                                    </svg>
+                            <div class="ms-pdp-gallery-card">
+                                <div class="ms-pdp-main-wrap">
+                                    <?php if ($pdpImages): ?>
+                                        <img src="<?= e($pdpImages[0]) ?>" alt="<?= e((string) $product['name']) ?>" id="pdpMainImg" data-idx="0">
+                                        <?php if (count($pdpImages) > 1): ?>
+                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-prev" onclick="sfPdpSlide(-1)" aria-label="Previous image">‹</button>
+                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-next" onclick="sfPdpSlide(1)" aria-label="Next image">›</button>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5" fill="#cbd5e1"/>
+                                            <polyline points="21 15 16 10 5 21" fill="none" stroke="#cbd5e1"/>
+                                        </svg>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if (count($pdpImages) > 1): ?>
+                                    <div class="ms-pdp-thumbs">
+                                        <?php foreach ($pdpImages as $tIdx => $tUrl): ?>
+                                            <div class="ms-pdp-thumb<?= $tIdx === 0 ? ' is-active' : '' ?>" onclick="sfPdpSetImage(<?= $tIdx ?>)">
+                                                <img src="<?= e($tUrl) ?>" alt="Thumbnail <?= $tIdx + 1 ?>">
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
                                 <?php endif; ?>
                             </div>
 
@@ -2165,6 +2372,54 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     checkValue();
     timer = setTimeout(switchWord, 1700);
 })();
+
+function sfCardSlide(btn, dir) {
+    var wrap = btn.closest('.ms-product-img-wrap');
+    if (!wrap) return;
+    var imgs = wrap.querySelectorAll('.ms-card-img-track img');
+    var dots = wrap.querySelectorAll('.ms-card-dots .ms-card-dot');
+    if (imgs.length <= 1) return;
+    
+    var currentIdx = 0;
+    for (var i = 0; i < imgs.length; i++) {
+        if (imgs[i].style.display !== 'none' && !imgs[i].hidden) {
+            currentIdx = i;
+            break;
+        }
+    }
+    
+    var nextIdx = (currentIdx + dir + imgs.length) % imgs.length;
+    
+    for (var j = 0; j < imgs.length; j++) {
+        imgs[j].style.display = (j === nextIdx) ? 'block' : 'none';
+        imgs[j].classList.toggle('is-active', j === nextIdx);
+    }
+    for (var k = 0; k < dots.length; k++) {
+        dots[k].classList.toggle('is-active', k === nextIdx);
+    }
+}
+
+var pdpImages = <?= !empty($pdpImages) ? json_encode($pdpImages) : '[]' ?>;
+var pdpCurrentIdx = 0;
+
+function sfPdpSlide(dir) {
+    if (!pdpImages || pdpImages.length <= 1) return;
+    pdpCurrentIdx = (pdpCurrentIdx + dir + pdpImages.length) % pdpImages.length;
+    sfPdpSetImage(pdpCurrentIdx);
+}
+
+function sfPdpSetImage(idx) {
+    if (!pdpImages || !pdpImages[idx]) return;
+    pdpCurrentIdx = idx;
+    var mainImg = document.getElementById('pdpMainImg');
+    if (mainImg) {
+        mainImg.src = pdpImages[idx];
+    }
+    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+    for (var i = 0; i < thumbs.length; i++) {
+        thumbs[i].classList.toggle('is-active', i === idx);
+    }
+}
 </script>
 </body>
 </html>
