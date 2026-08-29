@@ -743,6 +743,17 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             width: 13px;
             border-radius: 999px;
         }
+        .ms-product-desc {
+            font-size: 11.5px;
+            color: #64748b;
+            line-height: 1.35;
+            margin-bottom: 4px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
+        }
 
         /* PDP Gallery Multi-Image Carousel & Thumbnails */
         .ms-pdp-gallery-card {
@@ -1262,6 +1273,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <div class="ms-product-body">
                                         <div>
                                             <a class="ms-product-name" href="<?= e($pUrl) ?>"><?= e((string) $p['name']) ?></a>
+                                            <?php 
+                                            $pDesc = trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                                            if ($pDesc !== ''): ?>
+                                                <div class="ms-product-desc"><?= e($pDesc) ?></div>
+                                            <?php endif; ?>
                                             <?php if ($attrText !== ''): ?>
                                                 <div class="ms-product-attr"><?= e($attrText) ?></div>
                                             <?php endif; ?>
