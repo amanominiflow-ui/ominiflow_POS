@@ -124,6 +124,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', 'Weight'];
 ?>
+<style>
+/* Single Item vs Contains Variants */
+.item-toggles { display: flex !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; overflow: hidden !important; width: fit-content !important; margin-bottom: 16px !important; background: #fff !important; }
+.item-tog { padding: 8px 18px !important; border: none !important; background: transparent !important; font-size: 13px !important; font-weight: 600 !important; color: #475569 !important; cursor: pointer !important; transition: all 0.15s ease !important; }
+.item-tog.on { background: #2563eb !important; color: #ffffff !important; }
+.item-tog + .item-tog { border-left: 1px solid #cbd5e1 !important; }
+
+.variants-only { display: none; }
+.item-type-variants .variants-only { display: block !important; }
+.item-type-variants .variants-only.item-2 { display: grid !important; }
+.item-type-variants .single-only { display: none !important; }
+
+.variations-sec {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 16px 20px !important;
+    margin-top: 14px !important;
+    margin-bottom: 20px !important;
+}
+.variation-attr-row {
+    display: grid !important;
+    grid-template-columns: 200px 1fr 36px !important;
+    gap: 16px !important;
+    align-items: flex-start !important;
+    margin-bottom: 12px !important;
+}
+.tag-input-wrap {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 40px !important;
+    padding: 4px 8px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    background: #ffffff !important;
+    cursor: text !important;
+}
+.tag-input-wrap:focus-within {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+.tag-chip {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    background: #e0e7ff !important;
+    color: #3730a3 !important;
+    border-radius: 4px !important;
+    padding: 3px 8px !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+}
+.tag-chip .tag-remove {
+    cursor: pointer !important;
+    font-size: 14px !important;
+    color: #6366f1 !important;
+    line-height: 1 !important;
+    padding: 0 2px !important;
+    border: none !important;
+    background: none !important;
+}
+.tag-chip .tag-remove:hover { color: #dc2626 !important; }
+.tag-input-field {
+    border: none !important;
+    outline: none !important;
+    font: inherit !important;
+    font-size: 13px !important;
+    flex: 1 !important;
+    min-width: 80px !important;
+    padding: 4px !important;
+    background: transparent !important;
+}
+.attr-remove-btn {
+    width: 36px !important;
+    height: 40px !important;
+    background: none !important;
+    border: none !important;
+    color: #94a3b8 !important;
+    font-size: 20px !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin-top: 24px !important;
+}
+.attr-remove-btn:hover { color: #ef4444 !important; }
+.add-attr-link {
+    background: none !important;
+    border: 0 !important;
+    color: #2563eb !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    cursor: pointer !important;
+    padding: 0 !important;
+    margin-top: 10px !important;
+    display: inline-block !important;
+}
+.add-attr-link:hover { color: #1d4ed8 !important; }
+.variant-table-wrap { margin-top: 18px !important; overflow-x: auto !important; }
+.variant-table { width: 100% !important; border-collapse: collapse !important; font-size: 13px !important; }
+.variant-table th { background: #f1f5f9 !important; color: #475569 !important; font-weight: 700 !important; text-align: left !important; padding: 9px 12px !important; border: 1px solid #e2e8f0 !important; }
+.variant-table td { padding: 8px 12px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; }
+.variant-table td input { width: 100% !important; border: 1px solid #cbd5e1 !important; border-radius: 5px !important; padding: 6px 10px !important; font: inherit !important; font-size: 13px !important; }
+</style>
 
 <div class="item-sheet <?= $itemType === 'variants' ? 'item-type-variants' : '' ?>" id="itemSheet">
     <div class="item-top">
@@ -244,7 +350,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
         <button type="button" class="item-link single-only" id="addIdent">+ Add Identifier</button>
 
         <!-- Variations Section (visible only in "Contains Variants" mode) -->
-        <div class="variations-sec variants-only" id="variationsSec">
+        <div class="variations-sec variants-only" id="variationsSec" style="<?= $itemType !== 'variants' ? 'display:none;' : '' ?>">
             <div class="item-sec-title">Variations</div>
             <div class="variation-attrs-wrap" id="attrsWrap">
                 <?php if (!empty($variantAttrs)): ?>
@@ -557,17 +663,36 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
     });
 
     // Item type toggle (Single Item / Contains Variants)
+    function setItemType(type) {
+        var isVar = (type === 'variants');
+        document.querySelectorAll('.item-tog').forEach(function (b) {
+            b.classList.toggle('on', b.getAttribute('data-item-type') === type);
+        });
+        var typeInput = document.getElementById('item_type');
+        if (typeInput) typeInput.value = isVar ? 'variants' : 'single';
+        if (sheet) {
+            sheet.classList.toggle('item-type-variants', isVar);
+        }
+        document.querySelectorAll('.variants-only').forEach(function (el) {
+            el.style.display = isVar ? '' : 'none';
+        });
+        document.querySelectorAll('.single-only').forEach(function (el) {
+            el.style.display = isVar ? 'none' : '';
+        });
+        if (isVar) {
+            rebuildVariantMatrix();
+        }
+    }
+
     document.querySelectorAll('.item-tog').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            document.querySelectorAll('.item-tog').forEach(function (b) { b.classList.remove('on'); });
-            this.classList.add('on');
-            var type = this.getAttribute('data-item-type');
-            document.getElementById('item_type').value = type;
-            if (sheet) {
-                sheet.classList.toggle('item-type-variants', type === 'variants');
-            }
+            setItemType(this.getAttribute('data-item-type'));
         });
     });
+
+    // Initialize toggle state immediately
+    var initialType = document.getElementById('item_type') ? document.getElementById('item_type').value : 'single';
+    setItemType(initialType || 'single');
 
     document.querySelectorAll('input[name=item_kind]').forEach(function (r) {
         r.addEventListener('change', function () {

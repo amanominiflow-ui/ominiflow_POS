@@ -56,8 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="icon" type="image/png" sizes="32x32" href="<?= asset('assets/images/favicon-32x32.png') ?>">
     <link rel="icon" type="image/png" sizes="16x16" href="<?= asset('assets/images/favicon-16x16.png') ?>">
     <link rel="shortcut icon" href="<?= asset('assets/images/favicon.ico') ?>">
-    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
-    <link rel="stylesheet" href="<?= asset('assets/css/item-form.css') ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>?v=<?= time() ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/item-form.css') ?>?v=<?= time() ?>">
 </head>
 <body>
 <div class="app-layout">
