@@ -26,43 +26,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         set_flash('error', 'Invalid session token. Please refresh.');
         redirect(APP_URL . '/settings.php');
     } else {
-        $storeName = trim($_POST['store_name'] ?? 'OminiFlow Retail POS');
-        $tagline = trim($_POST['tagline'] ?? '');
-        $address = trim($_POST['address'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $gstin = trim($_POST['gstin'] ?? '');
-        $currency = trim($_POST['currency_symbol'] ?? '₹');
+        $saveData = [
+            'store_name' => trim($_POST['store_name'] ?? ''),
+            'legal_name' => trim($_POST['legal_name'] ?? ''),
+            'gstin' => trim($_POST['gstin'] ?? ''),
+            'currency_symbol' => trim($_POST['currency_symbol'] ?? '₹'),
+            'phone' => trim($_POST['phone'] ?? ''),
+            'email' => trim($_POST['email'] ?? ''),
+            'address' => trim($_POST['address'] ?? ''),
+            'city' => trim($_POST['city'] ?? ''),
+            'state' => trim($_POST['state'] ?? ''),
+            'pincode' => trim($_POST['pincode'] ?? ''),
+            'bank_name' => trim($_POST['bank_name'] ?? 'HDFC Bank'),
+            'account_holder' => trim($_POST['account_holder'] ?? ''),
+            'account_number' => trim($_POST['account_number'] ?? ''),
+            'bank_ifsc' => trim($_POST['bank_ifsc'] ?? ''),
+            'bank_branch' => trim($_POST['bank_branch'] ?? ''),
+            'account_type' => trim($_POST['account_type'] ?? 'Current Account'),
+            'package_name' => trim($_POST['package_name'] ?? 'Monthly'),
+            'terms_conditions' => trim($_POST['terms_conditions'] ?? ''),
+            'privacy_policy' => trim($_POST['privacy_policy'] ?? ''),
+        ];
 
-        $stmt = $db->prepare('
-            UPDATE store_settings
-            SET store_name = :sname, tagline = :tag, address = :addr, phone = :phone, email = :email, gstin = :gstin, currency_symbol = :curr, updated_at = NOW()
-            WHERE id = 1
-        ');
-        $stmt->execute([
-            'sname' => $storeName,
-            'tag' => $tagline ?: null,
-            'addr' => $address ?: null,
-            'phone' => $phone ?: null,
-            'email' => $email ?: null,
-            'gstin' => $gstin ?: null,
-            'curr' => $currency ?: '₹',
-        ]);
-        set_flash('success', 'Business profile & store settings saved successfully!');
+        require_once __DIR__ . '/includes/orders_db.php';
+        update_store_settings($saveData);
+
+        set_flash('success', 'Business profile, bank details & invoice settings saved successfully!');
         redirect(APP_URL . '/settings.php');
     }
 }
 
-$stmtS = $db->query('SELECT * FROM store_settings WHERE id = 1 LIMIT 1');
-$settings = $stmtS->fetch() ?: [
-    'store_name' => 'OminiFlow Retail POS',
-    'tagline' => 'Official Retail Store & POS Terminal',
-    'address' => 'Plot No. 42, Tech Park, Sector 5, Bangalore',
-    'phone' => '+91 98765 43210',
-    'email' => 'pos@ominiflow.com',
-    'gstin' => '29ABCDE1234F1Z5',
-    'currency_symbol' => '₹',
-];
+require_once __DIR__ . '/includes/orders_db.php';
+$settings = get_store_settings();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -485,9 +480,15 @@ $settings = $stmtS->fetch() ?: [
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="save_settings">
 
-                <div style="margin-bottom: 14px;">
-                    <label class="form-label required" style="display: block; margin-bottom: 6px;">Store / Business Name</label>
-                    <input type="text" name="store_name" value="<?= e($settings['store_name']) ?>" class="form-control" required style="width: 100%;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                    <div>
+                        <label class="form-label required" style="display: block; margin-bottom: 6px;">Store / Brand Name</label>
+                        <input type="text" name="store_name" value="<?= e($settings['store_name']) ?>" class="form-control" required style="width: 100%;">
+                    </div>
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">Legal Entity Name</label>
+                        <input type="text" name="legal_name" value="<?= e($settings['legal_name']) ?>" class="form-control" style="width: 100%;">
+                    </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
@@ -512,9 +513,70 @@ $settings = $stmtS->fetch() ?: [
                     </div>
                 </div>
 
-                <div style="margin-bottom: 20px;">
+                <div style="margin-bottom: 14px;">
                     <label class="form-label" style="display: block; margin-bottom: 6px;">Store Address</label>
-                    <textarea name="address" rows="3" class="form-control" style="width: 100%; resize: vertical;"><?= e($settings['address']) ?></textarea>
+                    <textarea name="address" rows="2" class="form-control" style="width: 100%; resize: vertical;"><?= e($settings['raw_address'] ?? $settings['address']) ?></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">City</label>
+                        <input type="text" name="city" value="<?= e($settings['city']) ?>" class="form-control" style="width: 100%;">
+                    </div>
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">State</label>
+                        <input type="text" name="state" value="<?= e($settings['state']) ?>" class="form-control" style="width: 100%;">
+                    </div>
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">PIN Code</label>
+                        <input type="text" name="pincode" value="<?= e($settings['pincode']) ?>" class="form-control" style="width: 100%;">
+                    </div>
+                </div>
+
+                <!-- Bank Details for Invoice -->
+                <div style="padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;">
+                    <div style="font-weight: 700; color: #0f172a; font-size: 13.5px; margin-bottom: 10px;">Bank Details (Printed on Invoices)</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">Bank Name</label>
+                            <input type="text" name="bank_name" value="<?= e($settings['bank_name']) ?>" class="form-control" placeholder="e.g. HDFC Bank">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">Account Holder</label>
+                            <input type="text" name="account_holder" value="<?= e($settings['account_holder']) ?>" class="form-control" placeholder="e.g. Company Name">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">Account Number</label>
+                            <input type="text" name="account_number" value="<?= e($settings['account_number']) ?>" class="form-control" placeholder="Account Number">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">IFSC Code</label>
+                            <input type="text" name="bank_ifsc" value="<?= e($settings['bank_ifsc']) ?>" class="form-control" placeholder="e.g. HDFC0000887" style="text-transform: uppercase;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">Branch</label>
+                            <input type="text" name="bank_branch" value="<?= e($settings['bank_branch']) ?>" class="form-control" placeholder="Branch Name">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 12px;">Account Type</label>
+                            <input type="text" name="account_type" value="<?= e($settings['account_type']) ?>" class="form-control" placeholder="Current Account">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px;">
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">Invoice Package / Type</label>
+                        <input type="text" name="package_name" value="<?= e($settings['package_name']) ?>" class="form-control" placeholder="e.g. Monthly">
+                    </div>
+                    <div>
+                        <label class="form-label" style="display: block; margin-bottom: 6px;">Invoice Terms / Policy</label>
+                        <input type="text" name="terms_conditions" value="<?= e($settings['terms_conditions']) ?>" class="form-control" placeholder="Custom Terms & Conditions">
+                    </div>
                 </div>
 
                 <div style="display: flex; justify-content: flex-end; gap: 10px;">

@@ -150,6 +150,15 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'font_size', "VARCHAR(20) NOT NULL DEFAULT 'medium'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_mode', "VARCHAR(20) NOT NULL DEFAULT 'all'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'selected_category_ids', "TEXT NULL");
+
+    // Payment Methods toggles
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_cod', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_upi', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
 }
 
 function add_schema_column_if_missing(PDO $db, string $table, string $column, string $definition): void {
@@ -586,6 +595,15 @@ function get_mobile_store_settings(int $businessId): array {
         'font_size' => in_array(($row['font_size'] ?? 'medium'), ['small', 'medium', 'large'], true) ? (string) $row['font_size'] : 'medium',
         'category_mode' => (($row['category_mode'] ?? 'all') === 'custom') ? 'custom' : 'all',
         'selected_category_ids' => parse_selected_ids($row['selected_category_ids'] ?? ''),
+
+        // Payment Preferences & Gateways
+        'enable_cod' => (int) ($row['enable_cod'] ?? 1) === 1,
+        'enable_upi' => (int) ($row['enable_upi'] ?? 1) === 1,
+        'enable_card' => (int) ($row['enable_card'] ?? 1) === 1,
+        'enable_netbanking' => (int) ($row['enable_netbanking'] ?? 1) === 1,
+        'enable_store_pickup_payment' => (int) ($row['enable_store_pickup_payment'] ?? 1) === 1,
+        'upi_id' => (string) ($row['upi_id'] ?? ''),
+        'payment_instructions' => (string) ($row['payment_instructions'] ?? ''),
     ];
 }
 
@@ -761,6 +779,13 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             font_size = :fsize,
             category_mode = :cmode,
             selected_category_ids = :scids,
+            enable_cod = :ecod,
+            enable_upi = :eupi,
+            enable_card = :ecard,
+            enable_netbanking = :enet,
+            enable_store_pickup_payment = :epick,
+            upi_id = :upiid,
+            payment_instructions = :pinst,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -845,6 +870,13 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             : 'medium',
         'cmode' => (($data['category_mode'] ?? $current['category_mode'] ?? 'all') === 'custom') ? 'custom' : 'all',
         'scids' => json_encode(parse_selected_ids($data['selected_category_ids'] ?? $current['selected_category_ids'] ?? [])),
+        'ecod' => array_key_exists('enable_cod', $data) ? (!empty($data['enable_cod']) ? 1 : 0) : ($current['enable_cod'] ? 1 : 0),
+        'eupi' => array_key_exists('enable_upi', $data) ? (!empty($data['enable_upi']) ? 1 : 0) : ($current['enable_upi'] ? 1 : 0),
+        'ecard' => array_key_exists('enable_card', $data) ? (!empty($data['enable_card']) ? 1 : 0) : ($current['enable_card'] ? 1 : 0),
+        'enet' => array_key_exists('enable_netbanking', $data) ? (!empty($data['enable_netbanking']) ? 1 : 0) : ($current['enable_netbanking'] ? 1 : 0),
+        'epick' => array_key_exists('enable_store_pickup_payment', $data) ? (!empty($data['enable_store_pickup_payment']) ? 1 : 0) : ($current['enable_store_pickup_payment'] ? 1 : 0),
+        'upiid' => array_key_exists('upi_id', $data) ? trim((string)$data['upi_id']) : ($current['upi_id'] ?? null),
+        'pinst' => array_key_exists('payment_instructions', $data) ? trim((string)$data['payment_instructions']) : ($current['payment_instructions'] ?? null),
         'bid' => $businessId,
     ]);
 
@@ -1725,9 +1757,21 @@ function place_online_store_order(int $businessId, array $checkout): array {
         return ['success' => false, 'errors' => $cust['errors'] ?? ['general' => 'Could not save customer details.']];
     }
 
-    $method = (string) ($checkout['payment_method'] ?? 'cod');
-    $method = in_array($method, ['cod', 'upi', 'pickup'], true) ? $method : 'cod';
-    $paymentStatus = $method === 'cod' ? 'pending' : 'paid';
+    $brandSettings = get_mobile_store_settings($businessId);
+    $allowedMethods = [];
+    if (!empty($brandSettings['enable_cod'])) $allowedMethods[] = 'cod';
+    if (!empty($brandSettings['enable_upi'])) $allowedMethods[] = 'upi';
+    if (!empty($brandSettings['enable_card'])) $allowedMethods[] = 'card';
+    if (!empty($brandSettings['enable_netbanking'])) $allowedMethods[] = 'netbanking';
+    if (!empty($brandSettings['enable_store_pickup_payment'])) $allowedMethods[] = 'pickup';
+
+    if (empty($allowedMethods)) {
+        $allowedMethods = ['cod'];
+    }
+
+    $rawMethod = (string) ($checkout['payment_method'] ?? '');
+    $method = in_array($rawMethod, $allowedMethods, true) ? $rawMethod : $allowedMethods[0];
+    $paymentStatus = in_array($method, ['cod', 'pickup'], true) ? 'pending' : 'paid';
     $notesParts = [
         'Online Store order',
         'Payment: ' . strtoupper($method),

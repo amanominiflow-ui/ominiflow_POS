@@ -49,7 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_slug') {
         $res = save_business_store_slug($bid, (string) ($_POST['store_slug'] ?? ''));
         if (!empty($res['success'])) {
-            set_store_published($bid, !empty($_POST['store_published']));
+            if (isset($_POST['store_published'])) {
+                set_store_published($bid, !empty($_POST['store_published']));
+            }
             set_flash('success', 'Store URL saved.');
         } else {
             set_flash('error', $res['error'] ?? 'Could not save store URL.');
@@ -127,6 +129,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['contact_us_text'] = $_POST['contact_us_text'] ?? '';
             $saveData['privacy_policy'] = $_POST['privacy_policy'] ?? '';
             $saveData['footer_location'] = $_POST['footer_location'] ?? '';
+
+            // Payment Methods Toggles & Options
+            $saveData['enable_cod'] = !empty($_POST['enable_cod']);
+            $saveData['enable_upi'] = !empty($_POST['enable_upi']);
+            $saveData['enable_card'] = !empty($_POST['enable_card']);
+            $saveData['enable_netbanking'] = !empty($_POST['enable_netbanking']);
+            $saveData['enable_store_pickup_payment'] = !empty($_POST['enable_store_pickup_payment']);
+            $saveData['upi_id'] = trim($_POST['upi_id'] ?? '');
+            $saveData['payment_instructions'] = trim($_POST['payment_instructions'] ?? '');
         }
 
         if ($action === 'save_customize' || $action === 'publish_layout') {
@@ -185,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             publish_mobile_store($bid);
             set_flash('success', 'Website published with your branding.');
         } else {
-            if ($action === 'save_preferences') {
+            if ($action === 'save_preferences' && isset($_POST['store_status_submitted'])) {
                 set_store_published($bid, !empty($_POST['store_published']));
             }
             set_flash('success', 'Store customization saved. Open the website to see it.');
@@ -414,6 +425,95 @@ if (in_array($tab, ['customize', 'branding'], true)) {
         }
         .pref-save-btn:hover {
             background: #1d4ed8;
+        }
+
+        /* Payment Methods Preference Styles */
+        .pref-pay-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 680px;
+        }
+        .pref-pay-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            transition: all 0.15s ease;
+        }
+        .pref-pay-card:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+        }
+        .pref-pay-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .pref-pay-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #f8fafc;
+            border: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .pref-pay-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .pref-pay-desc {
+            font-size: 12.5px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .pref-switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 25px;
+            flex-shrink: 0;
+            margin: 0;
+            cursor: pointer;
+        }
+        .pref-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .pref-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #cbd5e1;
+            transition: .2s;
+            border-radius: 25px;
+        }
+        .pref-slider:before {
+            position: absolute;
+            content: "";
+            height: 19px;
+            width: 19px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+        .pref-switch input:checked + .pref-slider {
+            background-color: #10b981;
+        }
+        .pref-switch input:checked + .pref-slider:before {
+            transform: translateX(21px);
         }
 
         /* Custom Domain Landing & Stepper Styles */
@@ -1490,10 +1590,18 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                     </button>
                                 </span>
                             </div>
-                            <div class="os-detail-row">
+                            <div class="os-detail-row" style="align-items:center;">
                                 <span class="os-detail-label">Status:</span>
-                                <span class="os-detail-value">
+                                <span class="os-detail-value" style="display:inline-flex;align-items:center;gap:12px;">
                                     <span class="os-status-pill <?= $published ? 'os-pill-open' : 'os-pill-closed' ?>"><?= $published ? 'Open' : 'Closed' ?></span>
+                                    <form method="post" style="margin:0;display:inline;">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="toggle_status">
+                                        <input type="hidden" name="tab" value="overview">
+                                        <button type="submit" style="padding:4px 12px;font-size:12px;font-weight:700;border-radius:6px;cursor:pointer;border:1px solid <?= $published ? '#fca5a5' : '#86efac' ?>;background:<?= $published ? '#fef2f2' : '#f0fdf4' ?>;color:<?= $published ? '#b91c1c' : '#15803d' ?>;transition:all 0.15s ease;">
+                                            <?= $published ? '🔴 Close Store' : '🟢 Open Store' ?>
+                                        </button>
+                                    </form>
                                 </span>
                             </div>
                         </div>
@@ -1542,6 +1650,26 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <input type="hidden" name="banner_title" value="<?= e($brand['banner_title']) ?>">
                         <input type="hidden" name="banner_subtitle" value="<?= e($brand['banner_subtitle']) ?>">
                         <input type="hidden" name="search_placeholder" value="<?= e($brand['search_placeholder']) ?>">
+
+                        <!-- Store Status (Open / Close) Control Section -->
+                        <div class="pref-section" style="background:#f8fafc;border:1.5px solid <?= $published ? '#86efac' : '#fca5a5' ?>;border-radius:10px;padding:16px 20px;margin-bottom:20px;">
+                            <input type="hidden" name="store_status_submitted" value="1">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+                                <div>
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<?= $published ? '#16a34a' : '#dc2626' ?>;"></span>
+                                        <span style="font-size:15px;font-weight:700;color:#0f172a;">Store Status: <?= $published ? 'Open (Accepting Customer Orders)' : 'Closed (Orders Paused)' ?></span>
+                                    </div>
+                                    <div style="font-size:13px;color:#64748b;margin-top:4px;">
+                                        <?= $published ? 'Your online store is live and open for customers to browse and place orders.' : 'Your online store is currently closed. Toggle the switch to open it whenever you are ready.' ?>
+                                    </div>
+                                </div>
+                                <label class="pref-switch" title="Toggle store open / closed">
+                                    <input type="checkbox" name="store_published" value="1" <?= $published ? 'checked' : '' ?>>
+                                    <span class="pref-slider"></span>
+                                </label>
+                            </div>
+                        </div>
 
                         <!-- Store Details Section -->
                         <div class="pref-section">
@@ -1608,6 +1736,101 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                 <input type="checkbox" name="enable_pickup" value="1" <?= !empty($brand['enable_pickup']) ? 'checked' : '' ?>>
                                 <span>Enable pickup</span>
                             </label>
+                        </div>
+
+                        <!-- Payment Methods & Settings Section -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Payment Methods & Settings</div>
+                            <div class="pref-help-sub">Choose which payment options are active and available for customers during checkout on your online store.</div>
+
+                            <div class="pref-pay-grid">
+                                <!-- COD -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon">💵</div>
+                                        <div>
+                                            <div class="pref-pay-name">Cash on Delivery (COD)</div>
+                                            <div class="pref-pay-desc">Customers pay with cash or UPI upon delivery</div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_cod" value="1" <?= !empty($brand['enable_cod']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+
+                                <!-- UPI -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon">📱</div>
+                                        <div>
+                                            <div class="pref-pay-name">UPI Payments</div>
+                                            <div class="pref-pay-desc">Google Pay, PhonePe, Paytm, BHIM & UPI QR checkout</div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_upi" value="1" <?= !empty($brand['enable_upi']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+
+                                <!-- Cards -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon">💳</div>
+                                        <div>
+                                            <div class="pref-pay-name">Credit & Debit Cards</div>
+                                            <div class="pref-pay-desc">Visa, MasterCard, RuPay card payments</div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_card" value="1" <?= !empty($brand['enable_card']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+
+                                <!-- Net Banking -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon">🏦</div>
+                                        <div>
+                                            <div class="pref-pay-name">Net Banking / Direct Bank Transfer</div>
+                                            <div class="pref-pay-desc">Direct bank account NEFT / IMPS / RTGS transfer</div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_netbanking" value="1" <?= !empty($brand['enable_netbanking']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+
+                                <!-- Store Pickup Payment -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon">🏪</div>
+                                        <div>
+                                            <div class="pref-pay-name">Pay at Store (Pickup)</div>
+                                            <div class="pref-pay-desc">Allow customers to place order online and pay cash at counter</div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_store_pickup_payment" value="1" <?= !empty($brand['enable_store_pickup_payment']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- UPI & Instructions Detail -->
+                            <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1f5f9;">
+                                <div class="pref-form-grid" style="margin-bottom:12px;">
+                                    <label class="pref-field-label">Store UPI ID (Optional)</label>
+                                    <input class="pref-field-input" type="text" name="upi_id" value="<?= e($brand['upi_id'] ?? '') ?>" placeholder="e.g. storename@okhdfcbank">
+                                </div>
+                                <div class="pref-form-grid">
+                                    <label class="pref-field-label">Payment Instructions / Note</label>
+                                    <input class="pref-field-input" type="text" name="payment_instructions" value="<?= e($brand['payment_instructions'] ?? '') ?>" placeholder="e.g. Please keep exact change ready for cash deliveries.">
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Customer Care & Contact Us Details Section -->

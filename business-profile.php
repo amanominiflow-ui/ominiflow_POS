@@ -57,6 +57,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
+        $bankName = trim($_POST['bank_name'] ?? 'HDFC Bank');
+        $accountHolder = trim($_POST['account_holder'] ?? $businessName);
+        $accountNumber = trim($_POST['account_number'] ?? '');
+        $bankIfsc = trim($_POST['bank_ifsc'] ?? '');
+        $bankBranch = trim($_POST['bank_branch'] ?? '');
+        $accountType = trim($_POST['account_type'] ?? 'Current Account');
+        $terms = trim($_POST['terms_conditions'] ?? '');
+        $privacy = trim($_POST['privacy_policy'] ?? '');
+        $packageName = trim($_POST['package_name'] ?? 'Monthly');
+
         $stmt = $db->prepare('
             UPDATE business_profile
             SET business_name = :bname,
@@ -75,6 +85,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 base_currency = :curr,
                 time_zone = :tz,
                 date_format = :dformat,
+                bank_name = :bank_name,
+                account_holder = :account_holder,
+                account_number = :account_number,
+                bank_ifsc = :bank_ifsc,
+                bank_branch = :bank_branch,
+                account_type = :account_type,
+                terms_conditions = :terms,
+                privacy_policy = :privacy,
+                package_name = :package_name,
                 ' . ($logoPath ? 'logo_path = :logo,' : '') . '
                 updated_at = NOW()
             WHERE id = 1
@@ -97,6 +116,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'curr' => $baseCurrency,
             'tz' => $timeZone,
             'dformat' => $dateFormat,
+            'bank_name' => $bankName,
+            'account_holder' => $accountHolder,
+            'account_number' => $accountNumber,
+            'bank_ifsc' => $bankIfsc,
+            'bank_branch' => $bankBranch,
+            'account_type' => $accountType,
+            'terms' => $terms,
+            'privacy' => $privacy,
+            'package_name' => $packageName,
         ];
         if ($logoPath) {
             $params['logo'] = $logoPath;
@@ -105,15 +133,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->execute($params);
 
         // Sync with store_settings
-        $db->prepare('UPDATE store_settings SET store_name = :sname, phone = :phone, email = :email, address = :addr WHERE id = 1')
-           ->execute([
-               'sname' => $businessName,
-               'phone' => ($phoneCode . ' ' . $phone),
-               'email' => $email,
-               'addr' => trim($address1 . ', ' . $address2 . ', ' . $city . ', ' . $state . ' ' . $zipCode, ', '),
-           ]);
+        require_once __DIR__ . '/includes/orders_db.php';
+        update_store_settings([
+            'store_name' => $businessName,
+            'legal_name' => $businessName,
+            'phone' => ($phoneCode . ' ' . $phone),
+            'email' => $email,
+            'address' => trim($address1 . ', ' . $address2, ', '),
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $zipCode,
+            'logo_path' => $logoPath ?: '',
+            'bank_name' => $bankName,
+            'account_holder' => $accountHolder,
+            'account_number' => $accountNumber,
+            'bank_ifsc' => $bankIfsc,
+            'bank_branch' => $bankBranch,
+            'account_type' => $accountType,
+            'terms_conditions' => $terms,
+            'privacy_policy' => $privacy,
+            'package_name' => $packageName,
+            'currency_symbol' => ($baseCurrency === 'INR' ? '₹' : '$'),
+        ]);
 
-        set_flash('success', 'Business Profile updated successfully!');
+        set_flash('success', 'Business Profile, Bank Details & Invoice Settings updated successfully!');
         redirect(APP_URL . '/business-profile.php');
     }
 }
@@ -602,6 +645,74 @@ $indianStates = [
                                 <option value="yyyy-MM-dd">yyyy-MM-dd [ 2026-08-19 ]</option>
                                 <option value="MM/dd/yyyy">MM/dd/yyyy [ 08/19/2026 ]</option>
                             </select>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="bp-divider">
+
+                <!-- SECTION 4: Bank Details (For Invoice) -->
+                <div style="margin-bottom: 24px;">
+                    <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 6px;">Bank Details (Printed on Invoices)</div>
+                    <div style="font-size: 13px; color: #64748b; margin-bottom: 16px;">These bank details appear dynamically on all generated invoices for this business.</div>
+                    
+                    <div class="bp-grid-2col">
+                        <div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Bank Name</label>
+                                <input type="text" name="bank_name" value="<?= e($profile['bank_name'] ?? 'HDFC Bank') ?>" class="bp-input" placeholder="e.g. HDFC Bank">
+                            </div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Account Number</label>
+                                <input type="text" name="account_number" value="<?= e($profile['account_number'] ?? '50200111653091') ?>" class="bp-input" placeholder="Bank Account Number">
+                            </div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Bank Branch</label>
+                                <input type="text" name="bank_branch" value="<?= e($profile['bank_branch'] ?? 'DEWAS') ?>" class="bp-input" placeholder="e.g. DEWAS Branch">
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Account Holder Name</label>
+                                <input type="text" name="account_holder" value="<?= e($profile['account_holder'] ?? $profile['business_name']) ?>" class="bp-input" placeholder="e.g. Ominiflow Enterprises">
+                            </div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">IFSC Code</label>
+                                <input type="text" name="bank_ifsc" value="<?= e($profile['bank_ifsc'] ?? 'HDFC0000887') ?>" class="bp-input" placeholder="e.g. HDFC0000887" style="text-transform: uppercase;">
+                            </div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Account Type</label>
+                                <input type="text" name="account_type" value="<?= e($profile['account_type'] ?? 'Current Account') ?>" class="bp-input" placeholder="e.g. Current Account">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="bp-divider">
+
+                <!-- SECTION 5: Invoice Terms & Privacy Policy -->
+                <div style="margin-bottom: 24px;">
+                    <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 6px;">Invoice Terms & Privacy Policy</div>
+                    <div style="font-size: 13px; color: #64748b; margin-bottom: 16px;">Customize the package name and policy notes printed at the footer of your invoices.</div>
+
+                    <div class="bp-grid-2col">
+                        <div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Invoice Package / Service Type</label>
+                                <input type="text" name="package_name" value="<?= e($profile['package_name'] ?? 'Monthly') ?>" class="bp-input" placeholder="e.g. Monthly, Retail Sale, Online Order">
+                            </div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Custom Privacy Policy</label>
+                                <textarea name="privacy_policy" rows="3" class="bp-input" style="height: auto; resize: vertical;" placeholder="Enter custom privacy policy"><?= e($profile['privacy_policy'] ?? '') ?></textarea>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="bp-col-field">
+                                <label class="bp-form-label">Terms & Conditions</label>
+                                <textarea name="terms_conditions" rows="4" class="bp-input" style="height: auto; resize: vertical;" placeholder="Enter invoice terms & conditions (e.g. Goods once sold...)"><?= e($profile['terms_conditions'] ?? '') ?></textarea>
+                            </div>
                         </div>
                     </div>
                 </div>

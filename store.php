@@ -2024,13 +2024,35 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
 
                                 <!-- Payment Method -->
+                                <?php
+                                $hasAnyOpt = false;
+                                ?>
                                 <label class="ms-label">Payment Method</label>
                                 <select class="ms-select" name="payment_method" style="margin-bottom:18px;">
-                                    <option value="cod">Cash on Delivery (COD)</option>
-                                    <option value="upi">UPI (Google Pay, PhonePe, Paytm)</option>
-                                    <option value="card">Credit / Debit Card</option>
-                                    <option value="pickup">Pay at store / Pickup</option>
+                                    <?php if (!empty($brand['enable_cod'])): $hasAnyOpt = true; ?>
+                                        <option value="cod">Cash on Delivery (COD)</option>
+                                    <?php endif; ?>
+                                    <?php if (!empty($brand['enable_upi'])): $hasAnyOpt = true; ?>
+                                        <option value="upi">UPI (Google Pay, PhonePe, Paytm, BHIM) <?= !empty($brand['upi_id']) ? ('[' . e($brand['upi_id']) . ']') : '' ?></option>
+                                    <?php endif; ?>
+                                    <?php if (!empty($brand['enable_card'])): $hasAnyOpt = true; ?>
+                                        <option value="card">Credit / Debit Card</option>
+                                    <?php endif; ?>
+                                    <?php if (!empty($brand['enable_netbanking'])): $hasAnyOpt = true; ?>
+                                        <option value="netbanking">Net Banking / Direct Bank Transfer</option>
+                                    <?php endif; ?>
+                                    <?php if (!empty($brand['enable_store_pickup_payment'])): $hasAnyOpt = true; ?>
+                                        <option value="pickup">Pay at Store / Pickup</option>
+                                    <?php endif; ?>
+                                    <?php if (!$hasAnyOpt): ?>
+                                        <option value="cod">Cash on Delivery (COD)</option>
+                                    <?php endif; ?>
                                 </select>
+                                <?php if (!empty($brand['payment_instructions'])): ?>
+                                    <div style="font-size:12.5px;color:#64748b;margin-top:-10px;margin-bottom:16px;background:#f8fafc;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;">
+                                        ℹ️ <?= e($brand['payment_instructions']) ?>
+                                    </div>
+                                <?php endif; ?>
 
                                 <div class="ms-total"><span>Total</span><span><?= sf_money($currency, $hydrated['total']) ?></span></div>
                                 <button class="ms-btn" type="submit" style="margin-top:14px;">Place Order</button>
@@ -2093,12 +2115,18 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <div class="ms-empty" style="padding:24px 0">No invoices yet.</div>
                     <?php else: ?>
                         <?php foreach ($myInvoices as $inv): ?>
-                            <div class="ms-cart-line">
+                            <div class="ms-cart-line" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #f1f5f9;">
                                 <div>
-                                    <strong><?= e((string) ($inv['invoice_number'] ?? ('#' . $inv['id']))) ?></strong>
+                                    <strong style="color:#0f172a;font-size:14px;"><?= e((string) ($inv['invoice_number'] ?? ('#' . $inv['id']))) ?></strong>
                                     <div class="ms-item-meta"><?= e((string) ($inv['invoice_date'] ?? $inv['created_at'] ?? '')) ?></div>
                                 </div>
-                                <div style="font-weight:700"><?= sf_money($currency, (float) ($inv['total_amount'] ?? 0)) ?></div>
+                                <div style="display:flex;align-items:center;gap:10px;">
+                                    <div style="font-weight:700"><?= sf_money($currency, (float) ($inv['total_amount'] ?? 0)) ?></div>
+                                    <a href="<?= APP_URL . '/invoice-view.php?id=' . (int)$inv['id'] . '&standalone=1' ?>" target="_blank" style="padding:6px 12px;border-radius:6px;background:#0f172a;color:#ffffff;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+                                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                        <span>Invoice</span>
+                                    </a>
+                                </div>
                             </div>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -2221,10 +2249,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             </div>
                         <?php endif; ?>
 
-                        <div class="ms-order-view-header">
+                        <div class="ms-order-view-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
                             <a href="<?= e(public_store_url($storeBiz, $storeShopper ? 'orders' : 'home')) ?>" class="ms-order-view-back">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                                 <span>Order Details</span>
+                            </a>
+                            <a href="<?= APP_URL . '/invoice-view.php?order_id=' . $orderId . '&standalone=1' ?>" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#0f172a;color:#ffffff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                <span>View / Print Invoice</span>
                             </a>
                         </div>
 
@@ -2700,56 +2732,90 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php endif; ?>
 
                 <!-- Payment Method Selector Section -->
+                <?php
+                $activeDrawerMethods = [];
+                if (!empty($brand['enable_cod'])) {
+                    $activeDrawerMethods['cod'] = [
+                        'name' => 'Pay on Delivery (COD)',
+                        'label' => 'Pay on Delivery',
+                        'desc' => 'Pay with cash or UPI upon delivery',
+                        'icon' => '💵'
+                    ];
+                }
+                if (!empty($brand['enable_upi'])) {
+                    $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
+                    if (!empty($brand['upi_id'])) {
+                        $upiSub .= ' (' . e($brand['upi_id']) . ')';
+                    }
+                    $activeDrawerMethods['upi'] = [
+                        'name' => 'Pay with UPI',
+                        'label' => 'Pay with UPI',
+                        'desc' => $upiSub,
+                        'icon' => '📱'
+                    ];
+                }
+                if (!empty($brand['enable_card'])) {
+                    $activeDrawerMethods['card'] = [
+                        'name' => 'Credit / Debit Card',
+                        'label' => 'Card Payment',
+                        'desc' => 'Visa, MasterCard, RuPay',
+                        'icon' => '💳'
+                    ];
+                }
+                if (!empty($brand['enable_netbanking'])) {
+                    $activeDrawerMethods['netbanking'] = [
+                        'name' => 'Net Banking / Direct Bank Transfer',
+                        'label' => 'Bank Transfer',
+                        'desc' => 'Direct bank transfer / NEFT / IMPS',
+                        'icon' => '🏦'
+                    ];
+                }
+                if (!empty($brand['enable_store_pickup_payment'])) {
+                    $activeDrawerMethods['pickup'] = [
+                        'name' => 'Pay at Store / Pickup',
+                        'label' => 'Pay at Store',
+                        'desc' => 'Collect & pay directly at counter',
+                        'icon' => '🏪'
+                    ];
+                }
+
+                if (empty($activeDrawerMethods)) {
+                    $activeDrawerMethods['cod'] = [
+                        'name' => 'Pay on Delivery (COD)',
+                        'label' => 'Pay on Delivery',
+                        'desc' => 'Pay with cash or UPI upon delivery',
+                        'icon' => '💵'
+                    ];
+                }
+
+                $firstKey = array_key_first($activeDrawerMethods);
+                $firstOpt = $activeDrawerMethods[$firstKey];
+                ?>
                 <div class="ms-cd-pm-section" id="msDrawerPmSection">
                     <div class="ms-cd-pm-head">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                         <span>Payment Method</span>
                     </div>
                     <div class="ms-cd-pm-options">
-                        <!-- COD -->
-                        <label class="ms-cd-pm-option is-selected" onclick="selectDrawerPaymentMethod('cod', 'Pay on Delivery', this)">
-                            <input type="radio" name="drawer_pm_choice" value="cod" checked>
-                            <div class="ms-cd-pm-icon">💵</div>
-                            <div class="ms-cd-pm-text">
-                                <div class="ms-cd-pm-name">Pay on Delivery (COD)</div>
-                                <div class="ms-cd-pm-desc">Pay with cash or UPI upon delivery</div>
-                            </div>
-                            <div class="ms-cd-pm-radio"></div>
-                        </label>
-
-                        <!-- UPI -->
-                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('upi', 'Pay with UPI', this)">
-                            <input type="radio" name="drawer_pm_choice" value="upi">
-                            <div class="ms-cd-pm-icon">📱</div>
-                            <div class="ms-cd-pm-text">
-                                <div class="ms-cd-pm-name">Pay with UPI</div>
-                                <div class="ms-cd-pm-desc">Google Pay, PhonePe, Paytm, BHIM</div>
-                            </div>
-                            <div class="ms-cd-pm-radio"></div>
-                        </label>
-
-                        <!-- Card -->
-                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('card', 'Credit / Debit Card', this)">
-                            <input type="radio" name="drawer_pm_choice" value="card">
-                            <div class="ms-cd-pm-icon">💳</div>
-                            <div class="ms-cd-pm-text">
-                                <div class="ms-cd-pm-name">Credit / Debit Card</div>
-                                <div class="ms-cd-pm-desc">Visa, MasterCard, RuPay</div>
-                            </div>
-                            <div class="ms-cd-pm-radio"></div>
-                        </label>
-
-                        <!-- Pay at Store / Pickup -->
-                        <label class="ms-cd-pm-option" onclick="selectDrawerPaymentMethod('pickup', 'Pay at Store / Pickup', this)">
-                            <input type="radio" name="drawer_pm_choice" value="pickup">
-                            <div class="ms-cd-pm-icon">🏪</div>
-                            <div class="ms-cd-pm-text">
-                                <div class="ms-cd-pm-name">Pay at Store / Pickup</div>
-                                <div class="ms-cd-pm-desc">Collect & pay directly at counter</div>
-                            </div>
-                            <div class="ms-cd-pm-radio"></div>
-                        </label>
+                        <?php foreach ($activeDrawerMethods as $mKey => $mInfo): 
+                            $isSel = ($mKey === $firstKey);
+                        ?>
+                            <label class="ms-cd-pm-option <?= $isSel ? 'is-selected' : '' ?>" onclick="selectDrawerPaymentMethod('<?= e($mKey) ?>', '<?= e(addslashes($mInfo['label'])) ?>', this)">
+                                <input type="radio" name="drawer_pm_choice" value="<?= e($mKey) ?>" <?= $isSel ? 'checked' : '' ?>>
+                                <div class="ms-cd-pm-icon"><?= $mInfo['icon'] ?></div>
+                                <div class="ms-cd-pm-text">
+                                    <div class="ms-cd-pm-name"><?= e($mInfo['name']) ?></div>
+                                    <div class="ms-cd-pm-desc"><?= e($mInfo['desc']) ?></div>
+                                </div>
+                                <div class="ms-cd-pm-radio"></div>
+                            </label>
+                        <?php endforeach; ?>
                     </div>
+                    <?php if (!empty($brand['payment_instructions'])): ?>
+                        <div style="font-size:12px;color:#64748b;margin-top:10px;padding:8px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;line-height:1.4;">
+                            ℹ️ <?= e($brand['payment_instructions']) ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -2760,11 +2826,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
                 <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
                 <input type="hidden" name="address" value="<?= e($locAddress) ?>">
-                <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="cod">
+                <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="<?= e($firstKey) ?>">
 
                 <div class="ms-cd-foot">
                     <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
-                        <div class="ms-cd-pay-title" id="msDrawerPayTitle">Pay on Delivery</div>
+                        <div class="ms-cd-pay-title" id="msDrawerPayTitle"><?= e($firstOpt['label']) ?></div>
                         <div class="ms-cd-pay-sub" style="color:#2563eb;font-weight:600;">Change Method ⌵</div>
                     </div>
                     <button type="submit" class="ms-cd-checkout-btn">Place Order</button>

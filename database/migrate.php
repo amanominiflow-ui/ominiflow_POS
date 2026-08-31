@@ -542,13 +542,29 @@ try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `store_settings` (
             `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
             `store_name` VARCHAR(191) NOT NULL DEFAULT 'OminiFlow Retail POS',
+            `legal_name` VARCHAR(191) NULL,
             `tagline` VARCHAR(255) NULL DEFAULT 'Official Retail Store & POS Terminal',
             `logo_path` VARCHAR(255) NULL DEFAULT 'assets/images/logo.jpg',
             `address` TEXT NULL,
+            `city` VARCHAR(100) NULL,
+            `state` VARCHAR(100) NULL,
+            `pincode` VARCHAR(20) NULL,
             `phone` VARCHAR(50) NULL DEFAULT '+91 98765 43210',
             `email` VARCHAR(191) NULL DEFAULT 'pos@ominiflow.com',
             `gstin` VARCHAR(50) NULL DEFAULT '29ABCDE1234F1Z5',
+            `pan_number` VARCHAR(50) NULL,
+            `bank_name` VARCHAR(100) NULL DEFAULT 'HDFC Bank',
+            `account_holder` VARCHAR(191) NULL DEFAULT 'Ominiflow Enterprises',
+            `account_number` VARCHAR(50) NULL DEFAULT '50200111653091',
+            `bank_ifsc` VARCHAR(30) NULL DEFAULT 'HDFC0000887',
+            `bank_branch` VARCHAR(100) NULL DEFAULT 'DEWAS',
+            `account_type` VARCHAR(50) NULL DEFAULT 'Current Account',
+            `upi_id` VARCHAR(100) NULL,
+            `terms_conditions` TEXT NULL,
+            `privacy_policy` MEDIUMTEXT NULL,
+            `package_name` VARCHAR(100) NULL DEFAULT 'Monthly',
             `currency_symbol` VARCHAR(10) NOT NULL DEFAULT '₹',
             `tax_type` VARCHAR(20) NOT NULL DEFAULT 'GST',
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1341,6 +1357,54 @@ try {
         INSERT IGNORE INTO `warehouse_stock` (`warehouse_id`, `product_id`, `stock_quantity`, `created_at`, `updated_at`)
         SELECT 1, p.id, p.stock_quantity, NOW(), NOW() FROM `products` p
     ");
+
+    // 6. Dynamic Invoice Branding & Bank Details Migration (Zoho POS / Multi-Vendor Parity)
+    $helperAddCol = function(PDO $p, string $tbl, string $col, string $def) {
+        try {
+            $st = $p->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = :col");
+            $st->execute(['db' => DB_NAME, 'tbl' => $tbl, 'col' => $col]);
+            if ((int)$st->fetchColumn() === 0) {
+                $p->exec("ALTER TABLE `{$tbl}` ADD `{$col}` {$def}");
+            }
+        } catch (Exception $e) {}
+    };
+
+    $helperAddCol($pdo, 'store_settings', 'legal_name', "VARCHAR(191) NULL");
+    $helperAddCol($pdo, 'store_settings', 'city', "VARCHAR(100) NULL");
+    $helperAddCol($pdo, 'store_settings', 'state', "VARCHAR(100) NULL");
+    $helperAddCol($pdo, 'store_settings', 'pincode', "VARCHAR(20) NULL");
+    $helperAddCol($pdo, 'store_settings', 'pan_number', "VARCHAR(50) NULL");
+    $helperAddCol($pdo, 'store_settings', 'bank_name', "VARCHAR(100) NULL DEFAULT 'HDFC Bank'");
+    $helperAddCol($pdo, 'store_settings', 'account_holder', "VARCHAR(191) NULL DEFAULT 'Ominiflow Enterprises'");
+    $helperAddCol($pdo, 'store_settings', 'account_number', "VARCHAR(50) NULL DEFAULT '50200111653091'");
+    $helperAddCol($pdo, 'store_settings', 'bank_ifsc', "VARCHAR(30) NULL DEFAULT 'HDFC0000887'");
+    $helperAddCol($pdo, 'store_settings', 'bank_branch', "VARCHAR(100) NULL DEFAULT 'DEWAS'");
+    $helperAddCol($pdo, 'store_settings', 'account_type', "VARCHAR(50) NULL DEFAULT 'Current Account'");
+    $helperAddCol($pdo, 'store_settings', 'upi_id', "VARCHAR(100) NULL");
+    $helperAddCol($pdo, 'store_settings', 'terms_conditions', "TEXT NULL");
+    $helperAddCol($pdo, 'store_settings', 'privacy_policy', "MEDIUMTEXT NULL");
+    $helperAddCol($pdo, 'store_settings', 'package_name', "VARCHAR(100) NULL DEFAULT 'Monthly'");
+
+    $helperAddCol($pdo, 'business_profile', 'bank_name', "VARCHAR(100) NULL DEFAULT 'HDFC Bank'");
+    $helperAddCol($pdo, 'business_profile', 'account_holder', "VARCHAR(191) NULL DEFAULT 'Ominiflow Enterprises'");
+    $helperAddCol($pdo, 'business_profile', 'account_number', "VARCHAR(50) NULL DEFAULT '50200111653091'");
+    $helperAddCol($pdo, 'business_profile', 'bank_ifsc', "VARCHAR(30) NULL DEFAULT 'HDFC0000887'");
+    $helperAddCol($pdo, 'business_profile', 'bank_branch', "VARCHAR(100) NULL DEFAULT 'DEWAS'");
+    $helperAddCol($pdo, 'business_profile', 'account_type', "VARCHAR(50) NULL DEFAULT 'Current Account'");
+    $helperAddCol($pdo, 'business_profile', 'upi_id', "VARCHAR(100) NULL");
+    $helperAddCol($pdo, 'business_profile', 'terms_conditions', "TEXT NULL");
+    $helperAddCol($pdo, 'business_profile', 'privacy_policy', "MEDIUMTEXT NULL");
+    $helperAddCol($pdo, 'business_profile', 'package_name', "VARCHAR(100) NULL DEFAULT 'Monthly'");
+
+    // Mobile Store Payment Preferences Columns
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_cod', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_upi', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
+
 
     if (php_sapi_name() === 'cli') {
         echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";

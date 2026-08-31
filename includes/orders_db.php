@@ -17,49 +17,170 @@ require_once __DIR__ . '/products_db.php';
 function get_store_settings(?int $businessId = null): array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
+    
+    $settings = null;
+    $biz = null;
+    $bizProfile = null;
+    $gst = null;
+    $mob = null;
+
     try {
         $stmt = $db->prepare('SELECT * FROM store_settings WHERE business_id = :bid LIMIT 1');
         $stmt->execute(['bid' => $bid]);
-        $settings = $stmt->fetch();
-        if ($settings) {
-            return $settings;
-        }
+        $settings = $stmt->fetch() ?: null;
+    } catch (PDOException $e) {}
 
-        // Check if business profile exists
+    try {
         $stmtBiz = $db->prepare('SELECT * FROM businesses WHERE id = :id LIMIT 1');
         $stmtBiz->execute(['id' => $bid]);
-        $biz = $stmtBiz->fetch();
-        if ($biz) {
-            return [
-                'id' => $biz['id'],
-                'business_id' => $biz['id'],
-                'store_name' => $biz['name'] ?? 'My POS Store',
-                'tagline' => 'Official Retail Store & POS Terminal',
-                'logo_path' => 'assets/images/logo.jpg',
-                'address' => $biz['address'] ?? 'Retail Store Counter',
-                'phone' => $biz['phone'] ?? '',
-                'email' => $biz['email'] ?? '',
-                'gstin' => $biz['tax_id'] ?? '',
-                'currency_symbol' => $biz['currency_symbol'] ?? '₹',
-                'tax_type' => 'GST',
-            ];
-        }
-    } catch (PDOException $e) {
-        // Fallback defaults
+        $biz = $stmtBiz->fetch() ?: null;
+    } catch (PDOException $e) {}
+
+    try {
+        $stmtProf = $db->prepare('SELECT * FROM business_profile WHERE business_id = :bid OR id = :id LIMIT 1');
+        $stmtProf->execute(['bid' => $bid, 'id' => $bid]);
+        $bizProfile = $stmtProf->fetch() ?: null;
+    } catch (PDOException $e) {}
+
+    try {
+        $stmtGST = $db->prepare('SELECT * FROM gst_settings WHERE business_id = :bid OR id = 1 LIMIT 1');
+        $stmtGST->execute(['bid' => $bid]);
+        $gst = $stmtGST->fetch() ?: null;
+    } catch (PDOException $e) {}
+
+    try {
+        $stmtMob = $db->prepare('SELECT * FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
+        $stmtMob->execute(['bid' => $bid]);
+        $mob = $stmtMob->fetch() ?: null;
+    } catch (PDOException $e) {}
+
+    $storeName = !empty($settings['store_name']) ? $settings['store_name'] :
+        (!empty($bizProfile['business_name']) ? $bizProfile['business_name'] :
+        (!empty($mob['display_name']) ? $mob['display_name'] :
+        (!empty($biz['name']) ? $biz['name'] : 'Ominiflow Enterprises')));
+
+    $legalName = !empty($settings['legal_name']) ? $settings['legal_name'] :
+        (!empty($biz['legal_name']) ? $biz['legal_name'] :
+        (!empty($gst['business_legal_name']) ? $gst['business_legal_name'] : $storeName));
+
+    $tagline = !empty($settings['tagline']) ? $settings['tagline'] :
+        (!empty($mob['banner_subtitle']) ? $mob['banner_subtitle'] : 'easy, smarter, endless');
+
+    $logoPath = !empty($settings['logo_path']) ? $settings['logo_path'] :
+        (!empty($bizProfile['logo_path']) ? $bizProfile['logo_path'] :
+        (!empty($mob['logo_path']) ? $mob['logo_path'] : 'assets/images/logo.jpg'));
+
+    $city = !empty($settings['city']) ? $settings['city'] :
+        (!empty($bizProfile['city']) ? $bizProfile['city'] :
+        (!empty($biz['city']) ? $biz['city'] : 'DEWAS'));
+
+    $state = !empty($settings['state']) ? $settings['state'] :
+        (!empty($bizProfile['state']) ? $bizProfile['state'] :
+        (!empty($biz['state']) ? $biz['state'] : 'Madhya Pradesh'));
+
+    $pincode = !empty($settings['pincode']) ? $settings['pincode'] :
+        (!empty($bizProfile['zip_code']) ? $bizProfile['zip_code'] :
+        (!empty($biz['pincode']) ? $biz['pincode'] : '455001'));
+
+    $addrLines = [];
+    if (!empty($settings['address'])) {
+        $addrLines[] = $settings['address'];
+    } elseif (!empty($bizProfile['address_line1']) || !empty($bizProfile['address_line2'])) {
+        if (!empty($bizProfile['address_line1'])) $addrLines[] = $bizProfile['address_line1'];
+        if (!empty($bizProfile['address_line2'])) $addrLines[] = $bizProfile['address_line2'];
+    } elseif (!empty($biz['address'])) {
+        $addrLines[] = $biz['address'];
+    } else {
+        $addrLines[] = '18, TARANI COLONY';
+    }
+    $addrBase = implode(', ', array_filter($addrLines));
+    $fullAddress = $addrBase;
+    if ($city && !str_contains($fullAddress, $city)) {
+        $fullAddress .= ', ' . $city;
+    }
+    if ($pincode && !str_contains($fullAddress, $pincode)) {
+        $fullAddress .= ' (' . $pincode . ')';
     }
 
+    $phone = !empty($settings['phone']) ? $settings['phone'] :
+        (!empty($bizProfile['phone']) ? (($bizProfile['phone_code'] ?? '+91') . ' ' . $bizProfile['phone']) :
+        (!empty($biz['phone']) ? $biz['phone'] : '+91 9755332357'));
+
+    $email = !empty($settings['email']) ? $settings['email'] :
+        (!empty($bizProfile['email']) ? $bizProfile['email'] :
+        (!empty($biz['email']) ? $biz['email'] : 'info@ominiflow.com'));
+
+    $gstin = !empty($settings['gstin']) ? $settings['gstin'] :
+        (!empty($gst['gstin']) ? $gst['gstin'] :
+        (!empty($biz['tax_id']) ? $biz['tax_id'] : '23BMKPN8756M1ZA'));
+
+    $panNumber = !empty($settings['pan_number']) ? $settings['pan_number'] :
+        (strlen($gstin) >= 15 ? substr($gstin, 2, 10) : '');
+
+    $bankName = !empty($settings['bank_name']) ? $settings['bank_name'] :
+        (!empty($bizProfile['bank_name']) ? $bizProfile['bank_name'] : 'HDFC Bank');
+
+    $accHolder = !empty($settings['account_holder']) ? $settings['account_holder'] :
+        (!empty($bizProfile['account_holder']) ? $bizProfile['account_holder'] : $storeName);
+
+    $accNum = !empty($settings['account_number']) ? $settings['account_number'] :
+        (!empty($bizProfile['account_number']) ? $bizProfile['account_number'] : '50200111653091');
+
+    $ifsc = !empty($settings['bank_ifsc']) ? $settings['bank_ifsc'] :
+        (!empty($bizProfile['bank_ifsc']) ? $bizProfile['bank_ifsc'] : 'HDFC0000887');
+
+    $branch = !empty($settings['bank_branch']) ? $settings['bank_branch'] :
+        (!empty($bizProfile['bank_branch']) ? $bizProfile['bank_branch'] : $city);
+
+    $accType = !empty($settings['account_type']) ? $settings['account_type'] :
+        (!empty($bizProfile['account_type']) ? $bizProfile['account_type'] : 'Current Account');
+
+    $upiId = !empty($settings['upi_id']) ? $settings['upi_id'] :
+        (!empty($bizProfile['upi_id']) ? $bizProfile['upi_id'] : '');
+
+    $terms = !empty($settings['terms_conditions']) ? $settings['terms_conditions'] :
+        (!empty($bizProfile['terms_conditions']) ? $bizProfile['terms_conditions'] : '');
+
+    $privacy = !empty($settings['privacy_policy']) ? $settings['privacy_policy'] :
+        (!empty($bizProfile['privacy_policy']) ? $bizProfile['privacy_policy'] :
+        (!empty($mob['privacy_policy']) ? $mob['privacy_policy'] : ''));
+
+    $packageName = !empty($settings['package_name']) ? $settings['package_name'] :
+        (!empty($bizProfile['package_name']) ? $bizProfile['package_name'] : 'Monthly');
+
+    $currencySymbol = !empty($settings['currency_symbol']) ? $settings['currency_symbol'] :
+        (!empty($biz['currency_symbol']) ? $biz['currency_symbol'] : '₹');
+
+    $taxType = !empty($settings['tax_type']) ? $settings['tax_type'] : 'GST';
+
     return [
-        'id' => $bid,
+        'id' => (int)($settings['id'] ?? $bid),
         'business_id' => $bid,
-        'store_name' => 'OminiFlow Retail POS',
-        'tagline' => 'Official Retail Store & POS Terminal',
-        'logo_path' => 'assets/images/logo.jpg',
-        'address' => 'Plot No. 42, Tech Park, Sector 5, Bangalore, Karnataka - 560100',
-        'phone' => '+91 98765 43210',
-        'email' => 'pos@ominiflow.com',
-        'gstin' => '29ABCDE1234F1Z5',
-        'currency_symbol' => '₹',
-        'tax_type' => 'GST',
+        'store_name' => $storeName,
+        'legal_name' => $legalName,
+        'tagline' => $tagline,
+        'logo_path' => $logoPath,
+        'address' => $fullAddress,
+        'raw_address' => $addrBase,
+        'city' => $city,
+        'state' => $state,
+        'pincode' => $pincode,
+        'phone' => $phone,
+        'email' => $email,
+        'gstin' => $gstin,
+        'pan_number' => $panNumber,
+        'bank_name' => $bankName,
+        'account_holder' => $accHolder,
+        'account_number' => $accNum,
+        'bank_ifsc' => $ifsc,
+        'bank_branch' => $branch,
+        'account_type' => $accType,
+        'upi_id' => $upiId,
+        'terms_conditions' => $terms,
+        'privacy_policy' => $privacy,
+        'package_name' => $packageName,
+        'currency_symbol' => $currencySymbol,
+        'tax_type' => $taxType,
     ];
 }
 
@@ -67,47 +188,113 @@ function update_store_settings(array $data, ?int $businessId = null): bool {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     
-    // Check if store_settings row exists for this business
     $stmtCheck = $db->prepare('SELECT id FROM store_settings WHERE business_id = :bid LIMIT 1');
     $stmtCheck->execute(['bid' => $bid]);
     $existing = $stmtCheck->fetch();
 
     $storeName = trim((string)($data['store_name'] ?? 'My POS Store'));
+    $legalName = trim((string)($data['legal_name'] ?? $storeName));
     $tagline = trim((string)($data['tagline'] ?? ''));
+    $logoPath = trim((string)($data['logo_path'] ?? ''));
     $address = trim((string)($data['address'] ?? ''));
+    $city = trim((string)($data['city'] ?? ''));
+    $state = trim((string)($data['state'] ?? ''));
+    $pincode = trim((string)($data['pincode'] ?? ''));
     $phone = trim((string)($data['phone'] ?? ''));
     $email = trim((string)($data['email'] ?? ''));
     $gstin = trim((string)($data['gstin'] ?? ''));
+    $panNumber = trim((string)($data['pan_number'] ?? ''));
+    $bankName = trim((string)($data['bank_name'] ?? 'HDFC Bank'));
+    $accHolder = trim((string)($data['account_holder'] ?? $storeName));
+    $accNum = trim((string)($data['account_number'] ?? ''));
+    $ifsc = trim((string)($data['bank_ifsc'] ?? ''));
+    $branch = trim((string)($data['bank_branch'] ?? ''));
+    $accType = trim((string)($data['account_type'] ?? 'Current Account'));
+    $upiId = trim((string)($data['upi_id'] ?? ''));
+    $terms = trim((string)($data['terms_conditions'] ?? ''));
+    $privacy = trim((string)($data['privacy_policy'] ?? ''));
+    $packageName = trim((string)($data['package_name'] ?? 'Monthly'));
+    $currency = trim((string)($data['currency_symbol'] ?? '₹'));
 
     if ($existing) {
         $stmt = $db->prepare('
             UPDATE store_settings
-            SET store_name = :store_name, tagline = :tagline, address = :address,
-                phone = :phone, email = :email, gstin = :gstin, updated_at = NOW()
+            SET store_name = :store_name, legal_name = :legal_name, tagline = :tagline,
+                ' . ($logoPath !== '' ? 'logo_path = :logo_path,' : '') . '
+                address = :address, city = :city, state = :state, pincode = :pincode,
+                phone = :phone, email = :email, gstin = :gstin, pan_number = :pan_number,
+                bank_name = :bank_name, account_holder = :account_holder, account_number = :account_number,
+                bank_ifsc = :bank_ifsc, bank_branch = :bank_branch, account_type = :account_type,
+                upi_id = :upi_id, terms_conditions = :terms_conditions, privacy_policy = :privacy_policy,
+                package_name = :package_name, currency_symbol = :currency_symbol, updated_at = NOW()
             WHERE business_id = :bid
         ');
-        return $stmt->execute([
+        $params = [
             'store_name' => $storeName,
+            'legal_name' => $legalName,
             'tagline' => $tagline,
             'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $pincode,
             'phone' => $phone,
             'email' => $email,
             'gstin' => $gstin,
+            'pan_number' => $panNumber,
+            'bank_name' => $bankName,
+            'account_holder' => $accHolder,
+            'account_number' => $accNum,
+            'bank_ifsc' => $ifsc,
+            'bank_branch' => $branch,
+            'account_type' => $accType,
+            'upi_id' => $upiId,
+            'terms_conditions' => $terms,
+            'privacy_policy' => $privacy,
+            'package_name' => $packageName,
+            'currency_symbol' => $currency,
             'bid' => $bid,
-        ]);
+        ];
+        if ($logoPath !== '') $params['logo_path'] = $logoPath;
+        return $stmt->execute($params);
     } else {
         $stmt = $db->prepare('
-            INSERT INTO store_settings (business_id, store_name, tagline, address, phone, email, gstin, created_at, updated_at)
-            VALUES (:bid, :store_name, :tagline, :address, :phone, :email, :gstin, NOW(), NOW())
+            INSERT INTO store_settings (
+                business_id, store_name, legal_name, tagline, logo_path, address, city, state, pincode,
+                phone, email, gstin, pan_number, bank_name, account_holder, account_number,
+                bank_ifsc, bank_branch, account_type, upi_id, terms_conditions, privacy_policy,
+                package_name, currency_symbol, created_at, updated_at
+            ) VALUES (
+                :bid, :store_name, :legal_name, :tagline, :logo_path, :address, :city, :state, :pincode,
+                :phone, :email, :gstin, :pan_number, :bank_name, :account_holder, :account_number,
+                :bank_ifsc, :bank_branch, :account_type, :upi_id, :terms_conditions, :privacy_policy,
+                :package_name, :currency_symbol, NOW(), NOW()
+            )
         ');
         return $stmt->execute([
             'bid' => $bid,
             'store_name' => $storeName,
+            'legal_name' => $legalName,
             'tagline' => $tagline,
+            'logo_path' => $logoPath ?: 'assets/images/logo.jpg',
             'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $pincode,
             'phone' => $phone,
             'email' => $email,
             'gstin' => $gstin,
+            'pan_number' => $panNumber,
+            'bank_name' => $bankName,
+            'account_holder' => $accHolder,
+            'account_number' => $accNum,
+            'bank_ifsc' => $ifsc,
+            'bank_branch' => $branch,
+            'account_type' => $accType,
+            'upi_id' => $upiId,
+            'terms_conditions' => $terms,
+            'privacy_policy' => $privacy,
+            'package_name' => $packageName,
+            'currency_symbol' => $currency,
         ]);
     }
 }
@@ -357,6 +544,16 @@ function process_pos_order(
             $tendered = $grandTotal;
         }
 
+        // Validate User ID against foreign key
+        $validUserId = null;
+        if ($userId !== null && (int)$userId > 0) {
+            $stmtU = $db->prepare('SELECT id FROM users WHERE id = :uid LIMIT 1');
+            $stmtU->execute(['uid' => (int)$userId]);
+            if ($stmtU->fetchColumn()) {
+                $validUserId = (int)$userId;
+            }
+        }
+
         // 4. Generate Order Number
         $orderNumber = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
 
@@ -381,7 +578,7 @@ function process_pos_order(
             'order_number' => $orderNumber,
             'outlet_id' => $outletId ?: 1,
             'customer_id' => $customerId ?: 1, // Default to Walk-in customer
-            'user_id' => $userId,
+            'user_id' => $validUserId,
             'subtotal' => $subtotal,
             'discount_amount' => $discountAmount,
             'discount_type' => in_array($discountType, ['fixed', 'percent'], true) ? $discountType : 'fixed',
@@ -469,7 +666,7 @@ function process_pos_order(
                     $stmtMoveLog->execute([
                         'biz_id' => $bid,
                         'product_id' => $compPid,
-                        'user_id' => $userId,
+                        'user_id' => $validUserId,
                         'movement_type' => 'out',
                         'quantity_change' => -$compDeduct,
                         'quantity_before' => $beforeCompStock,
@@ -489,7 +686,7 @@ function process_pos_order(
                 $stmtMoveLog->execute([
                     'biz_id' => $bid,
                     'product_id' => $pItem['product_id'],
-                    'user_id' => $userId,
+                    'user_id' => $validUserId,
                     'movement_type' => 'out',
                     'quantity_change' => -$pItem['quantity'],
                     'quantity_before' => $pItem['stock_before'],
@@ -528,7 +725,7 @@ function process_pos_order(
             'invoice_number' => $invoiceNumber,
             'order_id' => $orderId,
             'customer_id' => $customerId ?: 1,
-            'user_id' => $userId,
+            'user_id' => $validUserId,
             'subtotal' => $subtotal,
             'discount_amount' => $discountAmount,
             'discount_type' => $discountType,
@@ -554,9 +751,12 @@ function process_pos_order(
         $paymentNumber = 'PAY-' . date('Ymd') . '-' . str_pad((string)$paySeq, 4, '0', STR_PAD_LEFT);
 
         // Check for active open register session
-        $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
-        $stmtSession->execute(['uid' => $userId, 'bid' => $bid]);
-        $activeSessionId = $stmtSession->fetchColumn() ?: null;
+        $activeSessionId = null;
+        if ($validUserId !== null) {
+            $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
+            $stmtSession->execute(['uid' => $validUserId, 'bid' => $bid]);
+            $activeSessionId = $stmtSession->fetchColumn() ?: null;
+        }
 
         $stmtPay = $db->prepare('
             INSERT INTO payments (
@@ -573,7 +773,7 @@ function process_pos_order(
             'order_id' => $orderId,
             'inv_id' => $invoiceId,
             'cust_id' => $customerId ?: 1,
-            'user_id' => $userId,
+            'user_id' => $validUserId,
             'session_id' => $activeSessionId,
             'method' => $paymentMethod ?: 'cash',
             'amount' => $grandTotal,
