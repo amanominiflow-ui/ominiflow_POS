@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/products_db.php';
+require_once __DIR__ . '/includes/import_export_db.php';
 
 require_auth();
 
@@ -20,11 +21,28 @@ $search = trim((string) ($_GET['q'] ?? ''));
 $categoryId = !empty($_GET['category_id']) ? (int) $_GET['category_id'] : null;
 $statusFilter = trim((string) ($_GET['status'] ?? ''));
 $stockFilter = trim((string) ($_GET['stock'] ?? ''));
+$sort = trim((string) ($_GET['sort'] ?? ''));
+$viewMode = trim((string) ($_GET['view'] ?? 'list'));
+if (!in_array($viewMode, ['list', 'grid'], true)) {
+    $viewMode = 'list';
+}
+
+function catalog_filter_url(array $overrides = []): string {
+    $params = $_GET;
+    foreach ($overrides as $k => $v) {
+        if ($v === null || $v === '') {
+            unset($params[$k]);
+        } else {
+            $params[$k] = $v;
+        }
+    }
+    return asset('products.php' . ($params ? '?' . http_build_query($params) : ''));
+}
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
 
-// Handle Product Deletion & Quick Stock Adjustment
+// Handle Product Deletion, Quick Stock Adjustment, and Direct CSV Import
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         set_flash('error', 'Invalid session token. Please try again.');
@@ -56,11 +74,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', $msg);
         }
         redirect(APP_URL . '/products.php');
+    } elseif ($action === 'import_products') {
+        if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            set_flash('error', 'Please select a valid CSV file to upload.');
+        } else {
+            $res = import_products_from_csv($_FILES['csv_file']['tmp_name'], $userId);
+            if ($res['success']) {
+                $errTxt = !empty($res['errors']) ? ' with ' . count($res['errors']) . ' row error(s).' : '.';
+                set_flash('success', "Import completed: {$res['imported_count']} product(s) added/updated{$errTxt}");
+            } else {
+                set_flash('error', $res['error'] ?? 'Import failed.');
+            }
+        }
+        redirect(APP_URL . '/products.php');
     }
 }
 
 $categories = get_categories();
-$products = get_products($search, $categoryId, $statusFilter, $stockFilter);
+$products = get_products($search, $categoryId, $statusFilter, $stockFilter, null, $sort);
 $inventoryStats = get_inventory_stats();
 ?>
 <!DOCTYPE html>
@@ -75,7 +106,280 @@ $inventoryStats = get_inventory_stats();
     <link rel="icon" type="image/png" sizes="16x16" href="<?= asset('assets/images/favicon-16x16.png') ?>">
     <link rel="shortcut icon" href="<?= asset('assets/images/favicon.ico') ?>">
 
-    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>?v=<?= time() ?>">
+    <style>
+        /* Top Header Row alignment */
+        .page-header-row {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            margin-bottom: 24px !important;
+            gap: 16px !important;
+            flex-wrap: wrap !important;
+        }
+
+        .catalog-toolbar-group {
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin-left: auto !important;
+        }
+
+        .view-mode-toggle {
+            display: inline-flex !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+            background: #ffffff !important;
+            overflow: hidden !important;
+        }
+
+        .view-mode-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 36px !important;
+            height: 36px !important;
+            border: none !important;
+            background: transparent !important;
+            color: #64748b !important;
+            cursor: pointer !important;
+            text-decoration: none !important;
+            transition: all 0.15s ease !important;
+        }
+
+        .view-mode-btn:hover {
+            background: #f1f5f9 !important;
+            color: #1e293b !important;
+        }
+
+        .view-mode-btn.active {
+            background: #eff6ff !important;
+            color: #2563eb !important;
+        }
+
+        .view-mode-btn + .view-mode-btn {
+            border-left: 1px solid #cbd5e1 !important;
+        }
+
+        .btn-more-dots {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 36px !important;
+            height: 36px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+            background: #ffffff !important;
+            color: #334155 !important;
+            cursor: pointer !important;
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            transition: all 0.15s ease !important;
+        }
+
+        .btn-more-dots:hover {
+            background: #f8fafc !important;
+            border-color: #94a3b8 !important;
+            color: #0f172a !important;
+        }
+
+        .catalog-more-dropdown-wrap {
+            position: relative !important;
+            display: inline-block !important;
+        }
+
+        .catalog-more-menu {
+            display: none !important;
+            position: absolute !important;
+            right: 0 !important;
+            top: calc(100% + 6px) !important;
+            width: 230px !important;
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+            z-index: 9999 !important;
+            padding: 6px 0 !important;
+            animation: spFadeIn 0.15s ease !important;
+        }
+
+        .catalog-more-menu.show {
+            display: block !important;
+        }
+
+        .catalog-menu-item {
+            position: relative !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 9px 16px !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            color: #334155 !important;
+            text-decoration: none !important;
+            cursor: pointer !important;
+            transition: background 0.12s ease !important;
+        }
+
+        .catalog-menu-item:hover {
+            background: #f8fafc !important;
+            color: #0f172a !important;
+        }
+
+        .catalog-menu-item.highlight-blue {
+            background: #2563eb !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            border-radius: 6px 6px 0 0 !important;
+            margin: -6px 0 4px 0 !important;
+            padding: 10px 16px !important;
+        }
+
+        .catalog-menu-item.highlight-blue:hover {
+            background: #1d4ed8 !important;
+            color: #ffffff !important;
+        }
+
+        .catalog-menu-item-left {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+        }
+
+        .catalog-menu-item-left svg {
+            flex-shrink: 0 !important;
+        }
+
+        .catalog-menu-divider {
+            height: 1px !important;
+            background: #f1f5f9 !important;
+            margin: 4px 0 !important;
+        }
+
+        /* Submenu flyout */
+        .catalog-menu-item:hover > .catalog-submenu {
+            display: block !important;
+        }
+
+        .catalog-submenu {
+            display: none !important;
+            position: absolute !important;
+            right: 100% !important;
+            top: 0 !important;
+            width: 200px !important;
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+            z-index: 10000 !important;
+            padding: 6px 0 !important;
+            margin-right: 4px !important;
+        }
+
+        .catalog-submenu a {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 8px 14px !important;
+            font-size: 12.5px !important;
+            font-weight: 500 !important;
+            color: #334155 !important;
+            text-decoration: none !important;
+            transition: background 0.12s ease !important;
+        }
+
+        .catalog-submenu a:hover {
+            background: #f1f5f9 !important;
+            color: #2563eb !important;
+        }
+
+        .catalog-submenu a.is-active {
+            color: #2563eb !important;
+            font-weight: 700 !important;
+            background: #eff6ff !important;
+        }
+
+        /* Grid View Layout */
+        .products-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)) !important;
+            gap: 20px !important;
+            padding: 20px !important;
+        }
+
+        .product-card-grid {
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 10px !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+            transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+        }
+
+        .product-card-grid:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.08) !important;
+            border-color: #cbd5e1 !important;
+        }
+
+        .product-card-img-wrap {
+            height: 160px !important;
+            background: #f8fafc !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            position: relative !important;
+            border-bottom: 1px solid #f1f5f9 !important;
+        }
+
+        .product-card-img-wrap img {
+            max-height: 100% !important;
+            max-width: 100% !important;
+            object-fit: contain !important;
+        }
+
+        .product-card-body {
+            padding: 14px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 !important;
+        }
+
+        .product-card-title {
+            font-size: 14px !important;
+            font-weight: 700 !important;
+            color: #0f172a !important;
+            margin-bottom: 4px !important;
+            line-height: 1.3 !important;
+        }
+
+        .product-card-sku {
+            font-size: 11.5px !important;
+            color: #64748b !important;
+            margin-bottom: 10px !important;
+        }
+
+        .product-card-price-row {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            margin-top: auto !important;
+            padding-top: 10px !important;
+            border-top: 1px solid #f1f5f9 !important;
+        }
+
+        .product-card-price {
+            font-size: 15px !important;
+            font-weight: 800 !important;
+            color: #0f172a !important;
+        }
+
+        .product-card-actions {
+            display: flex !important;
+            gap: 6px !important;
+        }
+    </style>
 </head>
 <body>
     <div class="app-layout">
@@ -94,19 +398,113 @@ $inventoryStats = get_inventory_stats();
                         <h1 class="page-title">Products Catalog</h1>
                         <p class="page-subtitle">Manage retail items, pricing, SKU barcodes, and live inventory</p>
                     </div>
-                    <div class="page-actions">
-                        <a href="<?= asset('categories.php') ?>" class="btn-secondary">
-                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="catalog-toolbar-group">
+                        <a href="<?= asset('categories.php') ?>" class="btn-secondary" style="height:36px;padding:0 14px;">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
                             </svg>
                             <span>Categories</span>
                         </a>
-                        <a href="<?= asset('product-create.php') ?>" class="header-btn">
-                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                        <!-- View Mode Switcher (List / Grid) -->
+                        <div class="view-mode-toggle">
+                            <a href="<?= e(catalog_filter_url(['view' => 'list'])) ?>" class="view-mode-btn <?= $viewMode === 'list' ? 'active' : '' ?>" title="List View">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                            </a>
+                            <a href="<?= e(catalog_filter_url(['view' => 'grid'])) ?>" class="view-mode-btn <?= $viewMode === 'grid' ? 'active' : '' ?>" title="Grid View">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            </a>
+                        </div>
+
+                        <!-- Add Product Button -->
+                        <a href="<?= asset('product-create.php') ?>" class="header-btn" style="height:36px;padding:0 16px;">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
                             </svg>
                             <span>Add Product</span>
                         </a>
+
+                        <!-- More Actions Dropdown (...) -->
+                        <div class="catalog-more-dropdown-wrap">
+                            <button type="button" class="btn-more-dots" id="catalogMoreBtn" title="More Options" aria-haspopup="true" aria-expanded="false">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <circle cx="5" cy="12" r="2.2"/>
+                                    <circle cx="12" cy="12" r="2.2"/>
+                                    <circle cx="19" cy="12" r="2.2"/>
+                                </svg>
+                            </button>
+                            <div class="catalog-more-menu" id="catalogMoreMenu">
+                                <!-- Sort by -->
+                                <div class="catalog-menu-item highlight-blue">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                                        <span>Sort by</span>
+                                    </div>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                    <div class="catalog-submenu">
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'name_asc'])) ?>" class="<?= $sort === 'name_asc' ? 'is-active' : '' ?>">Name (A to Z)</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'name_desc'])) ?>" class="<?= $sort === 'name_desc' ? 'is-active' : '' ?>">Name (Z to A)</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'price_asc'])) ?>" class="<?= $sort === 'price_asc' ? 'is-active' : '' ?>">Price (Low to High)</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'price_desc'])) ?>" class="<?= $sort === 'price_desc' ? 'is-active' : '' ?>">Price (High to Low)</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'stock_desc'])) ?>" class="<?= $sort === 'stock_desc' ? 'is-active' : '' ?>">Stock (High to Low)</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => 'created_asc'])) ?>" class="<?= $sort === 'created_asc' ? 'is-active' : '' ?>">Oldest Added</a>
+                                        <a href="<?= e(catalog_filter_url(['sort' => ''])) ?>" class="<?= empty($sort) ? 'is-active' : '' ?>">Newest Added</a>
+                                    </div>
+                                </div>
+
+                                <!-- Import -->
+                                <div class="catalog-menu-item">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="16" height="16" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                        <span>Import</span>
+                                    </div>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                    <div class="catalog-submenu">
+                                        <a href="javascript:void(0)" onclick="openImportModal();">📥 Import Products (CSV)</a>
+                                        <a href="<?= asset('import-export.php') ?>">📊 Import & Export Hub</a>
+                                    </div>
+                                </div>
+
+                                <!-- Export -->
+                                <div class="catalog-menu-item">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="16" height="16" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                        <span>Export</span>
+                                    </div>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                    <div class="catalog-submenu">
+                                        <a href="<?= asset('import-export.php?export=products') ?>">📤 Export Products (CSV)</a>
+                                        <a href="<?= asset('import-export.php') ?>">📊 Export Hub</a>
+                                    </div>
+                                </div>
+
+                                <div class="catalog-menu-divider"></div>
+
+                                <!-- Preferences -->
+                                <a href="<?= asset('settings.php') ?>" class="catalog-menu-item">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="16" height="16" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                                        <span>Preferences</span>
+                                    </div>
+                                </a>
+
+                                <!-- Refresh List -->
+                                <a href="<?= asset('products.php') ?>" class="catalog-menu-item">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="16" height="16" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                        <span>Refresh List</span>
+                                    </div>
+                                </a>
+
+                                <!-- Reset Column Width -->
+                                <a href="javascript:void(0);" onclick="location.reload();" class="catalog-menu-item">
+                                    <div class="catalog-menu-item-left">
+                                        <svg width="16" height="16" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                                        <span>Reset Column Width</span>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -203,53 +601,116 @@ $inventoryStats = get_inventory_stats();
                     </form>
                 </div>
 
-                <!-- Products Table -->
+                <!-- Products Section (List View / Grid View) -->
                 <div class="section-card">
-                    <div class="table-wrap">
-                        <table class="saas-table">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Category</th>
-                                    <th>SKU / Barcode</th>
-                                    <th>Cost Price</th>
-                                    <th>Selling Price</th>
-                                    <th>Tax</th>
-                                    <th>Stock Level</th>
-                                    <th>Status</th>
-                                    <th style="text-align: right;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($products)): ?>
-                                    <tr>
-                                        <td colspan="9">
-                                            <div class="empty-state">
-                                                <div class="empty-state-icon">📦</div>
-                                                <div style="font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">No products found</div>
-                                                <div>Add your first product to the catalog or refine your search filters.</div>
-                                                <div style="margin-top: 16px;">
-                                                    <a href="<?= asset('product-create.php') ?>" class="header-btn" style="display: inline-flex;">+ Add New Product</a>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php else: ?>
-                                    <?php foreach ($products as $prod): ?>
-                                        <?php
-                                            $stock = (int) $prod['stock_quantity'];
-                                            $threshold = (int) $prod['low_stock_threshold'];
-                                            $stockBadgeClass = 'badge-in-stock';
-                                            $stockLabel = $stock . ' in stock';
+                    <?php if (empty($products)): ?>
+                        <div class="empty-state" style="padding: 48px 20px;">
+                            <div class="empty-state-icon">📦</div>
+                            <div style="font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">No products found</div>
+                            <div>Add your first product to the catalog or refine your search filters.</div>
+                            <div style="margin-top: 16px;">
+                                <a href="<?= asset('product-create.php') ?>" class="header-btn" style="display: inline-flex;">+ Add New Product</a>
+                            </div>
+                        </div>
+                    <?php elseif ($viewMode === 'grid'): ?>
+                        <!-- Grid View Cards -->
+                        <div class="products-grid">
+                            <?php foreach ($products as $prod):
+                                $stock = (int) $prod['stock_quantity'];
+                                $threshold = (int) $prod['low_stock_threshold'];
+                                $stockBadgeClass = 'badge-in-stock';
+                                $stockLabel = $stock . ' in stock';
+                                if ($stock <= 0) {
+                                    $stockBadgeClass = 'badge-out-of-stock';
+                                    $stockLabel = 'Out of stock';
+                                } elseif ($stock <= $threshold) {
+                                    $stockBadgeClass = 'badge-low-stock';
+                                    $stockLabel = 'Low stock (' . $stock . ')';
+                                }
+                            ?>
+                                <div class="product-card-grid">
+                                    <div class="product-card-img-wrap">
+                                        <?php if (!empty($prod['image_path'])): ?>
+                                            <img src="<?= asset($prod['image_path']) ?>" alt="<?= e($prod['name']) ?>">
+                                        <?php else: ?>
+                                            <div style="font-size: 38px;">📦</div>
+                                        <?php endif; ?>
+                                        <span class="badge <?= $stockBadgeClass ?>" style="position: absolute; top: 10px; right: 10px;">
+                                            <?= e($stockLabel) ?>
+                                        </span>
+                                    </div>
+                                    <div class="product-card-body">
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <span class="product-card-title"><?= e($prod['name']) ?></span>
+                                            <?php if (($prod['product_type'] ?? 'simple') === 'variable'): ?>
+                                                <span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;">Variants</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="product-card-sku">SKU: <?= e($prod['sku']) ?></div>
 
-                                            if ($stock <= 0) {
-                                                $stockBadgeClass = 'badge-out-of-stock';
-                                                $stockLabel = 'Out of stock (0)';
-                                            } elseif ($stock <= $threshold) {
-                                                $stockBadgeClass = 'badge-low-stock';
-                                                $stockLabel = 'Low stock (' . $stock . ')';
-                                            }
-                                        ?>
+                                        <?php if (!empty($prod['category_name'])): ?>
+                                            <div style="margin-bottom: 8px;">
+                                                <span class="badge badge-info" style="font-size: 11px;"><?= e($prod['category_name']) ?></span>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <div class="product-card-price-row">
+                                            <div>
+                                                <div style="font-size: 11px; color: #64748b;">Selling Price</div>
+                                                <div class="product-card-price">₹<?= number_format((float)$prod['selling_price'], 2) ?></div>
+                                            </div>
+                                            <div class="product-card-actions">
+                                                <button
+                                                    type="button"
+                                                    class="btn-action adjust open-adjust-modal-btn"
+                                                    data-id="<?= $prod['id'] ?>"
+                                                    data-name="<?= e($prod['name']) ?>"
+                                                    data-sku="<?= e($prod['sku']) ?>"
+                                                    data-stock="<?= (int)$prod['stock_quantity'] ?>"
+                                                    title="Quick Stock Adjustment"
+                                                >
+                                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                                                </button>
+                                                <a href="<?= asset('product-edit.php?id=' . $prod['id']) ?>" class="btn-action edit" title="Edit Product">
+                                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <!-- Standard List View Table -->
+                        <div class="table-wrap">
+                            <table class="saas-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Category</th>
+                                        <th>SKU / Barcode</th>
+                                        <th>Cost Price</th>
+                                        <th>Selling Price</th>
+                                        <th>Tax</th>
+                                        <th>Stock Level</th>
+                                        <th>Status</th>
+                                        <th style="text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($products as $prod):
+                                        $stock = (int) $prod['stock_quantity'];
+                                        $threshold = (int) $prod['low_stock_threshold'];
+                                        $stockBadgeClass = 'badge-in-stock';
+                                        $stockLabel = $stock . ' in stock';
+                                        if ($stock <= 0) {
+                                            $stockBadgeClass = 'badge-out-of-stock';
+                                            $stockLabel = 'Out of stock (0)';
+                                        } elseif ($stock <= $threshold) {
+                                            $stockBadgeClass = 'badge-low-stock';
+                                            $stockLabel = 'Low stock (' . $stock . ')';
+                                        }
+                                    ?>
                                         <tr>
                                             <td>
                                                 <div class="product-cell">
@@ -259,7 +720,12 @@ $inventoryStats = get_inventory_stats();
                                                         <div class="product-thumb-placeholder">📦</div>
                                                     <?php endif; ?>
                                                     <div>
-                                                        <div class="product-title"><?= e($prod['name']) ?></div>
+                                                        <div class="product-title" style="display:flex;align-items:center;gap:6px;">
+                                                            <span><?= e($prod['name']) ?></span>
+                                                            <?php if (($prod['product_type'] ?? 'simple') === 'variable'): ?>
+                                                                <span style="font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:4px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;white-space:nowrap;">Variants</span>
+                                                            <?php endif; ?>
+                                                        </div>
                                                         <div class="product-sku">SKU: <?= e($prod['sku']) ?></div>
                                                     </div>
                                                 </div>
@@ -333,10 +799,10 @@ $inventoryStats = get_inventory_stats();
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </main>
         </div>
@@ -390,8 +856,69 @@ $inventoryStats = get_inventory_stats();
         </div>
     </div>
 
+    <!-- Quick CSV Import Modal -->
+    <div class="modal-overlay" id="importProductsModal">
+        <div class="modal-box" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="18" height="18" fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    <span>Import Products (CSV)</span>
+                </h3>
+                <button type="button" class="modal-close-btn" onclick="closeImportModal();">&times;</button>
+            </div>
+            <form method="POST" action="<?= asset('products.php') ?>" enctype="multipart/form-data">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="import_products">
+
+                <div class="modal-body">
+                    <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 14px; line-height: 1.5;">
+                        Upload a CSV spreadsheet with your catalog items. Required header columns:<br>
+                        <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 5px; color: #0f172a;">Name, SKU, Selling Price, Cost Price, Tax Percent, Stock</code>
+                    </p>
+
+                    <div style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 24px 16px; text-align: center; background: #f8fafc; margin-bottom: 10px;">
+                        <svg width="34" height="34" fill="none" stroke="#94a3b8" viewBox="0 0 24 24" style="margin: 0 auto 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <div style="font-weight: 600; font-size: 13px; color: #0f172a; margin-bottom: 4px;">Choose CSV file from your device</div>
+                        <input type="file" name="csv_file" accept=".csv" required style="font-size: 12px; margin-top: 8px;">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeImportModal();">Cancel</button>
+                    <button type="submit" class="header-btn" style="border: 0;">Upload & Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="<?= asset('assets/js/dashboard.js') ?>"></script>
     <script>
+        // More Actions Dropdown Toggle
+        const moreBtn = document.getElementById('catalogMoreBtn');
+        const moreMenu = document.getElementById('catalogMoreMenu');
+        if (moreBtn && moreMenu) {
+            moreBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                moreMenu.classList.toggle('show');
+            });
+            document.addEventListener('click', function (e) {
+                if (!moreMenu.contains(e.target) && e.target !== moreBtn) {
+                    moreMenu.classList.remove('show');
+                }
+            });
+        }
+
+        // Import Modal Open/Close
+        function openImportModal() {
+            if (moreMenu) moreMenu.classList.remove('show');
+            const m = document.getElementById('importProductsModal');
+            if (m) m.classList.add('open');
+        }
+        function closeImportModal() {
+            const m = document.getElementById('importProductsModal');
+            if (m) m.classList.remove('open');
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const modal = document.getElementById('quickStockModal');
             const closeBtn = document.getElementById('closeQuickStockModal');
@@ -442,6 +969,13 @@ $inventoryStats = get_inventory_stats();
             modal.addEventListener('click', function (e) {
                 if (e.target === modal) closeModal();
             });
+
+            const importModal = document.getElementById('importProductsModal');
+            if (importModal) {
+                importModal.addEventListener('click', function (e) {
+                    if (e.target === importModal) closeImportModal();
+                });
+            }
 
             document.querySelectorAll('.open-adjust-modal-btn').forEach(btn => {
                 btn.addEventListener('click', function () {

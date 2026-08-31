@@ -12,12 +12,14 @@ require_once __DIR__ . '/auth.php';
    1. PRODUCT VARIANTS
    ========================================================================= */
 
-function get_product_variants(int $productId, ?int $businessId = null): array {
-    $db = get_db();
-    $bid = $businessId ?: current_business_id();
-    $stmt = $db->prepare('SELECT * FROM product_variants WHERE product_id = :pid AND business_id = :bid ORDER BY id ASC');
-    $stmt->execute(['pid' => $productId, 'bid' => $bid]);
-    return $stmt->fetchAll();
+if (!function_exists('get_product_variants')) {
+    function get_product_variants(int $productId, ?int $businessId = null): array {
+        $db = get_db();
+        $bid = $businessId ?: current_business_id();
+        $stmt = $db->prepare('SELECT * FROM product_variants WHERE product_id = :pid AND business_id = :bid ORDER BY id ASC');
+        $stmt->execute(['pid' => $productId, 'bid' => $bid]);
+        return $stmt->fetchAll();
+    }
 }
 
 function save_product_variant(int $productId, array $data, ?int $variantId = null, ?int $businessId = null): array {

@@ -257,7 +257,7 @@ function delete_category(int $id, ?int $businessId = null): array {
    2. PRODUCT OPERATIONS
    ========================================================================= */
 
-function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = '', ?int $businessId = null): array {
+function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = '', ?int $businessId = null, string $sort = ''): array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
@@ -296,7 +296,23 @@ function get_products(string $search = '', ?int $categoryId = null, string $stat
         $sql .= ' AND p.stock_quantity > p.low_stock_threshold';
     }
 
-    $sql .= ' ORDER BY p.id DESC';
+    if ($sort === 'name_asc') {
+        $sql .= ' ORDER BY p.name ASC';
+    } elseif ($sort === 'name_desc') {
+        $sql .= ' ORDER BY p.name DESC';
+    } elseif ($sort === 'price_asc') {
+        $sql .= ' ORDER BY p.selling_price ASC';
+    } elseif ($sort === 'price_desc') {
+        $sql .= ' ORDER BY p.selling_price DESC';
+    } elseif ($sort === 'stock_desc') {
+        $sql .= ' ORDER BY p.stock_quantity DESC';
+    } elseif ($sort === 'stock_asc') {
+        $sql .= ' ORDER BY p.stock_quantity ASC';
+    } elseif ($sort === 'created_asc') {
+        $sql .= ' ORDER BY p.id ASC';
+    } else {
+        $sql .= ' ORDER BY p.id DESC';
+    }
 
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
@@ -460,6 +476,61 @@ function ensure_product_item_schema(): void {
             UNIQUE KEY `uq_product_brands` (`business_id`, `kind`, `name`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+    // Product Attributes table
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `product_attributes` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `product_id` INT UNSIGNED NOT NULL,
+            `attribute_name` VARCHAR(100) NOT NULL,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pa_product` (`product_id`),
+            INDEX `idx_pa_biz` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    // Product Attribute Options table
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `product_attribute_options` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `attribute_id` INT UNSIGNED NOT NULL,
+            `option_value` VARCHAR(100) NOT NULL,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pao_attr` (`attribute_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    // Ensure product_variants has needed columns
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS `product_variants` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `product_id` INT UNSIGNED NOT NULL,
+            `variant_name` VARCHAR(191) NOT NULL,
+            `attribute_values` JSON NULL,
+            `sku` VARCHAR(100) NOT NULL,
+            `barcode` VARCHAR(100) NULL,
+            `cost_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+            `selling_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+            `stock_quantity` INT NOT NULL DEFAULT 0,
+            `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_pv_product` (`product_id`),
+            INDEX `idx_pv_sku` (`sku`),
+            INDEX `idx_pv_biz` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (PDOException $e) { /* table may exist */ }
+    // Add columns to product_variants if missing
+    foreach (['business_id' => "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`", 'attribute_values' => "JSON NULL AFTER `variant_name`"] as $vc => $vd) {
+        try {
+            $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'product_variants' AND COLUMN_NAME = :col");
+            $stmt->execute(['db' => DB_NAME, 'col' => $vc]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `product_variants` ADD `{$vc}` {$vd}");
+            }
+        } catch (PDOException $e) { /* ignore */ }
+    }
 }
 
 function get_tax_rates_list(?int $businessId = null): array {
@@ -537,6 +608,25 @@ function collect_product_form_data(): array {
 
     $reorder = max(0, (int) ($_POST['reorder_point'] ?? $_POST['low_stock_threshold'] ?? 5));
 
+    // Collect variant attributes
+    $variantAttributes = [];
+    $attrNames = (array) ($_POST['attr_name'] ?? []);
+    $attrOptions = (array) ($_POST['attr_options'] ?? []);
+    foreach ($attrNames as $i => $aName) {
+        $aName = trim((string) $aName);
+        if ($aName === '') continue;
+        // Options come as comma-separated or as array
+        $opts = $attrOptions[$i] ?? '';
+        if (is_string($opts)) {
+            $opts = array_values(array_filter(array_map('trim', explode(',', $opts))));
+        } else {
+            $opts = array_values(array_filter(array_map('trim', (array) $opts)));
+        }
+        if (!empty($opts)) {
+            $variantAttributes[] = ['name' => $aName, 'options' => $opts];
+        }
+    }
+
     return [
         'name' => $_POST['name'] ?? '',
         'sku' => $_POST['sku'] ?? '',
@@ -567,7 +657,7 @@ function collect_product_form_data(): array {
         'inter_tax_rate_id' => $interId ?: null,
         'track_inventory' => $track ? 1 : 0,
         'inventory_account' => trim((string) ($_POST['inventory_account'] ?? '')),
-        'inventory_valuation' => in_array(($_POST['inventory_valuation'] ?? 'fifo'), ['fifo', 'wac', 'lifo'], true) ? $_POST['inventory_valuation'] : 'fifo',
+        'inventory_valuation' => in_array(($_POST['inventory_valuation'] ?? 'fifo'), ['fifo', 'wac', 'lifo'], true) ? ($_POST['inventory_valuation'] ?? 'fifo') : 'fifo',
         'returnable' => !empty($_POST['returnable']) ? 1 : 0,
         'dim_length' => $_POST['dim_length'] ?? null,
         'dim_width' => $_POST['dim_width'] ?? null,
@@ -579,6 +669,7 @@ function collect_product_form_data(): array {
         'product_type' => $hasVariants ? 'variable' : 'simple',
         'is_trending' => !empty($_POST['is_trending']) ? 1 : 0,
         'remove_image_ids' => array_map('intval', (array) ($_POST['remove_image_ids'] ?? [])),
+        'variant_attributes' => $variantAttributes,
     ];
 }
 
@@ -851,6 +942,20 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         remember_product_brand('brand', (string) ($fields['brand'] ?? ''));
         remember_product_brand('manufacturer', (string) ($fields['manufacturer'] ?? ''));
 
+        // Save variant attributes and generate variant combos
+        if ($productType === 'variable' && !empty($data['variant_attributes'])) {
+            save_product_attributes($productId, $data['variant_attributes'], $bid);
+            save_product_variants_from_attributes($productId, $data['variant_attributes'], $bid);
+        } elseif ($productType === 'simple') {
+            // Clean up any leftover variant data
+            try {
+                $db->prepare('DELETE FROM product_attributes WHERE product_id = :pid AND business_id = :bid')
+                    ->execute(['pid' => $productId, 'bid' => $bid]);
+                $db->prepare('DELETE FROM product_variants WHERE product_id = :pid AND business_id = :bid')
+                    ->execute(['pid' => $productId, 'bid' => $bid]);
+            } catch (PDOException $e) { /* ignore */ }
+        }
+
         return ['success' => true, 'errors' => [], 'product_id' => $productId];
     } catch (PDOException $e) {
         return ['success' => false, 'errors' => ['general' => 'Database error: ' . $e->getMessage()]];
@@ -873,6 +978,213 @@ function delete_product(int $id, ?int $businessId = null): array {
     $stmt->execute(['id' => $id, 'biz_id' => $bid]);
 
     return ['success' => true];
+}
+
+/* =========================================================================
+   2b. PRODUCT VARIANT & ATTRIBUTE OPERATIONS
+   ========================================================================= */
+
+function get_product_attributes(int $productId, ?int $businessId = null): array {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+    $stmt = $db->prepare('
+        SELECT pa.*, GROUP_CONCAT(pao.id, ":::", pao.option_value ORDER BY pao.sort_order ASC, pao.id ASC SEPARATOR "|||")
+            AS options_raw
+        FROM product_attributes pa
+        LEFT JOIN product_attribute_options pao ON pao.attribute_id = pa.id
+        WHERE pa.product_id = :pid AND pa.business_id = :bid
+        GROUP BY pa.id
+        ORDER BY pa.sort_order ASC, pa.id ASC
+    ');
+    $stmt->execute(['pid' => $productId, 'bid' => $bid]);
+    $rows = $stmt->fetchAll();
+    $result = [];
+    foreach ($rows as $row) {
+        $options = [];
+        if (!empty($row['options_raw'])) {
+            foreach (explode('|||', $row['options_raw']) as $part) {
+                $pieces = explode(':::', $part, 2);
+                if (count($pieces) === 2) {
+                    $options[] = ['id' => (int) $pieces[0], 'value' => $pieces[1]];
+                }
+            }
+        }
+        $result[] = [
+            'id' => (int) $row['id'],
+            'attribute_name' => $row['attribute_name'],
+            'sort_order' => (int) $row['sort_order'],
+            'options' => $options,
+        ];
+    }
+    return $result;
+}
+
+function get_product_variants(int $productId, ?int $businessId = null): array {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+    $stmt = $db->prepare('
+        SELECT * FROM product_variants
+        WHERE product_id = :pid AND business_id = :bid
+        ORDER BY id ASC
+    ');
+    $stmt->execute(['pid' => $productId, 'bid' => $bid]);
+    return $stmt->fetchAll();
+}
+
+function save_product_attributes(int $productId, array $attributes, ?int $businessId = null): void {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+
+    // Delete old attributes (cascade deletes options)
+    $db->prepare('DELETE FROM product_attributes WHERE product_id = :pid AND business_id = :bid')
+        ->execute(['pid' => $productId, 'bid' => $bid]);
+
+    foreach ($attributes as $idx => $attr) {
+        $attrName = trim((string) ($attr['name'] ?? ''));
+        if ($attrName === '') continue;
+        $options = array_values(array_filter(array_map('trim', (array) ($attr['options'] ?? []))));
+        if (empty($options)) continue;
+
+        $stmtAttr = $db->prepare('INSERT INTO product_attributes (business_id, product_id, attribute_name, sort_order) VALUES (:bid, :pid, :name, :sort)');
+        $stmtAttr->execute(['bid' => $bid, 'pid' => $productId, 'name' => $attrName, 'sort' => $idx]);
+        $attrId = (int) $db->lastInsertId();
+
+        foreach ($options as $oi => $optVal) {
+            $db->prepare('INSERT INTO product_attribute_options (attribute_id, option_value, sort_order) VALUES (:aid, :val, :sort)')
+                ->execute(['aid' => $attrId, 'val' => $optVal, 'sort' => $oi]);
+        }
+    }
+}
+
+function generate_variant_combinations(array $attributes): array {
+    $attrOptions = [];
+    foreach ($attributes as $attr) {
+        $name = trim((string) ($attr['name'] ?? ''));
+        $opts = array_values(array_filter(array_map('trim', (array) ($attr['options'] ?? []))));
+        if ($name !== '' && !empty($opts)) {
+            $attrOptions[] = ['name' => $name, 'options' => $opts];
+        }
+    }
+    if (empty($attrOptions)) return [];
+
+    $combos = [[]];
+    foreach ($attrOptions as $ao) {
+        $newCombos = [];
+        foreach ($combos as $combo) {
+            foreach ($ao['options'] as $opt) {
+                $newCombos[] = array_merge($combo, [$ao['name'] => $opt]);
+            }
+        }
+        $combos = $newCombos;
+    }
+    return $combos;
+}
+
+function save_product_variants_from_attributes(int $productId, array $attributes, ?int $businessId = null): void {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+
+    // Get existing variants keyed by attribute_values JSON
+    $existingStmt = $db->prepare('SELECT * FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+    $existingStmt->execute(['pid' => $productId, 'bid' => $bid]);
+    $existingVariants = [];
+    foreach ($existingStmt->fetchAll() as $ev) {
+        $key = $ev['attribute_values'] ?? '';
+        $existingVariants[$key] = $ev;
+    }
+
+    $combos = generate_variant_combinations($attributes);
+    $usedKeys = [];
+
+    // Check if POST has variant-specific data
+    $postedSkus = $_POST['variant_sku'] ?? [];
+    $postedSelling = $_POST['variant_selling_price'] ?? [];
+    $postedCost = $_POST['variant_cost_price'] ?? [];
+    $postedStock = $_POST['variant_stock'] ?? [];
+
+    $totalVariantStock = 0;
+    $firstVariantPrice = null;
+    $firstVariantCost = null;
+
+    foreach ($combos as $ci => $combo) {
+        $variantName = implode(' / ', array_values($combo));
+        $attrJson = json_encode($combo, JSON_UNESCAPED_UNICODE);
+        $usedKeys[] = $attrJson;
+
+        // Check if variant already exists
+        if (isset($existingVariants[$attrJson])) {
+            // Update existing
+            $ev = $existingVariants[$attrJson];
+            $sku = !empty($postedSkus[$ci]) ? strtoupper(trim($postedSkus[$ci])) : $ev['sku'];
+            $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : (float) $ev['selling_price'];
+            $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : (float) $ev['cost_price'];
+            $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : (int) $ev['stock_quantity'];
+            $db->prepare('UPDATE product_variants SET variant_name = :vn, sku = :sku, selling_price = :sp, cost_price = :cp, stock_quantity = :stk, updated_at = NOW() WHERE id = :id')
+                ->execute(['vn' => $variantName, 'sku' => $sku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk, 'id' => (int) $ev['id']]);
+            $totalVariantStock += $stk;
+            if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
+            if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
+        } else {
+            // Generate SKU for new variant
+            $baseSku = strtoupper(trim($postedSkus[$ci] ?? ''));
+            if ($baseSku === '') {
+                $baseSku = 'SKU-' . strtoupper(substr(uniqid(), -6)) . '-V' . ($ci + 1);
+            }
+            $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : 0.00;
+            $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : 0.00;
+            $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : 0;
+            $db->prepare('INSERT INTO product_variants (business_id, product_id, variant_name, attribute_values, sku, selling_price, cost_price, stock_quantity) VALUES (:bid, :pid, :vn, :av, :sku, :sp, :cp, :stk)')
+                ->execute(['bid' => $bid, 'pid' => $productId, 'vn' => $variantName, 'av' => $attrJson, 'sku' => $baseSku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk]);
+            $totalVariantStock += $stk;
+            if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
+            if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
+        }
+    }
+
+    // Delete variants that no longer match any combo
+    if (!empty($usedKeys)) {
+        $allVariants = $db->prepare('SELECT id, attribute_values FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+        $allVariants->execute(['pid' => $productId, 'bid' => $bid]);
+        foreach ($allVariants->fetchAll() as $v) {
+            if (!in_array($v['attribute_values'], $usedKeys, true)) {
+                $db->prepare('DELETE FROM product_variants WHERE id = :id')->execute(['id' => (int) $v['id']]);
+            }
+        }
+    } else {
+        // No combos, delete all variants
+        $db->prepare('DELETE FROM product_variants WHERE product_id = :pid AND business_id = :bid')
+            ->execute(['pid' => $productId, 'bid' => $bid]);
+    }
+
+    // Sync parent product price and stock from variants
+    try {
+        $pStmt = $db->prepare('SELECT selling_price, cost_price, stock_quantity FROM products WHERE id = :pid AND business_id = :bid LIMIT 1');
+        $pStmt->execute(['pid' => $productId, 'bid' => $bid]);
+        $parentProd = $pStmt->fetch();
+        if ($parentProd) {
+            $updates = [];
+            $params = ['id' => $productId, 'bid' => $bid];
+            if ($firstVariantPrice !== null && ((float)$parentProd['selling_price'] <= 0)) {
+                $updates[] = 'selling_price = :sp';
+                $params['sp'] = $firstVariantPrice;
+            }
+            if ($firstVariantCost !== null && ((float)$parentProd['cost_price'] <= 0)) {
+                $updates[] = 'cost_price = :cp';
+                $params['cp'] = $firstVariantCost;
+            }
+            if ($totalVariantStock > 0 || (int)$parentProd['stock_quantity'] === 0) {
+                $updates[] = 'stock_quantity = :stk';
+                $params['stk'] = $totalVariantStock;
+            }
+            if (!empty($updates)) {
+                $db->prepare('UPDATE products SET ' . implode(', ', $updates) . ' WHERE id = :id AND business_id = :bid')->execute($params);
+            }
+        }
+    } catch (PDOException $e) { /* ignore */ }
 }
 
 /* =========================================================================

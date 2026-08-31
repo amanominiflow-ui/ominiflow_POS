@@ -1897,3 +1897,94 @@ function reorder_storefront_order(int $businessId, int $orderId): array {
     return ['success' => true, 'count' => storefront_cart_count($businessId)];
 }
 
+if (!function_exists('storefront_get_all_product_images')) {
+    function storefront_get_all_product_images(array $p, int $businessId): array {
+        $images = [];
+        $front = trim((string) ($p['image_path'] ?? ''));
+        if ($front) $images[] = asset($front);
+        $rear = trim((string) ($p['rear_image_path'] ?? ''));
+        if ($rear && $rear !== $front) $images[] = asset($rear);
+
+        $db = get_db();
+        $stmt = $db->prepare('SELECT path FROM product_images WHERE product_id = :pid AND business_id = :bid ORDER BY sort_order ASC, id ASC');
+        $stmt->execute(['pid' => (int) $p['id'], 'bid' => $businessId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $url = asset(trim((string) $row['path']));
+            if ($url && !in_array($url, $images, true)) {
+                $images[] = $url;
+            }
+        }
+        return $images;
+    }
+}
+
+if (!function_exists('storefront_parse_product_display_info')) {
+    function storefront_parse_product_display_info(array $p, int $businessId): array {
+        $isVariable = (($p['product_type'] ?? '') === 'variable');
+        $variants = ($isVariable && function_exists('get_product_variants')) ? get_product_variants((int) $p['id'], $businessId) : [];
+        $varCount = count($variants);
+        
+        $attrText = '';
+        $mrp = (float) ($p['mrp'] ?? 0);
+        $sellingPrice = (float) ($p['selling_price'] ?? 0);
+        
+        if ($isVariable && $varCount > 0) {
+            $firstVar = $variants[0];
+            $vName = trim((string) ($firstVar['variant_name'] ?? ''));
+            
+            if (!empty($firstVar['selling_price']) && (float) $firstVar['selling_price'] > 0) {
+                $sellingPrice = (float) $firstVar['selling_price'];
+            }
+            if (!empty($firstVar['cost_price']) && (float) ($firstVar['mrp'] ?? 0) > 0) {
+                $mrp = (float) $firstVar['mrp'];
+            }
+            
+            if ($vName !== '') {
+                if (stripos($vName, 'COLOUR:') !== false || stripos($vName, 'SIZE:') !== false) {
+                    $attrText = strtoupper($vName);
+                } elseif (strpos($vName, '/') !== false) {
+                    $parts = array_map('trim', explode('/', $vName));
+                    if (count($parts) >= 2) {
+                        $attrText = 'COLOUR: ' . strtoupper($parts[0]) . ', SIZES: ' . strtoupper($parts[1]);
+                    } else {
+                        $attrText = 'COLOUR: ' . strtoupper($vName);
+                    }
+                } elseif (strpos($vName, '-') !== false && !is_numeric($vName)) {
+                    $parts = array_map('trim', explode('-', $vName));
+                    if (count($parts) >= 2 && !is_numeric($parts[0])) {
+                        $attrText = 'COLOUR: ' . strtoupper($parts[0]) . ', SIZES: ' . strtoupper($parts[1]);
+                    } else {
+                        $attrText = 'COLOUR: ' . strtoupper($vName);
+                    }
+                } else {
+                    $attrText = 'COLOUR: ' . strtoupper($vName);
+                }
+            }
+        } else {
+            $pName = (string) ($p['name'] ?? '');
+            if (preg_match('/-([a-zA-Z\s]+)-([a-zA-Z0-9]+)$/i', $pName, $m)) {
+                $attrText = 'COLOUR: ' . strtoupper(trim($m[1])) . ', SIZES: ' . strtoupper(trim($m[2]));
+            } elseif (preg_match('/-([a-zA-Z\s]+)$/i', $pName, $m)) {
+                $attrText = 'COLOUR: ' . strtoupper(trim($m[1]));
+            }
+        }
+
+        $discountPercent = 0;
+        if ($mrp > $sellingPrice && $mrp > 0) {
+            $discountPercent = (int) round((($mrp - $sellingPrice) / $mrp) * 100);
+        }
+
+        return [
+            'variants' => $variants,
+            'variant_count' => $varCount,
+            'variantCount' => $varCount,
+            'attr_text' => $attrText,
+            'attrText' => $attrText,
+            'selling_price' => $sellingPrice,
+            'mrp' => $mrp,
+            'discount_percent' => $discountPercent,
+        ];
+    }
+}
+
+

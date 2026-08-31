@@ -679,6 +679,34 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
+    // 27b. Product Attributes Table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `product_attributes` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `product_id` INT UNSIGNED NOT NULL,
+            `attribute_name` VARCHAR(100) NOT NULL,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pa_product` (`product_id`),
+            INDEX `idx_pa_biz` (`business_id`),
+            FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // 27c. Product Attribute Options Table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `product_attribute_options` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `attribute_id` INT UNSIGNED NOT NULL,
+            `option_value` VARCHAR(100) NOT NULL,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pao_attr` (`attribute_id`),
+            FOREIGN KEY (`attribute_id`) REFERENCES `product_attributes` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
     // 28. Composite Product Items Table
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `composite_product_items` (
@@ -1146,6 +1174,9 @@ try {
 
     add_column_if_not_exists($pdo, 'order_items', 'variant_id', "INT UNSIGNED NULL AFTER `product_id`");
     add_column_if_not_exists($pdo, 'order_items', 'hsn_code', "VARCHAR(50) NULL AFTER `product_sku`");
+
+    add_column_if_not_exists($pdo, 'product_variants', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");
+    add_column_if_not_exists($pdo, 'product_variants', 'attribute_values', "JSON NULL AFTER `variant_name`");
 
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");

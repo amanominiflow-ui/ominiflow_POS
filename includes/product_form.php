@@ -88,9 +88,44 @@ if ($defaultInter === '' && $igstRates) {
         $defaultInter = (string) $igstRates[0]['id'];
     }
 }
+
+// Load variant attributes for edit mode or POST re-fill
+$variantAttrs = [];
+$existingVariants = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $attrNames = (array) ($_POST['attr_name'] ?? []);
+    $attrOpts = (array) ($_POST['attr_options'] ?? []);
+    foreach ($attrNames as $ai => $an) {
+        $an = trim((string) $an);
+        if ($an === '') continue;
+        $opts = $attrOpts[$ai] ?? '';
+        if (is_string($opts)) {
+            $opts = array_values(array_filter(array_map('trim', explode(',', $opts))));
+        } else {
+            $opts = array_values(array_filter(array_map('trim', (array) $opts)));
+        }
+        if (!empty($opts)) {
+            $variantAttrs[] = ['name' => $an, 'options' => $opts];
+        }
+    }
+} elseif ($isEdit && !empty($product['id']) && ($product['product_type'] ?? 'simple') === 'variable') {
+    $variantAttrs = function_exists('get_product_attributes') ? get_product_attributes((int) $product['id']) : [];
+    // Normalize format
+    $normalized = [];
+    foreach ($variantAttrs as $va) {
+        $opts = [];
+        foreach (($va['options'] ?? []) as $o) {
+            $opts[] = is_array($o) ? ($o['value'] ?? '') : (string) $o;
+        }
+        $normalized[] = ['name' => $va['attribute_name'] ?? ($va['name'] ?? ''), 'options' => $opts];
+    }
+    $variantAttrs = $normalized;
+    $existingVariants = function_exists('get_product_variants') ? get_product_variants((int) $product['id']) : [];
+}
+$variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', 'Weight'];
 ?>
 
-<div class="item-sheet">
+<div class="item-sheet <?= $itemType === 'variants' ? 'item-type-variants' : '' ?>" id="itemSheet">
     <div class="item-top">
         <div>
             <div class="item-row">
@@ -192,13 +227,13 @@ if ($defaultInter === '' && $igstRates) {
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="item-row">
+            <div class="item-row single-only">
                 <label class="item-label" for="sku">SKU</label>
                 <input class="item-input" type="text" id="sku" name="sku" value="<?= e(product_form_val('sku')) ?>" style="text-transform:uppercase">
                 <?php if (!empty($errors['sku'])): ?><div class="item-err"><?= e($errors['sku']) ?></div><?php endif; ?>
             </div>
         </div>
-        <div id="identWrap">
+        <div id="identWrap" class="single-only">
             <?php foreach ($identifiers as $ident): ?>
                 <div class="item-ident">
                     <input class="item-input" type="text" name="identifiers[]" value="<?= e((string) $ident) ?>" placeholder="UPC / EAN / ISBN">
@@ -206,8 +241,92 @@ if ($defaultInter === '' && $igstRates) {
                 </div>
             <?php endforeach; ?>
         </div>
-        <button type="button" class="item-link" id="addIdent">+ Add Identifier</button>
+        <button type="button" class="item-link single-only" id="addIdent">+ Add Identifier</button>
+
+        <!-- Variations Section (visible only in "Contains Variants" mode) -->
+        <div class="variations-sec variants-only" id="variationsSec">
+            <div class="item-sec-title">Variations</div>
+            <div class="variation-attrs-wrap" id="attrsWrap">
+                <?php if (!empty($variantAttrs)): ?>
+                    <?php foreach ($variantAttrs as $ai => $attr): ?>
+                    <div class="variation-attr-row" data-attr-index="<?= $ai ?>">
+                        <div>
+                            <label class="item-label req">Attribute*</label>
+                            <select class="item-select attr-name-select" name="attr_name[<?= $ai ?>]">
+                                <option value="">Select attribute</option>
+                                <?php foreach ($variantAttrNames as $van): ?>
+                                    <option value="<?= e($van) ?>" <?= $attr['name'] === $van ? 'selected' : '' ?>><?= e($van) ?></option>
+                                <?php endforeach; ?>
+                                <?php if (!in_array($attr['name'], $variantAttrNames, true) && $attr['name'] !== ''): ?>
+                                    <option value="<?= e($attr['name']) ?>" selected><?= e($attr['name']) ?></option>
+                                <?php endif; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="item-label req">Options*</label>
+                            <input type="hidden" name="attr_options[<?= $ai ?>]" class="attr-options-hidden" value="<?= e(implode(',', $attr['options'])) ?>">
+                            <div class="tag-input-wrap" data-attr="<?= $ai ?>">
+                                <?php foreach ($attr['options'] as $opt): ?>
+                                    <span class="tag-chip"><?= e($opt) ?><button type="button" class="tag-remove">&times;</button></span>
+                                <?php endforeach; ?>
+                                <input type="text" class="tag-input-field" placeholder="Type and press Enter">
+                            </div>
+                        </div>
+                        <button type="button" class="attr-remove-btn" title="Remove attribute">&times;</button>
+                    </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="variation-attr-row" data-attr-index="0">
+                        <div>
+                            <label class="item-label req">Attribute*</label>
+                            <select class="item-select attr-name-select" name="attr_name[0]">
+                                <option value="">eg: color</option>
+                                <?php foreach ($variantAttrNames as $van): ?>
+                                    <option value="<?= e($van) ?>"><?= e($van) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="item-label req">Options*</label>
+                            <input type="hidden" name="attr_options[0]" class="attr-options-hidden" value="">
+                            <div class="tag-input-wrap" data-attr="0">
+                                <input type="text" class="tag-input-field" placeholder="Type and press Enter">
+                            </div>
+                        </div>
+                        <button type="button" class="attr-remove-btn" title="Remove attribute">&times;</button>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <button type="button" class="add-attr-link" id="addAttrBtn">⊕ Add more attributes</button>
+
+            <div class="variant-table-wrap" id="variantTableWrap" style="<?= empty($existingVariants) ? 'display:none;' : '' ?>">
+                <div style="font-weight:700;font-size:13.5px;color:#1e293b;margin:16px 0 10px;">Variant Combinations & Pricing</div>
+                <table class="variant-table">
+                    <thead>
+                        <tr>
+                            <th>Variant</th>
+                            <th>SKU</th>
+                            <th>Selling Price (₹)</th>
+                            <th>Cost Price (₹)</th>
+                            <th>Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody id="variantTableBody">
+                        <?php foreach ($existingVariants as $vi => $ev): ?>
+                        <tr data-combo="<?= e((string)($ev['attribute_values'] ?? '')) ?>">
+                            <td class="variant-name-cell"><?= e((string) $ev['variant_name']) ?></td>
+                            <td><input type="text" name="variant_sku[<?= $vi ?>]" value="<?= e((string) $ev['sku']) ?>" style="text-transform:uppercase"></td>
+                            <td><input type="number" step="0.01" min="0" name="variant_selling_price[<?= $vi ?>]" value="<?= e((string) $ev['selling_price']) ?>" placeholder="0.00"></td>
+                            <td><input type="number" step="0.01" min="0" name="variant_cost_price[<?= $vi ?>]" value="<?= e((string) $ev['cost_price']) ?>" placeholder="0.00"></td>
+                            <td><input type="number" min="0" name="variant_stock[<?= $vi ?>]" value="<?= e((string) ($ev['stock_quantity'] ?? 0)) ?>" placeholder="0"></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
+
 
     <div class="item-sec">
         <div class="item-sec-title">Item Description</div>
@@ -217,7 +336,7 @@ if ($defaultInter === '' && $igstRates) {
     <div class="item-sec">
         <label class="item-check-title"><input type="checkbox" name="sales_enabled" value="1" <?= $salesOn ? 'checked' : '' ?> data-toggle="#salesBlock"> Sales Information</label>
         <div id="salesBlock" class="<?= $salesOn ? '' : 'item-hidden' ?>">
-            <div class="item-2">
+            <div class="item-2 single-only">
                 <div class="item-row">
                     <label class="item-label req">Selling Price*</label>
                     <div class="item-prefix"><span>INR</span><input class="item-input" type="number" step="0.01" min="0" name="selling_price" value="<?= e(product_form_val('selling_price', '0.00')) ?>"></div>
@@ -249,7 +368,7 @@ if ($defaultInter === '' && $igstRates) {
         <label class="item-check-title"><input type="checkbox" name="purchase_enabled" value="1" <?= $purchaseOn ? 'checked' : '' ?> data-toggle="#purchaseBlock"> Purchase Information</label>
         <div id="purchaseBlock" class="<?= $purchaseOn ? '' : 'item-hidden' ?>">
             <div class="item-2">
-                <div class="item-row">
+                <div class="item-row single-only">
                     <label class="item-label req">Cost Price*</label>
                     <div class="item-prefix"><span>INR</span><input class="item-input" type="number" step="0.01" min="0" name="cost_price" value="<?= e(product_form_val('cost_price', '0.00')) ?>"></div>
                 </div>
@@ -330,7 +449,7 @@ if ($defaultInter === '' && $igstRates) {
                     <input class="item-input" type="number" min="0" name="reorder_point" value="<?= e(product_form_val('reorder_point', product_form_val('low_stock_threshold', '5'))) ?>">
                 </div>
                 <?php if (!$isEdit): ?>
-                <div class="item-row">
+                <div class="item-row single-only">
                     <label class="item-label">Opening Stock</label>
                     <input class="item-input" type="number" min="0" name="initial_stock" value="<?= e(product_form_val('initial_stock', '0')) ?>">
                 </div>
@@ -365,7 +484,7 @@ if ($defaultInter === '' && $igstRates) {
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="item-hint">(Length X Width X Height)</div>
+                <div class="item-field-hint">(Length × Width × Height)</div>
             </div>
             <div class="item-row">
                 <label class="item-label">Weight</label>
@@ -411,55 +530,324 @@ if ($defaultInter === '' && $igstRates) {
 
 <script>
 (function () {
+    var sheet = document.getElementById('itemSheet');
+    var attrNames = <?= json_encode($variantAttrNames) ?>;
+
     function preview(input, box) {
         input.addEventListener('change', function () {
-            const f = this.files && this.files[0];
+            var f = this.files && this.files[0];
             if (!f) return;
-            const url = URL.createObjectURL(f);
-            let img = box.querySelector('img');
+            var url = URL.createObjectURL(f);
+            var img = box.querySelector('img');
             if (!img) { img = document.createElement('img'); box.prepend(img); }
             img.src = url;
-            const btn = box.querySelector('.item-drop-btn');
+            var btn = box.querySelector('.item-drop-btn');
             if (btn) btn.style.display = 'none';
         });
     }
     document.querySelectorAll('.item-drop').forEach(function (box) {
-        const input = box.querySelector('input[type=file]');
+        var input = box.querySelector('input[type=file]');
         if (input) preview(input, box);
     });
     document.querySelectorAll('[data-toggle]').forEach(function (cb) {
         cb.addEventListener('change', function () {
-            const el = document.querySelector(this.getAttribute('data-toggle'));
+            var el = document.querySelector(this.getAttribute('data-toggle'));
             if (el) el.classList.toggle('item-hidden', !this.checked);
         });
     });
+
+    // Item type toggle (Single Item / Contains Variants)
     document.querySelectorAll('.item-tog').forEach(function (btn) {
         btn.addEventListener('click', function () {
             document.querySelectorAll('.item-tog').forEach(function (b) { b.classList.remove('on'); });
             this.classList.add('on');
-            document.getElementById('item_type').value = this.getAttribute('data-item-type');
+            var type = this.getAttribute('data-item-type');
+            document.getElementById('item_type').value = type;
+            if (sheet) {
+                sheet.classList.toggle('item-type-variants', type === 'variants');
+            }
         });
     });
+
     document.querySelectorAll('input[name=item_kind]').forEach(function (r) {
         r.addEventListener('change', function () {
-            const service = this.value === 'service';
-            const inv = document.getElementById('inventorySec');
+            var service = this.value === 'service';
+            var inv = document.getElementById('inventorySec');
             if (inv) inv.classList.toggle('item-hidden', service);
             if (service) {
-                const cb = document.querySelector('input[name=track_inventory]');
+                var cb = document.querySelector('input[name=track_inventory]');
                 if (cb) { cb.checked = false; document.getElementById('inventoryBlock').classList.add('item-hidden'); }
             }
         });
     });
-    document.getElementById('addIdent').addEventListener('click', function () {
-        const wrap = document.getElementById('identWrap');
-        const row = document.createElement('div');
-        row.className = 'item-ident';
-        row.innerHTML = '<input class="item-input" type="text" name="identifiers[]" placeholder="UPC / EAN / ISBN"><button type="button" class="ident-remove" aria-label="Remove">&times;</button>';
-        wrap.appendChild(row);
-    });
-    document.getElementById('identWrap').addEventListener('click', function (e) {
-        if (e.target.classList.contains('ident-remove')) e.target.parentElement.remove();
-    });
+
+    // Identifiers
+    var addIdentBtn = document.getElementById('addIdent');
+    if (addIdentBtn) {
+        addIdentBtn.addEventListener('click', function () {
+            var wrap = document.getElementById('identWrap');
+            var row = document.createElement('div');
+            row.className = 'item-ident';
+            row.innerHTML = '<input class="item-input" type="text" name="identifiers[]" placeholder="UPC / EAN / ISBN"><button type="button" class="ident-remove" aria-label="Remove">&times;</button>';
+            wrap.appendChild(row);
+        });
+    }
+    var identWrap = document.getElementById('identWrap');
+    if (identWrap) {
+        identWrap.addEventListener('click', function (e) {
+            if (e.target.classList.contains('ident-remove')) e.target.parentElement.remove();
+        });
+    }
+
+    // === VARIANT ATTRIBUTES & LIVE COMBINATIONS ===
+
+    // Rebuild variant matrix combinations
+    function rebuildVariantMatrix() {
+        var tableWrap = document.getElementById('variantTableWrap');
+        var tbody = document.getElementById('variantTableBody');
+        if (!tableWrap || !tbody) return;
+
+        // Collect attributes & options from DOM
+        var attrList = [];
+        document.querySelectorAll('.variation-attr-row').forEach(function (row) {
+            var nameSel = row.querySelector('.attr-name-select');
+            var attrName = nameSel ? nameSel.value.trim() : '';
+            var chips = row.querySelectorAll('.tag-chip');
+            var opts = [];
+            chips.forEach(function (chip) {
+                var txt = chip.firstChild.textContent.trim();
+                if (txt) opts.push(txt);
+            });
+            if (attrName && opts.length > 0) {
+                attrList.push({ name: attrName, options: opts });
+            }
+        });
+
+        if (attrList.length === 0) {
+            tableWrap.style.display = 'none';
+            return;
+        }
+
+        // Generate combinations
+        var combos = [{}];
+        attrList.forEach(function (attr) {
+            var nextCombos = [];
+            combos.forEach(function (c) {
+                attr.options.forEach(function (opt) {
+                    var newC = Object.assign({}, c);
+                    newC[attr.name] = opt;
+                    nextCombos.push(newC);
+                });
+            });
+            combos = nextCombos;
+        });
+
+        if (combos.length === 0) {
+            tableWrap.style.display = 'none';
+            return;
+        }
+
+        tableWrap.style.display = 'block';
+
+        // Remember existing inputs in table by combo JSON key
+        var existingData = {};
+        tbody.querySelectorAll('tr').forEach(function (tr) {
+            var key = tr.getAttribute('data-combo');
+            if (key) {
+                var skuInp = tr.querySelector('input[name^="variant_sku"]');
+                var spInp = tr.querySelector('input[name^="variant_selling_price"]');
+                var cpInp = tr.querySelector('input[name^="variant_cost_price"]');
+                var stInp = tr.querySelector('input[name^="variant_stock"]');
+                existingData[key] = {
+                    sku: skuInp ? skuInp.value : '',
+                    selling_price: spInp ? spInp.value : '',
+                    cost_price: cpInp ? cpInp.value : '',
+                    stock: stInp ? stInp.value : ''
+                };
+            }
+        });
+
+        tbody.innerHTML = '';
+        var parentSku = (document.getElementById('sku') ? document.getElementById('sku').value.trim() : '') || 'SKU';
+
+        combos.forEach(function (combo, i) {
+            var comboKey = JSON.stringify(combo);
+            var varName = Object.values(combo).join(' / ');
+            var prev = existingData[comboKey] || {};
+
+            var skuVal = prev.sku !== undefined ? prev.sku : '';
+            var spVal = prev.selling_price !== undefined ? prev.selling_price : '';
+            var cpVal = prev.cost_price !== undefined ? prev.cost_price : '';
+            var stVal = prev.stock !== undefined ? prev.stock : '';
+
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-combo', comboKey);
+            tr.innerHTML =
+                '<td class="variant-name-cell">' + varName + '</td>' +
+                '<td><input type="text" name="variant_sku[' + i + ']" value="' + skuVal + '" placeholder="' + parentSku + '-V' + (i+1) + '" style="text-transform:uppercase"></td>' +
+                '<td><input type="number" step="0.01" min="0" name="variant_selling_price[' + i + ']" value="' + spVal + '" placeholder="0.00"></td>' +
+                '<td><input type="number" step="0.01" min="0" name="variant_cost_price[' + i + ']" value="' + cpVal + '" placeholder="0.00"></td>' +
+                '<td><input type="number" min="0" name="variant_stock[' + i + ']" value="' + stVal + '" placeholder="0"></td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Sync tag chips to the hidden input
+    function syncTags(tagWrap) {
+        var hidden = tagWrap.parentElement.querySelector('.attr-options-hidden');
+        if (!hidden) return;
+        var tags = [];
+        tagWrap.querySelectorAll('.tag-chip').forEach(function (chip) {
+            var text = chip.firstChild.textContent.trim();
+            if (text) tags.push(text);
+        });
+        hidden.value = tags.join(',');
+        rebuildVariantMatrix();
+    }
+
+    // Add a tag chip
+    function addTag(tagWrap, value) {
+        value = value.trim();
+        if (!value) return;
+        // Check duplicate
+        var existing = [];
+        tagWrap.querySelectorAll('.tag-chip').forEach(function (chip) {
+            existing.push(chip.firstChild.textContent.trim().toLowerCase());
+        });
+        if (existing.indexOf(value.toLowerCase()) >= 0) return;
+
+        var chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.textContent = value;
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'tag-remove';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.addEventListener('click', function () {
+            chip.remove();
+            syncTags(tagWrap);
+        });
+        chip.appendChild(removeBtn);
+
+        var input = tagWrap.querySelector('.tag-input-field');
+        tagWrap.insertBefore(chip, input);
+        syncTags(tagWrap);
+    }
+
+    // Setup tag input behavior for a wrap
+    function setupTagInput(tagWrap) {
+        var input = tagWrap.querySelector('.tag-input-field');
+        if (!input) return;
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                addTag(tagWrap, this.value);
+                this.value = '';
+            }
+            if (e.key === 'Backspace' && this.value === '') {
+                var chips = tagWrap.querySelectorAll('.tag-chip');
+                if (chips.length > 0) {
+                    chips[chips.length - 1].remove();
+                    syncTags(tagWrap);
+                }
+            }
+        });
+
+        input.addEventListener('blur', function () {
+            if (this.value.trim()) {
+                addTag(tagWrap, this.value);
+                this.value = '';
+            }
+        });
+
+        // Handle click on existing remove buttons (server-rendered)
+        tagWrap.querySelectorAll('.tag-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                this.parentElement.remove();
+                syncTags(tagWrap);
+            });
+        });
+
+        // Click on wrap focuses input
+        tagWrap.addEventListener('click', function () {
+            input.focus();
+        });
+    }
+
+    // Initialize existing tag inputs
+    document.querySelectorAll('.tag-input-wrap').forEach(setupTagInput);
+
+    // Rebuild matrix when attribute name changes
+    var attrsWrapEl = document.getElementById('attrsWrap');
+    if (attrsWrapEl) {
+        attrsWrapEl.addEventListener('change', function (e) {
+            if (e.target.classList.contains('attr-name-select')) {
+                rebuildVariantMatrix();
+            }
+        });
+    }
+
+    // Get next attribute index
+    function getNextAttrIndex() {
+        var rows = document.querySelectorAll('.variation-attr-row');
+        var max = -1;
+        rows.forEach(function (r) {
+            var idx = parseInt(r.getAttribute('data-attr-index'), 10);
+            if (idx > max) max = idx;
+        });
+        return max + 1;
+    }
+
+    // Build attribute name dropdown options HTML
+    function buildAttrOptions() {
+        var html = '<option value="">Select attribute</option>';
+        attrNames.forEach(function (name) {
+            html += '<option value="' + name + '">' + name + '</option>';
+        });
+        return html;
+    }
+
+    // Add more attributes
+    var addAttrBtn = document.getElementById('addAttrBtn');
+    if (addAttrBtn) {
+        addAttrBtn.addEventListener('click', function () {
+            var idx = getNextAttrIndex();
+            var row = document.createElement('div');
+            row.className = 'variation-attr-row';
+            row.setAttribute('data-attr-index', idx);
+            row.innerHTML =
+                '<div>' +
+                    '<label class="item-label req">Attribute*</label>' +
+                    '<select class="item-select attr-name-select" name="attr_name[' + idx + ']">' +
+                        buildAttrOptions() +
+                    '</select>' +
+                '</div>' +
+                '<div>' +
+                    '<label class="item-label req">Options*</label>' +
+                    '<input type="hidden" name="attr_options[' + idx + ']" class="attr-options-hidden" value="">' +
+                    '<div class="tag-input-wrap" data-attr="' + idx + '">' +
+                        '<input type="text" class="tag-input-field" placeholder="Type and press Enter">' +
+                    '</div>' +
+                '</div>' +
+                '<button type="button" class="attr-remove-btn" title="Remove attribute">&times;</button>';
+            document.getElementById('attrsWrap').appendChild(row);
+            setupTagInput(row.querySelector('.tag-input-wrap'));
+        });
+    }
+
+    // Remove attribute row (event delegation)
+    var attrsWrap = document.getElementById('attrsWrap');
+    if (attrsWrap) {
+        attrsWrap.addEventListener('click', function (e) {
+            if (e.target.classList.contains('attr-remove-btn')) {
+                var rows = document.querySelectorAll('.variation-attr-row');
+                if (rows.length > 1) {
+                    e.target.closest('.variation-attr-row').remove();
+                    rebuildVariantMatrix();
+                }
+            }
+        });
+    }
 })();
 </script>
