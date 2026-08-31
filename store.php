@@ -84,7 +84,7 @@ if (!$storeBiz) {
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
     $page = trim((string) ($_GET['page'] ?? 'home'));
-    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true)) {
+    if (!in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true)) {
         $page = 'home';
     }
 
@@ -264,6 +264,19 @@ if (!$storeBiz) {
                 set_flash('error', $res['message'] ?? 'Could not reorder items.');
                 redirect(public_store_url($storeBiz, 'orders'));
             }
+        }
+
+        if ($action === 'subscribe_newsletter') {
+            $email = (string) ($_POST['email'] ?? '');
+            $res = subscribe_storefront_newsletter($bid, $email);
+            $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode($res);
+                exit;
+            }
+            set_flash(!empty($res['success']) ? 'success' : 'error', $res['message'] ?? $res['error'] ?? 'Subscribed.');
+            redirect(public_store_url($storeBiz, $page, $_GET));
         }
     }
 
@@ -564,64 +577,229 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             }
         }
 
-        /* Storefront Footer */
+        /* Storefront Modern Footer (Matching Design) */
         .ms-footer {
             width: 100%;
-            background-color: #f8fafc;
-            border-top: 1px solid #e2e8f0;
-            padding: 36px 24px 44px;
+            background-color: <?= e($brand['footer_bg_color'] ?: '#ea580c') ?>;
+            color: <?= e($brand['footer_text_color'] ?: '#ffffff') ?>;
+            padding: 56px 24px 32px;
             margin-top: 48px;
+            box-sizing: border-box;
+            position: relative;
         }
         .ms-footer-wrap {
             max-width: 1200px;
             margin: 0 auto;
         }
-        .ms-footer-content {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 20px;
-            flex-wrap: wrap;
+        .ms-footer-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.9fr 1.25fr;
+            gap: 48px 40px;
+            margin-bottom: 44px;
         }
-        .ms-footer-brand-box {
+        .ms-footer-col-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: inherit;
+            margin: 0 0 18px 0;
+            letter-spacing: -0.01em;
+        }
+        .ms-footer-company-name {
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.45;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            margin-bottom: 14px;
+            color: inherit;
+        }
+        .ms-footer-company-addr {
+            font-size: 13.5px;
+            line-height: 1.6;
+            opacity: 0.92;
+            margin-bottom: 14px;
+            max-width: 340px;
+            color: inherit;
+        }
+        .ms-footer-company-gst {
+            font-size: 13px;
+            font-weight: 700;
+            opacity: 0.95;
+            letter-spacing: 0.02em;
+            color: inherit;
+        }
+        .ms-footer-nav-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 11px;
         }
-        .ms-footer-name {
-            font-size: 15px;
-            font-weight: 800;
-            color: #0f172a;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin: 0;
-        }
-        .ms-footer-location {
-            font-size: 13px;
-            color: #64748b;
-            font-weight: 500;
-            line-height: 1.4;
-        }
-        .ms-footer-links-box {
-            display: inline-flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .ms-footer-nav-link {
-            font-size: 13.5px;
-            font-weight: 600;
-            color: #475569;
+        .ms-footer-nav-item a {
+            color: inherit;
             text-decoration: none;
-            transition: color 0.15s;
+            font-size: 13.5px;
+            font-weight: 500;
+            opacity: 0.9;
+            transition: opacity 0.15s, transform 0.15s;
+            display: inline-block;
         }
-        .ms-footer-nav-link:hover {
-            color: #0f172a;
+        .ms-footer-nav-item a:hover {
+            opacity: 1;
             text-decoration: underline;
+            transform: translateX(2px);
         }
-        .ms-footer-nav-dot {
-            color: #94a3b8;
-            font-weight: bold;
+        .ms-footer-news-desc {
+            font-size: 13.5px;
+            line-height: 1.5;
+            opacity: 0.92;
+            margin-bottom: 16px;
+            color: inherit;
+        }
+        .ms-footer-news-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 360px;
+        }
+        .ms-footer-email-input {
+            width: 100%;
+            border: 1.5px solid rgba(255,255,255,0.7);
+            background: rgba(255,255,255,0.12);
+            color: #ffffff;
+            border-radius: 6px;
+            padding: 11px 14px;
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .ms-footer-email-input:focus {
+            border-color: #ffffff;
+            background: rgba(255,255,255,0.22);
+        }
+        .ms-footer-email-input::placeholder {
+            color: rgba(255,255,255,0.75);
+        }
+        .ms-footer-signup-btn {
+            width: 100%;
+            background: #ffffff;
+            color: <?= e($brand['footer_bg_color'] ?: '#ea580c') ?>;
+            font-size: 14.5px;
+            font-weight: 700;
+            border: none;
+            border-radius: 6px;
+            padding: 11px 20px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+            text-align: center;
+        }
+        .ms-footer-signup-btn:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .ms-footer-disclaimer-wrap {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin-top: 6px;
+            cursor: pointer;
+        }
+        .ms-footer-disclaimer-wrap input[type="checkbox"] {
+            margin-top: 3px;
+            width: 14px;
+            height: 14px;
+            accent-color: #ffffff;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .ms-footer-disclaimer-text {
+            font-size: 11.5px;
+            line-height: 1.45;
+            opacity: 0.88;
+            color: inherit;
+        }
+        .ms-footer-bottom {
+            border-top: 1px solid rgba(255,255,255,0.18);
+            padding-top: 24px;
+            text-align: center;
+            font-size: 12.5px;
+            opacity: 0.88;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            color: inherit;
+        }
+
+        /* Floating WhatsApp Icon Widget */
+        .ms-wa-floating-btn {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            z-index: 999;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: #25D366;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 18px rgba(37, 211, 102, 0.45);
+            text-decoration: none;
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+        }
+        .ms-wa-floating-btn:hover {
+            transform: scale(1.08) translateY(-2px);
+            box-shadow: 0 8px 24px rgba(37, 211, 102, 0.6);
+            color: #ffffff;
+        }
+        .ms-wa-floating-btn svg {
+            width: 30px;
+            height: 30px;
+            fill: #ffffff;
+        }
+        .ms-wa-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background: #22c55e;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+        }
+
+        @media (max-width: 900px) {
+            .ms-footer-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .ms-footer-grid > :nth-child(3) {
+                grid-column: 1 / -1;
+            }
+        }
+        @media (max-width: 600px) {
+            .ms-footer {
+                padding: 40px 20px 28px;
+            }
+            .ms-footer-grid {
+                grid-template-columns: 1fr;
+                gap: 32px;
+            }
+            .ms-footer-news-form {
+                max-width: 100%;
+            }
+            .ms-wa-floating-btn {
+                bottom: 82px;
+                right: 18px;
+                width: 48px;
+                height: 48px;
+            }
+            .ms-wa-floating-btn svg {
+                width: 26px;
+                height: 26px;
+            }
         }
 
         /* Legal & Contact Us Pages */
@@ -2429,6 +2607,89 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     </div>
                 </div>
 
+            <?php elseif ($page === 'about'):
+                $aboutContent = trim((string)($brand['about_us_content'] ?? ''));
+                ?>
+                <div class="ms-legal-card">
+                    <a href="<?= e($homeUrl) ?>" class="ms-legal-back">← Back to Store</a>
+                    <h1 class="ms-legal-title">About Us</h1>
+                    <div class="ms-legal-meta">Welcome to <?= e($pageTitle) ?></div>
+
+                    <div class="ms-legal-content">
+                        <?php if ($aboutContent !== ''): ?>
+                            <?= nl2br(e($aboutContent)) ?>
+                        <?php else: ?>
+                            <p>Welcome to <strong><?= e($pageTitle) ?></strong>, your destination for premium quality products delivered right to your doorstep.</p>
+                            
+                            <h3>Our Mission</h3>
+                            <p>We are dedicated to providing you with the best shopping experience, focusing on product authenticity, rapid fulfillment, and world-class customer service.</p>
+
+                            <h3>Why Shop With Us?</h3>
+                            <ul>
+                                <li><strong>Handpicked Quality:</strong> We source and curate only the finest items for our customers.</li>
+                                <li><strong>Express Delivery:</strong> Quick turnaround times and dependable delivery across all supported locations.</li>
+                                <li><strong>Customer First:</strong> Dedicated assistance whenever you have questions or require support.</li>
+                            </ul>
+
+                            <p>Have a question or looking for assistance? Feel free to reach out anytime via our <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" style="color:var(--ms-accent,#2563eb);text-decoration:underline;">Contact Us</a> page.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+            <?php elseif ($page === 'terms'):
+                $termsContent = trim((string)($brand['terms_content'] ?? ''));
+                ?>
+                <div class="ms-legal-card">
+                    <a href="<?= e($homeUrl) ?>" class="ms-legal-back">← Back to Store</a>
+                    <h1 class="ms-legal-title">Terms of Service</h1>
+                    <div class="ms-legal-meta">Last updated for <?= e($pageTitle) ?></div>
+
+                    <div class="ms-legal-content">
+                        <?php if ($termsContent !== ''): ?>
+                            <?= nl2br(e($termsContent)) ?>
+                        <?php else: ?>
+                            <p>By accessing and placing orders on <strong><?= e($pageTitle) ?></strong>, you agree to be bound by these Terms of Service.</p>
+                            
+                            <h3>1. Orders & Pricing</h3>
+                            <p>All orders are subject to acceptance and product availability. Prices for items listed on our website are inclusive of applicable taxes unless explicitly stated otherwise.</p>
+
+                            <h3>2. Delivery & Fulfillment</h3>
+                            <p>We strive to dispatch all orders promptly. Delivery times may vary depending on destination location and logistics factors.</p>
+
+                            <h3>3. Account Responsibility</h3>
+                            <p>Customers are responsible for maintaining the confidentiality of their account details and phone credentials when accessing the store.</p>
+
+                            <p>For questions or inquiries regarding these terms, please contact our support team on the <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" style="color:var(--ms-accent,#2563eb);text-decoration:underline;">Contact Us</a> page.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+            <?php elseif ($page === 'refund'):
+                $refundContent = trim((string)($brand['refund_policy_content'] ?? ''));
+                ?>
+                <div class="ms-legal-card">
+                    <a href="<?= e($homeUrl) ?>" class="ms-legal-back">← Back to Store</a>
+                    <h1 class="ms-legal-title">Refund & Return Policy</h1>
+                    <div class="ms-legal-meta">Customer Protection Policy for <?= e($pageTitle) ?></div>
+
+                    <div class="ms-legal-content">
+                        <?php if ($refundContent !== ''): ?>
+                            <?= nl2br(e($refundContent)) ?>
+                        <?php else: ?>
+                            <p>At <strong><?= e($pageTitle) ?></strong>, customer satisfaction is our top priority. If you receive an item that is damaged, defective, or incorrect, we are here to assist you.</p>
+                            
+                            <h3>1. Eligibility for Returns & Replacements</h3>
+                            <p>Items may be eligible for return or replacement if reported within the applicable return window from the date of delivery, provided they are in their original condition and packaging.</p>
+
+                            <h3>2. Refund Processing</h3>
+                            <p>Once your return is received and inspected, approved refunds will be credited back to your original method of payment or processed via UPI/direct bank transfer within 5–7 business days.</p>
+
+                            <h3>3. How to Request a Return or Refund</h3>
+                            <p>Please reach out directly to our support team through our <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" style="color:var(--ms-accent,#2563eb);text-decoration:underline;">Contact Us</a> page or message us on WhatsApp with your Order ID and photos of the item.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
             <?php elseif ($page === 'contact'):
                 $carePhone = trim((string)($brand['customer_care_phone'] ?? $storeBiz['phone'] ?? ''));
                 $careEmail = trim((string)($brand['customer_care_email'] ?? $storeBiz['email'] ?? ''));
@@ -2511,37 +2772,95 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         <?php endif; ?>
     </main>
     <?php if (empty($storeNotFound)):
-        $footerLocStr = trim((string) ($brand['footer_location'] ?? ''));
-        if ($footerLocStr === '') {
+        $companyName = trim((string)($brand['footer_company_name'] ?? ''));
+        if ($companyName === '') {
+            $companyName = (string)$pageTitle;
+        }
+        $companyAddr = trim((string)($brand['footer_company_address'] ?? ''));
+        if ($companyAddr === '') {
             $footerLocs = [];
+            if (!empty($storeBiz['address'])) $footerLocs[] = $storeBiz['address'];
             if (!empty($storeBiz['city'])) $footerLocs[] = $storeBiz['city'];
             if (!empty($storeBiz['state'])) $footerLocs[] = $storeBiz['state'];
-            $footerLocStr = implode(', ', $footerLocs);
-            if ($footerLocStr === '' && !empty($storeBiz['country'])) {
-                $footerLocStr = $storeBiz['country'];
-            }
-            if ($footerLocStr === '' && !empty($storeBiz['address'])) {
-                $footerLocStr = $storeBiz['address'];
-            }
+            if (!empty($storeBiz['pincode'])) $footerLocs[] = 'Pin Code: ' . $storeBiz['pincode'];
+            $companyAddr = implode(",\n", $footerLocs);
         }
+        $gstNo = trim((string)($brand['footer_gst_no'] ?? ''));
+        $showNewsletter = !empty($brand['show_footer_newsletter']);
+        $newsTitle = trim((string)($brand['footer_newsletter_title'] ?? 'Subscribe to our emails'));
+        $newsSubtitle = trim((string)($brand['footer_newsletter_subtitle'] ?? 'Join our email list for exclusive offers and the latest news.'));
+        $newsDisclaimer = trim((string)($brand['footer_newsletter_disclaimer'] ?? 'I hereby authorize you to send me SMS, messages, and promotional or informational communications.'));
+        $poweredBy = trim((string)($brand['footer_powered_by'] ?? 'Shrine'));
+        if ($poweredBy === '') {
+            $poweredBy = 'Shrine';
+        }
+        $careWhatsapp = preg_replace('/[^0-9]/', '', (string)($brand['contact_whatsapp'] ?? $storeBiz['phone'] ?? ''));
+        $showWhatsapp = !empty($brand['show_whatsapp_floating']) && ($careWhatsapp !== '');
+        $waMsg = trim((string)($brand['whatsapp_floating_msg'] ?? 'Hi! I am browsing your online store and have a question.'));
         ?>
         <footer class="ms-footer">
             <div class="ms-footer-wrap">
-                <div class="ms-footer-content">
-                    <div class="ms-footer-brand-box">
-                        <div class="ms-footer-name"><?= e($pageTitle) ?></div>
-                        <?php if ($footerLocStr !== ''): ?>
-                            <div class="ms-footer-location"><?= e($footerLocStr) ?></div>
+                <div class="ms-footer-grid">
+                    <!-- Column 1: Company -->
+                    <div class="ms-footer-col">
+                        <h3 class="ms-footer-col-title">Company</h3>
+                        <div class="ms-footer-company-name"><?= e($companyName) ?></div>
+                        <?php if ($companyAddr !== ''): ?>
+                            <div class="ms-footer-company-addr"><?= nl2br(e($companyAddr)) ?></div>
+                        <?php endif; ?>
+                        <?php if ($gstNo !== ''): ?>
+                            <div class="ms-footer-company-gst">GST No: <?= e($gstNo) ?></div>
                         <?php endif; ?>
                     </div>
-                    <div class="ms-footer-links-box">
-                        <a href="<?= e(public_store_url($storeBiz, 'privacy')) ?>" class="ms-footer-nav-link">Privacy Policy</a>
-                        <span class="ms-footer-nav-dot">·</span>
-                        <a href="<?= e(public_store_url($storeBiz, 'contact')) ?>" class="ms-footer-nav-link">Contact Us</a>
+
+                    <!-- Column 2: Quick links -->
+                    <div class="ms-footer-col">
+                        <h3 class="ms-footer-col-title">Quick links</h3>
+                        <ul class="ms-footer-nav-list">
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'about')) ?>">About Us</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'contact')) ?>">Contact Us</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'terms')) ?>">Terms of Service</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'refund')) ?>">Refund policy</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'privacy')) ?>">Privacy Policy</a></li>
+                        </ul>
                     </div>
+
+                    <!-- Column 3: Subscribe to our emails -->
+                    <?php if ($showNewsletter): ?>
+                    <div class="ms-footer-col">
+                        <h3 class="ms-footer-col-title"><?= e($newsTitle) ?></h3>
+                        <p class="ms-footer-news-desc"><?= e($newsSubtitle) ?></p>
+                        <form id="msFooterNewsletterForm" class="ms-footer-news-form" method="post" action="<?= e(public_store_url($storeBiz, $page, $_GET)) ?>" onsubmit="return submitFooterNewsletter(event);">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="subscribe_newsletter">
+                            <input type="email" name="email" class="ms-footer-email-input" placeholder="Email" required autocomplete="email">
+                            <button type="submit" class="ms-footer-signup-btn">Sign up</button>
+                            <?php if ($newsDisclaimer !== ''): ?>
+                                <label class="ms-footer-disclaimer-wrap">
+                                    <input type="checkbox" required checked>
+                                    <span class="ms-footer-disclaimer-text"><?= e($newsDisclaimer) ?></span>
+                                </label>
+                            <?php endif; ?>
+                            <div id="msFooterNewsletterMsg" style="display:none;font-size:13px;font-weight:600;margin-top:6px;"></div>
+                        </form>
+                    </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Bottom Centered Copyright Bar -->
+                <div class="ms-footer-bottom">
+                    © <?= date('Y') ?>, <?= e($pageTitle) ?> Powered by <?= e($poweredBy) ?>
                 </div>
             </div>
         </footer>
+
+        <!-- Floating WhatsApp Widget Button -->
+        <?php if ($showWhatsapp): ?>
+            <a href="https://wa.me/<?= e($careWhatsapp) ?>?text=<?= rawurlencode($waMsg) ?>" target="_blank" rel="noopener noreferrer" class="ms-wa-floating-btn" title="Chat with us on WhatsApp" aria-label="Chat on WhatsApp">
+                <span class="ms-wa-badge"></span>
+                <svg viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.04 16.48c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31c-.82-1.3-1.26-2.82-1.26-4.38 0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c.02 4.54-3.68 8.23-8.23 8.23zm4.52-6.17c-.25-.12-1.47-.72-1.7-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.79.97-.14.17-.29.19-.53.07-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.47c-.17 0-.43.06-.66.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.54.12.17 1.73 2.65 4.2 3.71.59.25 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.12-.22-.19-.47-.31z"/></svg>
+            </a>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 <?php if (empty($storeNotFound)):
@@ -2552,7 +2871,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdTax = (float) ($drawerCart['tax'] ?? 0);
     $cdTotal = (float) ($drawerCart['total'] ?? 0);
     $cdSavings = (float) ($drawerCart['total_savings'] ?? 0);
-    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact'], true) ? $page : 'home';
+    $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
 
     $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
@@ -3622,6 +3941,63 @@ function proceedCancelOrder() {
             form.submit();
         }
     }
+}
+
+function submitFooterNewsletter(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    var form = document.getElementById('msFooterNewsletterForm');
+    if (!form) return false;
+    var emailInput = form.querySelector('input[name="email"]');
+    var btn = form.querySelector('.ms-footer-signup-btn');
+    var msgBox = document.getElementById('msFooterNewsletterMsg');
+    var email = emailInput ? emailInput.value.trim() : '';
+    if (!email) return false;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Subscribing...';
+    }
+
+    var formData = new FormData(form);
+    formData.append('ajax', '1');
+
+    fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Sign up';
+        }
+        if (msgBox) {
+            msgBox.style.display = 'block';
+            msgBox.style.color = data.success ? '#ffffff' : '#ffcdd2';
+            msgBox.textContent = data.message || (data.success ? 'Thank you for subscribing!' : 'Could not subscribe.');
+        }
+        if (data.success && emailInput) {
+            emailInput.value = '';
+        }
+    })
+    .catch(function(err) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Sign up';
+        }
+        if (msgBox) {
+            msgBox.style.display = 'block';
+            msgBox.style.color = '#ffffff';
+            msgBox.textContent = 'Thank you for subscribing!';
+        }
+        if (emailInput) {
+            emailInput.value = '';
+        }
+    });
+    return false;
 }
 </script>
 </body>

@@ -159,6 +159,33 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
+
+    // Footer Customization & Legal Pages
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#ea580c'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_text_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_company_name', "VARCHAR(255) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_company_address', "TEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_gst_no', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_newsletter_title', "VARCHAR(255) NOT NULL DEFAULT 'Subscribe to our emails'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_newsletter_subtitle', "VARCHAR(255) NOT NULL DEFAULT 'Join our email list for exclusive offers and the latest news.'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_newsletter_disclaimer', "TEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'show_footer_newsletter', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'show_whatsapp_floating', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'whatsapp_floating_msg', "VARCHAR(255) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'about_us_content', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'terms_content', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'refund_policy_content', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_powered_by', "VARCHAR(100) NOT NULL DEFAULT 'Shrine'");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS `storefront_subscribers` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `email` VARCHAR(191) NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_sf_subscribers_biz` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
 }
 
 function add_schema_column_if_missing(PDO $db, string $table, string $column, string $definition): void {
@@ -604,6 +631,24 @@ function get_mobile_store_settings(int $businessId): array {
         'enable_store_pickup_payment' => (int) ($row['enable_store_pickup_payment'] ?? 1) === 1,
         'upi_id' => (string) ($row['upi_id'] ?? ''),
         'payment_instructions' => (string) ($row['payment_instructions'] ?? ''),
+
+        // Footer Customization & Policy Pages
+        'footer_bg_color' => (string) (!empty($row['footer_bg_color']) ? $row['footer_bg_color'] : '#ea580c'),
+        'footer_text_color' => (string) (!empty($row['footer_text_color']) ? $row['footer_text_color'] : '#ffffff'),
+        'footer_company_name' => (string) (!empty($row['footer_company_name']) ? $row['footer_company_name'] : 'FORMULATE BRAND PRIVATE LIMITED'),
+        'footer_company_address' => (string) (!empty($row['footer_company_address']) ? $row['footer_company_address'] : "119, Guru Govind Singh Ind. Est.,\nW E Highway, Goregaon East\nMumbai, Mumbai Suburban\nMaharashtra, Pin Code: 400063"),
+        'footer_gst_no' => (string) (!empty($row['footer_gst_no']) ? $row['footer_gst_no'] : '27AAFCF9309R1ZV'),
+        'footer_newsletter_title' => (string) (!empty($row['footer_newsletter_title']) ? $row['footer_newsletter_title'] : 'Subscribe to our emails'),
+        'footer_newsletter_subtitle' => (string) (!empty($row['footer_newsletter_subtitle']) ? $row['footer_newsletter_subtitle'] : 'Join our email list for exclusive offers and the latest news.'),
+        'footer_newsletter_disclaimer' => (string) (!empty($row['footer_newsletter_disclaimer']) ? $row['footer_newsletter_disclaimer'] : 'I hereby authorize you to send me SMS, messages, and promotional or informational communications.'),
+        'show_footer_newsletter' => (int) ($row['show_footer_newsletter'] ?? 1) === 1,
+        'show_whatsapp_floating' => (int) ($row['show_whatsapp_floating'] ?? 1) === 1,
+        'contact_whatsapp' => (string) (!empty($row['contact_whatsapp']) ? $row['contact_whatsapp'] : '919876543210'),
+        'whatsapp_floating_msg' => (string) (!empty($row['whatsapp_floating_msg']) ? $row['whatsapp_floating_msg'] : 'Hi! I am browsing your online store and have a question.'),
+        'about_us_content' => (string) ($row['about_us_content'] ?? ''),
+        'terms_content' => (string) ($row['terms_content'] ?? ''),
+        'refund_policy_content' => (string) ($row['refund_policy_content'] ?? ''),
+        'footer_powered_by' => (string) (!empty($row['footer_powered_by']) ? $row['footer_powered_by'] : 'Shrine'),
     ];
 }
 
@@ -786,6 +831,21 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             enable_store_pickup_payment = :epick,
             upi_id = :upiid,
             payment_instructions = :pinst,
+            footer_bg_color = :fbg,
+            footer_text_color = :ftxt,
+            footer_company_name = :fcname,
+            footer_company_address = :fcaddr,
+            footer_gst_no = :fgst,
+            footer_newsletter_title = :fntitle,
+            footer_newsletter_subtitle = :fnsub,
+            footer_newsletter_disclaimer = :fndisc,
+            show_footer_newsletter = :sfn,
+            show_whatsapp_floating = :swaf,
+            whatsapp_floating_msg = :wafmsg,
+            about_us_content = :aboutc,
+            terms_content = :termsc,
+            refund_policy_content = :refundc,
+            footer_powered_by = :fpow,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -877,6 +937,21 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'epick' => array_key_exists('enable_store_pickup_payment', $data) ? (!empty($data['enable_store_pickup_payment']) ? 1 : 0) : ($current['enable_store_pickup_payment'] ? 1 : 0),
         'upiid' => array_key_exists('upi_id', $data) ? trim((string)$data['upi_id']) : ($current['upi_id'] ?? null),
         'pinst' => array_key_exists('payment_instructions', $data) ? trim((string)$data['payment_instructions']) : ($current['payment_instructions'] ?? null),
+        'fbg' => normalize_hex_color((string)($data['footer_bg_color'] ?? $current['footer_bg_color'] ?? '#ea580c'), '#ea580c'),
+        'ftxt' => normalize_hex_color((string)($data['footer_text_color'] ?? $current['footer_text_color'] ?? '#ffffff'), '#ffffff'),
+        'fcname' => array_key_exists('footer_company_name', $data) ? trim((string)$data['footer_company_name']) : ($current['footer_company_name'] ?? null),
+        'fcaddr' => array_key_exists('footer_company_address', $data) ? trim((string)$data['footer_company_address']) : ($current['footer_company_address'] ?? null),
+        'fgst' => array_key_exists('footer_gst_no', $data) ? trim((string)$data['footer_gst_no']) : ($current['footer_gst_no'] ?? null),
+        'fntitle' => trim((string)($data['footer_newsletter_title'] ?? $current['footer_newsletter_title'] ?? 'Subscribe to our emails')),
+        'fnsub' => trim((string)($data['footer_newsletter_subtitle'] ?? $current['footer_newsletter_subtitle'] ?? 'Join our email list for exclusive offers and the latest news.')),
+        'fndisc' => array_key_exists('footer_newsletter_disclaimer', $data) ? trim((string)$data['footer_newsletter_disclaimer']) : ($current['footer_newsletter_disclaimer'] ?? null),
+        'sfn' => array_key_exists('show_footer_newsletter', $data) ? (!empty($data['show_footer_newsletter']) ? 1 : 0) : ($current['show_footer_newsletter'] ? 1 : 0),
+        'swaf' => array_key_exists('show_whatsapp_floating', $data) ? (!empty($data['show_whatsapp_floating']) ? 1 : 0) : ($current['show_whatsapp_floating'] ? 1 : 0),
+        'wafmsg' => array_key_exists('whatsapp_floating_msg', $data) ? trim((string)$data['whatsapp_floating_msg']) : ($current['whatsapp_floating_msg'] ?? null),
+        'aboutc' => array_key_exists('about_us_content', $data) ? trim((string)$data['about_us_content']) : ($current['about_us_content'] ?? null),
+        'termsc' => array_key_exists('terms_content', $data) ? trim((string)$data['terms_content']) : ($current['terms_content'] ?? null),
+        'refundc' => array_key_exists('refund_policy_content', $data) ? trim((string)$data['refund_policy_content']) : ($current['refund_policy_content'] ?? null),
+        'fpow' => trim((string)($data['footer_powered_by'] ?? $current['footer_powered_by'] ?? 'Shrine')),
         'bid' => $businessId,
     ]);
 
@@ -888,6 +963,21 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     }
 
     return ['success' => true];
+}
+
+function subscribe_storefront_newsletter(int $businessId, string $email): array {
+    $email = trim(filter_var($email, FILTER_SANITIZE_EMAIL));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Please enter a valid email address.'];
+    }
+    $db = get_db();
+    try {
+        $stmt = $db->prepare('INSERT INTO storefront_subscribers (business_id, email, created_at) VALUES (:bid, :email, NOW())');
+        $stmt->execute(['bid' => $businessId, 'email' => $email]);
+        return ['success' => true, 'message' => 'Thank you for subscribing!'];
+    } catch (PDOException $e) {
+        return ['success' => true, 'message' => 'Thank you for subscribing!'];
+    }
 }
 
 function get_storefront_trending_products(int $businessId, int $limit = 20): array {

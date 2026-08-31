@@ -130,6 +130,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['privacy_policy'] = $_POST['privacy_policy'] ?? '';
             $saveData['footer_location'] = $_POST['footer_location'] ?? '';
 
+            // Footer & Company Information Preferences
+            if (isset($_POST['footer_bg_color'])) $saveData['footer_bg_color'] = $_POST['footer_bg_color'];
+            if (isset($_POST['footer_text_color'])) $saveData['footer_text_color'] = $_POST['footer_text_color'];
+            if (isset($_POST['footer_company_name'])) $saveData['footer_company_name'] = $_POST['footer_company_name'];
+            if (isset($_POST['footer_company_address'])) $saveData['footer_company_address'] = $_POST['footer_company_address'];
+            if (isset($_POST['footer_gst_no'])) $saveData['footer_gst_no'] = $_POST['footer_gst_no'];
+            if (isset($_POST['footer_newsletter_title'])) $saveData['footer_newsletter_title'] = $_POST['footer_newsletter_title'];
+            if (isset($_POST['footer_newsletter_subtitle'])) $saveData['footer_newsletter_subtitle'] = $_POST['footer_newsletter_subtitle'];
+            if (isset($_POST['footer_newsletter_disclaimer'])) $saveData['footer_newsletter_disclaimer'] = $_POST['footer_newsletter_disclaimer'];
+            $saveData['show_footer_newsletter'] = !empty($_POST['show_footer_newsletter']);
+            $saveData['show_whatsapp_floating'] = !empty($_POST['show_whatsapp_floating']);
+            if (isset($_POST['whatsapp_floating_msg'])) $saveData['whatsapp_floating_msg'] = $_POST['whatsapp_floating_msg'];
+            if (isset($_POST['about_us_content'])) $saveData['about_us_content'] = $_POST['about_us_content'];
+            if (isset($_POST['terms_content'])) $saveData['terms_content'] = $_POST['terms_content'];
+            if (isset($_POST['refund_policy_content'])) $saveData['refund_policy_content'] = $_POST['refund_policy_content'];
+            if (isset($_POST['footer_powered_by'])) $saveData['footer_powered_by'] = $_POST['footer_powered_by'];
+
             // Payment Methods Toggles & Options
             $saveData['enable_cod'] = !empty($_POST['enable_cod']);
             $saveData['enable_upi'] = !empty($_POST['enable_upi']);
@@ -1833,10 +1850,101 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                             </div>
                         </div>
 
-                        <!-- Customer Care & Contact Us Details Section -->
+                        <!-- Footer Customization & Branding Section -->
+                        <div class="pref-section" style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;padding:20px 22px;margin-bottom:24px;">
+                            <div class="pref-sec-heading" style="color:#c2410c;margin-bottom:4px;display:flex;align-items:center;gap:8px;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+                                <span>Footer Customization & Colors</span>
+                            </div>
+                            <div class="pref-help-sub" style="color:#9a3412;">Customize the background color, text color, company information, and layout of your online store's footer.</div>
+
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;margin-top:14px;margin-bottom:14px;">
+                                <!-- Footer Background Color -->
+                                <div style="background:#ffffff;padding:12px 16px;border-radius:8px;border:1px solid #fed7aa;">
+                                    <label class="pref-field-label" style="display:block;margin-bottom:6px;font-weight:600;">Footer Background Color</label>
+                                    <div style="display:flex;align-items:center;gap:10px;">
+                                        <input type="color" id="footer_bg_picker" value="<?= e($brand['footer_bg_color'] ?? '#ea580c') ?>" style="width:38px;height:38px;padding:0;border:none;border-radius:6px;cursor:pointer;" onchange="document.getElementById('footer_bg_input').value = this.value">
+                                        <input class="pref-field-input" type="text" name="footer_bg_color" id="footer_bg_input" value="<?= e($brand['footer_bg_color'] ?? '#ea580c') ?>" placeholder="#ea580c" oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)) document.getElementById('footer_bg_picker').value = this.value" style="font-family:monospace;font-weight:600;">
+                                    </div>
+                                </div>
+
+                                <!-- Footer Text Color -->
+                                <div style="background:#ffffff;padding:12px 16px;border-radius:8px;border:1px solid #fed7aa;">
+                                    <label class="pref-field-label" style="display:block;margin-bottom:6px;font-weight:600;">Footer Text & Links Color</label>
+                                    <div style="display:flex;align-items:center;gap:10px;">
+                                        <input type="color" id="footer_text_picker" value="<?= e($brand['footer_text_color'] ?? '#ffffff') ?>" style="width:38px;height:38px;padding:0;border:none;border-radius:6px;cursor:pointer;" onchange="document.getElementById('footer_text_input').value = this.value">
+                                        <input class="pref-field-input" type="text" name="footer_text_color" id="footer_text_input" value="<?= e($brand['footer_text_color'] ?? '#ffffff') ?>" placeholder="#ffffff" oninput="if(/^#[0-9A-Fa-f]{6}$/.test(this.value)) document.getElementById('footer_text_picker').value = this.value" style="font-family:monospace;font-weight:600;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Company & Business Details (Left Column in Store Footer) -->
                         <div class="pref-section">
-                            <div class="pref-sec-heading" style="margin-bottom:4px">Contact Us & Customer Support</div>
-                            <div class="pref-help-sub">This information is displayed on your store's "Contact Us" page, footer, and QR code poster</div>
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Company & Business Information (Footer Column 1)</div>
+                            <div class="pref-help-sub">Displayed under the "Company" column in the store footer.</div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Company / Legal Entity Name</label>
+                                <input class="pref-field-input" type="text" name="footer_company_name" value="<?= e($brand['footer_company_name'] ?? '') ?>" placeholder="e.g. FORMULATE BRAND PRIVATE LIMITED (leave blank to use Store Name)">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Full Registered Address</label>
+                                <textarea class="pref-field-input" name="footer_company_address" rows="3" style="height:auto;padding:10px;font-family:inherit;font-size:13px;resize:vertical;" placeholder="e.g. 119, Guru Govind Singh Ind. Est., W E Highway, Goregaon East Mumbai, Mumbai Suburban Maharashtra, Pin Code: 400063"><?= e($brand['footer_company_address'] ?? '') ?></textarea>
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">GST / Tax Identification Number</label>
+                                <input class="pref-field-input" type="text" name="footer_gst_no" value="<?= e($brand['footer_gst_no'] ?? '') ?>" placeholder="e.g. 27AAFCF9309R1ZV (Optional)">
+                            </div>
+                        </div>
+
+                        <!-- Email Newsletter Subscription (Right Column in Store Footer) -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Email Newsletter Subscription (Footer Column 3)</div>
+                            <div class="pref-help-sub">Allows customers to subscribe for updates, offers, and announcements directly from the footer.</div>
+
+                            <label class="pref-check-item" style="margin-bottom:14px;">
+                                <input type="checkbox" name="show_footer_newsletter" value="1" <?= !empty($brand['show_footer_newsletter']) ? 'checked' : '' ?>>
+                                <span style="font-weight:600;">Enable Email Subscription Section in Footer</span>
+                            </label>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Newsletter Title</label>
+                                <input class="pref-field-input" type="text" name="footer_newsletter_title" value="<?= e($brand['footer_newsletter_title'] ?? 'Subscribe to our emails') ?>" placeholder="Subscribe to our emails">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Newsletter Subtitle / Description</label>
+                                <input class="pref-field-input" type="text" name="footer_newsletter_subtitle" value="<?= e($brand['footer_newsletter_subtitle'] ?? 'Join our email list for exclusive offers and the latest news.') ?>" placeholder="Join our email list for exclusive offers and the latest news.">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Opt-in Checkbox Disclaimer Text</label>
+                                <textarea class="pref-field-input" name="footer_newsletter_disclaimer" rows="2" style="height:auto;padding:8px 10px;font-family:inherit;font-size:13px;resize:vertical;" placeholder="I hereby authorize you to send me SMS, messages, and promotional or informational communications."><?= e($brand['footer_newsletter_disclaimer'] ?? 'I hereby authorize you to send me SMS, messages, and promotional or informational communications.') ?></textarea>
+                            </div>
+                        </div>
+
+                        <!-- WhatsApp Floating Chat & Customer Support -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">WhatsApp Support & Floating Chat Icon</div>
+                            <div class="pref-help-sub">Displays a floating WhatsApp icon at the bottom-right of your store so shoppers can chat with you instantly.</div>
+
+                            <label class="pref-check-item" style="margin-bottom:14px;">
+                                <input type="checkbox" name="show_whatsapp_floating" value="1" <?= !empty($brand['show_whatsapp_floating']) ? 'checked' : '' ?>>
+                                <span style="font-weight:600;">Enable Floating WhatsApp Icon on Bottom-Right of Store</span>
+                            </label>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">WhatsApp Support Number</label>
+                                <input class="pref-field-input" type="text" name="contact_whatsapp" value="<?= e($brand['contact_whatsapp'] ?? '') ?>" placeholder="e.g. 919876543210 (include country code without + or spaces)">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Pre-filled Chat Message (Optional)</label>
+                                <input class="pref-field-input" type="text" name="whatsapp_floating_msg" value="<?= e($brand['whatsapp_floating_msg'] ?? 'Hi! I am browsing your online store and have a question.') ?>" placeholder="e.g. Hi! I am browsing your online store and have a question.">
+                            </div>
 
                             <div class="pref-form-grid">
                                 <label class="pref-field-label">Customer care contact number</label>
@@ -1849,29 +1957,39 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                             </div>
 
                             <div class="pref-form-grid">
-                                <label class="pref-field-label">WhatsApp Support Number (Optional)</label>
-                                <input class="pref-field-input" type="text" name="contact_whatsapp" value="<?= e($brand['contact_whatsapp'] ?? '') ?>" placeholder="e.g. 919876543210 (with country code, no +)">
-                            </div>
-
-                            <div class="pref-form-grid">
                                 <label class="pref-field-label">Store Hours / Support Note</label>
                                 <input class="pref-field-input" type="text" name="contact_us_text" value="<?= e($brand['contact_us_text'] ?? '') ?>" placeholder="e.g. Mon - Sat: 10:00 AM - 8:00 PM">
                             </div>
 
                             <div class="pref-form-grid">
-                                <label class="pref-field-label">Footer Location / Subtitle</label>
-                                <input class="pref-field-input" type="text" name="footer_location" value="<?= e($brand['footer_location'] ?? '') ?>" placeholder="e.g. West Bengal (or leave empty to auto-use State/City from Settings)">
+                                <label class="pref-field-label">Footer Powered By Note</label>
+                                <input class="pref-field-input" type="text" name="footer_powered_by" value="<?= e($brand['footer_powered_by'] ?? 'Shrine') ?>" placeholder="e.g. Shrine or Ominiflow">
                             </div>
                         </div>
 
-                        <!-- Privacy Policy & Legal Section -->
+                        <!-- Store Policy Pages Content (Quick links in Store Footer) -->
                         <div class="pref-section">
-                            <div class="pref-sec-heading" style="margin-bottom:4px">Privacy Policy & Legal</div>
-                            <div class="pref-help-sub">Your store's Privacy Policy will be accessible to customers from the footer link.</div>
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Store Information & Policy Pages (Footer Quick Links)</div>
+                            <div class="pref-help-sub">These pages open when customers click on "About Us", "Contact Us", "Terms of Service", "Refund policy", or "Privacy Policy".</div>
 
-                            <div class="pref-form-grid">
-                                <label class="pref-field-label">Privacy Policy Content</label>
-                                <textarea class="pref-field-input" name="privacy_policy" rows="7" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter your custom Privacy Policy here. If left blank, a standard privacy policy based on your store name will be automatically provided."><?= e($brand['privacy_policy'] ?? '') ?></textarea>
+                            <div class="pref-form-grid" style="align-items:start;">
+                                <label class="pref-field-label" style="padding-top:8px;">About Us Content</label>
+                                <textarea class="pref-field-input" name="about_us_content" rows="5" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter custom About Us story or description. If left blank, a default store introduction will be shown."><?= e($brand['about_us_content'] ?? '') ?></textarea>
+                            </div>
+
+                            <div class="pref-form-grid" style="align-items:start;">
+                                <label class="pref-field-label" style="padding-top:8px;">Terms of Service Content</label>
+                                <textarea class="pref-field-input" name="terms_content" rows="5" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter your Terms of Service. If left blank, standard store terms will be generated."><?= e($brand['terms_content'] ?? '') ?></textarea>
+                            </div>
+
+                            <div class="pref-form-grid" style="align-items:start;">
+                                <label class="pref-field-label" style="padding-top:8px;">Refund & Return Policy Content</label>
+                                <textarea class="pref-field-input" name="refund_policy_content" rows="5" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter your Refund and Return policy details. If left blank, standard policy terms will be shown."><?= e($brand['refund_policy_content'] ?? '') ?></textarea>
+                            </div>
+
+                            <div class="pref-form-grid" style="align-items:start;">
+                                <label class="pref-field-label" style="padding-top:8px;">Privacy Policy Content</label>
+                                <textarea class="pref-field-input" name="privacy_policy" rows="5" style="height:auto;padding:12px;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;" placeholder="Enter your custom Privacy Policy here. If left blank, a standard privacy policy will be provided."><?= e($brand['privacy_policy'] ?? '') ?></textarea>
                             </div>
                         </div>
 
