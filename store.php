@@ -1078,11 +1078,18 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             padding: 16px 0 0 0 !important;
             display: flex !important;
             flex-direction: column !important;
-            align-items: center !important;
+            align-items: stretch !important;
             justify-content: space-between !important;
             text-align: center !important;
             flex: 1 !important;
             width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        .ms-product-body > div {
+            width: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
             box-sizing: border-box !important;
         }
         .ms-product-name {
@@ -1150,6 +1157,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             white-space: nowrap !important;
         }
 
+        .ms-card-add-form {
+            width: 100% !important;
+            display: block !important;
+            margin: 0 !important;
+            box-sizing: border-box !important;
+        }
+
         /* High-Converting Add to Cart Button Matching Reference */
         .ms-card-add-btn {
             width: 100% !important;
@@ -1162,7 +1176,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-radius: 8px !important;
             font-size: 16px !important;
             font-weight: 800 !important;
-            display: inline-flex !important;
+            display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             gap: 7px !important;

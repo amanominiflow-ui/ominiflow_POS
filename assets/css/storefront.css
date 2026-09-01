@@ -709,10 +709,17 @@ img {
     flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     text-align: center;
     width: 100%;
+    box-sizing: border-box;
+}
+.ms-product-body > div {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     box-sizing: border-box;
 }
 .ms-product-name {
@@ -791,6 +798,13 @@ img {
     white-space: nowrap;
 }
 
+.ms-card-add-form {
+    width: 100%;
+    display: block;
+    margin: 0;
+    box-sizing: border-box;
+}
+
 .ms-card-add-btn {
     width: 100%;
     height: 52px;
@@ -802,7 +816,7 @@ img {
     border-radius: 8px;
     font-size: 16px;
     font-weight: 800;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
     gap: 7px;
