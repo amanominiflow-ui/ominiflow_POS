@@ -777,6 +777,41 @@ img {
     white-space: nowrap;
 }
 
+.ms-card-add-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 11px 14px;
+    min-height: 42px;
+    background: var(--ms-header, #083d30);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    box-sizing: border-box;
+}
+.ms-card-add-btn:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+    color: #ffffff;
+}
+.ms-card-add-btn.is-disabled, .ms-card-add-btn:disabled {
+    background: #f1f5f9 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
 /* ==========================================================================
    GENERIC BUTTONS & FORMS
    ========================================================================== */

@@ -1068,12 +1068,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         .ms-card-add-btn {
             width: 100%;
             margin-top: 10px;
-            padding: 8px 12px;
+            padding: 11px 14px;
+            min-height: 42px;
             background: var(--ms-header, #083d30);
             color: #ffffff;
             border: none;
             border-radius: 8px;
-            font-size: 12.5px;
+            font-size: 13px;
             font-weight: 700;
             display: inline-flex;
             align-items: center;
