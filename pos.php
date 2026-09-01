@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/payment_options_db.php';
+require_once __DIR__ . '/includes/payment_integrations_db.php';
 
 require_auth();
 
@@ -135,6 +136,7 @@ $products = get_products('', null, 'active');
 $customers = get_customers();
 $heldSales = get_held_sales();
 $paymentOptions = get_payment_options('active');
+$activeGateways = get_active_pos_payment_gateways();
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -428,6 +430,19 @@ $flashError = get_flash('error');
                                 <span style="font-size: 20px;">📱</span>
                                 <span>UPI QR</span>
                             </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($activeGateways)): ?>
+                            <?php foreach ($activeGateways as $gwCode => $gw): 
+                                $gwIcon = '📱';
+                                if (in_array($gwCode, ['pinelabs', 'worldline'], true)) $gwIcon = '📟';
+                                elseif (in_array($gwCode, ['stripe', 'verifone'], true)) $gwIcon = '💳';
+                            ?>
+                                <div class="payment-method-card" data-method="<?= e($gwCode) ?>" title="<?= e($gw['name']) ?> Gateway (Online/EDC)">
+                                    <span style="font-size: 20px;"><?= $gwIcon ?></span>
+                                    <span><?= e($gw['name']) ?></span>
+                                </div>
+                            <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
 

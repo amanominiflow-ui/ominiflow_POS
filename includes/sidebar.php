@@ -63,7 +63,7 @@ if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', '
     $activeRailTab = 'channels';
 } elseif ($currentPage === 'reports.php') {
     $activeRailTab = 'reports';
-} elseif (in_array($currentPage, ['settings.php', 'integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'taxes.php', 'business-profile.php', 'users.php', 'roles.php', 'role-create.php'], true)) {
+} elseif (in_array($currentPage, ['settings.php', 'payment-integrations.php', 'customer-payments.php', 'integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'taxes.php', 'business-profile.php', 'users.php', 'roles.php', 'role-create.php'], true)) {
     $activeRailTab = 'settings';
 }
 
@@ -986,7 +986,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </div>
 
                 <!-- Payment Integrations -->
-                <div class="nav-group" id="grp-set-pay">
+                <div class="nav-group <?= in_array($currentPage, ['payment-integrations.php', 'customer-payments.php'], true) ? 'open' : '' ?>" id="grp-set-pay">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-set-pay')">
                         <div class="nav-group-title">
                             <span class="nav-item-icon">
@@ -999,7 +999,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         </span>
                     </div>
                     <div class="nav-submenu">
-                        <a href="<?= asset('settings.php') ?>" class="submenu-link">Customer Payments</a>
+                        <a href="<?= asset('payment-integrations.php') ?>" class="submenu-link <?= in_array($currentPage, ['payment-integrations.php', 'customer-payments.php'], true) ? 'active' : '' ?>">Customer Payments</a>
                     </div>
                 </div>
 

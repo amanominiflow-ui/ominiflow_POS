@@ -453,6 +453,27 @@ function ensure_product_item_schema(): void {
         }
     }
 
+    try {
+        $indexes = $db->query("SHOW INDEX FROM products WHERE Key_name = 'sku' AND Non_unique = 0")->fetchAll();
+        if (!empty($indexes)) {
+            $db->exec("ALTER TABLE products DROP INDEX `sku`");
+        }
+        $indexesBc = $db->query("SHOW INDEX FROM products WHERE Key_name = 'barcode' AND Non_unique = 0")->fetchAll();
+        if (!empty($indexesBc)) {
+            $db->exec("ALTER TABLE products DROP INDEX `barcode`");
+        }
+        $chkSku = $db->query("SHOW INDEX FROM products WHERE Key_name = 'uk_business_sku'")->fetchAll();
+        if (empty($chkSku)) {
+            $db->exec("ALTER TABLE products ADD UNIQUE KEY `uk_business_sku` (`business_id`, `sku`)");
+        }
+        $chkBc = $db->query("SHOW INDEX FROM products WHERE Key_name = 'uk_business_barcode'")->fetchAll();
+        if (empty($chkBc)) {
+            $db->exec("ALTER TABLE products ADD UNIQUE KEY `uk_business_barcode` (`business_id`, `barcode`)");
+        }
+    } catch (PDOException $e) {
+        // ignore
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS `product_images` (
             `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -870,7 +891,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         'inter_tax_rate_id' => !empty($data['inter_tax_rate_id']) ? (int) $data['inter_tax_rate_id'] : null,
         'track_inventory' => $track,
         'inventory_account' => trim((string) ($data['inventory_account'] ?? '')) ?: null,
-        'inventory_valuation' => in_array(($data['inventory_valuation'] ?? 'fifo'), ['fifo', 'wac', 'lifo'], true) ? $data['inventory_valuation'] : 'fifo',
+        'inventory_valuation' => in_array(($data['inventory_valuation'] ?? 'fifo'), ['fifo', 'wac', 'lifo'], true) ? ($data['inventory_valuation'] ?? 'fifo') : 'fifo',
         'returnable' => array_key_exists('returnable', $data) ? (!empty($data['returnable']) ? 1 : 0) : 1,
         'dim_length' => $nullableDec($data['dim_length'] ?? null),
         'dim_width' => $nullableDec($data['dim_width'] ?? null),
@@ -906,6 +927,17 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
             $productId = (int) $db->lastInsertId();
 
             if ($track && $initialStock > 0) {
+                $validUserId = null;
+                if ($userId !== null && (int)$userId > 0) {
+                    try {
+                        $stmtChkUser = $db->prepare('SELECT id FROM users WHERE id = :uid LIMIT 1');
+                        $stmtChkUser->execute(['uid' => (int)$userId]);
+                        if ($stmtChkUser->fetchColumn()) {
+                            $validUserId = (int)$userId;
+                        }
+                    } catch (Exception $e) {}
+                }
+
                 $stmtMove = $db->prepare('
                     INSERT INTO inventory_movements (
                         business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
@@ -916,7 +948,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
                 $stmtMove->execute([
                     'biz_id' => $bid,
                     'product_id' => $productId,
-                    'user_id' => $userId,
+                    'user_id' => $validUserId,
                     'movement_type' => 'in',
                     'quantity_change' => $initialStock,
                     'quantity_before' => 0,

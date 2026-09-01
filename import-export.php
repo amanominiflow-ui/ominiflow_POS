@@ -21,11 +21,12 @@ $flashError = get_flash('error');
 
 // Handle Export
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['export'])) {
-    $entity = $_GET['export'];
-    if ($entity === 'products') export_products_csv();
-    elseif ($entity === 'customers') export_customers_csv();
-    elseif ($entity === 'orders') export_orders_csv();
-    elseif ($entity === 'invoices') export_invoices_csv();
+    $entity = trim((string)$_GET['export']);
+    if ($entity === 'sample_template' || $entity === 'sample_products') {
+        export_sample_products_template();
+    } elseif (in_array($entity, ['products', 'customers', 'orders', 'invoices'], true)) {
+        export_data_to_csv($entity);
+    }
     exit;
 }
 
@@ -40,8 +41,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } else {
             $res = import_products_from_csv($_FILES['csv_file']['tmp_name'], (int)$user['id']);
             if ($res['success']) {
-                $errTxt = !empty($res['errors']) ? ' with ' . count($res['errors']) . ' row error(s).' : '.';
-                set_flash('success', "Import completed: {$res['imported_count']} product(s) added/updated{$errTxt}");
+                if ($res['imported_count'] > 0) {
+                    $warnTxt = !empty($res['errors']) ? ' (' . count($res['errors']) . ' warning(s): ' . implode('; ', array_slice($res['errors'], 0, 2)) . ')' : '';
+                    set_flash('success', "Import completed successfully: {$res['imported_count']} product(s) added/updated{$warnTxt}.");
+                } elseif (!empty($res['errors'])) {
+                    set_flash('error', 'CSV Import failed: ' . implode('; ', array_slice($res['errors'], 0, 3)));
+                } else {
+                    set_flash('error', 'No valid product rows found in uploaded CSV file.');
+                }
             } else {
                 set_flash('error', $res['error'] ?? 'Import failed.');
             }
@@ -90,16 +97,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
                     <!-- CSV Import Card -->
                     <div class="section-card">
-                        <div class="section-header">
+                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
                                 <h2 class="section-heading">Bulk Import Products (CSV)</h2>
                                 <p class="section-subheading">Upload new products or update existing inventory</p>
                             </div>
+                            <a href="<?= asset('import-export.php?export=sample_template') ?>" class="btn-secondary" style="font-size: 12px; font-weight: 600; padding: 6px 12px; text-decoration: none;">
+                                📥 Sample Template
+                            </a>
                         </div>
                         <div style="padding: 24px;">
                             <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 16px; line-height: 1.5;">
                                 Upload a standard CSV file with headers:<br>
-                                <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px;">Name, SKU, Selling Price, Cost Price, Tax Percent, Stock</code>
+                                <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px; color: #0f172a;">Name, SKU, Barcode, Category, Selling Price, Cost Price, Tax Percent, Stock</code>
                             </p>
 
                             <form method="POST" action="<?= asset('import-export.php') ?>" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 16px;">
@@ -112,9 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <input type="file" name="csv_file" accept=".csv" required style="font-size: 12px; margin-top: 6px;">
                                 </div>
 
-                                <button type="submit" class="header-btn" style="padding: 10px 20px; align-self: flex-start;">
-                                    Upload & Process CSV Import
-                                </button>
+                                <div style="display: flex; align-items: center; justify-content: space-between;">
+                                    <button type="submit" class="header-btn" style="padding: 10px 20px; border: 0;">
+                                        Upload & Process CSV Import
+                                    </button>
+                                    <a href="<?= asset('import-export.php?export=sample_template') ?>" style="font-size: 12.5px; color: var(--saas-primary); font-weight: 600; text-decoration: none;">
+                                        Download Sample CSV &darr;
+                                    </a>
+                                </div>
                             </form>
                         </div>
                     </div>

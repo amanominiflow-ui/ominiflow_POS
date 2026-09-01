@@ -365,7 +365,7 @@ $settings = get_store_settings();
                                     <span>Payment Integrations</span>
                                 </div>
                                 <ul class="set-links-list">
-                                    <li><a href="<?= asset('settings.php') ?>" class="set-link">Customer Payments</a></li>
+                                    <li><a href="<?= asset('payment-integrations.php') ?>" class="set-link">Customer Payments</a></li>
                                 </ul>
                             </div>
                         </div>

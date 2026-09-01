@@ -80,8 +80,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $res = import_products_from_csv($_FILES['csv_file']['tmp_name'], $userId);
             if ($res['success']) {
-                $errTxt = !empty($res['errors']) ? ' with ' . count($res['errors']) . ' row error(s).' : '.';
-                set_flash('success', "Import completed: {$res['imported_count']} product(s) added/updated{$errTxt}");
+                if ($res['imported_count'] > 0) {
+                    $warnTxt = !empty($res['errors']) ? ' (' . count($res['errors']) . ' warning(s): ' . implode('; ', array_slice($res['errors'], 0, 2)) . ')' : '';
+                    set_flash('success', "Import completed successfully: {$res['imported_count']} product(s) processed{$warnTxt}.");
+                } elseif (!empty($res['errors'])) {
+                    set_flash('error', 'CSV Import failed: ' . implode('; ', array_slice($res['errors'], 0, 3)));
+                } else {
+                    set_flash('error', 'No valid product rows found in uploaded CSV file.');
+                }
             } else {
                 set_flash('error', $res['error'] ?? 'Import failed.');
             }
@@ -871,9 +877,15 @@ $inventoryStats = get_inventory_stats();
                 <input type="hidden" name="action" value="import_products">
 
                 <div class="modal-body">
-                    <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 14px; line-height: 1.5;">
-                        Upload a CSV spreadsheet with your catalog items. Required header columns:<br>
-                        <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 5px; color: #0f172a;">Name, SKU, Selling Price, Cost Price, Tax Percent, Stock</code>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="font-size: 13px; color: var(--saas-slate-600);">Upload a CSV spreadsheet with your catalog items.</span>
+                        <a href="<?= asset('import-export.php?export=sample_template') ?>" style="font-size: 12px; color: var(--saas-primary); font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            <span>📥 Sample Template</span>
+                        </a>
+                    </div>
+                    <p style="font-size: 12.5px; color: var(--saas-slate-600); margin-bottom: 14px; line-height: 1.4;">
+                        Supported headers:<br>
+                        <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px; color: #0f172a;">Name, SKU, Barcode, Category, Selling Price, Cost Price, Tax Percent, Stock</code>
                     </p>
 
                     <div style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 24px 16px; text-align: center; background: #f8fafc; margin-bottom: 10px;">
@@ -883,9 +895,14 @@ $inventoryStats = get_inventory_stats();
                     </div>
                 </div>
 
-                <div class="modal-footer">
-                    <button type="button" class="btn-secondary" onclick="closeImportModal();">Cancel</button>
-                    <button type="submit" class="header-btn" style="border: 0;">Upload & Import</button>
+                <div class="modal-footer" style="justify-content: space-between;">
+                    <a href="<?= asset('import-export.php?export=sample_template') ?>" style="font-size: 12.5px; color: var(--saas-primary); font-weight: 600; text-decoration: none;">
+                        Download Sample CSV &darr;
+                    </a>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn-secondary" onclick="closeImportModal();">Cancel</button>
+                        <button type="submit" class="header-btn" style="border: 0;">Upload & Import</button>
+                    </div>
                 </div>
             </form>
         </div>

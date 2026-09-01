@@ -1143,6 +1143,30 @@ try {
         ");
     }
 
+    // 50. Customer Payment Gateway Integrations Table (Razorpay, Paytm, Stripe, Pine Labs, PhonePe, Worldline, 2Checkout)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `payment_integrations` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `gateway_code` VARCHAR(50) NOT NULL,
+            `gateway_name` VARCHAR(100) NOT NULL,
+            `api_key` VARCHAR(255) NULL,
+            `api_secret` VARCHAR(255) NULL,
+            `merchant_id` VARCHAR(100) NULL,
+            `webhook_secret` VARCHAR(255) NULL,
+            `terminal_id` VARCHAR(100) NULL,
+            `environment` ENUM('test', 'live') NOT NULL DEFAULT 'test',
+            `enable_in_pos` TINYINT(1) NOT NULL DEFAULT 1,
+            `enable_in_store` TINYINT(1) NOT NULL DEFAULT 1,
+            `status` ENUM('active', 'inactive', 'connected', 'disconnected') NOT NULL DEFAULT 'disconnected',
+            `extra_config` JSON NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uk_business_gateway` (`business_id`, `gateway_code`),
+            INDEX `idx_payment_integ_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
     /* =========================================================================
        ADDITIVE MULTI-TENANT & BUSINESS_ID COLUMNS (SAFE & NON-BREAKING)
        ========================================================================= */
@@ -1156,7 +1180,7 @@ try {
         'role_permissions', 'purchase_returns', 'vendor_payments', 'product_serials',
         'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
         'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations',
-        'payment_options', 'roles', 'payments'
+        'payment_options', 'roles', 'payments', 'payment_integrations'
     ];
 
     foreach ($tenantTables as $tTable) {
