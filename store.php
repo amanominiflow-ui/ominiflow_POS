@@ -121,6 +121,9 @@ if (!$storeBiz) {
             }
 
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
+            if (!empty($_POST['buy_now'])) {
+                redirect(public_store_url($storeBiz, 'home', ['cart' => 1]));
+            }
             $params = $back === 'product' ? ['id' => $pid] : [];
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
@@ -198,6 +201,9 @@ if (!$storeBiz) {
 
             set_flash('success', 'Delivery address saved.');
             $retPage = (string)($_POST['return_page'] ?? $page);
+            if ($retPage === 'checkout' || $retPage === 'cart' || !empty($_SESSION['sf_cart_' . $bid])) {
+                redirect(public_store_url($storeBiz, 'home', ['checkout' => 1]));
+            }
             redirect(public_store_url($storeBiz, $retPage));
         }
 
@@ -289,7 +295,8 @@ if (!$storeBiz) {
     $cartCount = (int) ($drawerCart['count'] ?? $cartCount);
     $storeShopper = refresh_storefront_shopper($bid);
     $openAccountDrawer = !empty($_GET['account']);
-    $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $page === 'cart');
+    $openOrderSummaryDirect = !empty($_GET['buynow']) || !empty($_GET['checkout']);
+    $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $openOrderSummaryDirect || $page === 'cart');
     if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
         $ret = $page === 'checkout' ? 'checkout' : 'account';
         redirect(public_store_signin_url($storeBiz, ['return' => $ret]));
@@ -579,31 +586,36 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
         /* Storefront Organic Wavy Footer */
         .ms-footer-wave-wrap {
+            position: relative;
             width: 100%;
             overflow: hidden;
             line-height: 0;
-            margin-top: 56px;
-            margin-bottom: -1px;
+            margin-top: 50px;
+            margin-bottom: -2px;
             pointer-events: none;
+            z-index: 1;
         }
         .ms-footer-wave-svg {
             position: relative;
             display: block;
             width: 100%;
-            height: 70px;
+            height: 95px;
+            margin-bottom: -1px;
         }
         @media (max-width: 768px) {
             .ms-footer-wave-svg {
-                height: 42px;
+                height: 55px;
             }
         }
         .ms-footer {
             width: 100%;
-            background-color: <?= e($brand['footer_bg_color'] ?: '#0d3830') ?>;
+            background-color: <?= e($brand['footer_bg_color'] ?: '#143d36') ?>;
             color: <?= e($brand['footer_text_color'] ?: '#ffffff') ?>;
-            padding: 36px 28px 28px;
+            padding: 30px 28px 28px;
             box-sizing: border-box;
             position: relative;
+            z-index: 2;
+            margin-top: 0;
         }
         .ms-footer-wrap {
             max-width: 1240px;
@@ -614,6 +626,51 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             grid-template-columns: 1.35fr 0.9fr 1.05fr 1.3fr;
             gap: 40px 36px;
             margin-bottom: 36px;
+        }
+
+        /* Compact Buy Now Buttons */
+        .ms-card-buy-btn {
+            width: 100%;
+            height: 32px;
+            margin-top: 6px;
+            background: #ffffff;
+            color: <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            border: 1.5px solid <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+        }
+        .ms-card-buy-btn:hover {
+            background: <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            color: #ffffff;
+        }
+        .ms-pdp-buy-btn {
+            width: 100%;
+            height: 44px;
+            background: #ffffff;
+            color: <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            border: 2px solid <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            border-radius: 8px;
+            font-size: 14.5px;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+        }
+        .ms-pdp-buy-btn:hover {
+            background: <?= e($brand['header_color'] ?: '#ea580c') ?>;
+            color: #ffffff;
         }
         .ms-footer-col-title {
             font-size: 13.5px;
@@ -801,16 +858,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         .ms-pay-badge {
             background: #ffffff;
             color: #0f172a;
-            font-size: 11px;
-            font-weight: 800;
-            padding: 3px 8px;
+            padding: 2px 7px;
             border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.18);
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            height: 22px;
-            letter-spacing: 0.02em;
+            height: 24px;
+            box-sizing: border-box;
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+        .ms-pay-badge svg {
+            display: block;
+            max-height: 16px;
+            width: auto;
         }
         .ms-footer-totop-btn {
             background: rgba(255,255,255,0.1);
@@ -2331,6 +2392,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <button type="submit" class="ms-card-add-btn">
                                                         <span>Add to cart</span>
                                                     </button>
+                                                    <button type="button" class="ms-card-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                        <span>Buy Now</span>
+                                                    </button>
                                                 </form>
                                             <?php endif; ?>
                                         </div>
@@ -2428,6 +2493,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
                                                         <span>Add to cart</span>
+                                                    </button>
+                                                    <button type="button" class="ms-card-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                        <span>Buy Now</span>
                                                     </button>
                                                 </form>
                                             <?php endif; ?>
@@ -2536,17 +2605,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <input type="hidden" name="redirect_page" value="product">
                                     <input type="hidden" name="return_id" value="<?= (int) $product['id'] ?>">
 
-                                    <div class="ms-pdp-action-row">
-                                        <div class="ms-pdp-stepper">
-                                            <button type="button" class="ms-pdp-step-btn" id="pdpMinus" aria-label="Decrease quantity">−</button>
-                                            <input type="number" name="qty" id="pdpQty" class="ms-pdp-qty-val" value="1" min="1" max="<?= $inStock ? max(1, $stockQty) : 1 ?>" <?= $inStock ? '' : 'disabled' ?>>
-                                            <button type="button" class="ms-pdp-step-btn" id="pdpPlus" aria-label="Increase quantity">+</button>
-                                        </div>
+                                    <div class="ms-pdp-action-row" style="display:flex;flex-direction:column;gap:8px;">
+                                        <div style="display:flex;align-items:center;gap:10px;width:100%;">
+                                            <div class="ms-pdp-stepper">
+                                                <button type="button" class="ms-pdp-step-btn" id="pdpMinus" aria-label="Decrease quantity">−</button>
+                                                <input type="number" name="qty" id="pdpQty" class="ms-pdp-qty-val" value="1" min="1" max="<?= $inStock ? max(1, $stockQty) : 1 ?>" <?= $inStock ? '' : 'disabled' ?>>
+                                                <button type="button" class="ms-pdp-step-btn" id="pdpPlus" aria-label="Increase quantity">+</button>
+                                            </div>
 
-                                        <button type="submit" class="ms-pdp-add-btn" <?= $inStock ? '' : 'disabled' ?>>
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                                            <span><?= $inStock ? 'Add to Cart' : 'Out of Stock' ?></span>
-                                        </button>
+                                            <button type="submit" class="ms-pdp-add-btn" style="flex:1;" <?= $inStock ? '' : 'disabled' ?>>
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                                                <span><?= $inStock ? 'Add to Cart' : 'Out of Stock' ?></span>
+                                            </button>
+                                        </div>
+                                        <?php if ($inStock): ?>
+                                            <button type="button" class="ms-pdp-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                <span>Buy Now</span>
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
                                 </form>
                             </div>
@@ -2724,6 +2801,36 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     </div>
                                     <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:4px;"><?= e($locName) ?> <?= $locPhone ? ('· ' . e($locPhone)) : '' ?></div>
                                     <div style="font-size:13.5px;color:#475569;line-height:1.45;"><?= e($locAddress) ?></div>
+                                </div>
+
+                                <!-- Items in Order -->
+                                <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:20px;">
+                                    <div style="font-size:13.5px;font-weight:700;color:#0f172a;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+                                        <span>Order Items (<?= count($hydrated['lines'] ?? []) ?>)</span>
+                                        <span style="font-size:12px;color:#64748b;font-weight:600;"><?= (int)($hydrated['qty'] ?? 0) ?> Qty</span>
+                                    </div>
+                                    <?php foreach (($hydrated['lines'] ?? []) as $line):
+                                        $p = $line['product'];
+                                        $img = sf_product_image($p['image_path'] ?? null);
+                                        $uPrice = (float)$line['unit_price'];
+                                        $lQty = (int)$line['qty'];
+                                        $lTotal = $uPrice * $lQty;
+                                    ?>
+                                        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                                            <div style="width:48px;height:48px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                                                <?php if ($img): ?>
+                                                    <img src="<?= e($img) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                                <?php else: ?>
+                                                    <span style="font-size:20px;">📦</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div style="flex:1;min-width:0;">
+                                                <div style="font-size:13.5px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e((string)$p['name']) ?></div>
+                                                <div style="font-size:12px;color:#64748b;"><?= sf_money($currency, $uPrice) ?> × <?= $lQty ?></div>
+                                            </div>
+                                            <div style="font-size:13.5px;font-weight:800;color:#0f172a;white-space:nowrap;"><?= sf_money($currency, $lTotal) ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
 
                                 <!-- Payment Method -->
@@ -3326,8 +3433,8 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         $storeDisplayName = $brand['display_name'] ?: ($storeBiz['business_name'] ?? $pageTitle);
         ?>
         <div class="ms-footer-wave-wrap" aria-hidden="true">
-            <svg class="ms-footer-wave-svg" viewBox="0 0 1440 90" preserveAspectRatio="none" fill="<?= e($brand['footer_bg_color'] ?: '#0d3830') ?>">
-                <path d="M0,38 C240,88 440,8 720,50 C1000,92 1200,14 1440,42 L1440,90 L0,90 Z"></path>
+            <svg class="ms-footer-wave-svg" viewBox="0 0 1440 100" preserveAspectRatio="none" fill="<?= e($brand['footer_bg_color'] ?: '#143d36') ?>">
+                <path d="M0,45 C280,95 460,5 720,20 C980,35 1180,85 1440,25 L1440,100 L0,100 Z"></path>
             </svg>
         </div>
         <footer class="ms-footer">
@@ -3422,13 +3529,67 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     </div>
                     <div class="ms-footer-payments-wrap">
                         <div class="ms-footer-pay-badges">
-                            <span class="ms-pay-badge ms-pay-gpay">GPay</span>
-                            <span class="ms-pay-badge ms-pay-phonepe">PhonePe</span>
-                            <span class="ms-pay-badge ms-pay-upi">UPI</span>
-                            <span class="ms-pay-badge ms-pay-paytm">Paytm</span>
-                            <span class="ms-pay-badge ms-pay-visa">VISA</span>
-                            <span class="ms-pay-badge ms-pay-rupay">RuPay</span>
-                            <span class="ms-pay-badge ms-pay-mc">Mastercard</span>
+                            <!-- GPay -->
+                            <span class="ms-pay-badge" title="Google Pay">
+                                <svg width="34" height="15" viewBox="0 0 68 28" fill="none">
+                                    <path d="M12.5 14.1v5.1H10.7V4.7h4.8c1.2 0 2.2.4 3 1.2.8.8 1.2 1.8 1.2 3 0 1.3-.4 2.3-1.2 3.1-.8.8-1.8 1.1-3 1.1h-3zm0-7.8v6.2h3.1c.7 0 1.3-.2 1.8-.7.5-.5.8-1.2.8-1.9 0-.8-.3-1.4-.8-1.9-.5-.5-1.1-.7-1.8-.7h-3.1zm11.9 4.3c1.3 0 2.3.4 3.1 1.1.8.7 1.2 1.7 1.2 3v4.5h-1.7v-1.4h-.1c-.7 1.1-1.7 1.7-2.9 1.7-1 0-1.9-.3-2.6-.9-.7-.6-1.1-1.4-1.1-2.3 0-1 .4-1.8 1.2-2.3.8-.6 1.8-.8 3.1-.8 1.1 0 2 .2 2.7.6v-.4c0-.7-.3-1.2-.8-1.7-.5-.4-1.1-.7-1.8-.7-.9 0-1.8.4-2.3 1.2l-1.5-.9c.8-1.2 2-1.8 3.7-1.8zm-2.4 6.8c0 .5.2.9.6 1.2.4.3.9.5 1.5.5.8 0 1.5-.3 2-1 .5-.6.8-1.3.8-2.1-.6-.5-1.4-.7-2.4-.7-.7 0-1.3.2-1.8.5-.5.4-.7.9-.7 1.6zm13.1-6.5l3.9 9.3-1.8 4.2h-1.8l1.4-3.1-4.2-10.4h1.9l2.8 7.2 2.6-7.2h2.2l-7 16.7" fill="#5F6368"/>
+                                    <path d="M4.6 10.2v2.4h5.9c-.2 1.3-.8 2.4-1.8 3.1-1 1-2.4 1.5-4.1 1.5-3.3 0-6-2.7-6-6s2.7-6 6-6c1.5 0 2.9.6 3.9 1.6l1.7-1.7C8.8 3.7 6.8 3 4.6 3 1.2 3-1.5 5.7-1.5 9.1s2.7 6.1 6.1 6.1c1.8 0 3.2-.6 4.3-1.8 1.2-1.2 1.6-2.9 1.6-4.6 0-.5 0-.9-.1-1.3H4.6v2.7z" fill="#4285F4" transform="translate(1,0)"/>
+                                    <path d="M4.6 15.2c1.7 0 3.1-.5 4.1-1.5l-1.9-1.5c-.6.4-1.3.6-2.2.6-1.7 0-3.1-1.1-3.6-2.7H-1v1.6c1.1 2.1 3.3 3.5 5.6 3.5z" fill="#34A853" transform="translate(1,0)"/>
+                                    <path d="M1 10.1c-.1-.4-.2-.9-.2-1.3 0-.5.1-.9.2-1.3V5.9H-1C-1.6 7-2 8.1-2 9.3s.4 2.3 1 3.4L1 10.1z" fill="#FBBC05" transform="translate(1,0)"/>
+                                    <path d="M4.6 4.7c1 0 1.9.3 2.6 1l2-2C8 2.5 6.4 1.8 4.6 1.8c-2.3 0-4.5 1.4-5.6 3.5l2 1.6c.5-1.6 1.9-2.7 3.6-2.7z" fill="#EA4335" transform="translate(1,0)"/>
+                                </svg>
+                            </span>
+
+                            <!-- PhonePe -->
+                            <span class="ms-pay-badge" style="background:#5f259f;" title="PhonePe">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.64 8.79l-4.73 6.13c-.24.31-.62.48-1.02.48-.48 0-.91-.25-1.14-.66l-1.35-2.42c-.22-.39-.18-.88.1-1.23l2.84-3.52H8.38c-.46 0-.84-.38-.84-.84s.38-.84.84-.84h6.05c.46 0 .84.38.84.84 0 .22-.09.43-.25.59l-.38.47z"/>
+                                </svg>
+                            </span>
+
+                            <!-- BHIM UPI -->
+                            <span class="ms-pay-badge" title="BHIM UPI">
+                                <svg width="34" height="15" viewBox="0 0 70 30" fill="none">
+                                    <path d="M22 6l-8 18h6l8-18h-6z" fill="#097939"/>
+                                    <path d="M14 6L6 24h6l8-18h-6z" fill="#005B9F"/>
+                                    <path d="M30 6L22 24h6l8-18h-6z" fill="#F37021"/>
+                                    <text x="36" y="21" font-family="Arial,sans-serif" font-weight="900" font-size="14" fill="#1e293b">UPI</text>
+                                </svg>
+                            </span>
+
+                            <!-- Paytm -->
+                            <span class="ms-pay-badge" title="Paytm">
+                                <svg width="36" height="14" viewBox="0 0 80 24" fill="none">
+                                    <path d="M0 6h6c3 0 5 1.5 5 4s-2 4-5 4H3v6H0V6zm3 6h3c1.5 0 2.5-.7 2.5-2S7.5 8 6 8H3v4z" fill="#002970"/>
+                                    <path d="M14 10h3v10h-3v-1.5c-1 1.2-2.5 1.8-4 1.8-3 0-5-2-5-5s2-5 5-5c1.5 0 3 .6 4 1.8V10zm-3 8c1.8 0 3-1.3 3-3.2s-1.2-3.2-3-3.2-3 1.3-3 3.2 1.2 3.2 3 3.2z" fill="#002970"/>
+                                    <path d="M23 10l-3 8-3-8h-3l4.5 11-1.5 4h3l7-15h-4z" fill="#002970"/>
+                                    <path d="M30 6v4h2v2.5h-2V18c0 1 .5 1.5 1.5 1.5h1V22c-1 0-2.5 0-3.5-.8-1-.8-1.5-2-1.5-3.5v-5.2h-2V10h2V6h4.5z" fill="#00b9f5"/>
+                                    <path d="M36 10h2.5v1.8c1-1.2 2.2-1.8 3.5-1.8 1.5 0 2.8.7 3.5 2 1-1.3 2.3-2 3.8-2 2.5 0 4.2 1.8 4.2 4.5V20H51v-5c0-1.5-.8-2.5-2-2.5s-2 1-2 2.5v5h-2.5v-5c0-1.5-.8-2.5-2-2.5s-2 1-2 2.5v5H36V10z" fill="#00b9f5"/>
+                                </svg>
+                            </span>
+
+                            <!-- VISA -->
+                            <span class="ms-pay-badge" title="VISA">
+                                <svg width="34" height="14" viewBox="0 0 60 20" fill="none">
+                                    <path d="M24.5 2.5L16.2 18H11L6.7 5.8C6.4 4.8 6.2 4.4 5.4 3.9 4 3.2 1.9 2.5 0 2.1L.5 0h8.6c1.1 0 2.1.7 2.3 2l2.2 11.5L18.8 0h5.7zm13-2.5L33 18h-5.2l4.5-18h5.2zm17.8 11.7c0-4.3-6-4.5-5.9-6.4 0-.6.6-1.2 1.8-1.3.6 0 2.2-.1 4 0.7l.7-3.4c-1-.4-2.3-.7-3.9-.7-4.1 0-7 2.2-7 5.3 0 2.3 2 3.6 3.6 4.4 1.6.8 2.2 1.3 2.2 2 0 1.1-1.3 1.6-2.5 1.6-1.7 0-2.6-.3-4-1l-.7 3.5c1.1.5 3.1.9 5.2.9 4.9 0 7.5-2.4 7.5-5.6zM46.7 18h4.8L48 0h-4.3c-1 0-1.8.6-2.2 1.5L33.3 18h5.5l1.1-3h6.8zm-5.8-5.7l2.8-7.6 1.6 7.6h-4.4z" fill="#1A1F71"/>
+                                </svg>
+                            </span>
+
+                            <!-- RuPay -->
+                            <span class="ms-pay-badge" title="RuPay">
+                                <svg width="36" height="14" viewBox="0 0 75 22" fill="none">
+                                    <text x="0" y="16" font-family="Arial,sans-serif" font-weight="900" font-style="italic" font-size="16" fill="#092F6B">RuPay</text>
+                                    <path d="M58 4l6 7-6 7h6l6-7-6-7h-6z" fill="#F47920"/>
+                                </svg>
+                            </span>
+
+                            <!-- Mastercard -->
+                            <span class="ms-pay-badge" title="Mastercard">
+                                <svg width="28" height="18" viewBox="0 0 36 24" fill="none">
+                                    <circle cx="12" cy="12" r="10" fill="#EB001B"/>
+                                    <circle cx="24" cy="12" r="10" fill="#F79E1B" fill-opacity="0.85"/>
+                                </svg>
+                            </span>
                         </div>
                         <button type="button" class="ms-footer-totop-btn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to Top" title="Back to top">↑</button>
                     </div>
@@ -3467,7 +3628,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
         
         <!-- STEP 1: MY CART (Screenshot 1) -->
-        <div class="ms-cd-view-panel" id="msCartViewMain" style="display:flex;flex-direction:column;height:100%;">
+        <div class="ms-cd-view-panel" id="msCartViewMain" style="display:<?= !empty($openOrderSummaryDirect) ? 'none' : 'flex' ?>;flex-direction:column;height:100%;">
             <div class="ms-cd-head">
                 <button type="button" class="ms-cd-btn-circle" id="msCartClose" aria-label="Close cart">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -3591,7 +3752,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         </div>
 
         <!-- STEP 2: ORDER SUMMARY (Screenshot 2) -->
-        <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:none;flex-direction:column;height:100%;">
+        <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:<?= !empty($openOrderSummaryDirect) ? 'flex' : 'none' ?>;flex-direction:column;height:100%;">
             <div class="ms-cd-head">
                 <button type="button" class="ms-cd-btn-circle" onclick="goToCartMainView()" aria-label="Back to cart">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -3618,6 +3779,38 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         </div>
                     <?php endif; ?>
                 </div>
+
+                <!-- Items in this Order -->
+                <?php if ($cdLines): ?>
+                    <div class="ms-cd-os-items" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:14px;">
+                        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+                            <span>Order Items (<?= $cdLineCount ?>)</span>
+                            <span style="font-size:12px;color:#64748b;font-weight:600;"><?= $cdQty ?> Qty</span>
+                        </div>
+                        <?php foreach ($cdLines as $line):
+                            $p = $line['product'];
+                            $img = sf_product_image($p['image_path'] ?? null);
+                            $uPrice = (float)$line['unit_price'];
+                            $lQty = (int)$line['qty'];
+                            $lTotal = $uPrice * $lQty;
+                        ?>
+                            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                                <div style="width:44px;height:44px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                                    <?php if ($img): ?>
+                                        <img src="<?= e($img) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                    <?php else: ?>
+                                        <span style="font-size:18px;">📦</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e((string)$p['name']) ?></div>
+                                    <div style="font-size:12px;color:#64748b;"><?= sf_money($currency, $uPrice) ?> × <?= $lQty ?></div>
+                                </div>
+                                <div style="font-size:13px;font-weight:800;color:#0f172a;white-space:nowrap;"><?= sf_money($currency, $lTotal) ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Summary -->
                 <div class="ms-cd-summary" style="padding-top:14px;">
@@ -4117,6 +4310,16 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         }
     };
 
+    window.openLocationDrawerDirect = function(returnPage) {
+        var rPage = returnPage || 'checkout';
+        if (locOverlay) {
+            var retInput = locOverlay.querySelector('input[name="return_page"]');
+            if (retInput) retInput.value = rPage;
+            showLocForm();
+            openDrawer(locOverlay);
+        }
+    };
+
     window.openLocationDrawerFromCart = function() {
         window.openLocationDrawerFromCheckout('checkout');
     };
@@ -4346,13 +4549,14 @@ function sfPdpSetImage(idx) {
     }
 }
 
-function handleAjaxAddToCart(ev, form) {
+function handleAjaxAddToCart(ev, form, isBuyNow) {
     if (ev) ev.preventDefault();
-    var btn = form.querySelector('button[type="submit"]');
+    var btn = isBuyNow ? form.querySelector('.ms-card-buy-btn, .ms-pdp-buy-btn') : form.querySelector('.ms-card-add-btn, .ms-pdp-add-btn');
+    if (!btn) btn = form.querySelector('button[type="submit"]');
     var origHtml = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>Adding...</span>';
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>' + (isBuyNow ? 'Proceeding...' : 'Adding...') + '</span>';
     }
 
     var formData = new FormData(form);
@@ -4368,7 +4572,40 @@ function handleAjaxAddToCart(ev, form) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
         if (data && data.success) {
+            var badges = document.querySelectorAll('#msCartBadge, .ms-cart-badge, .ms-bottom-cart-badge');
+            badges.forEach(function(b) {
+                b.textContent = data.cart_count;
+                b.style.display = data.cart_count > 0 ? '' : 'none';
+            });
             if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+            }
+
+            if (isBuyNow) {
+                var hasLocation = <?= (!empty($hasDeliveryLoc)) ? 'true' : 'false' ?>;
+                if (!hasLocation) {
+                    if (typeof window.openLocationDrawerDirect === 'function') {
+                        window.openLocationDrawerDirect('home');
+                    } else if (typeof window.openLocationDrawerFromCheckout === 'function') {
+                        window.openLocationDrawerFromCheckout('home');
+                    }
+                } else {
+                    var vMain = document.getElementById('msCartViewMain');
+                    var vSummary = document.getElementById('msCartViewOrderSummary');
+                    if (vMain && vSummary) {
+                        vMain.style.display = 'none';
+                        vSummary.style.display = 'flex';
+                    }
+                    var overlay = document.getElementById('msCartOverlay');
+                    if (overlay) {
+                        overlay.hidden = false;
+                        overlay.classList.add('is-open');
+                        overlay.setAttribute('aria-hidden', 'false');
+                        document.body.classList.add('ms-cart-lock');
+                    }
+                }
+            } else {
                 var prevBg = btn.style.background;
                 btn.style.background = '#16a34a';
                 btn.classList.add('is-success-pop');
@@ -4380,11 +4617,6 @@ function handleAjaxAddToCart(ev, form) {
                     btn.innerHTML = origHtml;
                 }, 1400);
             }
-            var badges = document.querySelectorAll('#msCartBadge, .ms-cart-badge, .ms-bottom-cart-badge');
-            badges.forEach(function(b) {
-                b.textContent = data.cart_count;
-                b.style.display = data.cart_count > 0 ? '' : 'none';
-            });
         } else {
             alert((data && data.message) ? data.message : 'Could not add item to cart.');
             if (btn) {
@@ -4708,6 +4940,16 @@ function submitFooterNewsletter(e) {
         trendingSec.classList.add('ms-scroll-visible');
     }
 })();
+
+<?php if (!empty($openOrderSummaryDirect) && empty($hasDeliveryLoc)): ?>
+document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+        if (typeof openLocationDrawerFromCheckout === 'function') {
+            openLocationDrawerFromCheckout('cart');
+        }
+    }, 150);
+});
+<?php endif; ?>
 </script>
 </body>
 </html>

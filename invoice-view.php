@@ -28,17 +28,36 @@ $orderId = !empty($_GET['order_id']) ? (int) $_GET['order_id'] : 0;
 $orderNum = !empty($_GET['order']) ? trim((string)$_GET['order']) : '';
 
 $invoice = null;
+$db = get_db();
+
 if ($invoiceId > 0) {
-    $invoice = get_invoice_by_id($invoiceId);
+    $stmtInv = $db->prepare('SELECT business_id FROM invoices WHERE id = :id LIMIT 1');
+    $stmtInv->execute(['id' => $invoiceId]);
+    $invBid = (int)$stmtInv->fetchColumn();
+    $invoice = get_invoice_by_id($invoiceId, $invBid ?: null);
 } elseif ($orderId > 0) {
-    $invoice = get_invoice_by_order_id($orderId);
+    $stmtOrd = $db->prepare('SELECT id, business_id FROM orders WHERE id = :id LIMIT 1');
+    $stmtOrd->execute(['id' => $orderId]);
+    $ordRow = $stmtOrd->fetch();
+    if ($ordRow) {
+        $bid = (int)$ordRow['business_id'];
+        $invoice = get_invoice_by_order_id($orderId, $bid);
+        if (!$invoice) {
+            $invData = generate_invoice_data_for_order($orderId, $bid);
+            $invoice = $invData['invoice'] ?? null;
+        }
+    }
 } elseif ($orderNum !== '') {
-    $db = get_db();
     $stmtOrd = $db->prepare('SELECT id, business_id FROM orders WHERE order_number = :num LIMIT 1');
     $stmtOrd->execute(['num' => $orderNum]);
     $ordRow = $stmtOrd->fetch();
     if ($ordRow) {
-        $invoice = get_invoice_by_order_id((int)$ordRow['id'], (int)$ordRow['business_id']);
+        $bid = (int)$ordRow['business_id'];
+        $invoice = get_invoice_by_order_id((int)$ordRow['id'], $bid);
+        if (!$invoice) {
+            $invData = generate_invoice_data_for_order((int)$ordRow['id'], $bid);
+            $invoice = $invData['invoice'] ?? null;
+        }
     }
 }
 
@@ -49,7 +68,7 @@ if (!$invoice) {
         redirect(APP_URL . '/invoices.php');
     } else {
         http_response_code(404);
-        echo '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;text-align:center;"><h2>Invoice Not Found</h2><p>We could not find the requested invoice.</p></body></html>';
+        echo '<!DOCTYPE html><html><head><title>Invoice Not Found</title></head><body style="font-family:sans-serif;padding:60px 20px;text-align:center;color:#334155;"><div style="font-size:48px;margin-bottom:16px;">📄</div><h2 style="font-size:22px;margin:0 0 8px;color:#0f172a;">Invoice Not Found</h2><p style="font-size:14px;color:#64748b;margin:0 0 24px;">We could not generate or locate the invoice for this order.</p><button onclick="window.close();" style="padding:10px 20px;background:#0f172a;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">Close Window</button></body></html>';
         exit;
     }
 }
@@ -58,7 +77,7 @@ $businessId = (int)($invoice['business_id'] ?? 1);
 $store = get_store_settings($businessId);
 $items = $invoice['items'] ?? [];
 $isCancelled = ($invoice['invoice_status'] === 'cancelled');
-$autoPrint = isset($_GET['print']);
+$autoPrint = isset($_GET['print']) || isset($_GET['download']);
 $isPublicView = !$isAdmin || isset($_GET['standalone']);
 $pageTitle = 'Invoice #' . $invoice['invoice_number'];
 

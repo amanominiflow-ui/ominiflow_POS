@@ -647,7 +647,7 @@ function get_mobile_store_settings(int $businessId): array {
         'payment_instructions' => (string) ($row['payment_instructions'] ?? ''),
 
         // Footer Customization & Policy Pages
-        'footer_bg_color' => (string) (!empty($row['footer_bg_color']) ? $row['footer_bg_color'] : '#ea580c'),
+        'footer_bg_color' => (string) (!empty($row['footer_bg_color']) && $row['footer_bg_color'] !== '#ea580c' ? $row['footer_bg_color'] : '#143d36'),
         'footer_text_color' => (string) (!empty($row['footer_text_color']) ? $row['footer_text_color'] : '#ffffff'),
         'footer_company_name' => (string) (!empty($row['footer_company_name']) ? $row['footer_company_name'] : 'FORMULATE BRAND PRIVATE LIMITED'),
         'footer_company_address' => (string) (!empty($row['footer_company_address']) ? $row['footer_company_address'] : "119, Guru Govind Singh Ind. Est.,\nW E Highway, Goregaon East\nMumbai, Mumbai Suburban\nMaharashtra, Pin Code: 400063"),
