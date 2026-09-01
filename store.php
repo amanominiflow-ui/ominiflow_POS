@@ -2426,7 +2426,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         </div>
                         <div class="ms-item-grid">
                             <?php foreach ($trendingProducts as $p):
-                                $pImages = storefront_get_all_product_images($p, $bid);
+                                $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
@@ -2443,10 +2443,19 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                 <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
                                             <?php endif; ?>
 
-                                            <?php if ($pImages): ?>
+                                            <?php if ($pMedia): ?>
                                                 <div class="ms-card-img-track" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
-                                                    <?php foreach ($pImages as $idx => $imgSrc): ?>
-                                                        <img src="<?= e($imgSrc) ?>" alt="<?= e((string) $p['name']) ?>" class="<?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                    <?php foreach ($pMedia as $idx => $m): ?>
+                                                        <?php if (!empty($m['is_video'])): ?>
+                                                            <div class="ms-card-media-slide <?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? 'display:flex;' : 'display:none;' ?>width:100%;height:100%;align-items:center;justify-content:center;background:#000;position:relative;border-radius:8px;overflow:hidden;">
+                                                                <video src="<?= e($m['url']) ?>" controls playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;" onclick="event.stopPropagation();"></video>
+                                                                <span style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:700;display:flex;align-items:center;gap:4px;pointer-events:none;z-index:2;">
+                                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="#c084fc"><path d="M8 5v14l11-7z"/></svg> Video
+                                                                </span>
+                                                            </div>
+                                                        <?php else: ?>
+                                                            <img src="<?= e($m['url']) ?>" alt="<?= e((string) $p['name']) ?>" class="ms-card-media-slide <?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                        <?php endif; ?>
                                                     <?php endforeach; ?>
                                                 </div>
                                             <?php else: ?>
@@ -2458,11 +2467,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                             <?php endif; ?>
                                         </a>
 
-                                        <?php if (count($pImages) > 1): ?>
-                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous Image">‹</button>
-                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next Image">›</button>
+                                        <?php if (count($pMedia) > 1): ?>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous">‹</button>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next">›</button>
                                             <div class="ms-card-dots">
-                                                <?php foreach ($pImages as $dIdx => $d): ?>
+                                                <?php foreach ($pMedia as $dIdx => $d): ?>
                                                     <span class="ms-card-dot<?= $dIdx === 0 ? ' is-active' : '' ?>"></span>
                                                 <?php endforeach; ?>
                                             </div>
@@ -2528,7 +2537,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php else: ?>
                         <div class="ms-item-grid">
                             <?php foreach ($products as $p):
-                                $pImages = storefront_get_all_product_images($p, $bid);
+                                $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
                                 $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
@@ -2545,10 +2554,19 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                 <span class="ms-card-discount-badge"><?= $discountPct ?>%<br>Off</span>
                                             <?php endif; ?>
 
-                                            <?php if ($pImages): ?>
+                                            <?php if ($pMedia): ?>
                                                 <div class="ms-card-img-track" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
-                                                    <?php foreach ($pImages as $idx => $imgSrc): ?>
-                                                        <img src="<?= e($imgSrc) ?>" alt="<?= e((string) $p['name']) ?>" class="<?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                    <?php foreach ($pMedia as $idx => $m): ?>
+                                                        <?php if (!empty($m['is_video'])): ?>
+                                                            <div class="ms-card-media-slide <?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? 'display:flex;' : 'display:none;' ?>width:100%;height:100%;align-items:center;justify-content:center;background:#000;position:relative;border-radius:8px;overflow:hidden;">
+                                                                <video src="<?= e($m['url']) ?>" controls playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;" onclick="event.stopPropagation();"></video>
+                                                                <span style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:700;display:flex;align-items:center;gap:4px;pointer-events:none;z-index:2;">
+                                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="#c084fc"><path d="M8 5v14l11-7z"/></svg> Video
+                                                                </span>
+                                                            </div>
+                                                        <?php else: ?>
+                                                            <img src="<?= e($m['url']) ?>" alt="<?= e((string) $p['name']) ?>" class="ms-card-media-slide <?= $idx === 0 ? 'is-active' : '' ?>" data-idx="<?= $idx ?>" style="<?= $idx === 0 ? '' : 'display:none;' ?>">
+                                                        <?php endif; ?>
                                                     <?php endforeach; ?>
                                                 </div>
                                             <?php else: ?>
@@ -2560,11 +2578,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                             <?php endif; ?>
                                         </a>
 
-                                        <?php if (count($pImages) > 1): ?>
-                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous Image">‹</button>
-                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next Image">›</button>
+                                        <?php if (count($pMedia) > 1): ?>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-prev" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, -1);" aria-label="Previous">‹</button>
+                                            <button type="button" class="ms-card-arrow ms-card-arrow-next" onclick="event.preventDefault(); event.stopPropagation(); sfCardSlide(this, 1);" aria-label="Next">›</button>
                                             <div class="ms-card-dots">
-                                                <?php foreach ($pImages as $dIdx => $d): ?>
+                                                <?php foreach ($pMedia as $dIdx => $d): ?>
                                                     <span class="ms-card-dot<?= $dIdx === 0 ? ' is-active' : '' ?>"></span>
                                                 <?php endforeach; ?>
                                             </div>
@@ -4662,23 +4680,35 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 function sfCardSlide(btn, dir) {
     var wrap = btn.closest('.ms-product-img-wrap');
     if (!wrap) return;
-    var imgs = wrap.querySelectorAll('.ms-card-img-track img');
+    var slides = wrap.querySelectorAll('.ms-card-img-track .ms-card-media-slide');
+    if (!slides || slides.length === 0) {
+        slides = wrap.querySelectorAll('.ms-card-img-track img');
+    }
     var dots = wrap.querySelectorAll('.ms-card-dots .ms-card-dot');
-    if (imgs.length <= 1) return;
+    if (!slides || slides.length <= 1) return;
     
     var currentIdx = 0;
-    for (var i = 0; i < imgs.length; i++) {
-        if (imgs[i].style.display !== 'none' && !imgs[i].hidden) {
+    for (var i = 0; i < slides.length; i++) {
+        if (slides[i].style.display !== 'none' && !slides[i].hidden) {
             currentIdx = i;
             break;
         }
     }
     
-    var nextIdx = (currentIdx + dir + imgs.length) % imgs.length;
+    var nextIdx = (currentIdx + dir + slides.length) % slides.length;
     
-    for (var j = 0; j < imgs.length; j++) {
-        imgs[j].style.display = (j === nextIdx) ? 'block' : 'none';
-        imgs[j].classList.toggle('is-active', j === nextIdx);
+    for (var j = 0; j < slides.length; j++) {
+        var isVid = slides[j].querySelector('video') || slides[j].tagName === 'VIDEO';
+        slides[j].style.display = (j === nextIdx) ? (isVid ? 'flex' : 'block') : 'none';
+        slides[j].classList.toggle('is-active', j === nextIdx);
+        var vidEl = slides[j].querySelector('video');
+        if (vidEl) {
+            if (j === nextIdx) {
+                vidEl.play().catch(function(){});
+            } else {
+                vidEl.pause();
+            }
+        }
     }
     for (var k = 0; k < dots.length; k++) {
         dots[k].classList.toggle('is-active', k === nextIdx);
