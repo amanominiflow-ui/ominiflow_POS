@@ -1065,7 +1065,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             overflow: hidden;
             word-break: break-word;
         }
-        /* Premium Add to Cart Button Animations */
+        /* Premium Add to Cart Button with Animated White Hover */
         .ms-card-add-btn {
             width: 100%;
             margin-top: 10px;
@@ -1073,7 +1073,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             min-height: 42px;
             background: var(--ms-header, #083d30);
             color: #ffffff;
-            border: none;
+            border: 1.5px solid var(--ms-header, #083d30);
             border-radius: 8px;
             font-size: 13px;
             font-weight: 700;
@@ -1084,46 +1084,56 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             cursor: pointer;
             text-decoration: none;
             position: relative;
+            z-index: 1;
             overflow: hidden;
-            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                        background 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                        border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+                        transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                        box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
             box-sizing: border-box;
         }
-        .ms-card-add-btn::after {
+        .ms-card-add-btn::before {
             content: '';
             position: absolute;
             top: 0;
-            left: -120%;
-            width: 80%;
+            left: 0;
+            width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.30), transparent);
-            transform: skewX(-20deg);
-            transition: none;
-            pointer-events: none;
+            background: #ffffff;
+            z-index: -1;
+            transform: scaleX(0);
+            transform-origin: left center;
+            transition: transform 0.32s cubic-bezier(0.2, 1, 0.3, 1);
         }
-        .ms-card-add-btn:hover:not(:disabled)::after {
-            left: 140%;
-            transition: left 0.75s ease-in-out;
+        .ms-card-add-btn:hover:not(:disabled)::before {
+            transform: scaleX(1);
         }
         .ms-card-add-btn:hover:not(:disabled) {
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
-            color: #ffffff;
+            color: var(--ms-header, #083d30) !important;
+            background: #ffffff !important;
+            border-color: var(--ms-header, #083d30) !important;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
         }
         .ms-card-add-btn:active:not(:disabled) {
-            transform: scale(0.96);
+            transform: scale(0.97);
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-        .ms-card-add-btn svg {
-            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        .ms-card-add-btn svg,
+        .ms-card-add-btn span {
+            position: relative;
+            z-index: 2;
+            transition: all 0.25s ease;
         }
         .ms-card-add-btn:hover:not(:disabled) svg {
-            transform: scale(1.15) rotate(-6deg);
-            animation: msCartWiggle 0.6s ease-in-out infinite alternate;
+            stroke: var(--ms-header, #083d30) !important;
+            color: var(--ms-header, #083d30) !important;
+            transform: scale(1.12);
         }
-        @keyframes msCartWiggle {
-            0% { transform: scale(1.15) rotate(-6deg); }
-            100% { transform: scale(1.2) rotate(6deg) translateY(-1px); }
+        .ms-card-add-btn:hover:not(:disabled) span {
+            color: var(--ms-header, #083d30) !important;
         }
         .ms-card-add-btn.is-success-pop {
             animation: msPopBurst 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1135,12 +1145,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         }
         .ms-card-add-btn.is-disabled, .ms-card-add-btn:disabled {
             background: #f1f5f9 !important;
+            border-color: #e2e8f0 !important;
             color: #94a3b8 !important;
             cursor: not-allowed;
             box-shadow: none;
             transform: none;
         }
-        .ms-card-add-btn.is-disabled::after, .ms-card-add-btn:disabled::after {
+        .ms-card-add-btn.is-disabled::before, .ms-card-add-btn:disabled::before {
             display: none;
         }
 
