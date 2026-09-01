@@ -172,6 +172,9 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_footer_newsletter', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'show_whatsapp_floating', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'whatsapp_floating_msg', "VARCHAR(255) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_facebook_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_instagram_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_whatsapp_url', "VARCHAR(500) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'about_us_content', "MEDIUMTEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'refund_policy_content', "MEDIUMTEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'footer_powered_by', "VARCHAR(100) NOT NULL DEFAULT 'Shrine'");
@@ -659,6 +662,9 @@ function get_mobile_store_settings(int $businessId): array {
         'show_whatsapp_floating' => (int) ($row['show_whatsapp_floating'] ?? 1) === 1,
         'contact_whatsapp' => (string) (!empty($row['contact_whatsapp']) ? $row['contact_whatsapp'] : '919876543210'),
         'whatsapp_floating_msg' => (string) (!empty($row['whatsapp_floating_msg']) ? $row['whatsapp_floating_msg'] : 'Hi! I am browsing your online store and have a question.'),
+        'footer_facebook_url' => (string) ($row['footer_facebook_url'] ?? ''),
+        'footer_instagram_url' => (string) ($row['footer_instagram_url'] ?? ''),
+        'footer_whatsapp_url' => (string) ($row['footer_whatsapp_url'] ?? ''),
         'about_us_content' => (string) ($row['about_us_content'] ?? ''),
         'terms_content' => (string) ($row['terms_content'] ?? ''),
         'refund_policy_content' => (string) ($row['refund_policy_content'] ?? ''),
@@ -926,6 +932,9 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             show_footer_newsletter = :sfn,
             show_whatsapp_floating = :swaf,
             whatsapp_floating_msg = :wafmsg,
+            footer_facebook_url = :ffb,
+            footer_instagram_url = :finsta,
+            footer_whatsapp_url = :fwa,
             about_us_content = :aboutc,
             terms_content = :termsc,
             refund_policy_content = :refundc,
@@ -1045,6 +1054,9 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'sfn' => array_key_exists('show_footer_newsletter', $data) ? (!empty($data['show_footer_newsletter']) ? 1 : 0) : ($current['show_footer_newsletter'] ? 1 : 0),
         'swaf' => array_key_exists('show_whatsapp_floating', $data) ? (!empty($data['show_whatsapp_floating']) ? 1 : 0) : ($current['show_whatsapp_floating'] ? 1 : 0),
         'wafmsg' => array_key_exists('whatsapp_floating_msg', $data) ? trim((string)$data['whatsapp_floating_msg']) : ($current['whatsapp_floating_msg'] ?? null),
+        'ffb' => array_key_exists('footer_facebook_url', $data) ? trim((string)$data['footer_facebook_url']) : ($current['footer_facebook_url'] ?? null),
+        'finsta' => array_key_exists('footer_instagram_url', $data) ? trim((string)$data['footer_instagram_url']) : ($current['footer_instagram_url'] ?? null),
+        'fwa' => array_key_exists('footer_whatsapp_url', $data) ? trim((string)$data['footer_whatsapp_url']) : ($current['footer_whatsapp_url'] ?? null),
         'aboutc' => array_key_exists('about_us_content', $data) ? trim((string)$data['about_us_content']) : ($current['about_us_content'] ?? null),
         'termsc' => array_key_exists('terms_content', $data) ? trim((string)$data['terms_content']) : ($current['terms_content'] ?? null),
         'refundc' => array_key_exists('refund_policy_content', $data) ? trim((string)$data['refund_policy_content']) : ($current['refund_policy_content'] ?? null),

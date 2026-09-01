@@ -142,6 +142,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['show_footer_newsletter'] = !empty($_POST['show_footer_newsletter']);
             $saveData['show_whatsapp_floating'] = !empty($_POST['show_whatsapp_floating']);
             if (isset($_POST['whatsapp_floating_msg'])) $saveData['whatsapp_floating_msg'] = $_POST['whatsapp_floating_msg'];
+            if (isset($_POST['footer_facebook_url'])) $saveData['footer_facebook_url'] = $_POST['footer_facebook_url'];
+            if (isset($_POST['footer_instagram_url'])) $saveData['footer_instagram_url'] = $_POST['footer_instagram_url'];
+            if (isset($_POST['footer_whatsapp_url'])) $saveData['footer_whatsapp_url'] = $_POST['footer_whatsapp_url'];
             if (isset($_POST['about_us_content'])) $saveData['about_us_content'] = $_POST['about_us_content'];
             if (isset($_POST['terms_content'])) $saveData['terms_content'] = $_POST['terms_content'];
             if (isset($_POST['refund_policy_content'])) $saveData['refund_policy_content'] = $_POST['refund_policy_content'];
@@ -1936,6 +1939,27 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                             <div class="pref-form-grid">
                                 <label class="pref-field-label">Opt-in Checkbox Disclaimer Text</label>
                                 <textarea class="pref-field-input" name="footer_newsletter_disclaimer" rows="2" style="height:auto;padding:8px 10px;font-family:inherit;font-size:13px;resize:vertical;" placeholder="I hereby authorize you to send me SMS, messages, and promotional or informational communications."><?= e($brand['footer_newsletter_disclaimer'] ?? 'I hereby authorize you to send me SMS, messages, and promotional or informational communications.') ?></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Social Media Links (Footer Icons) -->
+                        <div class="pref-section">
+                            <div class="pref-sec-heading" style="margin-bottom:4px">Social Media Links (Footer)</div>
+                            <div class="pref-help-sub">Enter the URLs for your social media pages to link icons in the storefront footer.</div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Facebook Page URL</label>
+                                <input class="pref-field-input" type="url" name="footer_facebook_url" value="<?= e($brand['footer_facebook_url'] ?? '') ?>" placeholder="https://facebook.com/yourbrand">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">Instagram Profile URL</label>
+                                <input class="pref-field-input" type="url" name="footer_instagram_url" value="<?= e($brand['footer_instagram_url'] ?? '') ?>" placeholder="https://instagram.com/yourbrand">
+                            </div>
+
+                            <div class="pref-form-grid">
+                                <label class="pref-field-label">WhatsApp Chat Link or URL (Optional)</label>
+                                <input class="pref-field-input" type="text" name="footer_whatsapp_url" value="<?= e($brand['footer_whatsapp_url'] ?? '') ?>" placeholder="e.g. https://wa.me/919876543210 (leave blank to auto-use WhatsApp number)">
                             </div>
                         </div>
 
