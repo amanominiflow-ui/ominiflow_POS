@@ -1475,8 +1475,8 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         /* Smooth Scroll Entrance Animation for Top Trending Section */
         .ms-trending-section-wrap {
             opacity: 0;
-            transform: translateY(30px);
-            transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1), transform 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: translateY(42px);
+            transition: opacity 0.85s cubic-bezier(0.16, 1, 0.3, 1), transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
             will-change: opacity, transform;
         }
         .ms-trending-section-wrap.ms-scroll-visible {
@@ -1485,19 +1485,19 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         }
         .ms-trending-section-wrap .ms-product-card {
             opacity: 0;
-            transform: translateY(22px) scale(0.98);
-            transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+            transform: translateY(30px) scale(0.97);
+            transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1), transform 0.75s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
         }
         .ms-trending-section-wrap.ms-scroll-visible .ms-product-card {
             opacity: 1;
             transform: translateY(0) scale(1);
         }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(1) { transition-delay: 0.08s; }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(2) { transition-delay: 0.16s; }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(3) { transition-delay: 0.24s; }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(4) { transition-delay: 0.32s; }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(5) { transition-delay: 0.40s; }
-        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(6) { transition-delay: 0.48s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(1) { transition-delay: 0.12s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(2) { transition-delay: 0.22s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(3) { transition-delay: 0.32s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(4) { transition-delay: 0.42s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(5) { transition-delay: 0.52s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(6) { transition-delay: 0.62s; }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
@@ -4535,8 +4535,8 @@ function submitFooterNewsletter(e) {
                 }
             });
         }, {
-            threshold: 0.08,
-            rootMargin: '0px 0px -40px 0px'
+            threshold: 0.2,
+            rootMargin: '0px 0px -140px 0px'
         });
         observer.observe(trendingSec);
     } else {
