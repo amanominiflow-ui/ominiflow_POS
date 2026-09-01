@@ -621,62 +621,59 @@ img {
 }
 
 .ms-product-card {
-    background: #ffffff;
-    border: 1px solid #edf2f7;
-    border-radius: 16px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-    padding: 14px 14px 16px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    align-items: stretch;
+    justify-content: flex-start;
     text-decoration: none;
     color: inherit;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
 }
-.ms-product-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
-    border-color: #cbd5e1;
-}
 
 .ms-product-img-wrap {
     width: 100%;
-    height: 320px;
+    height: 330px;
     background: #ffffff;
-    border-radius: 12px;
-    border-bottom: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+    border: 1px solid #f1f5f9;
     position: relative;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
     text-decoration: none;
-    padding: 10px;
+    padding: 16px;
     box-sizing: border-box;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ms-product-card:hover .ms-product-img-wrap {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09);
 }
 @media (max-width: 1280px) {
     .ms-product-img-wrap {
-        height: 290px;
+        height: 300px;
     }
 }
 @media (max-width: 992px) {
     .ms-product-img-wrap {
         height: 260px;
-        padding: 8px;
+        padding: 12px;
     }
 }
 @media (max-width: 640px) {
-    .ms-product-card {
-        padding: 10px 10px 12px;
-        border-radius: 12px;
-    }
     .ms-product-img-wrap {
         height: 180px;
-        padding: 4px;
+        padding: 8px;
+        border-radius: 12px;
     }
 }
 .ms-product-img-wrap img {
@@ -687,14 +684,14 @@ img {
     transition: transform 0.3s ease;
 }
 .ms-product-card:hover .ms-product-img-wrap img {
-    transform: scale(1.04);
+    transform: scale(1.03);
 }
 
 .ms-card-discount-badge {
     position: absolute;
     top: 8px;
     left: 8px;
-    background: var(--ms-header, #083d30);
+    background: #ea580c;
     color: #ffffff;
     font-size: 10px;
     font-weight: 800;
@@ -708,7 +705,7 @@ img {
 }
 
 .ms-product-body {
-    padding: 12px 2px 0;
+    padding: 16px 0 0 0;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -719,7 +716,7 @@ img {
     box-sizing: border-box;
 }
 .ms-product-name {
-    font-size: 14.5px;
+    font-size: 15px;
     font-weight: 700;
     color: #111827;
     text-align: center;
@@ -735,6 +732,7 @@ img {
 }
 .ms-product-name:hover {
     color: #f97316;
+    text-decoration: underline;
 }
 
 .ms-product-attr {
@@ -743,7 +741,7 @@ img {
     color: #6b7280;
     text-align: center;
     line-height: 1.35;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     letter-spacing: normal;
     display: -webkit-box;
     -webkit-line-clamp: 1;
@@ -759,7 +757,7 @@ img {
     text-align: center;
     text-decoration: underline;
     text-underline-offset: 2px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     display: inline-block;
     cursor: pointer;
 }
@@ -773,7 +771,7 @@ img {
     justify-content: center;
     gap: 8px;
     margin-top: auto;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     padding-top: 4px;
     width: 100%;
     text-align: center;
@@ -787,22 +785,22 @@ img {
 }
 .ms-product-mrp {
     font-size: 13.5px;
-    font-weight: 500;
-    color: #64748b;
+    font-weight: 600;
+    color: #374151;
     text-decoration: line-through;
     white-space: nowrap;
 }
 
 .ms-card-add-btn {
     width: 100%;
-    margin-top: 4px;
-    padding: 12px 14px;
-    min-height: 44px;
+    height: 46px;
+    min-height: 46px;
+    padding: 0 16px;
     background: #f97316;
     color: #ffffff;
     border: 1.5px solid #ea580c;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
@@ -817,7 +815,7 @@ img {
                 border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
                 transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
                 box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.25);
+    box-shadow: 0 2px 6px rgba(249, 115, 22, 0.2);
     box-sizing: border-box;
 }
 .ms-card-add-btn::before {
@@ -858,16 +856,12 @@ img {
     transform: scale(0.97);
     box-shadow: 0 2px 4px rgba(249, 115, 22, 0.2);
 }
-.ms-card-add-btn svg,
 .ms-card-add-btn span {
     position: relative;
     z-index: 2;
     transition: all 0.25s ease;
-}
-.ms-card-add-btn:hover:not(:disabled) svg {
-    stroke: #ea580c !important;
-    color: #ea580c !important;
-    transform: scale(1.12);
+    font-size: 15px;
+    font-weight: 700;
 }
 .ms-card-add-btn:hover:not(:disabled) span {
     color: #ea580c !important;

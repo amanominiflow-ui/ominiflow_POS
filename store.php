@@ -953,59 +953,59 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             }
         }
 
-        /* High-Converting Clean E-Commerce Card Architecture */
+        /* High-Converting Isolated Image Card & Centered Layout Architecture */
         .ms-product-card {
-            background: #ffffff !important;
-            border: 1px solid #edf2f7 !important;
-            border-radius: 16px !important;
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04) !important;
-            padding: 14px 14px 16px !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
             display: flex !important;
             flex-direction: column !important;
-            justify-content: space-between !important;
-            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            align-items: stretch !important;
+            justify-content: flex-start !important;
             box-sizing: border-box !important;
             min-width: 0 !important;
-        }
-        .ms-product-card:hover {
-            transform: translateY(-4px) !important;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08) !important;
-            border-color: #cbd5e1 !important;
+            text-decoration: none !important;
         }
 
+        /* Image Section as its Own Dedicated White Floating Card Box */
         .ms-product-img-wrap {
+            width: 100% !important;
+            height: 330px !important;
+            background: #ffffff !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02) !important;
+            border: 1px solid #f1f5f9 !important;
             position: relative !important;
             overflow: hidden !important;
             user-select: none !important;
-            height: 320px !important;
-            background: #ffffff !important;
-            border-radius: 12px !important;
-            border-bottom: none !important;
-            padding: 10px !important;
+            padding: 16px !important;
             box-sizing: border-box !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .ms-product-card:hover .ms-product-img-wrap {
+            transform: translateY(-4px) !important;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09) !important;
         }
         @media (max-width: 1280px) {
             .ms-product-img-wrap {
-                height: 290px !important;
+                height: 300px !important;
             }
         }
         @media (max-width: 992px) {
             .ms-product-img-wrap {
                 height: 260px !important;
-                padding: 8px !important;
+                padding: 12px !important;
             }
         }
         @media (max-width: 640px) {
-            .ms-product-card {
-                padding: 10px 10px 12px !important;
-                border-radius: 12px !important;
-            }
             .ms-product-img-wrap {
                 height: 180px !important;
-                padding: 4px !important;
+                padding: 8px !important;
+                border-radius: 12px !important;
             }
         }
         .ms-product-img-wrap img {
@@ -1016,7 +1016,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             transition: transform 0.3s ease !important;
         }
         .ms-product-card:hover .ms-product-img-wrap img {
-            transform: scale(1.04) !important;
+            transform: scale(1.03) !important;
         }
 
         .ms-card-arrow {
@@ -1073,8 +1073,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-radius: 999px;
         }
 
+        /* Product Body & Typography Below the Image Box */
         .ms-product-body {
-            padding: 12px 2px 0 !important;
+            padding: 16px 0 0 0 !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
@@ -1085,12 +1086,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             box-sizing: border-box !important;
         }
         .ms-product-name {
-            font-size: 14.5px !important;
+            font-size: 15px !important;
             font-weight: 700 !important;
             color: #111827 !important;
             text-align: center !important;
             line-height: 1.4 !important;
-            margin: 6px 0 4px !important;
+            margin: 0 0 4px 0 !important;
             display: -webkit-box !important;
             -webkit-line-clamp: 2 !important;
             -webkit-box-orient: vertical !important;
@@ -1101,6 +1102,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         }
         .ms-product-name:hover {
             color: #f97316 !important;
+            text-decoration: underline !important;
         }
         .ms-product-attr {
             font-size: 12px !important;
@@ -1108,7 +1110,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             color: #6b7280 !important;
             text-align: center !important;
             line-height: 1.35 !important;
-            margin: 2px 0 6px !important;
+            margin: 2px 0 4px !important;
             display: -webkit-box !important;
             -webkit-line-clamp: 1 !important;
             -webkit-box-orient: vertical !important;
@@ -1120,7 +1122,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             color: #f97316 !important;
             text-align: center !important;
             text-decoration: underline !important;
-            margin-bottom: 6px !important;
+            margin-bottom: 4px !important;
             display: inline-block !important;
         }
 
@@ -1129,7 +1131,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             align-items: baseline !important;
             justify-content: center !important;
             gap: 8px !important;
-            margin: 6px 0 12px !important;
+            margin: 4px 0 14px 0 !important;
             width: 100% !important;
             text-align: center !important;
         }
@@ -1138,25 +1140,27 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             font-weight: 800 !important;
             color: #f97316 !important;
             letter-spacing: -0.01em !important;
+            white-space: nowrap !important;
         }
         .ms-product-mrp {
             font-size: 13.5px !important;
-            font-weight: 500 !important;
-            color: #64748b !important;
+            font-weight: 600 !important;
+            color: #374151 !important;
             text-decoration: line-through !important;
+            white-space: nowrap !important;
         }
 
-        /* Reference-Matching Add to Cart Button (Orange / Dual-Inwards Hover) */
+        /* High-Converting Add to Cart Button Matching Reference */
         .ms-card-add-btn {
             width: 100% !important;
-            margin-top: 4px !important;
-            padding: 12px 14px !important;
-            min-height: 44px !important;
+            height: 46px !important;
+            min-height: 46px !important;
+            padding: 0 16px !important;
             background: #f97316 !important;
             color: #ffffff !important;
             border: 1.5px solid #ea580c !important;
             border-radius: 8px !important;
-            font-size: 14px !important;
+            font-size: 15px !important;
             font-weight: 700 !important;
             display: inline-flex !important;
             align-items: center !important;
@@ -1171,7 +1175,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
                         transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
                         box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
-            box-shadow: 0 2px 8px rgba(249, 115, 22, 0.25) !important;
+            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.2) !important;
             box-sizing: border-box !important;
         }
         .ms-card-add-btn::before {
@@ -1212,16 +1216,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             transform: scale(0.97) !important;
             box-shadow: 0 2px 4px rgba(249, 115, 22, 0.2) !important;
         }
-        .ms-card-add-btn svg,
         .ms-card-add-btn span {
             position: relative !important;
             z-index: 2 !important;
             transition: all 0.25s ease !important;
-        }
-        .ms-card-add-btn:hover:not(:disabled) svg {
-            stroke: #ea580c !important;
-            color: #ea580c !important;
-            transform: scale(1.12) !important;
+            font-size: 15px !important;
+            font-weight: 700 !important;
         }
         .ms-card-add-btn:hover:not(:disabled) span {
             color: #ea580c !important;
