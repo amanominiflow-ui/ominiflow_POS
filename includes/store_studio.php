@@ -388,9 +388,10 @@ function studio_cat_placeholder(): string {
                                         3 => $brand['home_hero_banner_3'] ?? null,
                                         4 => $brand['home_hero_banner_4'] ?? null,
                                     ];
+                                    $hasAnyBanner = !empty($hBanners[1]) || !empty($hBanners[2]) || !empty($hBanners[3]) || !empty($hBanners[4]);
                                     ?>
                                     <?php foreach ($hBanners as $sIdx => $sImg): ?>
-                                        <div id="canvasHeroSlide<?= $sIdx ?>" style="<?= $sIdx === 1 ? 'display:block' : 'display:none' ?>">
+                                        <div id="canvasHeroSlide<?= $sIdx ?>" data-has-img="<?= $sImg ? '1' : '0' ?>" style="<?= ($sIdx === 1) ? 'display:block' : 'display:none' ?>">
                                             <?php if ($sImg): ?>
                                                 <img src="<?= asset($sImg) ?>" alt="Hero Banner <?= $sIdx ?>" id="canvasHeroBannerImg<?= $sIdx ?>" style="width:100%;height:auto;display:block;">
                                             <?php else: ?>
@@ -399,10 +400,11 @@ function studio_cat_placeholder(): string {
                                         </div>
                                     <?php endforeach; ?>
                                     <div id="canvasHeroDots" style="position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:4px;pointer-events:none;">
-                                        <span class="st-dot on" id="heroDot1" style="width:6px;height:6px;border-radius:50%;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
-                                        <span class="st-dot" id="heroDot2" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
-                                        <span class="st-dot" id="heroDot3" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
-                                        <span class="st-dot" id="heroDot4" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                        <?php foreach ($hBanners as $sIdx => $sImg): ?>
+                                            <?php if ($sImg || (!$hasAnyBanner && $sIdx === 1)): ?>
+                                                <span class="st-dot <?= $sIdx === 1 ? 'on' : '' ?>" id="heroDot<?= $sIdx ?>" style="width:<?= $sIdx === 1 ? '14px' : '6px' ?>;height:6px;border-radius:<?= $sIdx === 1 ? '4px' : '50%' ?>;background:<?= $sIdx === 1 ? '#ffffff' : 'rgba(255,255,255,0.5)' ?>;box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
                                     </div>
                                 </div>
                             </div>
@@ -1345,6 +1347,18 @@ let currentHeroIdx = 1;
 let studioHeroTimer = null;
 let studioHeroPaused = false;
 
+function getAvailableHeroSlides() {
+    let available = [];
+    [1, 2, 3, 4].forEach(i => {
+        const slide = document.getElementById('canvasHeroSlide' + i);
+        if (slide && (slide.querySelector('img') || slide.dataset.hasImg === '1')) {
+            available.push(i);
+        }
+    });
+    if (available.length === 0) available = [1];
+    return available;
+}
+
 function switchHeroSlideTab(idx, isUserInteraction = true) {
     currentHeroIdx = idx;
     if (isUserInteraction) {
@@ -1368,12 +1382,15 @@ function switchHeroSlideTab(idx, isUserInteraction = true) {
     });
 }
 
-// Auto-play preview hero carousel in Store Studio
+// Auto-play preview hero carousel in Store Studio (only if multiple images exist)
 setInterval(() => {
     if (studioHeroPaused) return;
     const isFocused = document.activeElement && document.activeElement.closest('#editHeroBanner');
     if (isFocused) return;
-    let nextHeroIdx = (currentHeroIdx % 4) + 1;
+    const available = getAvailableHeroSlides();
+    if (available.length <= 1) return; // Do not rotate if only 1 slide has an image!
+    let currPos = available.indexOf(currentHeroIdx);
+    let nextHeroIdx = (currPos === -1 || currPos === available.length - 1) ? available[0] : available[currPos + 1];
     switchHeroSlideTab(nextHeroIdx, false);
 }, 3500);
 

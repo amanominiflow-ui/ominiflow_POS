@@ -649,6 +649,21 @@ function get_mobile_store_settings(int $businessId): array {
         'terms_content' => (string) ($row['terms_content'] ?? ''),
         'refund_policy_content' => (string) ($row['refund_policy_content'] ?? ''),
         'footer_powered_by' => (string) (!empty($row['footer_powered_by']) ? $row['footer_powered_by'] : 'Shrine'),
+
+        // Home Hero Banner Slider
+        'show_home_hero_banner' => (int) ($row['show_home_hero_banner'] ?? 1) === 1,
+        'home_hero_banner' => (!empty($row['home_hero_banner']) && store_logo_file_exists((string) $row['home_hero_banner'])) ? (string) $row['home_hero_banner'] : null,
+        'home_hero_banner_link' => (string) ($row['home_hero_banner_link'] ?? ''),
+        'home_hero_banner_2' => (!empty($row['home_hero_banner_2']) && store_logo_file_exists((string) $row['home_hero_banner_2'])) ? (string) $row['home_hero_banner_2'] : null,
+        'home_hero_banner_link_2' => (string) ($row['home_hero_banner_link_2'] ?? ''),
+        'home_hero_banner_3' => (!empty($row['home_hero_banner_3']) && store_logo_file_exists((string) $row['home_hero_banner_3'])) ? (string) $row['home_hero_banner_3'] : null,
+        'home_hero_banner_link_3' => (string) ($row['home_hero_banner_link_3'] ?? ''),
+        'home_hero_banner_4' => (!empty($row['home_hero_banner_4']) && store_logo_file_exists((string) $row['home_hero_banner_4'])) ? (string) $row['home_hero_banner_4'] : null,
+        'home_hero_banner_link_4' => (string) ($row['home_hero_banner_link_4'] ?? ''),
+        'home_hero_banner_5' => (!empty($row['home_hero_banner_5']) && store_logo_file_exists((string) $row['home_hero_banner_5'])) ? (string) $row['home_hero_banner_5'] : null,
+        'home_hero_banner_link_5' => (string) ($row['home_hero_banner_link_5'] ?? ''),
+        'home_hero_autoplay' => (int) ($row['home_hero_autoplay'] ?? 1) === 1,
+        'home_hero_autoplay_speed' => (int) ($row['home_hero_autoplay_speed'] ?? 4000),
     ];
 }
 
