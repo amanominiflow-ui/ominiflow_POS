@@ -1348,27 +1348,48 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-color: #0f172a;
         }
 
-        /* Full-Width Edge-to-Edge Hero Banner Below Navbar */
-        .ms-hero-full-banner-wrap {
+        /* Multi-Slide Full-Width Edge-to-Edge Hero Carousel */
+        .ms-hero-slider-wrap {
+            position: relative;
             width: 100%;
             max-width: 100%;
             overflow: hidden;
             margin: 0;
             padding: 0;
-            line-height: 0;
-            display: block;
             background: #ffffff;
+            line-height: 0;
+            user-select: none;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
         }
-        .ms-hero-full-banner-link {
+        .ms-hero-slider-track {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+        }
+        .ms-hero-slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 1;
+        }
+        .ms-hero-slide.is-active {
+            position: relative;
+            opacity: 1;
+            visibility: visible;
+            z-index: 2;
+        }
+        .ms-hero-slide-link {
             display: block;
             width: 100%;
-            margin: 0;
-            padding: 0;
             text-decoration: none;
             line-height: 0;
         }
-        .ms-hero-full-banner-img {
+        .ms-hero-slide-img {
             width: 100%;
             height: auto;
             display: block;
@@ -1377,6 +1398,78 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border: none;
             margin: 0;
             padding: 0;
+        }
+        .ms-hero-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            color: #0f172a;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+            opacity: 0;
+        }
+        .ms-hero-slider-wrap:hover .ms-hero-arrow {
+            opacity: 1;
+        }
+        .ms-hero-arrow:hover {
+            background: #ffffff;
+            transform: translateY(-50%) scale(1.08);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+        }
+        .ms-hero-arrow-prev { left: 16px; }
+        .ms-hero-arrow-next { right: 16px; }
+        .ms-hero-dots {
+            position: absolute;
+            bottom: 12px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            z-index: 10;
+        }
+        .ms-hero-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            padding: 0;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            transition: all 0.25s ease;
+        }
+        .ms-hero-dot.is-active {
+            background: #ffffff;
+            width: 24px;
+            border-radius: 6px;
+        }
+        @media (max-width: 768px) {
+            .ms-hero-arrow {
+                display: none;
+            }
+            .ms-hero-dots {
+                bottom: 8px;
+                gap: 6px;
+            }
+            .ms-hero-dot {
+                width: 6px;
+                height: 6px;
+            }
+            .ms-hero-dot.is-active {
+                width: 16px;
+            }
         }
     </style>
 </head>
@@ -1457,21 +1550,56 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         </div>
     </header>
 
-    <?php if (!$storeNotFound && $published && $page === 'home' && !empty($brand['show_home_hero_banner'] ?? 1)): 
-        $heroBannerImg = !empty($brand['home_hero_banner']) ? $brand['home_hero_banner'] : 'assets/images/niconi_home_banner.png';
-        $heroBannerLink = !empty($brand['home_hero_banner_link']) ? $brand['home_hero_banner_link'] : '';
+    <?php 
+    $heroSlides = [];
+    if (!$storeNotFound && $published && $page === 'home' && !empty($brand['show_home_hero_banner'] ?? 1)) {
+        for ($hI = 1; $hI <= 5; $hI++) {
+            $imgField = $hI === 1 ? 'home_hero_banner' : 'home_hero_banner_' . $hI;
+            $linkField = $hI === 1 ? 'home_hero_banner_link' : 'home_hero_banner_link_' . $hI;
+            $imgPath = $brand[$imgField] ?? ($hI === 1 ? 'assets/images/niconi_home_banner.png' : '');
+            if (!empty($imgPath)) {
+                $heroSlides[] = [
+                    'image' => $imgPath,
+                    'link' => trim((string)($brand[$linkField] ?? ''))
+                ];
+            }
+        }
+    }
+    $heroAutoplay = !empty($brand['home_hero_autoplay'] ?? 1);
+    $heroSpeed = max(1500, min(15000, (int)($brand['home_hero_autoplay_speed'] ?? 4000)));
     ?>
-        <div class="ms-hero-full-banner-wrap">
-            <?php if ($heroBannerLink !== ''): ?>
-                <a href="<?= e($heroBannerLink) ?>" class="ms-hero-full-banner-link">
-                    <img src="<?= asset($heroBannerImg) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-full-banner-img">
-                </a>
-            <?php else: ?>
-                <div class="ms-hero-full-banner-link">
-                    <img src="<?= asset($heroBannerImg) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-full-banner-img">
+    <?php if (!empty($heroSlides)): ?>
+        <section class="ms-hero-slider-wrap" id="msHeroSlider" data-autoplay="<?= $heroAutoplay ? '1' : '0' ?>" data-speed="<?= (int)$heroSpeed ?>">
+            <div class="ms-hero-slider-track" id="msHeroTrack">
+                <?php foreach ($heroSlides as $sIdx => $hSlide): ?>
+                    <div class="ms-hero-slide<?= $sIdx === 0 ? ' is-active' : '' ?>" data-slide="<?= $sIdx ?>">
+                        <?php if (!empty($hSlide['link'])): ?>
+                            <a href="<?= e($hSlide['link']) ?>" class="ms-hero-slide-link">
+                                <img src="<?= asset($hSlide['image']) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-slide-img">
+                            </a>
+                        <?php else: ?>
+                            <div class="ms-hero-slide-link">
+                                <img src="<?= asset($hSlide['image']) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-slide-img">
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <?php if (count($heroSlides) > 1): ?>
+                <button type="button" class="ms-hero-arrow ms-hero-arrow-prev" id="msHeroPrev" aria-label="Previous Slide">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button type="button" class="ms-hero-arrow ms-hero-arrow-next" id="msHeroNext" aria-label="Next Slide">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <div class="ms-hero-dots" id="msHeroDots">
+                    <?php foreach ($heroSlides as $sIdx => $hSlide): ?>
+                        <button type="button" class="ms-hero-dot<?= $sIdx === 0 ? ' is-active' : '' ?>" data-index="<?= $sIdx ?>" aria-label="Go to slide <?= $sIdx + 1 ?>"></button>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
-        </div>
+        </section>
     <?php endif; ?>
 
     <main class="ms-body-pad">
@@ -4263,6 +4391,108 @@ function submitFooterNewsletter(e) {
     });
     return false;
 }
+
+// Hero Banner Multi-Slide Carousel with Autoplay & Touch Swipe
+(function initHeroSlider() {
+    var slider = document.getElementById('msHeroSlider');
+    if (!slider) return;
+
+    var slides = slider.querySelectorAll('.ms-hero-slide');
+    if (slides.length <= 1) return;
+
+    var dots = slider.querySelectorAll('.ms-hero-dot');
+    var prevBtn = document.getElementById('msHeroPrev');
+    var nextBtn = document.getElementById('msHeroNext');
+    var current = 0;
+    var timer = null;
+    var isAutoplay = slider.dataset.autoplay === '1';
+    var speed = parseInt(slider.dataset.speed, 10) || 4000;
+    var isHovered = false;
+
+    function goToSlide(idx) {
+        if (idx < 0) idx = slides.length - 1;
+        if (idx >= slides.length) idx = 0;
+        current = idx;
+
+        slides.forEach(function(s, i) {
+            s.classList.toggle('is-active', i === current);
+        });
+
+        dots.forEach(function(d, i) {
+            d.classList.toggle('is-active', i === current);
+        });
+    }
+
+    function nextSlide() {
+        goToSlide(current + 1);
+    }
+
+    function prevSlide() {
+        goToSlide(current - 1);
+    }
+
+    function startAuto() {
+        if (!isAutoplay) return;
+        stopAuto();
+        timer = setInterval(function() {
+            if (!isHovered) nextSlide();
+        }, speed);
+    }
+
+    function stopAuto() {
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+    }
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            prevSlide();
+            startAuto();
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            nextSlide();
+            startAuto();
+        });
+    }
+
+    dots.forEach(function(dot) {
+        dot.addEventListener('click', function(e) {
+            e.preventDefault();
+            var targetIdx = parseInt(dot.dataset.index, 10);
+            goToSlide(targetIdx);
+            startAuto();
+        });
+    });
+
+    slider.addEventListener('mouseenter', function() { isHovered = true; });
+    slider.addEventListener('mouseleave', function() { isHovered = false; });
+
+    // Touch swipe support for mobile
+    var touchStartX = 0;
+    var touchEndX = 0;
+    slider.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    slider.addEventListener('touchend', function(e) {
+        touchEndX = e.changedTouches[0].screenX;
+        var diff = touchEndX - touchStartX;
+        if (Math.abs(diff) > 40) {
+            if (diff < 0) nextSlide();
+            else prevSlide();
+            startAuto();
+        }
+    }, { passive: true });
+
+    startAuto();
+})();
 </script>
 </body>
 </html>

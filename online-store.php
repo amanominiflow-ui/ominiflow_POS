@@ -205,6 +205,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_POST['show_home_hero_banner'])) $saveData['show_home_hero_banner'] = !empty($_POST['show_home_hero_banner']);
             if (isset($_POST['home_hero_banner_link'])) $saveData['home_hero_banner_link'] = $_POST['home_hero_banner_link'];
             $saveData['remove_home_hero_banner'] = !empty($_POST['remove_home_hero_banner']);
+            if (isset($_POST['home_hero_banner_link_2'])) $saveData['home_hero_banner_link_2'] = $_POST['home_hero_banner_link_2'];
+            $saveData['remove_home_hero_banner_2'] = !empty($_POST['remove_home_hero_banner_2']);
+            if (isset($_POST['home_hero_banner_link_3'])) $saveData['home_hero_banner_link_3'] = $_POST['home_hero_banner_link_3'];
+            $saveData['remove_home_hero_banner_3'] = !empty($_POST['remove_home_hero_banner_3']);
+            if (isset($_POST['home_hero_banner_link_4'])) $saveData['home_hero_banner_link_4'] = $_POST['home_hero_banner_link_4'];
+            $saveData['remove_home_hero_banner_4'] = !empty($_POST['remove_home_hero_banner_4']);
+            if (isset($_POST['home_hero_banner_link_5'])) $saveData['home_hero_banner_link_5'] = $_POST['home_hero_banner_link_5'];
+            $saveData['remove_home_hero_banner_5'] = !empty($_POST['remove_home_hero_banner_5']);
+            if (isset($_POST['home_hero_autoplay'])) $saveData['home_hero_autoplay'] = !empty($_POST['home_hero_autoplay']);
+            if (isset($_POST['home_hero_autoplay_speed'])) $saveData['home_hero_autoplay_speed'] = (int)$_POST['home_hero_autoplay_speed'];
         }
 
         $res = save_mobile_store_settings($bid, $saveData, $_FILES);

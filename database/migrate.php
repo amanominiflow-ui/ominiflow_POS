@@ -1431,6 +1431,16 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'show_home_hero_banner', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner', "VARCHAR(255) NULL DEFAULT 'assets/images/niconi_home_banner.png'");
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_2', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link_2', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_3', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link_3', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_4', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link_4', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_5', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link_5', "VARCHAR(255) NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay_speed', "INT NOT NULL DEFAULT 4000");
 
 
     if (php_sapi_name() === 'cli') {

@@ -707,13 +707,17 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     $headerText = normalize_hex_color((string) ($data['header_text_color'] ?? $current['header_text_color'] ?? '#ffffff'), '#ffffff');
     $buttonText = normalize_hex_color((string) ($data['button_text_color'] ?? $current['button_text_color'] ?? '#ffffff'), '#ffffff');
 
-    $rowStmt = $db->prepare('SELECT logo_path, favicon_path, banner_image, home_hero_banner FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
+    $rowStmt = $db->prepare('SELECT logo_path, favicon_path, banner_image, home_hero_banner, home_hero_banner_2, home_hero_banner_3, home_hero_banner_4, home_hero_banner_5 FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
     $rowStmt->execute(['bid' => $businessId]);
     $dbRow = $rowStmt->fetch() ?: [];
     $logoPath = $dbRow['logo_path'] ?? null;
     $bannerPath = $dbRow['banner_image'] ?? null;
     $faviconPath = $dbRow['favicon_path'] ?? null;
     $heroBannerPath = $dbRow['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png';
+    $heroBanner2Path = $dbRow['home_hero_banner_2'] ?? null;
+    $heroBanner3Path = $dbRow['home_hero_banner_3'] ?? null;
+    $heroBanner4Path = $dbRow['home_hero_banner_4'] ?? null;
+    $heroBanner5Path = $dbRow['home_hero_banner_5'] ?? null;
 
     if (!empty($files['logo']['name'])) {
         $up = upload_mobile_store_image($businessId, $files['logo'], 'logo');
@@ -746,7 +750,7 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         $bannerPath = null;
     }
     if (!empty($files['home_hero_banner']['name'])) {
-        $up = upload_mobile_store_image($businessId, $files['home_hero_banner'], 'hero_banner');
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner'], 'hero_banner_1');
         if (empty($up['success'])) {
             return $up;
         }
@@ -754,6 +758,46 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     }
     if (!empty($data['remove_home_hero_banner'])) {
         $heroBannerPath = null;
+    }
+    if (!empty($files['home_hero_banner_2']['name'])) {
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner_2'], 'hero_banner_2');
+        if (empty($up['success'])) {
+            return $up;
+        }
+        $heroBanner2Path = $up['path'];
+    }
+    if (!empty($data['remove_home_hero_banner_2'])) {
+        $heroBanner2Path = null;
+    }
+    if (!empty($files['home_hero_banner_3']['name'])) {
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner_3'], 'hero_banner_3');
+        if (empty($up['success'])) {
+            return $up;
+        }
+        $heroBanner3Path = $up['path'];
+    }
+    if (!empty($data['remove_home_hero_banner_3'])) {
+        $heroBanner3Path = null;
+    }
+    if (!empty($files['home_hero_banner_4']['name'])) {
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner_4'], 'hero_banner_4');
+        if (empty($up['success'])) {
+            return $up;
+        }
+        $heroBanner4Path = $up['path'];
+    }
+    if (!empty($data['remove_home_hero_banner_4'])) {
+        $heroBanner4Path = null;
+    }
+    if (!empty($files['home_hero_banner_5']['name'])) {
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner_5'], 'hero_banner_5');
+        if (empty($up['success'])) {
+            return $up;
+        }
+        $heroBanner5Path = $up['path'];
+    }
+    if (!empty($data['remove_home_hero_banner_5'])) {
+        $heroBanner5Path = null;
     }
 
     $db->prepare('
@@ -860,6 +904,16 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             show_home_hero_banner = :shbanner,
             home_hero_banner = :hbanner,
             home_hero_banner_link = :hblink,
+            home_hero_banner_2 = :hbanner2,
+            home_hero_banner_link_2 = :hblink2,
+            home_hero_banner_3 = :hbanner3,
+            home_hero_banner_link_3 = :hblink3,
+            home_hero_banner_4 = :hbanner4,
+            home_hero_banner_link_4 = :hblink4,
+            home_hero_banner_5 = :hbanner5,
+            home_hero_banner_link_5 = :hblink5,
+            home_hero_autoplay = :hautopl,
+            home_hero_autoplay_speed = :hspeed,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -969,6 +1023,16 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'shbanner' => array_key_exists('show_home_hero_banner', $data) ? (!empty($data['show_home_hero_banner']) ? 1 : 0) : ($current['show_home_hero_banner'] ?? 1),
         'hbanner' => $heroBannerPath,
         'hblink' => trim((string)($data['home_hero_banner_link'] ?? $current['home_hero_banner_link'] ?? '')),
+        'hbanner2' => $heroBanner2Path,
+        'hblink2' => trim((string)($data['home_hero_banner_link_2'] ?? $current['home_hero_banner_link_2'] ?? '')),
+        'hbanner3' => $heroBanner3Path,
+        'hblink3' => trim((string)($data['home_hero_banner_link_3'] ?? $current['home_hero_banner_link_3'] ?? '')),
+        'hbanner4' => $heroBanner4Path,
+        'hblink4' => trim((string)($data['home_hero_banner_link_4'] ?? $current['home_hero_banner_link_4'] ?? '')),
+        'hbanner5' => $heroBanner5Path,
+        'hblink5' => trim((string)($data['home_hero_banner_link_5'] ?? $current['home_hero_banner_link_5'] ?? '')),
+        'hautopl' => array_key_exists('home_hero_autoplay', $data) ? (!empty($data['home_hero_autoplay']) ? 1 : 0) : ($current['home_hero_autoplay'] ?? 1),
+        'hspeed' => isset($data['home_hero_autoplay_speed']) ? max(1000, min(15000, (int)$data['home_hero_autoplay_speed'])) : (int)($current['home_hero_autoplay_speed'] ?? 4000),
         'bid' => $businessId,
     ]);
 

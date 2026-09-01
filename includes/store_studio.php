@@ -377,10 +377,31 @@ function studio_cat_placeholder(): string {
 
                         <div id="stSections">
                             <div class="st-sec selected" id="secHeroBanner" data-sec="hero_banner" onclick="selectSec(event,'hero_banner')" <?= empty($brand['show_home_hero_banner'] ?? 1) ? 'style="display:none"' : '' ?>>
-                                <div class="st-pill" style="display:block;">Home Hero Banner</div>
-                                <div style="width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#ffffff;">
-                                    <?php $hBanner = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
-                                    <img src="<?= asset($hBanner) ?>" alt="Hero Banner" id="canvasHeroBannerImg" style="width:100%;height:auto;display:block;">
+                                <div class="st-pill" style="display:block;">Home Hero Banner Carousel</div>
+                                <div style="position:relative;width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#ffffff;">
+                                    <?php 
+                                    $hBanners = [
+                                        1 => $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png',
+                                        2 => $brand['home_hero_banner_2'] ?? null,
+                                        3 => $brand['home_hero_banner_3'] ?? null,
+                                        4 => $brand['home_hero_banner_4'] ?? null,
+                                    ];
+                                    ?>
+                                    <?php foreach ($hBanners as $sIdx => $sImg): ?>
+                                        <div id="canvasHeroSlide<?= $sIdx ?>" style="<?= $sIdx === 1 ? 'display:block' : 'display:none' ?>">
+                                            <?php if ($sImg): ?>
+                                                <img src="<?= asset($sImg) ?>" alt="Hero Banner <?= $sIdx ?>" id="canvasHeroBannerImg<?= $sIdx ?>" style="width:100%;height:auto;display:block;">
+                                            <?php else: ?>
+                                                <div style="height:110px;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#94a3b8;font-size:11px;font-weight:600;border:1px dashed #cbd5e1;border-radius:6px;margin:4px;">Slide <?= $sIdx ?> (Upload image in Settings)</div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                    <div id="canvasHeroDots" style="position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:4px;pointer-events:none;">
+                                        <span class="st-dot on" id="heroDot1" style="width:6px;height:6px;border-radius:50%;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                        <span class="st-dot" id="heroDot2" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                        <span class="st-dot" id="heroDot3" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                        <span class="st-dot" id="heroDot4" style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.5);box-shadow:0 1px 3px rgba(0,0,0,0.5);"></span>
+                                    </div>
                                 </div>
                             </div>
                             <?php foreach ($sectionOrder as $secKey): ?>
@@ -1007,29 +1028,137 @@ function studio_cat_placeholder(): string {
                         </div>
 
                         <div id="editHeroBanner" class="st-hidden">
-                            <div class="st-sec-title">Home Page Hero Banner</div>
+                            <div class="st-sec-title">Home Page Hero Banner Slider</div>
                             <label class="st-check" style="margin-bottom:12px;">
                                 <input type="checkbox" name="show_home_hero_banner" value="1" <?= !empty($brand['show_home_hero_banner'] ?? 1) ? 'checked' : '' ?> onchange="document.getElementById('secHeroBanner').style.display = this.checked ? 'block' : 'none'">
                                 <span>Show full-width hero banner on Home page</span>
                             </label>
-                            <div class="st-img-row" style="margin-bottom:12px;">
-                                <div class="st-img-box" id="layoutHeroBannerPreviewBox" style="width:130px;height:65px;border-radius:8px;">
-                                    <?php $hBanner = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
-                                    <?php if ($hBanner): ?>
-                                        <img src="<?= asset($hBanner) ?>" alt="Hero Banner" id="layoutHeroBannerPreviewImg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
-                                    <?php else: ?>
-                                        <span style="font-size:11px;color:#94a3b8">No Banner</span>
-                                    <?php endif; ?>
-                                </div>
-                                <div>
-                                    <button type="button" class="st-link" onclick="document.getElementById('layoutHeroBannerFile').click()">Change Banner Image</button>
-                                    <input type="file" name="home_hero_banner" id="layoutHeroBannerFile" accept="image/*" hidden onchange="previewFile(this,'layoutHeroBannerPreviewBox')">
-                                </div>
-                            </div>
-                            <div class="st-hint">Upload a high-resolution widescreen banner image (e.g., 1920x650 px).</div>
 
-                            <label class="st-label" style="margin-top:14px;">Banner Click Redirect Link (Optional)</label>
-                            <input class="st-input" type="text" name="home_hero_banner_link" value="<?= e($brand['home_hero_banner_link'] ?? '') ?>" placeholder="e.g. /store.php?category_id=1" style="margin-bottom:16px;">
+                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">
+                                <div style="font-weight:700;font-size:13px;color:#0f172a;margin-bottom:8px;">Autoplay Settings</div>
+                                <label class="st-check" style="margin-bottom:8px;">
+                                    <input type="checkbox" name="home_hero_autoplay" value="1" <?= !empty($brand['home_hero_autoplay'] ?? 1) ? 'checked' : '' ?>>
+                                    <span>Enable Automatic Sliding (Autoplay)</span>
+                                </label>
+                                <label class="st-label" style="margin-top:6px;">Slide Transition Speed</label>
+                                <select class="st-input" name="home_hero_autoplay_speed">
+                                    <?php
+                                    $hSpeed = (int)($brand['home_hero_autoplay_speed'] ?? 4000);
+                                    foreach ([2500 => 'Fast (2.5 seconds)', 3500 => 'Normal (3.5 seconds)', 4500 => 'Smooth (4.5 seconds)', 6000 => 'Slow (6 seconds)'] as $spVal => $spLbl): ?>
+                                        <option value="<?= $spVal ?>" <?= $hSpeed === $spVal ? 'selected' : '' ?>><?= $spLbl ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="st-sec-title">Banner Slides (Up to 4 Images)</div>
+                            <div class="st-tabs" style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px;">
+                                <button type="button" class="st-tab on" id="tabHeroSlide1" onclick="switchHeroSlideTab(1)">Slide 1</button>
+                                <button type="button" class="st-tab" id="tabHeroSlide2" onclick="switchHeroSlideTab(2)">Slide 2</button>
+                                <button type="button" class="st-tab" id="tabHeroSlide3" onclick="switchHeroSlideTab(3)">Slide 3</button>
+                                <button type="button" class="st-tab" id="tabHeroSlide4" onclick="switchHeroSlideTab(4)">Slide 4</button>
+                            </div>
+
+                            <!-- Slide 1 -->
+                            <div id="heroSlideGroup1">
+                                <label class="st-label">Slide 1 Image <span class="st-req">*</span></label>
+                                <div class="st-img-row" style="margin-bottom:10px;">
+                                    <div class="st-img-box" id="heroPreviewBox1" style="width:130px;height:65px;border-radius:8px;">
+                                        <?php $h1 = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
+                                        <?php if ($h1): ?>
+                                            <img src="<?= asset($h1) ?>" alt="Slide 1" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
+                                        <?php else: ?>
+                                            <span style="font-size:11px;color:#94a3b8">No Image</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile1').click()">Change Image</button>
+                                        <input type="file" name="home_hero_banner" id="heroFile1" accept="image/*" hidden onchange="previewFile(this,'heroPreviewBox1')">
+                                    </div>
+                                </div>
+                                <label class="st-label">Slide 1 Click Link (Optional)</label>
+                                <input class="st-input" type="text" name="home_hero_banner_link" value="<?= e($brand['home_hero_banner_link'] ?? '') ?>" placeholder="e.g. /store.php?category_id=1" style="margin-bottom:12px;">
+                            </div>
+
+                            <!-- Slide 2 -->
+                            <div id="heroSlideGroup2" class="st-hidden">
+                                <label class="st-label">Slide 2 Image</label>
+                                <div class="st-img-row" style="margin-bottom:10px;">
+                                    <div class="st-img-box" id="heroPreviewBox2" style="width:130px;height:65px;border-radius:8px;">
+                                        <?php $h2 = $brand['home_hero_banner_2'] ?? ''; ?>
+                                        <?php if ($h2): ?>
+                                            <img src="<?= asset($h2) ?>" alt="Slide 2" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
+                                        <?php else: ?>
+                                            <span style="font-size:11px;color:#94a3b8">No Image</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile2').click()">Upload Image</button>
+                                        <input type="file" name="home_hero_banner_2" id="heroFile2" accept="image/*" hidden onchange="previewFile(this,'heroPreviewBox2')">
+                                        <?php if ($h2): ?>
+                                            <label class="st-check" style="margin-top:6px;font-size:12px;color:#ef4444;">
+                                                <input type="checkbox" name="remove_home_hero_banner_2" value="1">
+                                                <span>Remove Slide 2</span>
+                                            </label>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <label class="st-label">Slide 2 Click Link (Optional)</label>
+                                <input class="st-input" type="text" name="home_hero_banner_link_2" value="<?= e($brand['home_hero_banner_link_2'] ?? '') ?>" placeholder="e.g. /store.php?category_id=2" style="margin-bottom:12px;">
+                            </div>
+
+                            <!-- Slide 3 -->
+                            <div id="heroSlideGroup3" class="st-hidden">
+                                <label class="st-label">Slide 3 Image</label>
+                                <div class="st-img-row" style="margin-bottom:10px;">
+                                    <div class="st-img-box" id="heroPreviewBox3" style="width:130px;height:65px;border-radius:8px;">
+                                        <?php $h3 = $brand['home_hero_banner_3'] ?? ''; ?>
+                                        <?php if ($h3): ?>
+                                            <img src="<?= asset($h3) ?>" alt="Slide 3" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
+                                        <?php else: ?>
+                                            <span style="font-size:11px;color:#94a3b8">No Image</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile3').click()">Upload Image</button>
+                                        <input type="file" name="home_hero_banner_3" id="heroFile3" accept="image/*" hidden onchange="previewFile(this,'heroPreviewBox3')">
+                                        <?php if ($h3): ?>
+                                            <label class="st-check" style="margin-top:6px;font-size:12px;color:#ef4444;">
+                                                <input type="checkbox" name="remove_home_hero_banner_3" value="1">
+                                                <span>Remove Slide 3</span>
+                                            </label>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <label class="st-label">Slide 3 Click Link (Optional)</label>
+                                <input class="st-input" type="text" name="home_hero_banner_link_3" value="<?= e($brand['home_hero_banner_link_3'] ?? '') ?>" placeholder="e.g. /store.php" style="margin-bottom:12px;">
+                            </div>
+
+                            <!-- Slide 4 -->
+                            <div id="heroSlideGroup4" class="st-hidden">
+                                <label class="st-label">Slide 4 Image</label>
+                                <div class="st-img-row" style="margin-bottom:10px;">
+                                    <div class="st-img-box" id="heroPreviewBox4" style="width:130px;height:65px;border-radius:8px;">
+                                        <?php $h4 = $brand['home_hero_banner_4'] ?? ''; ?>
+                                        <?php if ($h4): ?>
+                                            <img src="<?= asset($h4) ?>" alt="Slide 4" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
+                                        <?php else: ?>
+                                            <span style="font-size:11px;color:#94a3b8">No Image</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile4').click()">Upload Image</button>
+                                        <input type="file" name="home_hero_banner_4" id="heroFile4" accept="image/*" hidden onchange="previewFile(this,'heroPreviewBox4')">
+                                        <?php if ($h4): ?>
+                                            <label class="st-check" style="margin-top:6px;font-size:12px;color:#ef4444;">
+                                                <input type="checkbox" name="remove_home_hero_banner_4" value="1">
+                                                <span>Remove Slide 4</span>
+                                            </label>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <label class="st-label">Slide 4 Click Link (Optional)</label>
+                                <input class="st-input" type="text" name="home_hero_banner_link_4" value="<?= e($brand['home_hero_banner_link_4'] ?? '') ?>" placeholder="e.g. /store.php" style="margin-bottom:12px;">
+                            </div>
                         </div>
 
                         <div id="editHeader" class="st-hidden">
@@ -1205,6 +1334,42 @@ const bannerColors = {
     5: { bg: '<?= e($b5Bg) ?>', txt: '<?= e($b5Txt) ?>' },
     6: { bg: '<?= e($b6Bg) ?>', txt: '<?= e($b6Txt) ?>' }
 };
+
+let currentHeroIdx = 1;
+let studioHeroTimer = null;
+let studioHeroPaused = false;
+
+function switchHeroSlideTab(idx, isUserInteraction = true) {
+    currentHeroIdx = idx;
+    if (isUserInteraction) {
+        studioHeroPaused = true;
+        clearTimeout(studioHeroTimer);
+        studioHeroTimer = setTimeout(() => { studioHeroPaused = false; }, 8000);
+    }
+    [1, 2, 3, 4].forEach(i => {
+        const tab = document.getElementById('tabHeroSlide' + i);
+        const group = document.getElementById('heroSlideGroup' + i);
+        const slide = document.getElementById('canvasHeroSlide' + i);
+        const dot = document.getElementById('heroDot' + i);
+        if (tab) tab.classList.toggle('on', i === idx);
+        if (group) group.classList.toggle('st-hidden', i !== idx);
+        if (slide) slide.style.display = (i === idx) ? 'block' : 'none';
+        if (dot) {
+            dot.style.background = (i === idx) ? '#ffffff' : 'rgba(255,255,255,0.5)';
+            dot.style.width = (i === idx) ? '14px' : '6px';
+            dot.style.borderRadius = (i === idx) ? '4px' : '50%';
+        }
+    });
+}
+
+// Auto-play preview hero carousel in Store Studio
+setInterval(() => {
+    if (studioHeroPaused) return;
+    const isFocused = document.activeElement && document.activeElement.closest('#editHeroBanner');
+    if (isFocused) return;
+    let nextHeroIdx = (currentHeroIdx % 4) + 1;
+    switchHeroSlideTab(nextHeroIdx, false);
+}, 3500);
 
 let currentBannerIdx = 1;
 let studioBannerTimer = null;
