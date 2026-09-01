@@ -810,20 +810,31 @@ img {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    width: 50.5%;
     height: 100%;
     background: #ffffff;
     z-index: -1;
-    transform: scaleX(0);
-    transform-origin: center center;
-    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateX(-100%);
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.ms-card-add-btn:hover:not(:disabled)::before {
-    transform: scaleX(1);
+.ms-card-add-btn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 50.5%;
+    height: 100%;
+    background: #ffffff;
+    z-index: -1;
+    transform: translateX(100%);
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ms-card-add-btn:hover:not(:disabled)::before,
+.ms-card-add-btn:hover:not(:disabled)::after {
+    transform: translateX(0);
 }
 .ms-card-add-btn:hover:not(:disabled) {
     color: var(--ms-header, #083d30) !important;
-    background: #ffffff !important;
     border-color: var(--ms-header, #083d30) !important;
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
