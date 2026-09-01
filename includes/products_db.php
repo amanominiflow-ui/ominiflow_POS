@@ -400,6 +400,42 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
     return $oldPath;
 }
 
+function handle_product_video_upload(?array $file, ?string $oldPath = null): ?string {
+    if (!$file || !isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return $oldPath;
+    }
+
+    $allowedExts = ['mp4', 'webm', 'mov', 'ogg', 'ogv', 'm4v', 'mkv'];
+    $fileInfo = pathinfo($file['name']);
+    $ext = strtolower($fileInfo['extension'] ?? '');
+
+    if (!in_array($ext, $allowedExts, true)) {
+        return $oldPath;
+    }
+
+    // Max 100MB
+    if ($file['size'] > 100 * 1024 * 1024) {
+        return $oldPath;
+    }
+
+    $uploadDir = __DIR__ . '/../assets/uploads/products/videos/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    $newFileName = 'vid_' . bin2hex(random_bytes(8)) . '_' . time() . '.' . $ext;
+    $targetPath = $uploadDir . $newFileName;
+
+    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        if ($oldPath && file_exists(__DIR__ . '/../' . ltrim($oldPath, '/'))) {
+            @unlink(__DIR__ . '/../' . ltrim($oldPath, '/'));
+        }
+        return 'assets/uploads/products/videos/' . $newFileName;
+    }
+
+    return $oldPath;
+}
+
 function ensure_product_item_schema(): void {
     static $done = false;
     if ($done) {
@@ -437,6 +473,8 @@ function ensure_product_item_schema(): void {
         'weight_unit' => "VARCHAR(10) NOT NULL DEFAULT 'kg'",
         'extra_identifiers' => "TEXT NULL",
         'rear_image_path' => "VARCHAR(255) NULL",
+        'video_path' => "VARCHAR(255) NULL",
+        'video_url' => "VARCHAR(500) NULL",
     ];
     foreach ($columns as $col => $def) {
         try {
@@ -690,6 +728,8 @@ function collect_product_form_data(): array {
         'product_type' => $hasVariants ? 'variable' : 'simple',
         'is_trending' => !empty($_POST['is_trending']) ? 1 : 0,
         'remove_image_ids' => array_map('intval', (array) ($_POST['remove_image_ids'] ?? [])),
+        'remove_video' => !empty($_POST['remove_video']),
+        'video_url' => trim((string) ($_POST['video_url'] ?? '')),
         'variant_attributes' => $variantAttributes,
     ];
 }
@@ -862,6 +902,17 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
     }
     $imagePath = handle_product_image_upload($legacyFile, $oldProduct['image_path'] ?? null);
 
+    $videoPath = $oldProduct['video_path'] ?? null;
+    if (!empty($data['remove_video'])) {
+        if ($videoPath && file_exists(__DIR__ . '/../' . ltrim($videoPath, '/'))) {
+            @unlink(__DIR__ . '/../' . ltrim($videoPath, '/'));
+        }
+        $videoPath = null;
+    }
+    if (!empty($_FILES['product_video']) && ($_FILES['product_video']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+        $videoPath = handle_product_video_upload($_FILES['product_video'], $videoPath);
+    }
+
     $fields = [
         'category_id' => $categoryId,
         'product_type' => $productType,
@@ -901,6 +952,8 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         'weight_unit' => trim((string) ($data['weight_unit'] ?? 'kg')) ?: 'kg',
         'extra_identifiers' => (string) ($data['extra_identifiers'] ?? '[]'),
         'image_path' => $imagePath,
+        'video_path' => $videoPath,
+        'video_url' => trim((string) ($data['video_url'] ?? '')) ?: null,
         'status' => $status,
         'is_trending' => array_key_exists('is_trending', $data) ? (!empty($data['is_trending']) ? 1 : 0) : (!empty($oldProduct['is_trending']) ? 1 : 0),
     ];

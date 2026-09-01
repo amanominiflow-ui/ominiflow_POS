@@ -59,6 +59,8 @@ if (!$identifiers && !empty($product['barcode'])) {
 
 $frontImg = $product['image_path'] ?? '';
 $rearImg = $product['rear_image_path'] ?? '';
+$videoPath = $product['video_path'] ?? '';
+$videoUrl = $product['video_url'] ?? '';
 $otherImgs = [];
 foreach ($productImages ?? [] as $im) {
     if (($im['kind'] ?? '') === 'front') {
@@ -315,6 +317,32 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
+
+            <!-- Product Video Upload Section (Single Video) -->
+            <div class="item-drop item-video-drop" id="videoDrop" style="min-height:92px;flex-direction:column;gap:8px;position:relative;background:#faf5ff;border-color:#c084fc;padding:12px;">
+                <?php if ($videoPath): ?>
+                    <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                        <video src="<?= asset($videoPath) ?>" controls style="max-width:100%;max-height:120px;border-radius:6px;background:#000;"></video>
+                        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;font-size:12px;z-index:2;position:relative;">
+                            <label style="display:inline-flex;align-items:center;gap:5px;color:#dc2626;cursor:pointer;font-weight:600;">
+                                <input type="checkbox" name="remove_video" value="1"> Remove Video
+                            </label>
+                            <span style="color:#7e22ce;font-weight:600;">Click below to replace</span>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <div style="width:36px;height:36px;border-radius:50%;background:#ede9fe;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <svg width="20" height="20" fill="none" stroke="#7c3aed" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        </div>
+                        <div style="text-align:left;">
+                            <div style="font-size:13px;font-weight:700;color:#581c87;">Upload Product Video</div>
+                            <div style="font-size:11.5px;color:#7e22ce;">Add 1 video (MP4, WebM, up to 100MB)</div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <input type="file" name="product_video" accept="video/mp4,video/webm,video/quicktime,video/ogg">
+            </div>
         </div>
     </div>
 

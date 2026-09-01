@@ -396,6 +396,58 @@ if (!function_exists('storefront_get_all_product_images')) {
     }
 }
 
+if (!function_exists('storefront_get_product_media')) {
+    function storefront_get_product_media(array $p, int $businessId): array {
+        $media = [];
+        $added = [];
+
+        // 1. Front image
+        if (!empty($p['image_path'])) {
+            $url = sf_product_image((string) $p['image_path']);
+            if ($url && !in_array($url, $added, true)) {
+                $media[] = ['type' => 'image', 'url' => $url, 'is_video' => false];
+                $added[] = $url;
+            }
+        }
+
+        // 2. Product Video (1 video per item)
+        if (!empty($p['video_path'])) {
+            $vidUrl = asset($p['video_path']);
+            $media[] = [
+                'type' => 'video',
+                'url' => $vidUrl,
+                'is_video' => true,
+                'poster' => !empty($added[0]) ? $added[0] : ''
+            ];
+        }
+
+        // 3. Additional Images
+        if (function_exists('get_product_images')) {
+            $gallery = get_product_images((int) ($p['id'] ?? 0), $businessId);
+            foreach ($gallery as $g) {
+                if (!empty($g['path'])) {
+                    $url = sf_product_image((string) $g['path']);
+                    if ($url && !in_array($url, $added, true)) {
+                        $media[] = ['type' => 'image', 'url' => $url, 'is_video' => false];
+                        $added[] = $url;
+                    }
+                }
+            }
+        }
+
+        // 4. Rear Image
+        if (!empty($p['rear_image_path'])) {
+            $url = sf_product_image((string) $p['rear_image_path']);
+            if ($url && !in_array($url, $added, true)) {
+                $media[] = ['type' => 'image', 'url' => $url, 'is_video' => false];
+                $added[] = $url;
+            }
+        }
+
+        return $media;
+    }
+}
+
 if (!function_exists('storefront_parse_product_display_info')) {
     function storefront_parse_product_display_info(array $p, int $businessId): array {
         $isVariable = (($p['product_type'] ?? '') === 'variable');
@@ -2601,21 +2653,32 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
                     $inStock = $activeVariant ? ((int)$activeVariant['stock_quantity'] > 0) : ((int)$product['stock_quantity'] > 0);
                     $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
-                    $pdpImages = storefront_get_all_product_images($product, $bid);
+                    $pdpMedia = storefront_get_product_media($product, $bid);
+                    $firstImgUrl = '';
+                    foreach ($pdpMedia as $m) {
+                        if (empty($m['is_video'])) {
+                            $firstImgUrl = $m['url'];
+                            break;
+                        }
+                    }
+                    if ($firstImgUrl === '' && !empty($pdpMedia[0]['url'])) {
+                        $firstImgUrl = $pdpMedia[0]['url'];
+                    }
                     ?>
                     <div class="ms-pdp-wrap">
                         <a href="<?= e($homeUrl) ?>" class="ms-legal-back" style="display:inline-flex;margin-bottom:16px;">← Back to Store</a>
 
                         <!-- Top 2-Column Product Detail Card -->
                         <div class="ms-pdp-top-card">
-                            <!-- Left: High-Res Image Gallery -->
+                            <!-- Left: High-Res Image/Video Gallery -->
                             <div class="ms-pdp-gallery-card">
-                                <div class="ms-pdp-main-wrap">
-                                    <?php if ($pdpImages): ?>
-                                        <img src="<?= e($pdpImages[0]) ?>" alt="<?= e((string) $product['name']) ?>" id="pdpMainImg" data-idx="0">
-                                        <?php if (count($pdpImages) > 1): ?>
-                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-prev" onclick="sfPdpSlide(-1)" aria-label="Previous image">‹</button>
-                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-next" onclick="sfPdpSlide(1)" aria-label="Next image">›</button>
+                                <div class="ms-pdp-main-wrap" style="position:relative;">
+                                    <?php if ($pdpMedia): ?>
+                                        <img src="<?= e($firstImgUrl) ?>" alt="<?= e((string) $product['name']) ?>" id="pdpMainImg" data-idx="0" style="<?= (!empty($pdpMedia[0]['is_video'])) ? 'display:none;' : '' ?>">
+                                        <video id="pdpMainVideo" controls playsinline preload="metadata" style="<?= (!empty($pdpMedia[0]['is_video'])) ? 'display:block;' : 'display:none;' ?>width:100%;height:100%;max-height:460px;object-fit:contain;background:#000;border-radius:8px;"></video>
+                                        <?php if (count($pdpMedia) > 1): ?>
+                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-prev" onclick="sfPdpSlide(-1)" aria-label="Previous media">‹</button>
+                                            <button type="button" class="ms-pdp-arrow ms-pdp-arrow-next" onclick="sfPdpSlide(1)" aria-label="Next media">›</button>
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -2625,11 +2688,18 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         </svg>
                                     <?php endif; ?>
                                 </div>
-                                <?php if (count($pdpImages) > 1): ?>
+                                <?php if (count($pdpMedia) > 1): ?>
                                     <div class="ms-pdp-thumbs">
-                                        <?php foreach ($pdpImages as $tIdx => $tUrl): ?>
-                                            <div class="ms-pdp-thumb<?= $tIdx === 0 ? ' is-active' : '' ?>" onclick="sfPdpSetImage(<?= $tIdx ?>)">
-                                                <img src="<?= e($tUrl) ?>" alt="Thumbnail <?= $tIdx + 1 ?>">
+                                        <?php foreach ($pdpMedia as $tIdx => $m): ?>
+                                            <div class="ms-pdp-thumb<?= $tIdx === 0 ? ' is-active' : '' ?>" onclick="sfPdpSetMedia(<?= $tIdx ?>)" style="position:relative;overflow:hidden;">
+                                                <?php if (!empty($m['is_video'])): ?>
+                                                    <div style="width:100%;height:100%;background:#1e1b4b;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;border-radius:4px;">
+                                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#a855f7"><path d="M8 5v14l11-7z"/></svg>
+                                                        <span style="font-size:9.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#c084fc;">Video</span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <img src="<?= e($m['url']) ?>" alt="Thumbnail <?= $tIdx + 1 ?>">
+                                                <?php endif; ?>
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
@@ -4615,26 +4685,50 @@ function sfCardSlide(btn, dir) {
     }
 }
 
-var pdpImages = <?= !empty($pdpImages) ? json_encode($pdpImages) : '[]' ?>;
+var pdpMedia = <?= !empty($pdpMedia) ? json_encode($pdpMedia) : '[]' ?>;
 var pdpCurrentIdx = 0;
 
 function sfPdpSlide(dir) {
-    if (!pdpImages || pdpImages.length <= 1) return;
-    pdpCurrentIdx = (pdpCurrentIdx + dir + pdpImages.length) % pdpImages.length;
-    sfPdpSetImage(pdpCurrentIdx);
+    if (!pdpMedia || pdpMedia.length <= 1) return;
+    pdpCurrentIdx = (pdpCurrentIdx + dir + pdpMedia.length) % pdpMedia.length;
+    sfPdpSetMedia(pdpCurrentIdx);
 }
 
-function sfPdpSetImage(idx) {
-    if (!pdpImages || !pdpImages[idx]) return;
+function sfPdpSetMedia(idx) {
+    if (!pdpMedia || !pdpMedia[idx]) return;
     pdpCurrentIdx = idx;
+    var item = pdpMedia[idx];
     var mainImg = document.getElementById('pdpMainImg');
-    if (mainImg) {
-        mainImg.src = pdpImages[idx];
+    var mainVid = document.getElementById('pdpMainVideo');
+
+    if (item.is_video || item.type === 'video') {
+        if (mainImg) mainImg.style.display = 'none';
+        if (mainVid) {
+            mainVid.style.display = 'block';
+            if (mainVid.src !== item.url) {
+                mainVid.src = item.url;
+            }
+            mainVid.play().catch(function(){});
+        }
+    } else {
+        if (mainVid) {
+            mainVid.pause();
+            mainVid.style.display = 'none';
+        }
+        if (mainImg) {
+            mainImg.style.display = 'block';
+            mainImg.src = item.url;
+        }
     }
+
     var thumbs = document.querySelectorAll('.ms-pdp-thumb');
     for (var i = 0; i < thumbs.length; i++) {
         thumbs[i].classList.toggle('is-active', i === idx);
     }
+}
+
+function sfPdpSetImage(idx) {
+    sfPdpSetMedia(idx);
 }
 
 function handleAjaxAddToCart(ev, form, isBuyNow) {
