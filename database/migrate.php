@@ -1428,6 +1428,9 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
     $helperAddCol($pdo, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
+    $helperAddCol($pdo, 'mobile_store_settings', 'show_home_hero_banner', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner', "VARCHAR(255) NULL DEFAULT 'assets/images/niconi_home_banner.png'");
+    $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_banner_link', "VARCHAR(255) NULL");
 
 
     if (php_sapi_name() === 'cli') {

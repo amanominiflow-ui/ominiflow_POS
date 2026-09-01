@@ -1347,6 +1347,37 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         .ms-pdp-thumb.is-active, .ms-pdp-thumb:hover {
             border-color: #0f172a;
         }
+
+        /* Full-Width Edge-to-Edge Hero Banner Below Navbar */
+        .ms-hero-full-banner-wrap {
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            line-height: 0;
+            display: block;
+            background: #ffffff;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+        }
+        .ms-hero-full-banner-link {
+            display: block;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            text-decoration: none;
+            line-height: 0;
+        }
+        .ms-hero-full-banner-img {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: cover;
+            object-position: center;
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
@@ -1425,6 +1456,23 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <?php endif; ?>
         </div>
     </header>
+
+    <?php if (!$storeNotFound && $published && $page === 'home' && !empty($brand['show_home_hero_banner'] ?? 1)): 
+        $heroBannerImg = !empty($brand['home_hero_banner']) ? $brand['home_hero_banner'] : 'assets/images/niconi_home_banner.png';
+        $heroBannerLink = !empty($brand['home_hero_banner_link']) ? $brand['home_hero_banner_link'] : '';
+    ?>
+        <div class="ms-hero-full-banner-wrap">
+            <?php if ($heroBannerLink !== ''): ?>
+                <a href="<?= e($heroBannerLink) ?>" class="ms-hero-full-banner-link">
+                    <img src="<?= asset($heroBannerImg) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-full-banner-img">
+                </a>
+            <?php else: ?>
+                <div class="ms-hero-full-banner-link">
+                    <img src="<?= asset($heroBannerImg) ?>" alt="<?= e($pageTitle) ?>" class="ms-hero-full-banner-img">
+                </div>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
     <main class="ms-body-pad">
         <?php if ($storeNotFound): ?>

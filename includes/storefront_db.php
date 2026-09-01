@@ -707,12 +707,13 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     $headerText = normalize_hex_color((string) ($data['header_text_color'] ?? $current['header_text_color'] ?? '#ffffff'), '#ffffff');
     $buttonText = normalize_hex_color((string) ($data['button_text_color'] ?? $current['button_text_color'] ?? '#ffffff'), '#ffffff');
 
-    $rowStmt = $db->prepare('SELECT logo_path, favicon_path, banner_image FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
+    $rowStmt = $db->prepare('SELECT logo_path, favicon_path, banner_image, home_hero_banner FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
     $rowStmt->execute(['bid' => $businessId]);
     $dbRow = $rowStmt->fetch() ?: [];
     $logoPath = $dbRow['logo_path'] ?? null;
     $bannerPath = $dbRow['banner_image'] ?? null;
     $faviconPath = $dbRow['favicon_path'] ?? null;
+    $heroBannerPath = $dbRow['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png';
 
     if (!empty($files['logo']['name'])) {
         $up = upload_mobile_store_image($businessId, $files['logo'], 'logo');
@@ -743,6 +744,16 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     }
     if (!empty($data['remove_banner'])) {
         $bannerPath = null;
+    }
+    if (!empty($files['home_hero_banner']['name'])) {
+        $up = upload_mobile_store_image($businessId, $files['home_hero_banner'], 'hero_banner');
+        if (empty($up['success'])) {
+            return $up;
+        }
+        $heroBannerPath = $up['path'];
+    }
+    if (!empty($data['remove_home_hero_banner'])) {
+        $heroBannerPath = null;
     }
 
     $db->prepare('
@@ -846,6 +857,9 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             terms_content = :termsc,
             refund_policy_content = :refundc,
             footer_powered_by = :fpow,
+            show_home_hero_banner = :shbanner,
+            home_hero_banner = :hbanner,
+            home_hero_banner_link = :hblink,
             updated_at = NOW()
         WHERE business_id = :bid
     ')->execute([
@@ -952,6 +966,9 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'termsc' => array_key_exists('terms_content', $data) ? trim((string)$data['terms_content']) : ($current['terms_content'] ?? null),
         'refundc' => array_key_exists('refund_policy_content', $data) ? trim((string)$data['refund_policy_content']) : ($current['refund_policy_content'] ?? null),
         'fpow' => trim((string)($data['footer_powered_by'] ?? $current['footer_powered_by'] ?? 'Shrine')),
+        'shbanner' => array_key_exists('show_home_hero_banner', $data) ? (!empty($data['show_home_hero_banner']) ? 1 : 0) : ($current['show_home_hero_banner'] ?? 1),
+        'hbanner' => $heroBannerPath,
+        'hblink' => trim((string)($data['home_hero_banner_link'] ?? $current['home_hero_banner_link'] ?? '')),
         'bid' => $businessId,
     ]);
 

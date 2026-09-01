@@ -202,6 +202,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $saveData['category_mode'] = $_POST['category_mode'];
                 $saveData['selected_category_ids'] = $_POST['selected_category_ids'] ?? [];
             }
+            if (isset($_POST['show_home_hero_banner'])) $saveData['show_home_hero_banner'] = !empty($_POST['show_home_hero_banner']);
+            if (isset($_POST['home_hero_banner_link'])) $saveData['home_hero_banner_link'] = $_POST['home_hero_banner_link'];
+            $saveData['remove_home_hero_banner'] = !empty($_POST['remove_home_hero_banner']);
         }
 
         $res = save_mobile_store_settings($bid, $saveData, $_FILES);

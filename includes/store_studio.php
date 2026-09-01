@@ -376,6 +376,13 @@ function studio_cat_placeholder(): string {
                         </div>
 
                         <div id="stSections">
+                            <div class="st-sec selected" id="secHeroBanner" data-sec="hero_banner" onclick="selectSec(event,'hero_banner')" <?= empty($brand['show_home_hero_banner'] ?? 1) ? 'style="display:none"' : '' ?>>
+                                <div class="st-pill" style="display:block;">Home Hero Banner</div>
+                                <div style="width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#ffffff;">
+                                    <?php $hBanner = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
+                                    <img src="<?= asset($hBanner) ?>" alt="Hero Banner" id="canvasHeroBannerImg" style="width:100%;height:auto;display:block;">
+                                </div>
+                            </div>
                             <?php foreach ($sectionOrder as $secKey): ?>
                                 <?php if ($secKey === 'category'): ?>
                                     <div class="st-sec" id="secCategory" data-sec="category" onclick="selectSec(event,'category')" <?= empty($brand['show_categories']) ? 'style="display:none"' : '' ?>>
@@ -682,7 +689,7 @@ function studio_cat_placeholder(): string {
 
             <!-- Layout edit panel -->
             <aside class="st-panel" id="panelLayout">
-                <form method="post" id="layoutForm" style="display:flex;flex-direction:column;height:100%;min-height:0">
+                <form method="post" id="layoutForm" enctype="multipart/form-data" style="display:flex;flex-direction:column;height:100%;min-height:0">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="save_customize">
                     <input type="hidden" name="tab" value="customize">
@@ -999,6 +1006,32 @@ function studio_cat_placeholder(): string {
                             <div class="st-info">All Items from the inventory will be listed in this section</div>
                         </div>
 
+                        <div id="editHeroBanner" class="st-hidden">
+                            <div class="st-sec-title">Home Page Hero Banner</div>
+                            <label class="st-check" style="margin-bottom:12px;">
+                                <input type="checkbox" name="show_home_hero_banner" value="1" <?= !empty($brand['show_home_hero_banner'] ?? 1) ? 'checked' : '' ?> onchange="document.getElementById('secHeroBanner').style.display = this.checked ? 'block' : 'none'">
+                                <span>Show full-width hero banner on Home page</span>
+                            </label>
+                            <div class="st-img-row" style="margin-bottom:12px;">
+                                <div class="st-img-box" id="layoutHeroBannerPreviewBox" style="width:130px;height:65px;border-radius:8px;">
+                                    <?php $hBanner = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
+                                    <?php if ($hBanner): ?>
+                                        <img src="<?= asset($hBanner) ?>" alt="Hero Banner" id="layoutHeroBannerPreviewImg" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
+                                    <?php else: ?>
+                                        <span style="font-size:11px;color:#94a3b8">No Banner</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div>
+                                    <button type="button" class="st-link" onclick="document.getElementById('layoutHeroBannerFile').click()">Change Banner Image</button>
+                                    <input type="file" name="home_hero_banner" id="layoutHeroBannerFile" accept="image/*" hidden onchange="previewFile(this,'layoutHeroBannerPreviewBox')">
+                                </div>
+                            </div>
+                            <div class="st-hint">Upload a high-resolution widescreen banner image (e.g., 1920x650 px).</div>
+
+                            <label class="st-label" style="margin-top:14px;">Banner Click Redirect Link (Optional)</label>
+                            <input class="st-input" type="text" name="home_hero_banner_link" value="<?= e($brand['home_hero_banner_link'] ?? '') ?>" placeholder="e.g. /store.php?category_id=1" style="margin-bottom:16px;">
+                        </div>
+
                         <div id="editHeader" class="st-hidden">
                             <label class="st-label">Business / Store Display Name <span class="st-req">*</span></label>
                             <input class="st-input" type="text" name="display_name" id="layoutDisplayName" value="<?= e($displayName) ?>" placeholder="e.g. ASH COLLECTIVE" oninput="updateCanvasDisplayName(this.value)" style="margin-bottom:16px;">
@@ -1094,11 +1127,13 @@ function openDrawer(kind) {
     if (STUDIO_MODE === 'branding') return;
     const panel = document.getElementById('panelLayout');
     panel.classList.add('open');
-    ['editCategory','themeCategory','editBanner','editTrending','editItem','editHeader'].forEach(id => {
+    ['editHeroBanner','editCategory','themeCategory','editBanner','editTrending','editItem','editHeader'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('st-hidden');
     });
     const map = {
+        'edit-hero-banner': ['editHeroBanner', 'Edit Home Hero Banner'],
+        'theme-hero-banner': ['editHeroBanner', 'Edit Home Hero Banner'],
         'edit-category': ['editCategory', 'Edit Category Component'],
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
@@ -1109,7 +1144,7 @@ function openDrawer(kind) {
         'theme-item': ['editItem', 'Edit Item Component'],
         'edit-header': ['editHeader', 'Edit Header Component']
     };
-    const cfg = map[kind] || map['edit-category'];
+    const cfg = map[kind] || map['edit-hero-banner'];
     const target = document.getElementById(cfg[0]);
     if (target) target.classList.remove('st-hidden');
     document.getElementById('layoutHeading').textContent = cfg[1];
@@ -1133,17 +1168,33 @@ function updateCanvasDisplayName(val) {
 }
 function menuAction(kind) {
     const selected = document.querySelector('.st-sec.selected');
-    const key = selected ? selected.dataset.sec : 'category';
-    if (kind === 'edit') {
-        openDrawer(key === 'category' ? 'edit-category' : (key === 'banner' ? 'edit-banner' : (key === 'trending' ? 'edit-trending' : 'edit-item')));
-    } else if (kind === 'theme') {
-        openDrawer(key === 'category' ? 'theme-category' : (key === 'banner' ? 'theme-banner' : (key === 'trending' ? 'theme-trending' : 'theme-item')));
+    const key = selected ? selected.dataset.sec : 'hero_banner';
+    if (kind === 'edit' || kind === 'theme') {
+        if (key === 'hero_banner') {
+            openDrawer('edit-hero-banner');
+        } else if (key === 'category') {
+            openDrawer(kind === 'edit' ? 'edit-category' : 'theme-category');
+        } else if (key === 'banner') {
+            openDrawer('edit-banner');
+        } else if (key === 'trending') {
+            openDrawer('edit-trending');
+        } else {
+            openDrawer('edit-item');
+        }
     } else if (kind === 'move') {
         moveSec(key, 'down');
     } else if (kind === 'rearrange') {
         openRearrange();
     } else if (kind === 'delete') {
-        toggleSec(key, false);
+        if (key === 'hero_banner') {
+            const hSec = document.getElementById('secHeroBanner');
+            if (hSec) hSec.style.display = 'none';
+            const fHero = document.querySelector('input[name="show_home_hero_banner"]');
+            if (fHero) fHero.checked = false;
+            hideFloatMenu();
+        } else {
+            toggleSec(key, false);
+        }
     }
 }
 const bannerColors = {

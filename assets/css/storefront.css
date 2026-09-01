@@ -2875,3 +2875,35 @@ body.sf-auth-body {
     transform: translateY(-1px);
 }
 
+/* Full-Width Edge-to-Edge Hero Banner Below Navbar */
+.ms-hero-full-banner-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+    display: block;
+    background: #ffffff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+.ms-hero-full-banner-link {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    text-decoration: none;
+    line-height: 0;
+}
+.ms-hero-full-banner-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: cover;
+    object-position: center;
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+
