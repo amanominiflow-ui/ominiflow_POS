@@ -971,7 +971,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         /* Image Section as its Own Dedicated White Floating Card Box */
         .ms-product-img-wrap {
             width: 100% !important;
-            height: 330px !important;
+            height: 440px !important;
             background: #ffffff !important;
             border-radius: 16px !important;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02) !important;
@@ -990,20 +990,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             transform: translateY(-4px) !important;
             box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09) !important;
         }
-        @media (max-width: 1280px) {
+        @media (max-width: 1400px) {
             .ms-product-img-wrap {
-                height: 300px !important;
+                height: 400px !important;
+            }
+        }
+        @media (max-width: 1200px) {
+            .ms-product-img-wrap {
+                height: 360px !important;
             }
         }
         @media (max-width: 992px) {
             .ms-product-img-wrap {
-                height: 260px !important;
+                height: 300px !important;
                 padding: 12px !important;
             }
         }
         @media (max-width: 640px) {
             .ms-product-img-wrap {
-                height: 180px !important;
+                height: 220px !important;
                 padding: 8px !important;
                 border-radius: 12px !important;
             }
