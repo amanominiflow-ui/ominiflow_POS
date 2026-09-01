@@ -1471,6 +1471,33 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 width: 16px;
             }
         }
+
+        /* Smooth Scroll Entrance Animation for Top Trending Section */
+        .ms-trending-section-wrap {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1), transform 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: opacity, transform;
+        }
+        .ms-trending-section-wrap.ms-scroll-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .ms-trending-section-wrap .ms-product-card {
+            opacity: 0;
+            transform: translateY(22px) scale(0.98);
+            transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+        }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(1) { transition-delay: 0.08s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(2) { transition-delay: 0.16s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(3) { transition-delay: 0.24s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(4) { transition-delay: 0.32s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(5) { transition-delay: 0.40s; }
+        .ms-trending-section-wrap.ms-scroll-visible .ms-product-card:nth-child(6) { transition-delay: 0.48s; }
     </style>
 </head>
 <body class="ms-body ms-font-<?= e($fontSize) ?><?= (!empty($openCartDrawer) || !empty($openAccountDrawer)) ? ' ms-cart-lock' : '' ?>">
@@ -4492,6 +4519,29 @@ function submitFooterNewsletter(e) {
     }, { passive: true });
 
     startAuto();
+})();
+
+// Smooth Scroll Animation for Top Trending Items
+(function initTrendingScrollReveal() {
+    var trendingSec = document.querySelector('.ms-trending-section-wrap');
+    if (!trendingSec) return;
+
+    if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function(entries, obs) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('ms-scroll-visible');
+                    obs.unobserve(entry.target);
+                }
+            });
+        }, {
+            threshold: 0.08,
+            rootMargin: '0px 0px -40px 0px'
+        });
+        observer.observe(trendingSec);
+    } else {
+        trendingSec.classList.add('ms-scroll-visible');
+    }
 })();
 </script>
 </body>
