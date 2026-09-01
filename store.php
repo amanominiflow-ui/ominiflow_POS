@@ -953,32 +953,59 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             }
         }
 
+        /* High-Converting Clean E-Commerce Card Architecture */
         .ms-product-card {
-            border-radius: 14px !important;
+            background: #ffffff !important;
+            border: 1px solid #edf2f7 !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04) !important;
+            padding: 14px 14px 16px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            box-sizing: border-box !important;
+            min-width: 0 !important;
         }
+        .ms-product-card:hover {
+            transform: translateY(-4px) !important;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08) !important;
+            border-color: #cbd5e1 !important;
+        }
+
         .ms-product-img-wrap {
             position: relative !important;
             overflow: hidden !important;
             user-select: none !important;
-            height: 380px !important;
-            padding: 14px !important;
+            height: 320px !important;
+            background: #ffffff !important;
+            border-radius: 12px !important;
+            border-bottom: none !important;
+            padding: 10px !important;
             box-sizing: border-box !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
         @media (max-width: 1280px) {
             .ms-product-img-wrap {
-                height: 340px !important;
+                height: 290px !important;
             }
         }
         @media (max-width: 992px) {
             .ms-product-img-wrap {
-                height: 290px !important;
-                padding: 10px !important;
+                height: 260px !important;
+                padding: 8px !important;
             }
         }
         @media (max-width: 640px) {
+            .ms-product-card {
+                padding: 10px 10px 12px !important;
+                border-radius: 12px !important;
+            }
             .ms-product-img-wrap {
-                height: 200px !important;
-                padding: 6px !important;
+                height: 180px !important;
+                padding: 4px !important;
             }
         }
         .ms-product-img-wrap img {
@@ -986,7 +1013,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             height: 100% !important;
             object-fit: contain !important;
             object-position: center !important;
+            transition: transform 0.3s ease !important;
         }
+        .ms-product-card:hover .ms-product-img-wrap img {
+            transform: scale(1.04) !important;
+        }
+
         .ms-card-arrow {
             position: absolute;
             top: 50%;
@@ -1040,111 +1072,159 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             width: 13px;
             border-radius: 999px;
         }
+
+        .ms-product-body {
+            padding: 12px 2px 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            text-align: center !important;
+            flex: 1 !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        .ms-product-name {
+            font-size: 14.5px !important;
+            font-weight: 700 !important;
+            color: #111827 !important;
+            text-align: center !important;
+            line-height: 1.4 !important;
+            margin: 6px 0 4px !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            overflow: hidden !important;
+            word-break: break-word !important;
+            text-decoration: none !important;
+            transition: color 0.15s ease !important;
+        }
+        .ms-product-name:hover {
+            color: #f97316 !important;
+        }
         .ms-product-attr {
-            font-size: 12.5px;
-            font-weight: 400;
-            color: #64748b;
-            text-transform: none;
-            line-height: 1.4;
-            margin: 4px 0 6px;
-            letter-spacing: normal;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            word-break: break-word;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            color: #6b7280 !important;
+            text-align: center !important;
+            line-height: 1.35 !important;
+            margin: 2px 0 6px !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 1 !important;
+            -webkit-box-orient: vertical !important;
+            overflow: hidden !important;
         }
-        .ms-product-desc {
-            font-size: 12px;
-            color: #64748b;
-            line-height: 1.35;
-            margin: 4px 0 6px;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            word-break: break-word;
+        .ms-product-variants-link {
+            font-size: 11.5px !important;
+            font-weight: 600 !important;
+            color: #f97316 !important;
+            text-align: center !important;
+            text-decoration: underline !important;
+            margin-bottom: 6px !important;
+            display: inline-block !important;
         }
-        /* Premium Add to Cart Button with Animated White Hover */
+
+        .ms-product-price-row {
+            display: flex !important;
+            align-items: baseline !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            margin: 6px 0 12px !important;
+            width: 100% !important;
+            text-align: center !important;
+        }
+        .ms-product-price {
+            font-size: 16.5px !important;
+            font-weight: 800 !important;
+            color: #f97316 !important;
+            letter-spacing: -0.01em !important;
+        }
+        .ms-product-mrp {
+            font-size: 13.5px !important;
+            font-weight: 500 !important;
+            color: #64748b !important;
+            text-decoration: line-through !important;
+        }
+
+        /* Reference-Matching Add to Cart Button (Orange / Dual-Inwards Hover) */
         .ms-card-add-btn {
-            width: 100%;
-            margin-top: 10px;
-            padding: 11px 14px;
-            min-height: 42px;
-            background: var(--ms-header, #083d30);
-            color: #ffffff;
-            border: 1.5px solid var(--ms-header, #083d30);
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 7px;
-            cursor: pointer;
-            text-decoration: none;
-            position: relative;
-            z-index: 1;
-            overflow: hidden;
+            width: 100% !important;
+            margin-top: 4px !important;
+            padding: 12px 14px !important;
+            min-height: 44px !important;
+            background: #f97316 !important;
+            color: #ffffff !important;
+            border: 1.5px solid #ea580c !important;
+            border-radius: 8px !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 7px !important;
+            cursor: pointer !important;
+            text-decoration: none !important;
+            position: relative !important;
+            z-index: 1 !important;
+            overflow: hidden !important;
             transition: color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
-                        background 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
                         border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
                         transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
-                        box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-            box-sizing: border-box;
+                        box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            box-shadow: 0 2px 8px rgba(249, 115, 22, 0.25) !important;
+            box-sizing: border-box !important;
         }
         .ms-card-add-btn::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 50.5%;
-            height: 100%;
-            background: #ffffff;
-            z-index: -1;
-            transform: translateX(-100%);
-            transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+            content: '' !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 50.5% !important;
+            height: 100% !important;
+            background: #ffffff !important;
+            z-index: -1 !important;
+            transform: translateX(-100%) !important;
+            transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
         .ms-card-add-btn::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 50.5%;
-            height: 100%;
-            background: #ffffff;
-            z-index: -1;
-            transform: translateX(100%);
-            transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+            content: '' !important;
+            position: absolute !important;
+            top: 0 !important;
+            right: 0 !important;
+            width: 50.5% !important;
+            height: 100% !important;
+            background: #ffffff !important;
+            z-index: -1 !important;
+            transform: translateX(100%) !important;
+            transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
         .ms-card-add-btn:hover:not(:disabled)::before,
         .ms-card-add-btn:hover:not(:disabled)::after {
-            transform: translateX(0);
+            transform: translateX(0) !important;
         }
         .ms-card-add-btn:hover:not(:disabled) {
-            color: var(--ms-header, #083d30) !important;
-            border-color: var(--ms-header, #083d30) !important;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+            color: #ea580c !important;
+            border-color: #ea580c !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 18px rgba(249, 115, 22, 0.35) !important;
         }
         .ms-card-add-btn:active:not(:disabled) {
-            transform: scale(0.97);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transform: scale(0.97) !important;
+            box-shadow: 0 2px 4px rgba(249, 115, 22, 0.2) !important;
         }
         .ms-card-add-btn svg,
         .ms-card-add-btn span {
-            position: relative;
-            z-index: 2;
-            transition: all 0.25s ease;
+            position: relative !important;
+            z-index: 2 !important;
+            transition: all 0.25s ease !important;
         }
         .ms-card-add-btn:hover:not(:disabled) svg {
-            stroke: var(--ms-header, #083d30) !important;
-            color: var(--ms-header, #083d30) !important;
-            transform: scale(1.12);
+            stroke: #ea580c !important;
+            color: #ea580c !important;
+            transform: scale(1.12) !important;
         }
         .ms-card-add-btn:hover:not(:disabled) span {
-            color: var(--ms-header, #083d30) !important;
+            color: #ea580c !important;
         }
         .ms-card-add-btn.is-success-pop {
             animation: msPopBurst 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1918,8 +1998,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                                                        <span>Add to Cart</span>
+                                                        <span>Add to cart</span>
                                                     </button>
                                                 </form>
                                             <?php endif; ?>
@@ -2017,8 +2096,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                                                        <span>Add to Cart</span>
+                                                        <span>Add to cart</span>
                                                     </button>
                                                 </form>
                                             <?php endif; ?>
