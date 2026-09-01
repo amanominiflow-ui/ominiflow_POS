@@ -383,7 +383,7 @@ function studio_cat_placeholder(): string {
                                 <div style="position:relative;width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#ffffff;">
                                     <?php 
                                     $hBanners = [
-                                        1 => $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png',
+                                        1 => $brand['home_hero_banner'] ?? null,
                                         2 => $brand['home_hero_banner_2'] ?? null,
                                         3 => $brand['home_hero_banner_3'] ?? null,
                                         4 => $brand['home_hero_banner_4'] ?? null,
@@ -1067,7 +1067,7 @@ function studio_cat_placeholder(): string {
                                 <label class="st-label">Slide 1 Image <span class="st-req">*</span></label>
                                 <div class="st-img-row" style="margin-bottom:10px;">
                                     <div class="st-img-box" id="heroPreviewBox1" style="width:130px;height:65px;border-radius:8px;">
-                                        <?php $h1 = $brand['home_hero_banner'] ?? 'assets/images/niconi_home_banner.png'; ?>
+                                        <?php $h1 = $brand['home_hero_banner'] ?? ''; ?>
                                         <?php if ($h1): ?>
                                             <img src="<?= asset($h1) ?>" alt="Slide 1" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">
                                         <?php else: ?>
@@ -1075,8 +1075,14 @@ function studio_cat_placeholder(): string {
                                         <?php endif; ?>
                                     </div>
                                     <div>
-                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile1').click()">Change Image</button>
+                                        <button type="button" class="st-link" onclick="document.getElementById('heroFile1').click()"><?= $h1 ? 'Change Image' : 'Upload Image' ?></button>
                                         <input type="file" name="home_hero_banner" id="heroFile1" accept="image/*" hidden onchange="previewFile(this,'heroPreviewBox1')">
+                                        <?php if ($h1): ?>
+                                            <label class="st-check" style="margin-top:6px;font-size:12px;color:#ef4444;">
+                                                <input type="checkbox" name="remove_home_hero_banner" value="1">
+                                                <span>Remove Slide 1</span>
+                                            </label>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                                 <label class="st-label">Slide 1 Click Link (Optional)</label>
@@ -1675,10 +1681,27 @@ function previewFile(input, boxId) {
     const file = input.files && input.files[0];
     if (!file) return;
     const url = URL.createObjectURL(file);
-    document.getElementById(boxId).innerHTML = '<img src="' + url + '" alt="">';
+    const box = document.getElementById(boxId);
+    if (box) box.innerHTML = '<img src="' + url + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">';
     if (boxId === 'logoPreviewBox') {
         document.getElementById('stPhLogo').style.display = 'flex';
         document.getElementById('stPhLogo').innerHTML = '<img src="' + url + '" alt="">';
+    } else if (boxId === 'heroPreviewBox1') {
+        const slide = document.getElementById('canvasHeroSlide1');
+        if (slide) slide.innerHTML = '<img src="' + url + '" alt="Hero Banner 1" id="canvasHeroBannerImg1" style="width:100%;height:auto;display:block;">';
+        switchHeroSlideTab(1, true);
+    } else if (boxId === 'heroPreviewBox2') {
+        const slide = document.getElementById('canvasHeroSlide2');
+        if (slide) slide.innerHTML = '<img src="' + url + '" alt="Hero Banner 2" id="canvasHeroBannerImg2" style="width:100%;height:auto;display:block;">';
+        switchHeroSlideTab(2, true);
+    } else if (boxId === 'heroPreviewBox3') {
+        const slide = document.getElementById('canvasHeroSlide3');
+        if (slide) slide.innerHTML = '<img src="' + url + '" alt="Hero Banner 3" id="canvasHeroBannerImg3" style="width:100%;height:auto;display:block;">';
+        switchHeroSlideTab(3, true);
+    } else if (boxId === 'heroPreviewBox4') {
+        const slide = document.getElementById('canvasHeroSlide4');
+        if (slide) slide.innerHTML = '<img src="' + url + '" alt="Hero Banner 4" id="canvasHeroBannerImg4" style="width:100%;height:auto;display:block;">';
+        switchHeroSlideTab(4, true);
     }
 }
 setTimeout(() => { const f = document.getElementById('stFlash'); if (f) f.remove(); }, 4200);

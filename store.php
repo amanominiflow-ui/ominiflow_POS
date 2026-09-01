@@ -1556,7 +1556,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         for ($hI = 1; $hI <= 5; $hI++) {
             $imgField = $hI === 1 ? 'home_hero_banner' : 'home_hero_banner_' . $hI;
             $linkField = $hI === 1 ? 'home_hero_banner_link' : 'home_hero_banner_link_' . $hI;
-            $imgPath = $brand[$imgField] ?? ($hI === 1 ? 'assets/images/niconi_home_banner.png' : '');
+            $imgPath = trim((string)($brand[$imgField] ?? ''));
             if (!empty($imgPath)) {
                 $heroSlides[] = [
                     'image' => $imgPath,
