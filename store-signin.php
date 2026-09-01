@@ -32,16 +32,24 @@ if (!empty($_GET['return'])) {
     $_SESSION[$returnKey] = (string) $_GET['return'];
 }
 $returnTarget = (string) ($_SESSION[$returnKey] ?? 'home');
-$returnParams = $returnTarget === 'checkout' ? ['return' => 'checkout'] : [];
+$returnParams = in_array($returnTarget, ['checkout', 'buynow'], true) ? ['return' => $returnTarget] : [];
 
 $signinUrl = public_store_signin_url($storeBiz, $returnParams);
 $signupUrl = public_store_signin_url($storeBiz, array_merge(['mode' => 'signup'], $returnParams));
 $forgotUrl = public_store_signin_url($storeBiz, array_merge(['mode' => 'forgot'], $returnParams));
 
+$sfSigninDest = static function (array $storeBiz, string $returnTarget): string {
+    if ($returnTarget === 'checkout') {
+        return public_store_url($storeBiz, 'checkout');
+    }
+    if ($returnTarget === 'buynow') {
+        return public_store_url($storeBiz, 'home', ['buynow' => '1']);
+    }
+    return public_store_url($storeBiz, 'home', ['account' => '1']);
+};
+
 if (get_storefront_shopper($bid)) {
-    $redirectUrl = $returnTarget === 'checkout'
-        ? public_store_url($storeBiz, 'checkout')
-        : public_store_url($storeBiz, 'home', ['account' => '1']);
+    $redirectUrl = $sfSigninDest($storeBiz, $returnTarget);
     unset($_SESSION[$returnKey]);
     redirect($redirectUrl);
 }
@@ -78,9 +86,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     unset($_SESSION[$pendingKey]);
                 }
 
-                $dest = $returnTarget === 'checkout'
-                    ? public_store_url($storeBiz, 'checkout')
-                    : public_store_url($storeBiz, 'home', ['account' => '1']);
+                $savedLoc = get_storefront_delivery_location($bid);
+                if (!empty($savedLoc['formatted'])) {
+                    persist_storefront_shopper_address($bid, $savedLoc);
+                } else {
+                    restore_storefront_delivery_location($bid);
+                }
+
+                $dest = $sfSigninDest($storeBiz, $returnTarget);
                 unset($_SESSION[$returnKey]);
                 set_flash('success', 'Welcome back to ' . $storeName . '!');
                 redirect($dest);
@@ -118,9 +131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         unset($_SESSION[$pendingKey]);
                     }
 
-                    $dest = $returnTarget === 'checkout'
-                        ? public_store_url($storeBiz, 'checkout')
-                        : public_store_url($storeBiz, 'home', ['account' => '1']);
+                    $savedLoc = get_storefront_delivery_location($bid);
+                    if (!empty($savedLoc['formatted'])) {
+                        persist_storefront_shopper_address($bid, $savedLoc);
+                    } else {
+                        restore_storefront_delivery_location($bid);
+                    }
+
+                    $dest = $sfSigninDest($storeBiz, $returnTarget);
                     unset($_SESSION[$returnKey]);
                     set_flash('success', 'Account created successfully! Welcome to ' . $storeName);
                     redirect($dest);

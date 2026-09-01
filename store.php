@@ -75,6 +75,10 @@ if (!$storeBiz) {
     $drawerCart = ['lines' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
     $openCartDrawer = false;
     $openAccountDrawer = false;
+    $openBuyNowSummary = false;
+    $openBuyNowAddress = false;
+    $hasDeliveryLoc = false;
+    $buyNowCart = ['lines' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
     $storeShopper = null;
 } else {
     $storeNotFound = false;
@@ -121,9 +125,6 @@ if (!$storeBiz) {
             }
 
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
-            if (!empty($_POST['buy_now'])) {
-                redirect(public_store_url($storeBiz, 'home', ['cart' => 1]));
-            }
             $params = $back === 'product' ? ['id' => $pid] : [];
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
@@ -132,6 +133,46 @@ if (!$storeBiz) {
                 $params['q'] = (string) $_GET['q'];
             }
             redirect(public_store_url($storeBiz, $back === 'product' ? 'product' : 'home', $params));
+        }
+
+        if ($action === 'buy_now') {
+            $pid = (int) ($_POST['product_id'] ?? 0);
+            $qty = max(1, (int) ($_POST['qty'] ?? 1));
+            $vid = (int) ($_POST['variant_id'] ?? 0);
+            $back = (string) ($_POST['redirect_page'] ?? 'home');
+            $res = set_storefront_buynow($bid, $pid, $qty, $vid);
+
+            $redirectPage = $back === 'product' ? 'product' : 'home';
+            $params = ['buynow' => '1'];
+            if ($redirectPage === 'product') {
+                $params['id'] = $pid > 0 ? $pid : (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+            }
+            if (!empty($_GET['category_id'])) {
+                $params['category_id'] = (int) $_GET['category_id'];
+            }
+            if (!empty($_GET['q'])) {
+                $params['q'] = (string) $_GET['q'];
+            }
+            $redirectUrl = public_store_url($storeBiz, $redirectPage, $params);
+
+            $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => !empty($res['success']),
+                    'has_location' => storefront_has_delivery_location($bid),
+                    'redirect' => $redirectUrl,
+                    'cart_count' => storefront_cart_count($bid),
+                    'message' => !empty($res['success']) ? 'Proceeding to checkout.' : ($res['error'] ?? 'Could not start checkout.'),
+                ]);
+                exit;
+            }
+
+            if (!empty($res['success'])) {
+                redirect($redirectUrl);
+            }
+            set_flash('error', $res['error'] ?? 'Could not start checkout.');
+            redirect(public_store_url($storeBiz, $redirectPage === 'product' ? 'product' : 'home', $redirectPage === 'product' ? ['id' => $pid] : []));
         }
 
         if ($action === 'update_cart') {
@@ -177,7 +218,7 @@ if (!$storeBiz) {
             $addrParts = array_filter([$doorNo, $street, $city, $state ? ($state . ($pincode ? ' - ' . $pincode : '')) : $pincode, $country]);
             $fullAddress = implode(', ', $addrParts);
 
-            $_SESSION['sf_delivery_location_' . $bid] = [
+            $savedLoc = [
                 'name' => $delName,
                 'door_no' => $doorNo,
                 'street_area' => $street,
@@ -189,18 +230,20 @@ if (!$storeBiz) {
                 'formatted' => $fullAddress,
                 'display' => $city !== '' ? ($street !== '' ? ($street . ', ' . $city) : $city) : ($state !== '' ? $state : ($doorNo !== '' ? $doorNo : $fullAddress)),
             ];
-
-            $shopper = get_storefront_shopper($bid);
-            if ($shopper) {
-                update_storefront_shopper_profile($bid, (int)$shopper['id'], [
-                    'name' => $delName !== '' ? $delName : ($shopper['name'] ?? ''),
-                    'phone' => $phone !== '' ? $phone : ($shopper['phone'] ?? ''),
-                    'address' => $fullAddress,
-                ]);
-            }
+            save_storefront_delivery_location($bid, $savedLoc);
+            persist_storefront_shopper_address($bid, $savedLoc);
 
             set_flash('success', 'Delivery address saved.');
             $retPage = (string)($_POST['return_page'] ?? $page);
+            if ($retPage === 'buynow') {
+                $bnParams = ['buynow' => '1'];
+                $targetPage = 'home';
+                if ($page === 'product' && !empty($_GET['id'])) {
+                    $targetPage = 'product';
+                    $bnParams['id'] = (int) $_GET['id'];
+                }
+                redirect(public_store_url($storeBiz, $targetPage, $bnParams));
+            }
             if ($retPage === 'checkout' || $retPage === 'cart' || !empty($_SESSION['sf_cart_' . $bid])) {
                 redirect(public_store_url($storeBiz, 'home', ['checkout' => 1]));
             }
@@ -223,10 +266,11 @@ if (!$storeBiz) {
         }
 
         if ($action === 'place_order') {
+            $isBuyNowCheckout = (string) ($_POST['checkout_mode'] ?? '') === 'buynow';
             $shopper = get_storefront_shopper($bid);
             if (!$shopper) {
                 set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
-                redirect(public_store_signin_url($storeBiz, ['return' => 'checkout']));
+                redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
             }
             $result = place_online_store_order($bid, [
                 'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
@@ -235,6 +279,7 @@ if (!$storeBiz) {
                 'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
                 'notes' => (string) ($_POST['notes'] ?? ''),
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
+                'buy_now' => $isBuyNowCheckout,
             ]);
             if (!empty($result['success'])) {
                 redirect(public_store_url($storeBiz, 'order', [
@@ -244,7 +289,7 @@ if (!$storeBiz) {
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
-            redirect(public_store_url($storeBiz, 'checkout'));
+            redirect(public_store_url($storeBiz, $isBuyNowCheckout ? 'home' : 'checkout', $isBuyNowCheckout ? ['buynow' => '1'] : []));
         }
 
         if ($action === 'cancel_order') {
@@ -294,8 +339,14 @@ if (!$storeBiz) {
     $drawerCart = hydrate_storefront_cart($bid);
     $cartCount = (int) ($drawerCart['count'] ?? $cartCount);
     $storeShopper = refresh_storefront_shopper($bid);
+    restore_storefront_delivery_location($bid, $storeShopper);
+    $buyNowCart = hydrate_storefront_buynow($bid);
+    $hasSavedDeliveryLoc = storefront_has_delivery_location($bid, $storeShopper);
     $openAccountDrawer = !empty($_GET['account']);
-    $openOrderSummaryDirect = !empty($_GET['buynow']) || !empty($_GET['checkout']);
+    $openBuyNowFlow = !empty($_GET['buynow']) && !empty($buyNowCart['lines']);
+    $openBuyNowAddress = $openBuyNowFlow && !$hasSavedDeliveryLoc;
+    $openBuyNowSummary = $openBuyNowFlow && $hasSavedDeliveryLoc;
+    $openOrderSummaryDirect = !empty($_GET['checkout']) || $openBuyNowSummary;
     $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $openOrderSummaryDirect || $page === 'cart');
     if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
         $ret = $page === 'checkout' ? 'checkout' : 'account';
@@ -1712,7 +1763,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                 <div class="ms-top-actions">
                     <?php if (!empty($brand['show_location'])):
-                        $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                        $savedLoc = get_storefront_delivery_location($bid);
                         $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
                         if (mb_strlen($locDisplay) > 28) {
                             $locDisplay = mb_substr($locDisplay, 0, 26) . '...';
@@ -2392,7 +2443,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <button type="submit" class="ms-card-add-btn">
                                                         <span>Add to cart</span>
                                                     </button>
-                                                    <button type="button" class="ms-card-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                                    <button type="button" class="ms-card-buy-btn" onclick="handleBuyNow(event, this.form);">
                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                                         <span>Buy Now</span>
                                                     </button>
@@ -2494,7 +2545,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <button type="submit" class="ms-card-add-btn">
                                                         <span>Add to cart</span>
                                                     </button>
-                                                    <button type="button" class="ms-card-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                                    <button type="button" class="ms-card-buy-btn" onclick="handleBuyNow(event, this.form);">
                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                                         <span>Buy Now</span>
                                                     </button>
@@ -2619,7 +2670,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                             </button>
                                         </div>
                                         <?php if ($inStock): ?>
-                                            <button type="button" class="ms-pdp-buy-btn" onclick="handleAjaxAddToCart(event, this.form, true);">
+                                            <button type="button" class="ms-pdp-buy-btn" onclick="handleBuyNow(event, this.form);">
                                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                                 <span>Buy Now</span>
                                             </button>
@@ -2753,7 +2804,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <a class="ms-btn" href="<?= e($homeUrl) ?>" style="margin-top:12px">Start Shopping</a>
                     </div>
                 <?php else: 
-                    $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                    $savedLoc = get_storefront_delivery_location($bid);
                     $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
                     $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
                     $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
@@ -2943,7 +2994,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 </div>
 
             <?php elseif ($page === 'addresses' && $storeShopper):
-                $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+                $savedLoc = get_storefront_delivery_location($bid);
                 $prefillName = $savedLoc['name'] ?? storefront_clean_person_name((string)($storeShopper['name'] ?? ''));
                 $prefillPhone = $savedLoc['phone'] ?? (string)($storeShopper['phone'] ?? '');
                 $prefillDoor = $savedLoc['door_no'] ?? '';
@@ -3617,12 +3668,22 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
 
-    $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+    $savedLoc = get_storefront_delivery_location($bid);
     $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
     $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
     $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
     $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
     $hasDeliveryLoc = ($locAddress !== '');
+
+    $osBuyNow = !empty($openBuyNowSummary);
+    $osSrc = $osBuyNow ? ($buyNowCart ?? ['lines' => []]) : $drawerCart;
+    $osLines = $osSrc['lines'] ?? [];
+    $osLineCount = count($osLines);
+    $osQty = (int) ($osSrc['count'] ?? 0);
+    $osSub = (float) ($osSrc['subtotal'] ?? 0);
+    $osTax = (float) ($osSrc['tax'] ?? 0);
+    $osTotal = (float) ($osSrc['total'] ?? 0);
+    $osSavings = (float) ($osSrc['total_savings'] ?? 0);
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
@@ -3754,7 +3815,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         <!-- STEP 2: ORDER SUMMARY (Screenshot 2) -->
         <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:<?= !empty($openOrderSummaryDirect) ? 'flex' : 'none' ?>;flex-direction:column;height:100%;">
             <div class="ms-cd-head">
-                <button type="button" class="ms-cd-btn-circle" onclick="goToCartMainView()" aria-label="Back to cart">
+                <button type="button" class="ms-cd-btn-circle" onclick="<?= !empty($osBuyNow) ? 'closeBuyNowSummary()' : 'goToCartMainView()' ?>" aria-label="<?= !empty($osBuyNow) ? 'Close' : 'Back to cart' ?>">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                 </button>
                 <div class="ms-cd-title">Order Summary</div>
@@ -3762,7 +3823,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
             <div class="ms-cd-body">
                 <!-- Deliver to Section -->
-                <div class="ms-cd-deliver-section" onclick="openLocationDrawerFromCheckout('cart')">
+                <div class="ms-cd-deliver-section" onclick="openLocationDrawerFromCheckout('<?= !empty($osBuyNow) ? 'buynow' : 'cart' ?>')">
                     <div class="ms-cd-deliver-head">
                         <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:#0f172a;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.4 7-11a7 7 0 10-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -3780,14 +3841,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php endif; ?>
                 </div>
 
-                <!-- Items in this Order -->
-                <?php if ($cdLines): ?>
+                <!-- Items in this Order (compact: name, qty, price only) -->
+                <?php if ($osLines): ?>
                     <div class="ms-cd-os-items" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:14px;">
                         <div style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
-                            <span>Order Items (<?= $cdLineCount ?>)</span>
-                            <span style="font-size:12px;color:#64748b;font-weight:600;"><?= $cdQty ?> Qty</span>
+                            <span>Order Items (<?= $osLineCount ?>)</span>
+                            <span style="font-size:12px;color:#64748b;font-weight:600;"><?= $osQty ?> Qty</span>
                         </div>
-                        <?php foreach ($cdLines as $line):
+                        <?php foreach ($osLines as $line):
                             $p = $line['product'];
                             $img = sf_product_image($p['image_path'] ?? null);
                             $uPrice = (float)$line['unit_price'];
@@ -3815,14 +3876,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <!-- Summary -->
                 <div class="ms-cd-summary" style="padding-top:14px;">
                     <div class="ms-cd-summary-title">Summary</div>
-                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $cdSub) ?></span></div>
+                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $osSub) ?></span></div>
                     <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
-                    <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $cdTax) ?></span></div>
-                    <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $cdTotal) ?></span></div>
+                    <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $osTax) ?></span></div>
+                    <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $osTotal) ?></span></div>
                 </div>
 
-                <?php if ($cdSavings > 0): ?>
-                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $cdSavings) ?></div>
+                <?php if ($osSavings > 0): ?>
+                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $osSavings) ?></div>
                 <?php endif; ?>
 
                 <!-- Payment Method Selector Section -->
@@ -3916,6 +3977,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <form method="post" id="msDrawerCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="place_order">
+                <?php if (!empty($osBuyNow)): ?>
+                    <input type="hidden" name="checkout_mode" value="buynow">
+                <?php endif; ?>
                 <input type="hidden" name="name" value="<?= e($locName) ?>">
                 <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
                 <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
@@ -4067,7 +4131,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
             <!-- View 2: Address Details Form (Screenshot 1) -->
             <?php
-            $savedLoc = $_SESSION['sf_delivery_location_' . $bid] ?? [];
+            $savedLoc = get_storefront_delivery_location($bid);
             $prefillName = $savedLoc['name'] ?? storefront_clean_person_name((string)($storeShopper['name'] ?? ''));
             $prefillPhone = $savedLoc['phone'] ?? (string)($storeShopper['phone'] ?? '');
             $prefillDoor = $savedLoc['door_no'] ?? '';
@@ -4550,13 +4614,17 @@ function sfPdpSetImage(idx) {
 }
 
 function handleAjaxAddToCart(ev, form, isBuyNow) {
+    if (isBuyNow) {
+        handleBuyNow(ev, form);
+        return;
+    }
     if (ev) ev.preventDefault();
-    var btn = isBuyNow ? form.querySelector('.ms-card-buy-btn, .ms-pdp-buy-btn') : form.querySelector('.ms-card-add-btn, .ms-pdp-add-btn');
+    var btn = form.querySelector('.ms-card-add-btn, .ms-pdp-add-btn');
     if (!btn) btn = form.querySelector('button[type="submit"]');
     var origHtml = btn ? btn.innerHTML : '';
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>' + (isBuyNow ? 'Proceeding...' : 'Adding...') + '</span>';
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>Adding...</span>';
     }
 
     var formData = new FormData(form);
@@ -4577,36 +4645,9 @@ function handleAjaxAddToCart(ev, form, isBuyNow) {
                 b.textContent = data.cart_count;
                 b.style.display = data.cart_count > 0 ? '' : 'none';
             });
+            var prevBg = btn ? btn.style.background : '';
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = origHtml;
-            }
-
-            if (isBuyNow) {
-                var hasLocation = <?= (!empty($hasDeliveryLoc)) ? 'true' : 'false' ?>;
-                if (!hasLocation) {
-                    if (typeof window.openLocationDrawerDirect === 'function') {
-                        window.openLocationDrawerDirect('home');
-                    } else if (typeof window.openLocationDrawerFromCheckout === 'function') {
-                        window.openLocationDrawerFromCheckout('home');
-                    }
-                } else {
-                    var vMain = document.getElementById('msCartViewMain');
-                    var vSummary = document.getElementById('msCartViewOrderSummary');
-                    if (vMain && vSummary) {
-                        vMain.style.display = 'none';
-                        vSummary.style.display = 'flex';
-                    }
-                    var overlay = document.getElementById('msCartOverlay');
-                    if (overlay) {
-                        overlay.hidden = false;
-                        overlay.classList.add('is-open');
-                        overlay.setAttribute('aria-hidden', 'false');
-                        document.body.classList.add('ms-cart-lock');
-                    }
-                }
-            } else {
-                var prevBg = btn.style.background;
                 btn.style.background = '#16a34a';
                 btn.classList.add('is-success-pop');
                 btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> <span>Added!</span>';
@@ -4628,6 +4669,57 @@ function handleAjaxAddToCart(ev, form, isBuyNow) {
     .catch(function(err) {
         form.submit();
     });
+}
+
+function handleBuyNow(ev, form) {
+    if (ev) ev.preventDefault();
+    var btn = form.querySelector('.ms-card-buy-btn, .ms-pdp-buy-btn');
+    if (!btn) btn = form.querySelector('button[type="button"]');
+    var origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg> <span>Proceeding...</span>';
+    }
+
+    var formData = new FormData(form);
+    formData.set('action', 'buy_now');
+    formData.append('ajax', '1');
+
+    fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data && data.success && data.redirect) {
+            window.location.href = data.redirect;
+            return;
+        }
+        alert((data && data.message) ? data.message : 'Could not start checkout.');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    })
+    .catch(function() {
+        var act = form.querySelector('input[name="action"]');
+        if (act) act.value = 'buy_now';
+        form.submit();
+    });
+}
+
+function closeBuyNowSummary() {
+    var overlay = document.getElementById('msCartOverlay');
+    if (overlay) {
+        overlay.classList.remove('is-open');
+        overlay.hidden = true;
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('ms-cart-lock');
+    goToCartMainView();
 }
 
 function selectDrawerPaymentMethod(methodKey, methodTitle, labelEl) {
@@ -4941,7 +5033,17 @@ function submitFooterNewsletter(e) {
     }
 })();
 
-<?php if (!empty($openOrderSummaryDirect) && empty($hasDeliveryLoc)): ?>
+<?php if (!empty($openBuyNowAddress)): ?>
+document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+        if (typeof openLocationDrawerDirect === 'function') {
+            openLocationDrawerDirect('buynow');
+        } else if (typeof openLocationDrawerFromCheckout === 'function') {
+            openLocationDrawerFromCheckout('buynow');
+        }
+    }, 150);
+});
+<?php elseif (!empty($openOrderSummaryDirect) && empty($hasDeliveryLoc)): ?>
 document.addEventListener('DOMContentLoaded', function () {
     setTimeout(function () {
         if (typeof openLocationDrawerFromCheckout === 'function') {

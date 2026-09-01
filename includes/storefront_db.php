@@ -1505,6 +1505,194 @@ function hydrate_storefront_cart(int $businessId): array {
     ];
 }
 
+function storefront_buynow_key(int $businessId): string {
+    return 'sf_buynow_' . $businessId;
+}
+
+function get_storefront_buynow(int $businessId): array {
+    $row = $_SESSION[storefront_buynow_key($businessId)] ?? [];
+    return is_array($row) ? $row : [];
+}
+
+function clear_storefront_buynow(int $businessId): void {
+    unset($_SESSION[storefront_buynow_key($businessId)]);
+}
+
+function set_storefront_buynow(int $businessId, int $productId, int $qty = 1, int $variantId = 0): array {
+    $qty = max(1, $qty);
+    $product = get_product_by_id($productId, $businessId);
+    if (!$product || ($product['status'] ?? '') !== 'active') {
+        return ['success' => false, 'error' => 'This item is not available.'];
+    }
+    $stock = (int) ($product['stock_quantity'] ?? 0);
+    if ($stock <= 0) {
+        return ['success' => false, 'error' => 'This item is out of stock.'];
+    }
+    if ($qty > $stock) {
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+    }
+    $_SESSION[storefront_buynow_key($businessId)] = [
+        'product_id' => $productId,
+        'qty' => $qty,
+        'variant_id' => $variantId > 0 ? $variantId : null,
+    ];
+    return ['success' => true];
+}
+
+function hydrate_storefront_buynow(int $businessId): array {
+    $bn = get_storefront_buynow($businessId);
+    $pid = (int) ($bn['product_id'] ?? 0);
+    $qty = max(1, (int) ($bn['qty'] ?? 1));
+    if ($pid <= 0) {
+        return [
+            'lines' => [],
+            'subtotal' => 0.0,
+            'tax' => 0.0,
+            'total' => 0.0,
+            'total_savings' => 0.0,
+            'count' => 0,
+        ];
+    }
+
+    $product = get_product_by_id($pid, $businessId);
+    if (!$product || ($product['status'] ?? '') !== 'active') {
+        clear_storefront_buynow($businessId);
+        return [
+            'lines' => [],
+            'subtotal' => 0.0,
+            'tax' => 0.0,
+            'total' => 0.0,
+            'total_savings' => 0.0,
+            'count' => 0,
+        ];
+    }
+
+    $stock = (int) ($product['stock_quantity'] ?? 0);
+    if ($stock <= 0) {
+        clear_storefront_buynow($businessId);
+        return [
+            'lines' => [],
+            'subtotal' => 0.0,
+            'tax' => 0.0,
+            'total' => 0.0,
+            'total_savings' => 0.0,
+            'count' => 0,
+        ];
+    }
+    if ($qty > $stock) {
+        $qty = $stock;
+    }
+
+    $unit = (float) $product['selling_price'];
+    $mrp = (float) ($product['mrp'] ?? 0);
+    $taxPct = (float) ($product['tax_percent'] ?? 0);
+    $line = $unit * $qty;
+    $lineTax = round($line * ($taxPct / 100), 2);
+    $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
+
+    return [
+        'lines' => [[
+            'product' => $product,
+            'qty' => $qty,
+            'unit_price' => $unit,
+            'mrp' => $mrp,
+            'tax_percent' => $taxPct,
+            'line_total' => $line,
+            'tax_amount' => $lineTax,
+            'savings' => $lineSavings,
+        ]],
+        'subtotal' => round($line, 2),
+        'tax' => $lineTax,
+        'total' => round($line + $lineTax, 2),
+        'total_savings' => $lineSavings,
+        'count' => $qty,
+    ];
+}
+
+function storefront_delivery_location_key(int $businessId): string {
+    return 'sf_delivery_location_' . $businessId;
+}
+
+function get_storefront_delivery_location(int $businessId): array {
+    $row = $_SESSION[storefront_delivery_location_key($businessId)] ?? [];
+    return is_array($row) ? $row : [];
+}
+
+function save_storefront_delivery_location(int $businessId, array $loc): void {
+    $_SESSION[storefront_delivery_location_key($businessId)] = $loc;
+}
+
+function storefront_has_delivery_location(int $businessId, ?array $shopper = null): bool {
+    $saved = get_storefront_delivery_location($businessId);
+    if (trim((string) ($saved['formatted'] ?? '')) !== '') {
+        return true;
+    }
+    if ($shopper === null) {
+        $shopper = get_storefront_shopper($businessId);
+    }
+    return $shopper !== null && trim((string) ($shopper['address'] ?? '')) !== '';
+}
+
+function restore_storefront_delivery_location(int $businessId, ?array $shopper = null): array {
+    $saved = get_storefront_delivery_location($businessId);
+    if (trim((string) ($saved['formatted'] ?? '')) !== '') {
+        return $saved;
+    }
+    if ($shopper === null) {
+        $shopper = get_storefront_shopper($businessId);
+    }
+    if (!$shopper) {
+        return $saved;
+    }
+    $addr = trim((string) ($shopper['address'] ?? ''));
+    if ($addr === '') {
+        return $saved;
+    }
+    $restored = [
+        'name' => storefront_clean_person_name((string) ($shopper['name'] ?? '')),
+        'door_no' => (string) ($saved['door_no'] ?? ''),
+        'street_area' => (string) ($saved['street_area'] ?? $addr),
+        'city' => (string) ($saved['city'] ?? ''),
+        'state' => (string) ($saved['state'] ?? 'West Bengal'),
+        'pincode' => (string) ($saved['pincode'] ?? ''),
+        'country' => (string) ($saved['country'] ?? 'India'),
+        'phone' => (string) ($shopper['phone'] ?? ''),
+        'formatted' => $addr,
+        'display' => $addr,
+    ];
+    save_storefront_delivery_location($businessId, $restored);
+    return $restored;
+}
+
+function persist_storefront_shopper_address(int $businessId, array $loc): void {
+    $shopper = get_storefront_shopper($businessId);
+    if (!$shopper || empty($shopper['id'])) {
+        return;
+    }
+    $name = storefront_clean_person_name((string) ($loc['name'] ?? $shopper['name'] ?? ''));
+    if ($name === '') {
+        $name = (string) ($shopper['name'] ?? 'Customer');
+    }
+    $phone = trim((string) ($loc['phone'] ?? $shopper['phone'] ?? ''));
+    $address = trim((string) ($loc['formatted'] ?? ''));
+    try {
+        get_db()->prepare('UPDATE customers SET name = :name, phone = :phone, address = :address, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute([
+                'name' => $name,
+                'phone' => $phone !== '' ? $phone : null,
+                'address' => $address !== '' ? $address : null,
+                'id' => (int) $shopper['id'],
+                'bid' => $businessId,
+            ]);
+        $shopper['name'] = $name;
+        $shopper['phone'] = $phone;
+        $shopper['address'] = $address;
+        set_storefront_shopper($businessId, $shopper);
+    } catch (PDOException $e) {
+        // Keep checkout working even if profile write fails.
+    }
+}
+
 function storefront_shopper_key(int $businessId): string {
     return 'storefront_shopper_' . $businessId;
 }
@@ -1947,9 +2135,10 @@ function find_or_create_store_customer(int $businessId, array $data): array {
 }
 
 function place_online_store_order(int $businessId, array $checkout): array {
-    $hydrated = hydrate_storefront_cart($businessId);
+    $isBuyNow = !empty($checkout['buy_now']);
+    $hydrated = $isBuyNow ? hydrate_storefront_buynow($businessId) : hydrate_storefront_cart($businessId);
     if (empty($hydrated['lines'])) {
-        return ['success' => false, 'errors' => ['cart' => 'Your cart is empty.']];
+        return ['success' => false, 'errors' => ['cart' => $isBuyNow ? 'This item is no longer available.' : 'Your cart is empty.']];
     }
 
     $cust = find_or_create_store_customer($businessId, $checkout);
@@ -2011,7 +2200,11 @@ function place_online_store_order(int $businessId, array $checkout): array {
     );
 
     if (!empty($result['success'])) {
-        save_storefront_cart($businessId, []);
+        if ($isBuyNow) {
+            clear_storefront_buynow($businessId);
+        } else {
+            save_storefront_cart($businessId, []);
+        }
     }
     return $result;
 }
