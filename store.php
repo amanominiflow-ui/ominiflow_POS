@@ -356,7 +356,8 @@ if (!$storeBiz) {
 
 if (!function_exists('sf_money')) {
     function sf_money(string $symbol, float $amount): string {
-        return e($symbol) . number_format($amount, 2);
+        $decimals = (floor($amount) == $amount) ? 0 : 2;
+        return e($symbol) . number_format($amount, $decimals);
     }
 }
 
@@ -1464,24 +1465,40 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             display: flex !important;
             align-items: baseline !important;
             justify-content: center !important;
-            gap: 8px !important;
-            margin: 4px 0 14px 0 !important;
+            gap: 6px !important;
+            flex-wrap: wrap !important;
+            margin: 4px 0 12px 0 !important;
             width: 100% !important;
             text-align: center !important;
+            overflow: hidden !important;
         }
         .ms-product-price {
-            font-size: 16.5px !important;
+            font-size: 15px !important;
             font-weight: 800 !important;
             color: #f97316 !important;
             letter-spacing: -0.01em !important;
             white-space: nowrap !important;
+            line-height: 1.2 !important;
         }
         .ms-product-mrp {
-            font-size: 13.5px !important;
-            font-weight: 600 !important;
-            color: #374151 !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            color: #64748b !important;
             text-decoration: line-through !important;
             white-space: nowrap !important;
+            line-height: 1.2 !important;
+        }
+        @media (max-width: 640px) {
+            .ms-product-price-row {
+                gap: 4px !important;
+                margin: 3px 0 8px 0 !important;
+            }
+            .ms-product-price {
+                font-size: 14px !important;
+            }
+            .ms-product-mrp {
+                font-size: 11.5px !important;
+            }
         }
 
         .ms-card-add-form {
