@@ -376,8 +376,10 @@ function studio_cat_placeholder(): string {
                         </div>
 
                         <div id="stSections">
-                            <div class="st-sec selected" id="secHeroBanner" data-sec="hero_banner" onclick="selectSec(event,'hero_banner')" <?= empty($brand['show_home_hero_banner'] ?? 1) ? 'style="display:none"' : '' ?>>
-                                <div class="st-pill" style="display:block;">Home Hero Banner Carousel</div>
+                            <div class="st-sec selected" id="secHeroBanner" data-sec="heroBanner" onclick="selectSec(event,'heroBanner')" <?= empty($brand['show_home_hero_banner'] ?? 1) ? 'style="display:none"' : '' ?>>
+                                <div class="st-pill">Hero Banner</div>
+                                <div class="st-plus top" onclick="event.stopPropagation(); openAddPop(this)">+</div>
+                                <div class="st-plus bot" onclick="event.stopPropagation(); openAddPop(this)">+</div>
                                 <div style="position:relative;width:100%;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);background:#ffffff;">
                                     <?php 
                                     $hBanners = [
@@ -599,6 +601,7 @@ function studio_cat_placeholder(): string {
                     </div>
                     <?php endif; ?>
                     <div class="st-add-pop" id="stAddPop">
+                        <button type="button" onclick="restoreSec('heroBanner')">Hero Banner</button>
                         <button type="button" onclick="restoreSec('category')">Category</button>
                         <button type="button" onclick="restoreSec('banner')">Banner</button>
                         <button type="button" onclick="restoreSec('trending')">Top Trending Items</button>
@@ -716,6 +719,7 @@ function studio_cat_placeholder(): string {
                     <input type="hidden" name="tab" value="customize">
                     <input type="hidden" name="display_name" value="<?= e($displayName) ?>">
                     <input type="hidden" name="section_order" id="inputSectionOrder" value="<?= e(implode(',', $sectionOrder)) ?>">
+                    <input type="hidden" name="show_home_hero_banner" id="flagHeroBanner" value="<?= !empty($brand['show_home_hero_banner'] ?? 1) ? '1' : '' ?>">
                     <input type="hidden" name="show_banner" id="flagBanner" value="<?= !empty($brand['show_banner']) ? '1' : '' ?>">
                     <input type="hidden" name="show_categories" id="flagCategory" value="<?= !empty($brand['show_categories']) ? '1' : '' ?>">
                     <input type="hidden" name="show_trending_items" id="flagTrending" value="<?= !empty($brand['show_trending_items']) ? '1' : '' ?>">
@@ -1231,7 +1235,9 @@ function selectSec(ev, key) {
     if (STUDIO_MODE === 'branding') return;
     if (ev) ev.stopPropagation();
     document.querySelectorAll('.st-sec').forEach(s => s.classList.remove('selected'));
-    const el = document.getElementById('sec' + key.charAt(0).toUpperCase() + key.slice(1));
+    let id = 'sec' + key.charAt(0).toUpperCase() + key.slice(1);
+    if (key === 'hero_banner' || key === 'heroBanner') id = 'secHeroBanner';
+    const el = document.getElementById(id);
     if (el && el.style.display !== 'none') el.classList.add('selected');
     placeFloatMenu();
 }
@@ -1261,8 +1267,10 @@ function openDrawer(kind) {
         if (el) el.classList.add('st-hidden');
     });
     const map = {
-        'edit-hero-banner': ['editHeroBanner', 'Edit Home Hero Banner'],
-        'theme-hero-banner': ['editHeroBanner', 'Edit Home Hero Banner'],
+        'edit-heroBanner': ['editHeroBanner', 'Hero Banner Slider'],
+        'theme-heroBanner': ['editHeroBanner', 'Hero Banner Slider'],
+        'edit-hero-banner': ['editHeroBanner', 'Hero Banner Slider'],
+        'theme-hero-banner': ['editHeroBanner', 'Hero Banner Slider'],
         'edit-category': ['editCategory', 'Edit Category Component'],
         'theme-category': ['themeCategory', 'Category Properties'],
         'edit-banner': ['editBanner', 'Edit Banner Component'],
@@ -1273,7 +1281,7 @@ function openDrawer(kind) {
         'theme-item': ['editItem', 'Edit Item Component'],
         'edit-header': ['editHeader', 'Edit Header Component']
     };
-    const cfg = map[kind] || map['edit-hero-banner'];
+    const cfg = map[kind] || map['edit-heroBanner'];
     const target = document.getElementById(cfg[0]);
     if (target) target.classList.remove('st-hidden');
     document.getElementById('layoutHeading').textContent = cfg[1];
@@ -1297,10 +1305,10 @@ function updateCanvasDisplayName(val) {
 }
 function menuAction(kind) {
     const selected = document.querySelector('.st-sec.selected');
-    const key = selected ? selected.dataset.sec : 'hero_banner';
+    const key = selected ? selected.dataset.sec : 'heroBanner';
     if (kind === 'edit' || kind === 'theme') {
-        if (key === 'hero_banner') {
-            openDrawer('edit-hero-banner');
+        if (key === 'heroBanner' || key === 'hero_banner') {
+            openDrawer('edit-heroBanner');
         } else if (key === 'category') {
             openDrawer(kind === 'edit' ? 'edit-category' : 'theme-category');
         } else if (key === 'banner') {
@@ -1315,15 +1323,7 @@ function menuAction(kind) {
     } else if (kind === 'rearrange') {
         openRearrange();
     } else if (kind === 'delete') {
-        if (key === 'hero_banner') {
-            const hSec = document.getElementById('secHeroBanner');
-            if (hSec) hSec.style.display = 'none';
-            const fHero = document.querySelector('input[name="show_home_hero_banner"]');
-            if (fHero) fHero.checked = false;
-            hideFloatMenu();
-        } else {
-            toggleSec(key, false);
-        }
+        toggleSec(key, false);
     }
 }
 const bannerColors = {
@@ -1523,8 +1523,14 @@ function onCanvasBg(ev) {
     document.getElementById('stAddPop').classList.remove('open');
 }
 function toggleSec(key, show) {
-    const el = document.getElementById('sec' + key.charAt(0).toUpperCase() + key.slice(1));
-    const flag = document.getElementById('flag' + key.charAt(0).toUpperCase() + key.slice(1));
+    let id = 'sec' + key.charAt(0).toUpperCase() + key.slice(1);
+    let flagId = 'flag' + key.charAt(0).toUpperCase() + key.slice(1);
+    if (key === 'heroBanner' || key === 'hero_banner') {
+        id = 'secHeroBanner';
+        flagId = 'flagHeroBanner';
+    }
+    const el = document.getElementById(id);
+    const flag = document.getElementById(flagId);
     if (el) el.style.display = show ? '' : 'none';
     if (flag) flag.value = show ? '1' : '';
     if (el) el.classList.remove('selected');
@@ -1543,7 +1549,9 @@ function openAddPop(btn) {
 }
 function moveSec(key, dir) {
     const wrap = document.getElementById('stSections');
-    const el = document.getElementById('sec' + key.charAt(0).toUpperCase() + key.slice(1));
+    let id = 'sec' + key.charAt(0).toUpperCase() + key.slice(1);
+    if (key === 'heroBanner' || key === 'hero_banner') id = 'secHeroBanner';
+    const el = document.getElementById(id);
     if (!wrap || !el) return;
     if (dir === 'down' && el.nextElementSibling) wrap.insertBefore(el.nextElementSibling, el);
     else if (dir === 'up' && el.previousElementSibling) wrap.insertBefore(el, el.previousElementSibling);
@@ -1556,7 +1564,7 @@ function syncOrder() {
 }
 function openRearrange() {
     const keys = [...document.querySelectorAll('#stSections .st-sec')].map(s => s.dataset.sec);
-    const labels = { category: 'All Categories', banner: 'Banners', trending: 'Top Trending Items', item: 'All Items' };
+    const labels = { heroBanner: 'Hero Banner Slider', category: 'All Categories', banner: 'Banners', trending: 'Top Trending Items', item: 'All Items' };
     window._ord = keys.slice();
     drawOrd();
     document.getElementById('rearrangeModal').classList.add('open');
@@ -1579,7 +1587,9 @@ function ordMove(i, d) {
 function applyRearrange() {
     const wrap = document.getElementById('stSections');
     window._ord.forEach(k => {
-        const el = document.getElementById('sec' + k.charAt(0).toUpperCase() + k.slice(1));
+        let id = 'sec' + k.charAt(0).toUpperCase() + k.slice(1);
+        if (k === 'heroBanner' || k === 'hero_banner') id = 'secHeroBanner';
+        const el = document.getElementById(id);
         if (el) wrap.appendChild(el);
     });
     syncOrder();
