@@ -1363,6 +1363,43 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-radius: 999px;
         }
 
+        .ms-confirm-modal-overlay {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 999999 !important;
+            background: rgba(15, 23, 42, 0.65) !important;
+            backdrop-filter: blur(4px) !important;
+            -webkit-backdrop-filter: blur(4px) !important;
+            display: none;
+            align-items: center !important;
+            justify-content: center !important;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+            padding: 16px !important;
+        }
+        .ms-confirm-modal-overlay.is-open {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            display: flex !important;
+        }
+        .ms-confirm-dialog {
+            background: #ffffff !important;
+            border-radius: 16px !important;
+            padding: 24px 22px 20px !important;
+            max-width: 380px !important;
+            width: 100% !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important;
+            transform: translateY(12px) scale(0.96);
+            transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+            box-sizing: border-box !important;
+            position: relative !important;
+            z-index: 1000000 !important;
+        }
+        .ms-confirm-modal-overlay.is-open .ms-confirm-dialog {
+            transform: translateY(0) scale(1) !important;
+        }
+
         /* Product Body & Typography Below the Image Box */
         .ms-product-body {
             padding: 16px 0 0 0 !important;
@@ -4933,6 +4970,8 @@ function openConfirmOrderModal() {
     if (modal) {
         modal.classList.add('is-open');
         modal.hidden = false;
+        modal.removeAttribute('hidden');
+        modal.style.display = 'flex';
         modal.setAttribute('aria-hidden', 'false');
     }
 }
@@ -4942,6 +4981,8 @@ function closeConfirmOrderModal() {
     if (modal) {
         modal.classList.remove('is-open');
         modal.hidden = true;
+        modal.setAttribute('hidden', '');
+        modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     }
     msCheckoutFormPending = null;
@@ -4969,6 +5010,8 @@ function openCancelOrderModal(orderId, orderNum) {
     if (modal) {
         modal.classList.add('is-open');
         modal.hidden = false;
+        modal.removeAttribute('hidden');
+        modal.style.display = 'flex';
         modal.setAttribute('aria-hidden', 'false');
     }
 }
@@ -4978,6 +5021,8 @@ function closeCancelOrderModal() {
     if (modal) {
         modal.classList.remove('is-open');
         modal.hidden = true;
+        modal.setAttribute('hidden', '');
+        modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     }
     msCancelOrderIdPending = null;

@@ -2541,9 +2541,10 @@ body.sf-auth-body {
 .ms-confirm-modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 99999;
-    background: rgba(15, 23, 42, 0.55);
+    z-index: 999999;
+    background: rgba(15, 23, 42, 0.65);
     backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2555,6 +2556,7 @@ body.sf-auth-body {
 .ms-confirm-modal-overlay.is-open {
     opacity: 1;
     pointer-events: auto;
+    display: flex !important;
 }
 .ms-confirm-dialog {
     background: #ffffff;
