@@ -1153,15 +1153,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         /* High-Converting Add to Cart Button Matching Reference */
         .ms-card-add-btn {
             width: 100% !important;
-            height: 46px !important;
-            min-height: 46px !important;
+            height: 52px !important;
+            min-height: 52px !important;
             padding: 0 16px !important;
             background: #f97316 !important;
             color: #ffffff !important;
             border: 1.5px solid #ea580c !important;
             border-radius: 8px !important;
-            font-size: 15px !important;
-            font-weight: 700 !important;
+            font-size: 16px !important;
+            font-weight: 800 !important;
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -1175,7 +1175,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
                         transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
                         box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
-            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.2) !important;
+            box-shadow: 0 2px 8px rgba(249, 115, 22, 0.22) !important;
             box-sizing: border-box !important;
         }
         .ms-card-add-btn::before {
@@ -1220,8 +1220,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             position: relative !important;
             z-index: 2 !important;
             transition: all 0.25s ease !important;
-            font-size: 15px !important;
-            font-weight: 700 !important;
+            font-size: 16px !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.01em !important;
         }
         .ms-card-add-btn:hover:not(:disabled) span {
             color: #ea580c !important;
