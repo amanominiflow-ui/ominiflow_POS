@@ -577,56 +577,89 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             }
         }
 
-        /* Storefront Modern Footer (Matching Design) */
+        /* Storefront Organic Wavy Footer */
+        .ms-footer-wave-wrap {
+            width: 100%;
+            overflow: hidden;
+            line-height: 0;
+            margin-top: 56px;
+            margin-bottom: -1px;
+            pointer-events: none;
+        }
+        .ms-footer-wave-svg {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 70px;
+        }
+        @media (max-width: 768px) {
+            .ms-footer-wave-svg {
+                height: 42px;
+            }
+        }
         .ms-footer {
             width: 100%;
-            background-color: <?= e($brand['footer_bg_color'] ?: '#ea580c') ?>;
+            background-color: <?= e($brand['footer_bg_color'] ?: '#0d3830') ?>;
             color: <?= e($brand['footer_text_color'] ?: '#ffffff') ?>;
-            padding: 56px 24px 32px;
-            margin-top: 48px;
+            padding: 36px 28px 28px;
             box-sizing: border-box;
             position: relative;
         }
         .ms-footer-wrap {
-            max-width: 1200px;
+            max-width: 1240px;
             margin: 0 auto;
         }
         .ms-footer-grid {
             display: grid;
-            grid-template-columns: 1.2fr 0.9fr 1.25fr;
-            gap: 48px 40px;
-            margin-bottom: 44px;
+            grid-template-columns: 1.35fr 0.9fr 1.05fr 1.3fr;
+            gap: 40px 36px;
+            margin-bottom: 36px;
         }
         .ms-footer-col-title {
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 13.5px;
+            font-weight: 800;
             color: inherit;
             margin: 0 0 18px 0;
-            letter-spacing: -0.01em;
-        }
-        .ms-footer-company-name {
-            font-size: 14px;
-            font-weight: 700;
-            line-height: 1.45;
+            letter-spacing: 0.07em;
             text-transform: uppercase;
-            letter-spacing: 0.02em;
-            margin-bottom: 14px;
-            color: inherit;
-        }
-        .ms-footer-company-addr {
-            font-size: 13.5px;
-            line-height: 1.6;
-            opacity: 0.92;
-            margin-bottom: 14px;
-            max-width: 340px;
-            color: inherit;
-        }
-        .ms-footer-company-gst {
-            font-size: 13px;
-            font-weight: 700;
             opacity: 0.95;
-            letter-spacing: 0.02em;
+        }
+        .ms-footer-brand-logo {
+            max-height: 46px;
+            max-width: 180px;
+            object-fit: contain;
+            margin-bottom: 14px;
+            display: block;
+        }
+        .ms-footer-brand-title {
+            font-size: 26px;
+            font-weight: 800;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            margin-bottom: 14px;
             color: inherit;
+        }
+        .ms-footer-about-text {
+            font-size: 13px;
+            line-height: 1.6;
+            opacity: 0.88;
+            margin-bottom: 16px;
+            max-width: 320px;
+            color: inherit;
+        }
+        .ms-footer-contact-info {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 13px;
+            opacity: 0.92;
+        }
+        .ms-footer-contact-info a {
+            color: inherit;
+            text-decoration: none;
+        }
+        .ms-footer-contact-info a:hover {
+            text-decoration: underline;
         }
         .ms-footer-nav-list {
             list-style: none;
@@ -634,14 +667,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             margin: 0;
             display: flex;
             flex-direction: column;
-            gap: 11px;
+            gap: 10px;
         }
         .ms-footer-nav-item a {
             color: inherit;
             text-decoration: none;
-            font-size: 13.5px;
+            font-size: 13px;
             font-weight: 500;
-            opacity: 0.9;
+            opacity: 0.85;
             transition: opacity 0.15s, transform 0.15s;
             display: inline-block;
         }
@@ -651,46 +684,48 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             transform: translateX(2px);
         }
         .ms-footer-news-desc {
-            font-size: 13.5px;
+            font-size: 13px;
             line-height: 1.5;
-            opacity: 0.92;
-            margin-bottom: 16px;
+            opacity: 0.88;
+            margin-bottom: 14px;
             color: inherit;
         }
         .ms-footer-news-form {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            max-width: 360px;
+            max-width: 340px;
         }
         .ms-footer-email-input {
             width: 100%;
-            border: 1.5px solid rgba(255,255,255,0.7);
-            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.45);
+            background: rgba(255,255,255,0.06);
             color: #ffffff;
-            border-radius: 6px;
-            padding: 11px 14px;
-            font-size: 14px;
+            border-radius: 4px;
+            padding: 10px 14px;
+            font-size: 13.5px;
             outline: none;
             box-sizing: border-box;
             transition: border-color 0.15s, background 0.15s;
         }
         .ms-footer-email-input:focus {
             border-color: #ffffff;
-            background: rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.15);
         }
         .ms-footer-email-input::placeholder {
-            color: rgba(255,255,255,0.75);
+            color: rgba(255,255,255,0.7);
         }
         .ms-footer-signup-btn {
-            width: 100%;
+            width: 120px;
             background: #ffffff;
-            color: <?= e($brand['footer_bg_color'] ?: '#ea580c') ?>;
-            font-size: 14.5px;
-            font-weight: 700;
+            color: <?= e($brand['footer_bg_color'] ?: '#0d3830') ?>;
+            font-size: 12.5px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
             border: none;
-            border-radius: 6px;
-            padding: 11px 20px;
+            border-radius: 4px;
+            padding: 10px 16px;
             cursor: pointer;
             transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
             text-align: center;
@@ -699,6 +734,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             opacity: 0.95;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .ms-footer-socials {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 14px;
+        }
+        .ms-footer-social-icon {
+            color: inherit;
+            opacity: 0.85;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s, transform 0.2s;
+            text-decoration: none;
+        }
+        .ms-footer-social-icon:hover {
+            opacity: 1;
+            transform: scale(1.15);
         }
         .ms-footer-disclaimer-wrap {
             display: flex;
@@ -709,27 +763,74 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         }
         .ms-footer-disclaimer-wrap input[type="checkbox"] {
             margin-top: 3px;
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
             accent-color: #ffffff;
             cursor: pointer;
             flex-shrink: 0;
         }
         .ms-footer-disclaimer-text {
-            font-size: 11.5px;
+            font-size: 11px;
             line-height: 1.45;
-            opacity: 0.88;
+            opacity: 0.82;
             color: inherit;
         }
-        .ms-footer-bottom {
-            border-top: 1px solid rgba(255,255,255,0.18);
-            padding-top: 24px;
-            text-align: center;
+        .ms-footer-bottom-bar {
+            border-top: 1px dashed rgba(255,255,255,0.22);
+            padding-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
             font-size: 12.5px;
-            opacity: 0.88;
-            font-weight: 500;
-            letter-spacing: 0.01em;
+            opacity: 0.9;
+        }
+        .ms-footer-payments-wrap {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .ms-footer-pay-badges {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            flex-wrap: wrap;
+        }
+        .ms-pay-badge {
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 22px;
+            letter-spacing: 0.02em;
+        }
+        .ms-footer-totop-btn {
+            background: rgba(255,255,255,0.1);
             color: inherit;
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .ms-footer-totop-btn:hover {
+            background: #ffffff;
+            color: <?= e($brand['footer_bg_color'] ?: '#0d3830') ?>;
+            border-color: #ffffff;
         }
 
         /* Floating WhatsApp Icon Widget */
@@ -771,24 +872,31 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             border-radius: 50%;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 992px) {
             .ms-footer-grid {
                 grid-template-columns: 1fr 1fr;
-            }
-            .ms-footer-grid > :nth-child(3) {
-                grid-column: 1 / -1;
+                gap: 32px;
             }
         }
         @media (max-width: 600px) {
             .ms-footer {
-                padding: 40px 20px 28px;
+                padding: 28px 18px 24px;
             }
             .ms-footer-grid {
                 grid-template-columns: 1fr;
-                gap: 32px;
+                gap: 28px;
             }
             .ms-footer-news-form {
                 max-width: 100%;
+            }
+            .ms-footer-bottom-bar {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 14px;
+            }
+            .ms-footer-payments-wrap {
+                width: 100%;
+                justify-content: space-between;
             }
             .ms-wa-floating-btn {
                 bottom: 82px;
@@ -3214,44 +3322,75 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
         $careWhatsapp = preg_replace('/[^0-9]/', '', (string)($brand['contact_whatsapp'] ?? $storeBiz['phone'] ?? ''));
         $showWhatsapp = !empty($brand['show_whatsapp_floating']) && ($careWhatsapp !== '');
         $waMsg = trim((string)($brand['whatsapp_floating_msg'] ?? 'Hi! I am browsing your online store and have a question.'));
+        $logoPath = $brand['logo_path'] ?? null;
+        $storeDisplayName = $brand['display_name'] ?: ($storeBiz['business_name'] ?? $pageTitle);
         ?>
+        <div class="ms-footer-wave-wrap" aria-hidden="true">
+            <svg class="ms-footer-wave-svg" viewBox="0 0 1440 90" preserveAspectRatio="none" fill="<?= e($brand['footer_bg_color'] ?: '#0d3830') ?>">
+                <path d="M0,38 C240,88 440,8 720,50 C1000,92 1200,14 1440,42 L1440,90 L0,90 Z"></path>
+            </svg>
+        </div>
         <footer class="ms-footer">
             <div class="ms-footer-wrap">
                 <div class="ms-footer-grid">
-                    <!-- Column 1: Company -->
-                    <div class="ms-footer-col">
-                        <h3 class="ms-footer-col-title">Company</h3>
-                        <div class="ms-footer-company-name"><?= e($companyName) ?></div>
-                        <?php if ($companyAddr !== ''): ?>
-                            <div class="ms-footer-company-addr"><?= nl2br(e($companyAddr)) ?></div>
+                    <!-- Column 1: Brand & Contact Info -->
+                    <div class="ms-footer-col ms-footer-col-brand">
+                        <?php if ($logoPath): ?>
+                            <img src="<?= asset($logoPath) ?>" alt="<?= e($storeDisplayName) ?>" class="ms-footer-brand-logo">
+                        <?php else: ?>
+                            <div class="ms-footer-brand-title"><?= e($storeDisplayName) ?></div>
                         <?php endif; ?>
-                        <?php if ($gstNo !== ''): ?>
-                            <div class="ms-footer-company-gst">GST No: <?= e($gstNo) ?></div>
-                        <?php endif; ?>
+                        <div class="ms-footer-about-text">
+                            <?= !empty($brand['about_us_content']) ? e(mb_substr(strip_tags($brand['about_us_content']), 0, 220)) : ('At ' . e($storeDisplayName) . ', we bring you a premium collection of carefully selected products, combining quality, value, and freshness for everyday living.') ?>
+                        </div>
+                        <div class="ms-footer-contact-info">
+                            <?php $fPhone = $brand['phone'] ?: ($storeBiz['phone'] ?? ''); ?>
+                            <?php if ($fPhone): ?>
+                                <div class="ms-footer-contact-line"><strong>Phone:</strong> <a href="tel:<?= e($fPhone) ?>"><?= e($fPhone) ?></a></div>
+                            <?php endif; ?>
+                            <?php $fEmail = $brand['customer_care_email'] ?: ($storeBiz['email'] ?? ''); ?>
+                            <?php if ($fEmail): ?>
+                                <div class="ms-footer-contact-line"><strong>Email:</strong> <a href="mailto:<?= e($fEmail) ?>"><?= e($fEmail) ?></a></div>
+                            <?php endif; ?>
+                            <?php if ($gstNo !== ''): ?>
+                                <div class="ms-footer-contact-line"><strong>GST:</strong> <?= e($gstNo) ?></div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
-                    <!-- Column 2: Quick links -->
+                    <!-- Column 2: Our Company -->
                     <div class="ms-footer-col">
-                        <h3 class="ms-footer-col-title">Quick links</h3>
+                        <h3 class="ms-footer-col-title">OUR COMPANY</h3>
                         <ul class="ms-footer-nav-list">
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'home')) ?>">Home</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'home')) ?>#items">All products</a></li>
                             <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'about')) ?>">About Us</a></li>
                             <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'contact')) ?>">Contact Us</a></li>
-                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'terms')) ?>">Terms of Service</a></li>
-                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'refund')) ?>">Refund policy</a></li>
-                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'privacy')) ?>">Privacy Policy</a></li>
                         </ul>
                     </div>
 
-                    <!-- Column 3: Subscribe to our emails -->
-                    <?php if ($showNewsletter): ?>
+                    <!-- Column 3: Customer Services -->
                     <div class="ms-footer-col">
-                        <h3 class="ms-footer-col-title"><?= e($newsTitle) ?></h3>
-                        <p class="ms-footer-news-desc"><?= e($newsSubtitle) ?></p>
+                        <h3 class="ms-footer-col-title">CUSTOMER SERVICES</h3>
+                        <ul class="ms-footer-nav-list">
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'privacy')) ?>">Privacy Policy</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'refund')) ?>">Refund Policy</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'terms')) ?>">Shipping Policy</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'terms')) ?>">Legal Notice</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'contact')) ?>">Contact Information</a></li>
+                            <li class="ms-footer-nav-item"><a href="<?= e(public_store_url($storeBiz, 'terms')) ?>">Terms of Service</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 4: Subscribe Our Newsletter -->
+                    <div class="ms-footer-col ms-footer-col-news">
+                        <h3 class="ms-footer-col-title"><?= strtoupper(e($newsTitle ?: 'SUBSCRIBE OUR NEWSLETTER')) ?></h3>
+                        <p class="ms-footer-news-desc"><?= e($newsSubtitle ?: 'Get updates on new launches, exclusive deals.') ?></p>
                         <form id="msFooterNewsletterForm" class="ms-footer-news-form" method="post" action="<?= e(public_store_url($storeBiz, $page, $_GET)) ?>" onsubmit="return submitFooterNewsletter(event);">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="subscribe_newsletter">
-                            <input type="email" name="email" class="ms-footer-email-input" placeholder="Email" required autocomplete="email">
-                            <button type="submit" class="ms-footer-signup-btn">Sign up</button>
+                            <input type="email" name="email" class="ms-footer-email-input" placeholder="Email address" required autocomplete="email">
+                            <button type="submit" class="ms-footer-signup-btn">SUBSCRIBE</button>
                             <?php if ($newsDisclaimer !== ''): ?>
                                 <label class="ms-footer-disclaimer-wrap">
                                     <input type="checkbox" required checked>
@@ -3260,13 +3399,39 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?php endif; ?>
                             <div id="msFooterNewsletterMsg" style="display:none;font-size:13px;font-weight:600;margin-top:6px;"></div>
                         </form>
+                        <div class="ms-footer-socials">
+                            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="ms-footer-social-icon" aria-label="Facebook">
+                                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M22.675 0h-21.35C.597 0 0 .597 0 1.325v21.351C0 23.403.597 24 1.325 24H12.82v-9.294H9.692v-3.622h3.128V8.413c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12V24h6.116c.73 0 1.323-.597 1.323-1.325V1.325C24 .597 23.403 0 22.675 0z"/></svg>
+                            </a>
+                            <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" class="ms-footer-social-icon" aria-label="Instagram">
+                                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                            </a>
+                            <?php if ($careWhatsapp): ?>
+                                <a href="https://wa.me/<?= e($careWhatsapp) ?>" target="_blank" rel="noopener noreferrer" class="ms-footer-social-icon" aria-label="WhatsApp">
+                                    <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.04 16.48c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31c-.82-1.3-1.26-2.82-1.26-4.38 0-4.54 3.7-8.24 8.25-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c.02 4.54-3.68 8.23-8.23 8.23zm4.52-6.17c-.25-.12-1.47-.72-1.7-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.79.97-.14.17-.29.19-.53.07-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43h-.47c-.17 0-.43.06-.66.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.54.12.17 1.73 2.65 4.2 3.71.59.25 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.12-.22-.19-.47-.31z"/></svg>
+                                </a>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                    <?php endif; ?>
                 </div>
 
-                <!-- Bottom Centered Copyright Bar -->
-                <div class="ms-footer-bottom">
-                    © <?= date('Y') ?>, <?= e($pageTitle) ?> Powered by <?= e($poweredBy) ?>
+                <!-- Bottom Bar with Dashed Divider & Payment Badges -->
+                <div class="ms-footer-bottom-bar">
+                    <div class="ms-footer-copy">
+                        © <?= date('Y') ?> <?= e($storeDisplayName) ?>. All Rights Reserved.
+                    </div>
+                    <div class="ms-footer-payments-wrap">
+                        <div class="ms-footer-pay-badges">
+                            <span class="ms-pay-badge ms-pay-gpay">GPay</span>
+                            <span class="ms-pay-badge ms-pay-phonepe">PhonePe</span>
+                            <span class="ms-pay-badge ms-pay-upi">UPI</span>
+                            <span class="ms-pay-badge ms-pay-paytm">Paytm</span>
+                            <span class="ms-pay-badge ms-pay-visa">VISA</span>
+                            <span class="ms-pay-badge ms-pay-rupay">RuPay</span>
+                            <span class="ms-pay-badge ms-pay-mc">Mastercard</span>
+                        </div>
+                        <button type="button" class="ms-footer-totop-btn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to Top" title="Back to top">↑</button>
+                    </div>
                 </div>
             </div>
         </footer>
