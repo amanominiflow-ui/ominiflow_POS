@@ -597,29 +597,23 @@ img {
 }
 
 /* ==========================================================================
-   PRODUCT ITEMS GRID - 4-Column Clean E-Commerce Architecture
+   PRODUCT ITEMS GRID - 3-Column Clean E-Commerce Architecture
    ========================================================================== */
 .ms-item-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
     margin-bottom: 48px;
     width: 100%;
     box-sizing: border-box;
 }
-@media (max-width: 1080px) {
+@media (max-width: 992px) {
     .ms-item-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 16px;
     }
 }
-@media (max-width: 768px) {
-    .ms-item-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-    }
-}
-@media (max-width: 480px) {
+@media (max-width: 640px) {
     .ms-item-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
@@ -629,7 +623,7 @@ img {
 .ms-product-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -644,13 +638,13 @@ img {
 }
 .ms-product-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.10);
     border-color: #cbd5e1;
 }
 
 .ms-product-img-wrap {
     width: 100%;
-    height: 310px;
+    height: 380px;
     background: #f8fafc;
     position: relative;
     overflow: hidden;
@@ -659,16 +653,23 @@ img {
     justify-content: center;
     text-decoration: none;
     border-bottom: 1px solid #f1f5f9;
-    padding: 8px;
+    padding: 14px;
+    box-sizing: border-box;
 }
-@media (max-width: 960px) {
+@media (max-width: 1280px) {
     .ms-product-img-wrap {
-        height: 260px;
+        height: 340px;
+    }
+}
+@media (max-width: 992px) {
+    .ms-product-img-wrap {
+        height: 290px;
+        padding: 10px;
     }
 }
 @media (max-width: 640px) {
     .ms-product-img-wrap {
-        height: 210px;
+        height: 200px;
         padding: 6px;
     }
 }
@@ -1096,9 +1097,9 @@ img {
     }
     .ms-item-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
+        gap: 16px;
     }
-    .ms-product-img-wrap { height: 160px; }
+    .ms-product-img-wrap { height: 300px; }
 }
 
 /* ==========================================================================

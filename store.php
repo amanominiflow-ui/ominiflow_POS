@@ -932,11 +932,60 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             font-weight: 700;
         }
 
-        /* Product Card Multi-Image Navigation & Arrows */
+        /* 3-Column Product Grid & Enlarged Image Architecture */
+        .ms-item-grid {
+            display: grid !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 24px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        @media (max-width: 992px) {
+            .ms-item-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 16px !important;
+            }
+        }
+        @media (max-width: 640px) {
+            .ms-item-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 10px !important;
+            }
+        }
+
+        .ms-product-card {
+            border-radius: 14px !important;
+        }
         .ms-product-img-wrap {
             position: relative !important;
-            overflow: hidden;
-            user-select: none;
+            overflow: hidden !important;
+            user-select: none !important;
+            height: 380px !important;
+            padding: 14px !important;
+            box-sizing: border-box !important;
+        }
+        @media (max-width: 1280px) {
+            .ms-product-img-wrap {
+                height: 340px !important;
+            }
+        }
+        @media (max-width: 992px) {
+            .ms-product-img-wrap {
+                height: 290px !important;
+                padding: 10px !important;
+            }
+        }
+        @media (max-width: 640px) {
+            .ms-product-img-wrap {
+                height: 200px !important;
+                padding: 6px !important;
+            }
+        }
+        .ms-product-img-wrap img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            object-position: center !important;
         }
         .ms-card-arrow {
             position: absolute;
