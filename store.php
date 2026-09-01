@@ -1065,6 +1065,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             overflow: hidden;
             word-break: break-word;
         }
+        /* Premium Add to Cart Button Animations */
         .ms-card-add-btn {
             width: 100%;
             margin-top: 10px;
@@ -1079,18 +1080,58 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 7px;
             cursor: pointer;
             text-decoration: none;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
             box-sizing: border-box;
         }
-        .ms-card-add-btn:hover {
-            opacity: 0.92;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+        .ms-card-add-btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -120%;
+            width: 80%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.30), transparent);
+            transform: skewX(-20deg);
+            transition: none;
+            pointer-events: none;
+        }
+        .ms-card-add-btn:hover:not(:disabled)::after {
+            left: 140%;
+            transition: left 0.75s ease-in-out;
+        }
+        .ms-card-add-btn:hover:not(:disabled) {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
             color: #ffffff;
+        }
+        .ms-card-add-btn:active:not(:disabled) {
+            transform: scale(0.96);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .ms-card-add-btn svg {
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .ms-card-add-btn:hover:not(:disabled) svg {
+            transform: scale(1.15) rotate(-6deg);
+            animation: msCartWiggle 0.6s ease-in-out infinite alternate;
+        }
+        @keyframes msCartWiggle {
+            0% { transform: scale(1.15) rotate(-6deg); }
+            100% { transform: scale(1.2) rotate(6deg) translateY(-1px); }
+        }
+        .ms-card-add-btn.is-success-pop {
+            animation: msPopBurst 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes msPopBurst {
+            0% { transform: scale(0.92); }
+            50% { transform: scale(1.06); }
+            100% { transform: scale(1); }
         }
         .ms-card-add-btn.is-disabled, .ms-card-add-btn:disabled {
             background: #f1f5f9 !important;
@@ -1098,6 +1139,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             cursor: not-allowed;
             box-shadow: none;
             transform: none;
+        }
+        .ms-card-add-btn.is-disabled::after, .ms-card-add-btn:disabled::after {
+            display: none;
         }
 
         /* PDP Gallery Multi-Image Carousel & Thumbnails */
@@ -3839,10 +3883,12 @@ function handleAjaxAddToCart(ev, form) {
             if (btn) {
                 var prevBg = btn.style.background;
                 btn.style.background = '#16a34a';
+                btn.classList.add('is-success-pop');
                 btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> <span>Added!</span>';
                 setTimeout(function() {
                     btn.disabled = false;
                     btn.style.background = prevBg;
+                    btn.classList.remove('is-success-pop');
                     btn.innerHTML = origHtml;
                 }, 1400);
             }
