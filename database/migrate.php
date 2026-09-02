@@ -1080,6 +1080,41 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
+    // 48. Consignment & COD Label Manifest Table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `consignment_manifests` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `tracking_number` VARCHAR(100) NOT NULL,
+            `product_name` VARCHAR(255) NULL,
+            `service_label` VARCHAR(100) NOT NULL DEFAULT 'SPEED POST',
+            `order_type` ENUM('Cash on Delivery', 'Prepaid') NOT NULL DEFAULT 'Cash on Delivery',
+            `cod_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            `sender_name` VARCHAR(255) NULL,
+            `sender_owner` VARCHAR(255) NULL,
+            `sender_address1` VARCHAR(255) NULL,
+            `sender_address2` VARCHAR(255) NULL,
+            `sender_state` VARCHAR(100) NULL,
+            `sender_pincode` VARCHAR(20) NULL,
+            `sender_mobile` VARCHAR(50) NULL,
+            `receiver_name` VARCHAR(255) NOT NULL,
+            `receiver_company` VARCHAR(255) NULL,
+            `receiver_address1` VARCHAR(255) NULL,
+            `receiver_address2` VARCHAR(255) NULL,
+            `receiver_city` VARCHAR(100) NULL,
+            `receiver_pincode` VARCHAR(20) NULL,
+            `receiver_state` VARCHAR(100) NULL,
+            `receiver_mobile` VARCHAR(50) NULL,
+            `thank_you_message` VARCHAR(255) NULL,
+            `footer_line` VARCHAR(255) NULL,
+            `print_count` INT UNSIGNED NOT NULL DEFAULT 1,
+            `status` VARCHAR(50) NOT NULL DEFAULT 'Manifested',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_consignment_tracking` (`tracking_number`),
+            INDEX `idx_consignment_date` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
     // 48. Payment Options / Tender Types Table (Zoho POS Parity)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `payment_options` (
