@@ -1,7 +1,8 @@
 <?php
 /**
  * OminiFlow POS - Public / Authenticated Products Sync API
- * Allows Omniflow to pull products, stock, prices, categories, images, and variants.
+ * Allows Omniflow to pull products, stock, prices, categories, images, and variants
+ * strictly filtered by the specific business/store to avoid cross-store leakage.
  */
 
 declare(strict_types=1);
@@ -31,41 +32,61 @@ try {
     exit;
 }
 
-$businessId = isset($_GET['business_id']) ? (int)$_GET['business_id'] : 1;
+$businessParam = isset($_GET['business_id']) ? trim((string)$_GET['business_id']) : '1';
 $limit = isset($_GET['limit']) ? min(1000, max(1, (int)$_GET['limit'])) : 500;
 $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
 
 try {
-    $stmt = $db->prepare('
-        SELECT p.*, c.name AS category_name, c.code AS category_code
-        FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
-        WHERE (p.business_id = :bid OR p.business_id IS NULL OR p.business_id = 0)
-          AND p.status = "active"
-        ORDER BY p.id ASC
-        LIMIT :lim OFFSET :off
-    ');
-    $stmt->bindValue(':bid', $businessId, PDO::PARAM_INT);
-    $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
-    $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-
-    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // If empty for specific business_id, fetch all active products
-    if (empty($products)) {
-        $stmtAll = $db->prepare('
-            SELECT p.*, c.name AS category_name, c.code AS category_code
+    if (is_numeric($businessParam) && (int)$businessParam > 0) {
+        $bid = (int)$businessParam;
+        $stmt = $db->prepare('
+            SELECT p.*, c.name AS category_name, c.code AS category_code, b.name AS business_name, b.store_slug
             FROM products p
             LEFT JOIN categories c ON c.id = p.category_id
-            WHERE p.status = "active"
+            LEFT JOIN businesses b ON b.id = p.business_id
+            WHERE p.business_id = :bid
+              AND p.status = "active"
             ORDER BY p.id ASC
             LIMIT :lim OFFSET :off
         ');
-        $stmtAll->bindValue(':lim', $limit, PDO::PARAM_INT);
-        $stmtAll->bindValue(':off', $offset, PDO::PARAM_INT);
-        $stmtAll->execute();
-        $products = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
+        $stmt->bindValue(':bid', $bid, PDO::PARAM_INT);
+        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $cntStmt = $db->prepare('SELECT COUNT(*) FROM products WHERE business_id = :bid AND status = "active"');
+        $cntStmt->bindValue(':bid', $bid, PDO::PARAM_INT);
+        $cntStmt->execute();
+        $totalCount = (int) $cntStmt->fetchColumn();
+    } else {
+        $stmt = $db->prepare('
+            SELECT p.*, c.name AS category_name, c.code AS category_code, b.name AS business_name, b.store_slug
+            FROM products p
+            LEFT JOIN categories c ON c.id = p.category_id
+            LEFT JOIN businesses b ON b.id = p.business_id
+            WHERE (b.store_slug = :bslug OR b.name = :bname)
+              AND p.status = "active"
+            ORDER BY p.id ASC
+            LIMIT :lim OFFSET :off
+        ');
+        $stmt->bindValue(':bslug', $businessParam, PDO::PARAM_STR);
+        $stmt->bindValue(':bname', $businessParam, PDO::PARAM_STR);
+        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $cntStmt = $db->prepare('
+            SELECT COUNT(*) 
+            FROM products p
+            JOIN businesses b ON b.id = p.business_id
+            WHERE (b.store_slug = :bslug OR b.name = :bname) AND p.status = "active"
+        ');
+        $cntStmt->bindValue(':bslug', $businessParam, PDO::PARAM_STR);
+        $cntStmt->bindValue(':bname', $businessParam, PDO::PARAM_STR);
+        $cntStmt->execute();
+        $totalCount = (int) $cntStmt->fetchColumn();
     }
 
     // Attach product variants if variants table exists
@@ -91,12 +112,9 @@ try {
         unset($p);
     }
 
-    $countStmt = $db->query('SELECT COUNT(*) FROM products WHERE status = "active"');
-    $totalCount = (int) $countStmt->fetchColumn();
-
     echo json_encode([
         'success' => true,
-        'business_id' => $businessId,
+        'business_id' => $businessParam,
         'total' => $totalCount,
         'count' => count($products),
         'products' => $products,
