@@ -177,10 +177,8 @@ function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, arr
     try {
         $db->beginTransaction();
 
-        $stmtCount = $db->prepare("SELECT COUNT(*) FROM stock_transfers WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtCount->execute(['bid' => $bid]);
-        $seq = (int)$stmtCount->fetchColumn() + 1;
-        $transferNumber = 'TRF-' . date('Ymd') . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+        require_once __DIR__ . '/orders_db.php';
+        $transferNumber = generate_unique_reference('stock_transfers', 'transfer_number', 'TRF-', $db);
 
         $stmtTrf = $db->prepare('
             INSERT INTO stock_transfers (business_id, transfer_number, source_warehouse_id, dest_warehouse_id, user_id, status, notes, created_at, updated_at)

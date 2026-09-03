@@ -22,10 +22,8 @@ function create_purchase_return(int $poId, array $items, string $refundMethod = 
 
         $vendorId = (int)$po['vendor_id'];
 
-        $stmtCount = $db->prepare("SELECT COUNT(*) FROM purchase_returns WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtCount->execute(['bid' => $bid]);
-        $seq = (int)$stmtCount->fetchColumn() + 1;
-        $returnNumber = 'PRET-' . date('Ymd') . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+        require_once __DIR__ . '/orders_db.php';
+        $returnNumber = generate_unique_reference('purchase_returns', 'return_number', 'PRET-', $db);
 
         $totalReturnAmount = 0.00;
         foreach ($items as $it) {
@@ -112,10 +110,8 @@ function record_vendor_payment(int $vendorId, float $amount, ?int $poId = null, 
     try {
         $db->beginTransaction();
 
-        $stmtCount = $db->prepare("SELECT COUNT(*) FROM vendor_payments WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtCount->execute(['bid' => $bid]);
-        $seq = (int)$stmtCount->fetchColumn() + 1;
-        $paymentNumber = 'VPAY-' . date('Ymd') . '-' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+        require_once __DIR__ . '/orders_db.php';
+        $paymentNumber = generate_unique_reference('vendor_payments', 'payment_number', 'VPAY-', $db);
 
         $stmtVP = $db->prepare('
             INSERT INTO vendor_payments (business_id, payment_number, vendor_id, purchase_order_id, user_id, amount, payment_method, transaction_ref, notes, status, created_at)

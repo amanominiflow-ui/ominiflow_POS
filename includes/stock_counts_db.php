@@ -43,10 +43,8 @@ function start_stock_count(int $userId, string $notes = '', ?int $businessId = n
     try {
         $db->beginTransaction();
 
-        $stmtCountNum = $db->prepare("SELECT COUNT(*) FROM stock_counts WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtCountNum->execute(['bid' => $bid]);
-        $seqToday = (int) $stmtCountNum->fetchColumn() + 1;
-        $countNumber = 'STK-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+        require_once __DIR__ . '/orders_db.php';
+        $countNumber = generate_unique_reference('stock_counts', 'count_number', 'STK-', $db);
 
         $stmtSC = $db->prepare('
             INSERT INTO stock_counts (business_id, count_number, user_id, status, notes, created_at)

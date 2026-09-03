@@ -129,10 +129,8 @@ function create_purchase_order(
         }
 
         // Generate PO Number (PO-YYYYMMDD-XXXX)
-        $stmtPOCount = $db->prepare("SELECT COUNT(*) FROM purchase_orders WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtPOCount->execute(['bid' => $bid]);
-        $seqToday = (int) $stmtPOCount->fetchColumn() + 1;
-        $poNumber = 'PO-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+        require_once __DIR__ . '/orders_db.php';
+        $poNumber = generate_unique_reference('purchase_orders', 'po_number', 'PO-', $db);
 
         $subtotal = 0.00;
         $totalTax = 0.00;

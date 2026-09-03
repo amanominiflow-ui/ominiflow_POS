@@ -16,101 +16,86 @@ function ensure_orders_invoices_schema(): void {
     $done = true;
     $db = get_db();
 
-    // 1. Invoices table - drop any single-column unique index on invoice_number
-    try {
-        $indexes = $db->query("SHOW INDEX FROM invoices")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($indexes as $idx) {
-            if ($idx['Key_name'] !== 'PRIMARY' && $idx['Column_name'] === 'invoice_number' && (int)$idx['Non_unique'] === 0) {
-                $kName = $idx['Key_name'];
-                if ($kName !== 'uk_business_invoice_number') {
-                    try {
-                        $db->exec("ALTER TABLE invoices DROP INDEX `{$kName}`");
-                    } catch (Exception $e) {}
-                }
-            }
-        }
-        $chk = $db->query("SHOW INDEX FROM invoices WHERE Key_name = 'uk_business_invoice_number'")->fetchAll();
-        if (empty($chk)) {
-            try {
-                $db->exec("ALTER TABLE invoices ADD UNIQUE KEY `uk_business_invoice_number` (`business_id`, `invoice_number`)");
-            } catch (Exception $e) {}
-        }
-    } catch (Exception $e) {}
+    $tablesAndCols = [
+        'invoices' => ['invoice_number', 'uk_business_invoice_number'],
+        'orders' => ['order_number', 'uk_business_order_number'],
+        'payments' => ['payment_number', 'uk_business_payment_number'],
+        'returns' => ['return_number', 'uk_business_return_number'],
+        'credit_notes' => ['credit_note_number', 'uk_business_credit_note_number'],
+        'purchase_orders' => ['po_number', 'uk_business_po_number'],
+        'vendor_payments' => ['payment_number', 'uk_business_vpay_number'],
+        'stock_transfers' => ['transfer_number', 'uk_business_trf_number'],
+        'stock_counts' => ['count_number', 'uk_business_stk_number'],
+    ];
 
-    // 2. Orders table - drop any single-column unique index on order_number
-    try {
-        $indexes = $db->query("SHOW INDEX FROM orders")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($indexes as $idx) {
-            if ($idx['Key_name'] !== 'PRIMARY' && $idx['Column_name'] === 'order_number' && (int)$idx['Non_unique'] === 0) {
-                $kName = $idx['Key_name'];
-                if ($kName !== 'uk_business_order_number') {
-                    try {
-                        $db->exec("ALTER TABLE orders DROP INDEX `{$kName}`");
-                    } catch (Exception $e) {}
+    foreach ($tablesAndCols as $tbl => $info) {
+        [$col, $ukName] = $info;
+        try {
+            $indexes = $db->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($indexes as $idx) {
+                if ($idx['Key_name'] !== 'PRIMARY' && $idx['Column_name'] === $col && (int)$idx['Non_unique'] === 0) {
+                    $kName = $idx['Key_name'];
+                    if ($kName !== $ukName) {
+                        try {
+                            $db->exec("ALTER TABLE `{$tbl}` DROP INDEX `{$kName}`");
+                        } catch (Exception $e) {}
+                    }
                 }
             }
-        }
-        $chk = $db->query("SHOW INDEX FROM orders WHERE Key_name = 'uk_business_order_number'")->fetchAll();
-        if (empty($chk)) {
-            try {
-                $db->exec("ALTER TABLE orders ADD UNIQUE KEY `uk_business_order_number` (`business_id`, `order_number`)");
-            } catch (Exception $e) {}
-        }
-    } catch (Exception $e) {}
+        } catch (Exception $e) {}
+    }
+}
 
-    // 3. Credit Notes table
+function generate_unique_reference(string $table, string $column, string $prefix, ?PDO $db = null): string {
+    ensure_orders_invoices_schema();
+    $db = $db ?: get_db();
+    $fullPrefix = $prefix . date('Ymd') . '-';
+
     try {
-        $indexes = $db->query("SHOW INDEX FROM credit_notes")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($indexes as $idx) {
-            if ($idx['Key_name'] !== 'PRIMARY' && $idx['Column_name'] === 'credit_note_number' && (int)$idx['Non_unique'] === 0) {
-                $kName = $idx['Key_name'];
-                if ($kName !== 'uk_business_credit_note_number') {
-                    try {
-                        $db->exec("ALTER TABLE credit_notes DROP INDEX `{$kName}`");
-                    } catch (Exception $e) {}
-                }
+        $stmt = $db->prepare("
+            SELECT `{$column}` FROM `{$table}` 
+            WHERE `{$column}` LIKE :prefix 
+            ORDER BY id DESC LIMIT 100
+        ");
+        $stmt->execute(['prefix' => $fullPrefix . '%']);
+        $recent = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $maxSeq = 0;
+        foreach ($recent as $val) {
+            $parts = explode('-', (string) $val);
+            $lastSeq = (int) end($parts);
+            if ($lastSeq > $maxSeq) {
+                $maxSeq = $lastSeq;
             }
         }
-    } catch (Exception $e) {}
+        $seq = max(1, $maxSeq + 1);
+
+        $chkStmt = $db->prepare("SELECT id FROM `{$table}` WHERE `{$column}` = :val LIMIT 1");
+        do {
+            $candidate = $fullPrefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+            $chkStmt->execute(['val' => $candidate]);
+            $exists = (int) $chkStmt->fetchColumn();
+            if ($exists > 0) {
+                $seq++;
+            }
+        } while ($exists > 0);
+
+        return $candidate;
+    } catch (Exception $e) {
+        return $fullPrefix . strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
+    }
 }
 
 function generate_next_invoice_number(int $businessId, ?PDO $db = null): string {
-    ensure_orders_invoices_schema();
-    $db = $db ?: get_db();
-    $prefix = 'INV-' . date('Ymd') . '-';
+    return generate_unique_reference('invoices', 'invoice_number', 'INV-', $db);
+}
 
-    // Find highest sequence today across all invoices to guarantee zero collisions
-    $stmt = $db->prepare("
-        SELECT invoice_number FROM invoices 
-        WHERE invoice_number LIKE :prefix
-        ORDER BY id DESC LIMIT 100
-    ");
-    $stmt->execute(['prefix' => $prefix . '%']);
-    $recent = $stmt->fetchAll(PDO::FETCH_COLUMN);
+function generate_next_payment_number(int $businessId, ?PDO $db = null): string {
+    return generate_unique_reference('payments', 'payment_number', 'PAY-', $db);
+}
 
-    $maxSeq = 0;
-    foreach ($recent as $inv) {
-        $parts = explode('-', (string) $inv);
-        $lastSeq = (int) end($parts);
-        if ($lastSeq > $maxSeq) {
-            $maxSeq = $lastSeq;
-        }
-    }
-
-    $seq = max(1, $maxSeq + 1);
-
-    // Guaranteed uniqueness check loop against entire invoices table
-    $chkStmt = $db->prepare("SELECT id FROM invoices WHERE invoice_number = :num LIMIT 1");
-    do {
-        $invNum = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-        $chkStmt->execute(['num' => $invNum]);
-        $exists = (int) $chkStmt->fetchColumn();
-        if ($exists > 0) {
-            $seq++;
-        }
-    } while ($exists > 0);
-
-    return $invNum;
+function generate_next_return_number(int $businessId, ?PDO $db = null): string {
+    return generate_unique_reference('returns', 'return_number', 'RET-', $db);
 }
 
 function generate_next_order_number(int $businessId, ?PDO $db = null): string {
@@ -857,10 +842,7 @@ function process_pos_order(
         $invoiceId = (int) $db->lastInsertId();
 
         // 8. Record in Centralized Payments table
-        $stmtPayCount = $db->prepare("SELECT COUNT(*) FROM payments WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtPayCount->execute(['bid' => $bid]);
-        $paySeq = (int) $stmtPayCount->fetchColumn() + 1;
-        $paymentNumber = 'PAY-' . date('Ymd') . '-' . str_pad((string)$paySeq, 4, '0', STR_PAD_LEFT);
+        $paymentNumber = generate_next_payment_number($bid, $db);
 
         // Check for active open register session
         $activeSessionId = null;
@@ -1533,10 +1515,7 @@ function process_pos_return(
         }
 
         // Generate Return Number
-        $stmtRetCount = $db->prepare("SELECT COUNT(*) FROM returns WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtRetCount->execute(['bid' => $bid]);
-        $seqToday = (int) $stmtRetCount->fetchColumn() + 1;
-        $returnNumber = 'RET-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+        $returnNumber = generate_next_return_number($bid, $db);
 
         // Find linked invoice ID
         $stmtInv = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id AND business_id = :bid LIMIT 1');
