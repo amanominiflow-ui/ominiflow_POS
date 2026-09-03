@@ -79,6 +79,10 @@ $items = $invoice['items'] ?? [];
 $isCancelled = ($invoice['invoice_status'] === 'cancelled');
 $autoPrint = isset($_GET['print']) || isset($_GET['download']);
 $isPublicView = !$isAdmin || isset($_GET['standalone']);
+$requestedSize = trim((string)($_GET['size'] ?? 'default'));
+if (!in_array($requestedSize, ['default', '4x3'], true)) {
+    $requestedSize = 'default';
+}
 $pageTitle = 'Invoice #' . $invoice['invoice_number'];
 
 // Helper: Amount in Indian Words
@@ -544,6 +548,123 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             margin-bottom: 4px;
         }
 
+        /* 4x3 INCH COMPACT LAYOUT STYLES (SCREEN PREVIEW) */
+        body.size-4x3 .inv-paper {
+            max-width: 4.4in;
+            width: 100%;
+            padding: 16px 18px;
+            font-size: 11px;
+            border-radius: 6px;
+        }
+        body.size-4x3 .inv-logo-header {
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+        }
+        body.size-4x3 .inv-logo-img {
+            max-height: 38px;
+            max-width: 160px;
+        }
+        body.size-4x3 .inv-logo-fallback {
+            font-size: 18px;
+        }
+        body.size-4x3 .inv-logo-icon {
+            width: 26px;
+            height: 26px;
+            font-size: 13px;
+        }
+        body.size-4x3 .inv-header-row {
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        body.size-4x3 .inv-seller-name {
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+        body.size-4x3 .inv-seller-meta {
+            font-size: 10px;
+            line-height: 1.35;
+        }
+        body.size-4x3 .inv-seller-gst {
+            font-size: 10px;
+            margin-top: 2px;
+        }
+        body.size-4x3 .inv-doc-title {
+            font-size: 15px;
+            margin-bottom: 3px;
+        }
+        body.size-4x3 .inv-meta-line {
+            font-size: 10px;
+            gap: 4px;
+        }
+        body.size-4x3 .inv-middle-row {
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            gap: 10px;
+        }
+        body.size-4x3 .inv-issued-title {
+            font-size: 10px;
+            margin-bottom: 1px;
+        }
+        body.size-4x3 .inv-cust-name {
+            font-size: 12.5px;
+        }
+        body.size-4x3 .inv-cust-address {
+            font-size: 10px;
+        }
+        body.size-4x3 .inv-package-block {
+            font-size: 10px;
+            padding: 4px 8px;
+        }
+        body.size-4x3 .inv-table {
+            margin-bottom: 12px;
+        }
+        body.size-4x3 .inv-table th {
+            padding: 6px 6px;
+            font-size: 9.5px;
+        }
+        body.size-4x3 .inv-table td {
+            padding: 5px 6px;
+            font-size: 10px;
+        }
+        body.size-4x3 .inv-summary-wrap {
+            margin-bottom: 14px;
+        }
+        body.size-4x3 .inv-summary-table {
+            min-width: 170px;
+            font-size: 10px;
+        }
+        body.size-4x3 .inv-summary-table td {
+            padding: 2px 4px;
+        }
+        body.size-4x3 .inv-total-box {
+            padding: 6px 8px;
+        }
+        body.size-4x3 .inv-total-title {
+            font-size: 12px;
+        }
+        body.size-4x3 .inv-total-amount {
+            font-size: 13px;
+        }
+        body.size-4x3 .inv-bottom-section {
+            gap: 12px;
+            margin-top: 14px;
+            padding-top: 6px;
+        }
+        body.size-4x3 .inv-bank-box {
+            font-size: 9.5px;
+            line-height: 1.4;
+        }
+        body.size-4x3 .inv-bank-heading {
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        body.size-4x3 .inv-policy-box {
+            margin-top: 12px;
+            padding-top: 8px;
+            font-size: 9px;
+            line-height: 1.35;
+        }
+
         /* Print Media Styling for Clean A4 */
         @media print {
             @page {
@@ -588,10 +709,84 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             .inv-total-box {
                 border: 2px solid #000000 !important;
             }
+
+            /* 4x3 Specific Print Rules */
+            body.size-4x3 .inv-paper {
+                width: 4in !important;
+                max-width: 4in !important;
+                padding: 2mm 3mm !important;
+                font-size: 8.5px !important;
+            }
+            body.size-4x3 .inv-logo-header {
+                margin-bottom: 4px !important;
+                padding-bottom: 2px !important;
+            }
+            body.size-4x3 .inv-logo-img {
+                max-height: 26px !important;
+            }
+            body.size-4x3 .inv-seller-name {
+                font-size: 11px !important;
+            }
+            body.size-4x3 .inv-seller-meta {
+                font-size: 7.5px !important;
+            }
+            body.size-4x3 .inv-seller-gst {
+                font-size: 7.5px !important;
+            }
+            body.size-4x3 .inv-doc-title {
+                font-size: 12px !important;
+            }
+            body.size-4x3 .inv-meta-line {
+                font-size: 8px !important;
+            }
+            body.size-4x3 .inv-cust-name {
+                font-size: 9.5px !important;
+            }
+            body.size-4x3 .inv-cust-address {
+                font-size: 7.5px !important;
+            }
+            body.size-4x3 .inv-table th {
+                padding: 2px 3px !important;
+                font-size: 7.5px !important;
+            }
+            body.size-4x3 .inv-table td {
+                padding: 2px 3px !important;
+                font-size: 8px !important;
+            }
+            body.size-4x3 .inv-summary-table td {
+                padding: 1px 2px !important;
+                font-size: 8px !important;
+            }
+            body.size-4x3 .inv-total-box {
+                padding: 3px 4px !important;
+            }
+            body.size-4x3 .inv-total-title {
+                font-size: 9px !important;
+            }
+            body.size-4x3 .inv-total-amount {
+                font-size: 10px !important;
+            }
+            body.size-4x3 .inv-bank-box {
+                font-size: 7.5px !important;
+                line-height: 1.25 !important;
+            }
+            body.size-4x3 .inv-policy-box {
+                margin-top: 6px !important;
+                padding-top: 4px !important;
+                font-size: 7px !important;
+                line-height: 1.2 !important;
+            }
         }
     </style>
+    <style id="dynamicPageSizeStyle">
+        <?php if ($requestedSize === '4x3'): ?>
+            @media print { @page { size: 4in 3in; margin: 3mm 3mm; } }
+        <?php else: ?>
+            @media print { @page { size: A4 portrait; margin: 12mm 10mm; } }
+        <?php endif; ?>
+    </style>
 </head>
-<body>
+<body class="<?= $requestedSize === '4x3' ? 'size-4x3' : '' ?>">
 
 <?php if ($isAdmin && !$isPublicView): ?>
     <div class="app-layout">
@@ -621,7 +816,19 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             </span>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <!-- Page Size Selector (Default A4 vs 4x3 inch) -->
+            <div class="inv-size-selector-wrap" style="display: inline-flex; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px 10px;">
+                <label for="invPageSizeSelect" style="font-size: 12px; font-weight: 700; color: #475569; margin: 0; white-space: nowrap; display: flex; align-items: center; gap: 4px;">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                    Page Size:
+                </label>
+                <select id="invPageSizeSelect" onchange="switchInvoiceSize(this.value)" style="font-size: 12.5px; font-weight: 700; color: #0f172a; border: none; background: transparent; cursor: pointer; outline: none;">
+                    <option value="default" <?= $requestedSize !== '4x3' ? 'selected' : '' ?>>📄 Default (A4)</option>
+                    <option value="4x3" <?= $requestedSize === '4x3' ? 'selected' : '' ?>>🏷️ 4x3 inch</option>
+                </select>
+            </div>
+
             <!-- Print Button -->
             <button type="button" class="inv-btn inv-btn-primary" onclick="window.print();">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
@@ -843,6 +1050,35 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
 <?php endif; ?>
 
 <script>
+    function switchInvoiceSize(size) {
+        const is4x3 = (size === '4x3');
+        document.body.classList.toggle('size-4x3', is4x3);
+        const select = document.getElementById('invPageSizeSelect');
+        if (select) select.value = size;
+
+        // Update URL query parameter without full reload
+        const url = new URL(window.location.href);
+        if (size === '4x3') {
+            url.searchParams.set('size', '4x3');
+        } else {
+            url.searchParams.delete('size');
+        }
+        window.history.replaceState({}, '', url.toString());
+
+        // Update dynamic page size CSS rule for printing
+        let dynStyle = document.getElementById('dynamicPageSizeStyle');
+        if (!dynStyle) {
+            dynStyle = document.createElement('style');
+            dynStyle.id = 'dynamicPageSizeStyle';
+            document.head.appendChild(dynStyle);
+        }
+        if (is4x3) {
+            dynStyle.innerHTML = '@media print { @page { size: 4in 3in; margin: 3mm 3mm; } }';
+        } else {
+            dynStyle.innerHTML = '@media print { @page { size: A4 portrait; margin: 12mm 10mm; } }';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         <?php if ($autoPrint): ?>
             setTimeout(() => window.print(), 350);
@@ -858,8 +1094,5 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
         if (dismissCancelBtn && cancelModal) dismissCancelBtn.addEventListener('click', () => cancelModal.classList.remove('open'));
     });
 </script>
-</body>
-</html>   });
-    </script>
 </body>
 </html>
