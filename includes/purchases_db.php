@@ -147,13 +147,52 @@ function create_purchase_order(
             $qty = (int) ($item['quantity'] ?? 0);
             $unitCost = (float) ($item['unit_cost'] ?? 0.00);
             $taxPercent = (float) ($item['tax_percent'] ?? 0.00);
+            $pName = trim((string)($item['product_name'] ?? ''));
+            $pSku = trim((string)($item['product_sku'] ?? ''));
 
             if ($qty <= 0) continue;
 
-            $stmtP = $db->prepare('SELECT name, sku FROM products WHERE id = :id AND business_id = :bid');
-            $stmtP->execute(['id' => $productId, 'bid' => $bid]);
-            $p = $stmtP->fetch();
-            if (!$p) throw new Exception("Product ID {$productId} not found.");
+            if ($productId > 0) {
+                $stmtP = $db->prepare('SELECT name, sku FROM products WHERE id = :id AND business_id = :bid');
+                $stmtP->execute(['id' => $productId, 'bid' => $bid]);
+                $p = $stmtP->fetch();
+                if ($p) {
+                    $pName = $p['name'];
+                    $pSku = $p['sku'];
+                }
+            }
+
+            if ($pName === '') {
+                $pName = 'Ordered Item #' . (count($processedItems) + 1);
+            }
+            if ($pSku === '') {
+                $pSku = 'SKU-' . strtoupper(substr(uniqid(), -6));
+            }
+
+            if ($productId <= 0) {
+                $stmtCatId = $db->prepare('SELECT id FROM categories WHERE business_id = :bid LIMIT 1');
+                $stmtCatId->execute(['bid' => $bid]);
+                $catId = (int)$stmtCatId->fetchColumn() ?: 1;
+
+                $stmtInsProd = $db->prepare('
+                    INSERT INTO products (
+                        business_id, category_id, name, sku, barcode, cost_price, selling_price,
+                        stock_quantity, status, created_at, updated_at
+                    ) VALUES (
+                        :biz_id, :cat_id, :name, :sku, :barcode, :cost, :price, 0, "active", NOW(), NOW()
+                    )
+                ');
+                $stmtInsProd->execute([
+                    'biz_id' => $bid,
+                    'cat_id' => $catId,
+                    'name' => $pName,
+                    'sku' => $pSku,
+                    'barcode' => $pSku,
+                    'cost' => $unitCost,
+                    'price' => round($unitCost * 1.3, 2),
+                ]);
+                $productId = (int)$db->lastInsertId();
+            }
 
             $lineSubtotal = round($unitCost * $qty, 2);
             $lineTax = round(($lineSubtotal * $taxPercent) / 100, 2);
@@ -164,8 +203,8 @@ function create_purchase_order(
 
             $processedItems[] = [
                 'product_id' => $productId,
-                'product_name' => $p['name'],
-                'product_sku' => $p['sku'],
+                'product_name' => $pName,
+                'product_sku' => $pSku,
                 'unit_cost' => $unitCost,
                 'quantity_ordered' => $qty,
                 'tax_percent' => $taxPercent,

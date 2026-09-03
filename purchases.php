@@ -90,6 +90,14 @@ $search = trim($_GET['search'] ?? '');
 $status = trim($_GET['status'] ?? '');
 $purchaseOrders = get_purchase_orders($search, $status);
 $vendors = get_vendors();
+if (empty($vendors)) {
+    save_vendor([
+        'name' => 'General Wholesale Vendor',
+        'company_name' => 'Main Supplier Hub',
+        'payment_terms' => 'Net 30'
+    ]);
+    $vendors = get_vendors();
+}
 $products = get_products();
 
 $flashSuccess = get_flash('success');
@@ -102,6 +110,64 @@ $flashError = get_flash('error');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
     <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
+    <style>
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.6);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-overlay.open, .modal-overlay.show, .modal-overlay.active {
+            display: flex !important;
+        }
+        .modal-box {
+            background: #ffffff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 680px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+        }
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+        }
+        .modal-close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            line-height: 1;
+            color: #64748b;
+            cursor: pointer;
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            padding: 14px 20px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            background: #f8fafc;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+    </style>
 </head>
 <body>
     <div class="app-layout">
@@ -146,7 +212,7 @@ $flashError = get_flash('error');
                     <div class="section-card" style="padding: 40px 30px; text-align: center; margin-bottom: 24px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
                         <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">Start Managing Your Purchase Activities!</h2>
                         <p style="color: #64748b; font-size: 14px; max-width: 500px; margin: 0 auto 24px;">Create, customize, and send professional Purchase Orders to your vendors.</p>
-                        <button type="button" class="header-btn" onclick="document.getElementById('createPOModal').classList.add('show')" style="padding: 12px 28px; font-size: 14px; font-weight: 700; background: #3b82f6; border-color: #3b82f6;">
+                        <button type="button" class="header-btn" onclick="openCreatePOModal()" style="padding: 12px 28px; font-size: 14px; font-weight: 700; background: #3b82f6; border-color: #3b82f6; cursor: pointer;">
                             CREATE NEW PURCHASE ORDER
                         </button>
 
@@ -373,21 +439,32 @@ $flashError = get_flash('error');
     <script src="<?= asset('assets/js/dashboard.js') ?>"></script>
     <script>
         const productsCatalog = <?= json_encode($products) ?>;
-
         const poModal = document.getElementById('createPOModal');
         const openPOBtn = document.getElementById('openCreatePOBtn');
-        if (openPOBtn) openPOBtn.addEventListener('click', () => {
-            poModal.classList.add('open');
-            if (document.querySelectorAll('.po-line-row').length === 0) addPOLine();
-        });
         const closePOBtn = document.getElementById('closeCreatePOModal');
-        if (closePOBtn) closePOBtn.addEventListener('click', () => poModal.classList.remove('open'));
         const cancelPOBtn = document.getElementById('cancelCreatePOModal');
-        if (cancelPOBtn) cancelPOBtn.addEventListener('click', () => poModal.classList.remove('open'));
+
+        function openCreatePOModal() {
+            if (poModal) {
+                poModal.classList.add('open');
+                poModal.classList.add('show');
+                if (document.querySelectorAll('.po-line-row').length === 0) addPOLine();
+            }
+        }
+
+        function closeCreatePOModal() {
+            if (poModal) {
+                poModal.classList.remove('open');
+                poModal.classList.remove('show');
+            }
+        }
+
+        if (openPOBtn) openPOBtn.addEventListener('click', openCreatePOModal);
+        if (closePOBtn) closePOBtn.addEventListener('click', closeCreatePOModal);
+        if (cancelPOBtn) cancelPOBtn.addEventListener('click', closeCreatePOModal);
 
         if (window.location.search.includes('action=new')) {
-            poModal.classList.add('open');
-            if (document.querySelectorAll('.po-line-row').length === 0) addPOLine();
+            openCreatePOModal();
         }
 
         const poLinesContainer = document.getElementById('poLinesContainer');
@@ -403,7 +480,7 @@ $flashError = get_flash('error');
             div.style.marginBottom = '8px';
             div.style.alignItems = 'center';
 
-            let optionsHtml = '';
+            let optionsHtml = '<option value="0">-- Custom / New Product --</option>';
             productsCatalog.forEach(p => {
                 optionsHtml += `<option value="${p.id}" data-cost="${p.cost_price}" data-tax="${p.tax_percent}">${escapeHtml(p.name)} (Cost: ₹${p.cost_price})</option>`;
             });
@@ -411,13 +488,14 @@ $flashError = get_flash('error');
             div.innerHTML = `
                 <select class="form-control po-prod-select">${optionsHtml}</select>
                 <input type="number" min="1" value="10" placeholder="Qty" class="form-control po-qty-input">
-                <input type="number" step="0.01" value="${productsCatalog[0] ? productsCatalog[0].cost_price : '0.00'}" placeholder="Unit Cost" class="form-control po-cost-input">
+                <input type="number" step="0.01" value="${productsCatalog[0] ? productsCatalog[0].cost_price : '100.00'}" placeholder="Unit Cost" class="form-control po-cost-input">
                 <button type="button" style="background:none; border:none; color:#ef4444; font-size:18px; cursor:pointer;" onclick="this.parentElement.remove();">&times;</button>
             `;
 
             div.querySelector('.po-prod-select').addEventListener('change', function() {
                 const opt = this.options[this.selectedIndex];
-                div.querySelector('.po-cost-input').value = opt.getAttribute('data-cost') || '0.00';
+                const cost = opt.getAttribute('data-cost');
+                if (cost) div.querySelector('.po-cost-input').value = cost;
             });
 
             poLinesContainer.appendChild(div);
@@ -432,13 +510,23 @@ $flashError = get_flash('error');
             document.querySelectorAll('.po-line-row').forEach(row => {
                 const sel = row.querySelector('.po-prod-select');
                 const opt = sel.options[sel.selectedIndex];
+                const prodId = parseInt(sel.value, 10);
                 items.push({
-                    product_id: parseInt(sel.value, 10),
+                    product_id: prodId > 0 ? prodId : null,
+                    product_name: opt.text.split(' (')[0],
+                    product_sku: 'SKU-' + Math.floor(1000 + Math.random() * 9000),
                     quantity: parseInt(row.querySelector('.po-qty-input').value, 10) || 1,
                     unit_cost: parseFloat(row.querySelector('.po-cost-input').value) || 0,
                     tax_percent: parseFloat(opt.getAttribute('data-tax')) || 0,
                 });
             });
+
+            if (items.length === 0) {
+                alert('Please add at least one product item to the purchase order.');
+                e.preventDefault();
+                return;
+            }
+
             document.getElementById('poItemsJson').value = JSON.stringify(items);
         });
 
@@ -446,20 +534,7 @@ $flashError = get_flash('error');
         document.querySelectorAll('.receive-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const poId = this.getAttribute('data-id');
-                const qty = prompt("Enter total units to receive for this PO:", "10");
-                if (qty && parseInt(qty, 10) > 0) {
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '<?= asset('purchases.php') ?>';
-                    form.innerHTML = `
-                        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                        <input type="hidden" name="action" value="receive_goods">
-                        <input type="hidden" name="po_id" value="${poId}">
-                        <input type="hidden" name="receiving_json" value='[{"po_item_id": 1, "quantity_to_receive": ${parseInt(qty, 10)}}]'>
-                    `;
-                    document.body.appendChild(form);
-                    form.submit();
-                }
+                window.location.href = '<?= asset('purchase-receives.php') ?>?po_id=' + poId;
             });
         });
     </script>

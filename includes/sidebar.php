@@ -454,10 +454,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('orders.php') ?>" class="submenu-link <?= $currentPage === 'orders.php' ? 'active' : '' ?>">Orders</a>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-                            <a href="<?= asset('invoices.php') ?>" class="submenu-link <?= in_array($currentPage, ['invoices.php', 'invoice-view.php', 'invoice-create.php'], true) ? 'active' : '' ?>" style="flex: 1;">Invoices</a>
-                            <a href="<?= asset('invoice-create.php') ?>" class="sidebar-quick-add-btn" title="Create New Invoice">+</a>
-                        </div>
+                        <a href="<?= asset('invoices.php') ?>" class="submenu-link <?= in_array($currentPage, ['invoices.php', 'invoice-view.php', 'invoice-create.php'], true) ? 'active' : '' ?>">Invoices</a>
                         <a href="<?= asset('fulfillment.php') ?>" class="submenu-link <?= $currentPage === 'fulfillment.php' ? 'active' : '' ?>">Shipments</a>
                         <a href="<?= asset('returns.php') ?>" class="submenu-link <?= $currentPage === 'returns.php' ? 'active' : '' ?>">Returns</a>
                         <a href="<?= asset('consignment-manifest.php') ?>" class="submenu-link <?= $currentPage === 'consignment-manifest.php' ? 'active' : '' ?>">Consignment &amp; COD Label Manifest</a>
@@ -481,19 +478,10 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('vendors.php') ?>" class="submenu-link <?= $currentPage === 'vendors.php' ? 'active' : '' ?>">Vendors</a>
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
-                            <a href="<?= asset('purchases.php') ?>" class="submenu-link <?= $currentPage === 'purchases.php' ? 'active' : '' ?>" style="flex: 1;">Purchase Orders</a>
-                            <a href="<?= asset('purchases.php?action=new') ?>" title="New Purchase Order" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
-                        </div>
+                        <a href="<?= asset('purchases.php') ?>" class="submenu-link <?= $currentPage === 'purchases.php' ? 'active' : '' ?>">Purchase Orders</a>
                         <a href="<?= asset('purchase-receives.php') ?>" class="submenu-link <?= $currentPage === 'purchase-receives.php' ? 'active' : '' ?>">Purchase Receives</a>
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
-                            <a href="<?= asset('bills.php') ?>" class="submenu-link <?= $currentPage === 'bills.php' ? 'active' : '' ?>" style="flex: 1;">Bills</a>
-                            <a href="<?= asset('bills.php?action=new') ?>" title="New Bill" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
-                        </div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
-                            <a href="<?= asset('payments-made.php') ?>" class="submenu-link <?= $currentPage === 'payments-made.php' ? 'active' : '' ?>" style="flex: 1;">Payments Made</a>
-                            <a href="<?= asset('payments-made.php?action=new') ?>" title="New Payment" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
-                        </div>
+                        <a href="<?= asset('bills.php') ?>" class="submenu-link <?= $currentPage === 'bills.php' ? 'active' : '' ?>">Bills</a>
+                        <a href="<?= asset('payments-made.php') ?>" class="submenu-link <?= $currentPage === 'payments-made.php' ? 'active' : '' ?>">Payments Made</a>
                         <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Vendor Credits</a>
                     </div>
                 </div>
