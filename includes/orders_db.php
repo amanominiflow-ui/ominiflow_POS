@@ -21,11 +21,20 @@ function ensure_orders_invoices_schema(): void {
         'orders' => ['order_number', 'uk_business_order_number'],
         'payments' => ['payment_number', 'uk_business_payment_number'],
         'returns' => ['return_number', 'uk_business_return_number'],
+        'customer_returns' => ['return_number', 'uk_business_creturn_number'],
         'credit_notes' => ['credit_note_number', 'uk_business_credit_note_number'],
         'purchase_orders' => ['po_number', 'uk_business_po_number'],
+        'purchase_returns' => ['return_number', 'uk_business_preturn_number'],
         'vendor_payments' => ['payment_number', 'uk_business_vpay_number'],
         'stock_transfers' => ['transfer_number', 'uk_business_trf_number'],
         'stock_counts' => ['count_number', 'uk_business_stk_number'],
+        'categories' => ['code', 'uk_business_cat_code'],
+        'tax_rates' => ['code', 'uk_business_tax_code'],
+        'price_lists' => ['code', 'uk_business_plist_code'],
+        'coupons' => ['code', 'uk_business_coupon_code'],
+        'promotions' => ['code', 'uk_business_promo_code'],
+        'products' => ['sku', 'uk_business_sku'],
+        'product_variants' => ['sku', 'uk_business_var_sku'],
     ];
 
     foreach ($tablesAndCols as $tbl => $info) {
