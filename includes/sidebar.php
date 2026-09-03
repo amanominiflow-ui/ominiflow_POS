@@ -72,7 +72,7 @@ if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', '
 // Active sub-groups mapping for Business tab (Single Active Group at a time)
 $inventoryPages = ['products.php', 'product-create.php', 'product-edit.php', 'categories.php', 'stock-count.php', 'inventory.php', 'outlets.php', 'transfers.php', 'barcode-print.php'];
 $salesPages = ['orders.php', 'invoices.php', 'invoice-view.php', 'invoice-create.php', 'fulfillment.php', 'returns.php', 'consignment-manifest.php'];
-$purchasesPages = ['vendors.php', 'purchases.php', 'purchase-returns.php'];
+$purchasesPages = ['vendors.php', 'purchases.php', 'purchase-receives.php', 'bills.php', 'payments-made.php', 'purchase-returns.php'];
 $customersPages = ['customers.php', 'promotions.php'];
 $documentsPages = ['import-export.php', 'settings.php'];
 
@@ -481,7 +481,19 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('vendors.php') ?>" class="submenu-link <?= $currentPage === 'vendors.php' ? 'active' : '' ?>">Vendors</a>
-                        <a href="<?= asset('purchases.php') ?>" class="submenu-link <?= $currentPage === 'purchases.php' ? 'active' : '' ?>">Purchase Orders</a>
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
+                            <a href="<?= asset('purchases.php') ?>" class="submenu-link <?= $currentPage === 'purchases.php' ? 'active' : '' ?>" style="flex: 1;">Purchase Orders</a>
+                            <a href="<?= asset('purchases.php?action=new') ?>" title="New Purchase Order" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
+                        </div>
+                        <a href="<?= asset('purchase-receives.php') ?>" class="submenu-link <?= $currentPage === 'purchase-receives.php' ? 'active' : '' ?>">Purchase Receives</a>
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
+                            <a href="<?= asset('bills.php') ?>" class="submenu-link <?= $currentPage === 'bills.php' ? 'active' : '' ?>" style="flex: 1;">Bills</a>
+                            <a href="<?= asset('bills.php?action=new') ?>" title="New Bill" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
+                            <a href="<?= asset('payments-made.php') ?>" class="submenu-link <?= $currentPage === 'payments-made.php' ? 'active' : '' ?>" style="flex: 1;">Payments Made</a>
+                            <a href="<?= asset('payments-made.php?action=new') ?>" title="New Payment" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 2px 6px; border-radius: 4px; font-weight: bold;">+</a>
+                        </div>
                         <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Vendor Credits</a>
                     </div>
                 </div>

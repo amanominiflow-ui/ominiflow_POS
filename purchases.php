@@ -73,6 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', $res['error'] ?? 'Could not receive goods.');
         }
         redirect(APP_URL . '/purchases.php');
+    } elseif ($action === 'convert_to_bill') {
+        $poId = (int) ($_POST['po_id'] ?? 0);
+        $res = convert_po_to_bill($poId, date('Y-m-d'), date('Y-m-d', strtotime('+30 days')), '', $userId);
+        if ($res['success']) {
+            set_flash('success', "Purchase Order converted to Bill #{$res['bill_number']} successfully! Total: ₹" . number_format($res['total_amount'], 2));
+            redirect(APP_URL . '/bills.php');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not convert to bill.');
+            redirect(APP_URL . '/purchases.php');
+        }
     }
 }
 
@@ -103,13 +113,16 @@ $flashError = get_flash('error');
             <main class="dashboard-content">
                 <div class="page-header-row">
                     <div>
-                        <h1 class="page-title">Purchase Orders & Stock Receiving</h1>
-                        <p class="page-subtitle">Create procurement orders for vendors and receive goods with automatic inventory stock-in and audit logs.</p>
+                        <h1 class="page-title">All Purchase Orders</h1>
+                        <p class="page-subtitle">Create procurement orders for vendors, receive goods, and convert to vendor bills.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
+                        <a href="<?= asset('purchase-receives.php') ?>" class="btn-secondary" style="padding: 10px 16px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+                            <span>📦 In Transit Receives</span>
+                        </a>
                         <button type="button" class="header-btn" id="openCreatePOBtn" style="padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px;">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
-                            <span>Create Purchase Order</span>
+                            <span>+ New Purchase Order</span>
                         </button>
                     </div>
                 </div>
@@ -125,6 +138,54 @@ $flashError = get_flash('error');
                     <div class="saas-alert saas-alert-danger">
                         <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         <span><?= e($flashError) ?></span>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (empty($purchaseOrders) && $search === '' && $status === ''): ?>
+                    <!-- LIFECYCLE BANNER MATCHING SCREENSHOT 2 -->
+                    <div class="section-card" style="padding: 40px 30px; text-align: center; margin-bottom: 24px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">Start Managing Your Purchase Activities!</h2>
+                        <p style="color: #64748b; font-size: 14px; max-width: 500px; margin: 0 auto 24px;">Create, customize, and send professional Purchase Orders to your vendors.</p>
+                        <button type="button" class="header-btn" onclick="document.getElementById('createPOModal').classList.add('show')" style="padding: 12px 28px; font-size: 14px; font-weight: 700; background: #3b82f6; border-color: #3b82f6;">
+                            CREATE NEW PURCHASE ORDER
+                        </button>
+
+                        <div style="margin-top: 40px; padding-top: 30px; border-top: 1px solid #f1f5f9;">
+                            <h4 style="font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 20px;">Life cycle of a Purchase Order</h4>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                                <div style="border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                    <span>📄 RAISE PURCHASE ORDER</span>
+                                </div>
+                                <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">CONVERT TO OPEN &rarr;</span>
+                                <div style="border: 1px solid #86efac; background: #f0fdf4; color: #15803d; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                    <span>📦 RECEIVE GOODS</span>
+                                </div>
+                                <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">CONVERT TO BILL &rarr;</span>
+                                <div style="border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                    <span>🧾 CONVERT TO BILL</span>
+                                </div>
+                                <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">RECORD PAYMENT &rarr;</span>
+                                <div style="border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                    <span>💳 RECORD PAYMENT</span>
+                                </div>
+                            </div>
+
+                            <div style="text-align: left; max-width: 580px; margin: 30px auto 0; font-size: 13.5px; color: #475569; line-height: 1.8;">
+                                <div style="font-weight: 700; margin-bottom: 8px; color: #1e293b;">In the Purchase Orders module, you can:</div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                                    <span style="color: #3b82f6;">✓</span>
+                                    <span>Create and send a purchase order to your vendors when you are in need of a product.</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                                    <span style="color: #3b82f6;">✓</span>
+                                    <span>Convert the purchase order into a bill after you receive an invoice for your purchase.</span>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <span style="color: #3b82f6;">✓</span>
+                                    <span>Receive items accurately with automatic inventory stock replenishment.</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 <?php endif; ?>
 
@@ -153,8 +214,8 @@ $flashError = get_flash('error');
                 <div class="section-card">
                     <div class="section-header">
                         <div>
-                            <h2 class="section-heading">All Purchase Orders</h2>
-                            <p class="section-subheading">Tracking supplier deliveries and goods receiving</p>
+                            <h2 class="section-heading">Purchase Orders</h2>
+                            <p class="section-subheading">Tracking supplier deliveries, receiving progress, and vendor billing</p>
                         </div>
                     </div>
                     <div class="table-wrap">
@@ -169,12 +230,12 @@ $flashError = get_flash('error');
                                     <th>Receiving Progress</th>
                                     <th>Total Amount</th>
                                     <th>Status</th>
-                                    <th style="text-align: right;">Action</th>
+                                    <th style="text-align: right;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($purchaseOrders)): ?>
-                                    <tr><td colspan="9" style="text-align: center; padding: 32px; color: #64748b;">No purchase orders found. Click "+ Create Purchase Order" to order stock from suppliers.</td></tr>
+                                    <tr><td colspan="9" style="text-align: center; padding: 32px; color: #64748b;">No purchase orders found. Click "+ New Purchase Order" to create one.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($purchaseOrders as $po): ?>
                                         <tr>
@@ -199,13 +260,21 @@ $flashError = get_flash('error');
                                                 <?php endif; ?>
                                             </td>
                                             <td style="text-align: right;">
-                                                <?php if ($po['status'] !== 'received'): ?>
-                                                    <button type="button" class="btn-secondary receive-btn" data-id="<?= $po['id'] ?>" style="padding: 5px 10px; font-size: 12px; font-weight: 700;">
-                                                        📦 Receive
-                                                    </button>
-                                                <?php else: ?>
-                                                    <span style="color:#047857; font-weight:700; font-size:12px;">✓ Completed</span>
-                                                <?php endif; ?>
+                                                <div style="display: inline-flex; gap: 6px; align-items: center;">
+                                                    <?php if ($po['status'] !== 'received'): ?>
+                                                        <a href="<?= asset('purchase-receives.php?po_id=' . $po['id']) ?>" class="btn-secondary" style="padding: 4px 8px; font-size: 11.5px; font-weight: 700; text-decoration: none;" title="Receive items into inventory">
+                                                            📦 Receive
+                                                        </a>
+                                                    <?php endif; ?>
+                                                    <form method="POST" action="<?= asset('purchases.php') ?>" style="display: inline;" onsubmit="return confirm('Convert PO #<?= e($po['po_number']) ?> to a Vendor Bill?');">
+                                                        <?= csrf_field() ?>
+                                                        <input type="hidden" name="action" value="convert_to_bill">
+                                                        <input type="hidden" name="po_id" value="<?= $po['id'] ?>">
+                                                        <button type="submit" class="btn-secondary" style="padding: 4px 8px; font-size: 11.5px; font-weight: 700; color: #2563eb;" title="Convert to Vendor Bill">
+                                                            🧾 Bill
+                                                        </button>
+                                                    </form>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -315,6 +384,11 @@ $flashError = get_flash('error');
         if (closePOBtn) closePOBtn.addEventListener('click', () => poModal.classList.remove('open'));
         const cancelPOBtn = document.getElementById('cancelCreatePOModal');
         if (cancelPOBtn) cancelPOBtn.addEventListener('click', () => poModal.classList.remove('open'));
+
+        if (window.location.search.includes('action=new')) {
+            poModal.classList.add('open');
+            if (document.querySelectorAll('.po-line-row').length === 0) addPOLine();
+        }
 
         const poLinesContainer = document.getElementById('poLinesContainer');
         const addPOLineBtn = document.getElementById('addPOLineBtn');

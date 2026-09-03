@@ -1215,7 +1215,8 @@ try {
         'role_permissions', 'purchase_returns', 'vendor_payments', 'product_serials',
         'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
         'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations',
-        'payment_options', 'roles', 'payments', 'payment_integrations'
+        'payment_options', 'roles', 'payments', 'payment_integrations',
+        'purchase_receives', 'purchase_bills'
     ];
 
     foreach ($tenantTables as $tTable) {
