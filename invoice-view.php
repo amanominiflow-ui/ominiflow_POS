@@ -344,21 +344,21 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             margin-bottom: 24px;
         }
         .inv-seller-name {
-            font-size: 19px;
-            font-weight: 800;
-            color: #0f172a;
+            font-size: 18px;
+            font-weight: 650;
+            color: #1e293b;
             letter-spacing: -0.01em;
             margin-bottom: 4px;
         }
         .inv-seller-meta {
             font-size: 12.5px;
-            color: #334155;
+            color: #475569;
             line-height: 1.5;
         }
         .inv-seller-gst {
             font-size: 12.5px;
-            color: #0f172a;
-            font-weight: 700;
+            color: #334155;
+            font-weight: 600;
             margin-top: 3px;
         }
 
@@ -366,20 +366,20 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             text-align: right;
         }
         .inv-doc-title {
-            font-size: 20px;
-            font-weight: 800;
-            color: #0f172a;
-            letter-spacing: 0.05em;
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: 0.04em;
             text-transform: uppercase;
         }
         .inv-meta-line {
-            font-size: 13px;
-            color: #1e293b;
+            font-size: 12.5px;
+            color: #334155;
             margin-top: 3px;
         }
         .inv-meta-label {
-            font-weight: 700;
-            color: #0f172a;
+            font-weight: 600;
+            color: #475569;
         }
         .inv-meta-val {
             font-weight: 600;
@@ -396,35 +396,39 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             padding-top: 14px;
         }
         .inv-issued-title {
-            font-size: 13px;
-            font-weight: 700;
-            color: #0f172a;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #475569;
             margin-bottom: 3px;
         }
         .inv-cust-name {
-            font-size: 14.5px;
-            font-weight: 800;
-            color: #0f172a;
+            font-size: 14px;
+            font-weight: 650;
+            color: #1e293b;
             text-transform: uppercase;
             letter-spacing: -0.01em;
         }
         .inv-cust-address {
             font-size: 12.5px;
-            color: #334155;
+            color: #475569;
             line-height: 1.45;
             margin-top: 3px;
         }
         .inv-cust-gst {
             font-size: 12.5px;
-            font-weight: 700;
-            color: #0f172a;
+            font-weight: 600;
+            color: #334155;
             margin-top: 3px;
         }
         .inv-package-block {
             text-align: right;
-            font-size: 13px;
-            color: #0f172a;
+            font-size: 12.5px;
+            color: #475569;
             padding-bottom: 4px;
+        }
+        .inv-package-block strong {
+            font-weight: 600;
+            color: #334155;
         }
 
         /* Items Table */
@@ -436,24 +440,24 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
         }
         .inv-table th {
             background: #f8fafc;
-            color: #1e293b;
-            font-size: 12px;
-            font-weight: 800;
+            color: #334155;
+            font-size: 11.5px;
+            font-weight: 650;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
-            padding: 10px 14px;
+            letter-spacing: 0.03em;
+            padding: 9px 12px;
             border: 1px solid #cbd5e1;
         }
         .inv-table td {
-            padding: 12px 14px;
+            padding: 10px 12px;
             border: 1px solid #cbd5e1;
-            font-size: 13px;
-            color: #1e293b;
+            font-size: 12.5px;
+            color: #334155;
             vertical-align: middle;
         }
         .inv-table td.desc-col {
             font-weight: 500;
-            color: #0f172a;
+            color: #1e293b;
         }
 
         /* Summary Calculations Box (Right Aligned under table) */
@@ -470,8 +474,8 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             background: #ffffff;
         }
         .inv-summary-table td {
-            padding: 8px 14px;
-            font-size: 13px;
+            padding: 7px 12px;
+            font-size: 12.5px;
             border-bottom: 1px solid #cbd5e1;
         }
         .inv-summary-table td.label-col {
@@ -481,14 +485,14 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             width: 50%;
         }
         .inv-summary-table td.val-col {
-            color: #0f172a;
+            color: #1e293b;
             font-weight: 600;
             text-align: right;
             width: 50%;
         }
         .inv-total-box {
-            border: 2px solid #000000;
-            padding: 8px 12px;
+            border: 1.5px solid #1e293b;
+            padding: 7px 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -496,14 +500,14 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             margin: -1px -1px -1px -1px;
         }
         .inv-total-title {
-            font-size: 15px;
-            font-weight: 800;
-            color: #000000;
+            font-size: 14px;
+            font-weight: 650;
+            color: #1e293b;
         }
         .inv-total-amount {
-            font-size: 15.5px;
-            font-weight: 800;
-            color: #000000;
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #1e293b;
         }
 
         /* Bank Details Section (Bottom Left) */
@@ -511,36 +515,36 @@ $logoExists = ($storeLogo !== '' && (file_exists(__DIR__ . '/' . $storeLogo) || 
             display: grid;
             grid-template-columns: 1.3fr 1fr;
             gap: 20px;
-            margin-top: 32px;
+            margin-top: 28px;
             padding-top: 10px;
         }
         .inv-bank-box {
-            font-size: 12.5px;
-            color: #334155;
+            font-size: 12px;
+            color: #475569;
             line-height: 1.6;
         }
         .inv-bank-heading {
-            font-size: 14px;
-            font-weight: 800;
-            color: #0f172a;
-            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 650;
+            color: #1e293b;
+            margin-bottom: 5px;
         }
         .inv-bank-row {
             margin-bottom: 2px;
         }
         .inv-bank-row strong {
-            color: #0f172a;
-            font-weight: 700;
+            color: #334155;
+            font-weight: 600;
         }
 
         /* Terms & Privacy Policy */
         .inv-policy-box {
-            margin-top: 28px;
-            padding-top: 14px;
+            margin-top: 24px;
+            padding-top: 12px;
             border-top: 1px dashed #cbd5e1;
-            font-size: 12px;
+            font-size: 11.5px;
             color: #64748b;
-            line-height: 1.55;
+            line-height: 1.5;
         }
         .inv-policy-title {
             font-weight: 700;
