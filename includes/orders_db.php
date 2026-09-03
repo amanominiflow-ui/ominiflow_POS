@@ -10,6 +10,112 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/products_db.php';
 
+function ensure_orders_invoices_schema(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    $db = get_db();
+
+    // 1. Invoices table
+    try {
+        $idxs = $db->query("SHOW INDEX FROM invoices WHERE Key_name = 'invoice_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $db->exec("ALTER TABLE invoices DROP INDEX `invoice_number`");
+        }
+        $chk = $db->query("SHOW INDEX FROM invoices WHERE Key_name = 'uk_business_invoice_number'")->fetchAll();
+        if (empty($chk)) {
+            $db->exec("ALTER TABLE invoices ADD UNIQUE KEY `uk_business_invoice_number` (`business_id`, `invoice_number`)");
+        }
+    } catch (PDOException $e) {}
+
+    // 2. Orders table
+    try {
+        $idxs = $db->query("SHOW INDEX FROM orders WHERE Key_name = 'order_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $db->exec("ALTER TABLE orders DROP INDEX `order_number`");
+        }
+        $chk = $db->query("SHOW INDEX FROM orders WHERE Key_name = 'uk_business_order_number'")->fetchAll();
+        if (empty($chk)) {
+            $db->exec("ALTER TABLE orders ADD UNIQUE KEY `uk_business_order_number` (`business_id`, `order_number`)");
+        }
+    } catch (PDOException $e) {}
+
+    // 3. Credit Notes table
+    try {
+        $idxs = $db->query("SHOW INDEX FROM credit_notes WHERE Key_name = 'credit_note_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $db->exec("ALTER TABLE credit_notes DROP INDEX `credit_note_number`");
+        }
+        $chk = $db->query("SHOW INDEX FROM credit_notes WHERE Key_name = 'uk_business_credit_note_number'")->fetchAll();
+        if (empty($chk)) {
+            $db->exec("ALTER TABLE credit_notes ADD UNIQUE KEY `uk_business_credit_note_number` (`business_id`, `credit_note_number`)");
+        }
+    } catch (PDOException $e) {}
+
+    // 4. Purchase Orders table
+    try {
+        $idxs = $db->query("SHOW INDEX FROM purchase_orders WHERE Key_name = 'po_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $db->exec("ALTER TABLE purchase_orders DROP INDEX `po_number`");
+        }
+        $chk = $db->query("SHOW INDEX FROM purchase_orders WHERE Key_name = 'uk_business_po_number'")->fetchAll();
+        if (empty($chk)) {
+            $db->exec("ALTER TABLE purchase_orders ADD UNIQUE KEY `uk_business_po_number` (`business_id`, `po_number`)");
+        }
+    } catch (PDOException $e) {}
+}
+
+function generate_next_invoice_number(int $businessId, ?PDO $db = null): string {
+    ensure_orders_invoices_schema();
+    $db = $db ?: get_db();
+    $prefix = 'INV-' . date('Ymd') . '-';
+
+    // Find highest sequence today for this business
+    $stmt = $db->prepare("
+        SELECT invoice_number FROM invoices 
+        WHERE business_id = :bid AND invoice_number LIKE :prefix
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmt->execute(['bid' => $businessId, 'prefix' => $prefix . '%']);
+    $last = $stmt->fetchColumn();
+
+    $seq = 1;
+    if ($last) {
+        $parts = explode('-', (string) $last);
+        $lastSeq = (int) end($parts);
+        $seq = max($seq, $lastSeq + 1);
+    } else {
+        $stmtCount = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
+        $stmtCount->execute(['bid' => $businessId]);
+        $seq = max($seq, (int) $stmtCount->fetchColumn() + 1);
+    }
+
+    // Double check loop to guarantee zero collisions
+    $chkStmt = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND invoice_number = :num");
+    do {
+        $invNum = $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        $chkStmt->execute(['bid' => $businessId, 'num' => $invNum]);
+        $exists = (int) $chkStmt->fetchColumn();
+        if ($exists > 0) {
+            $seq++;
+        }
+    } while ($exists > 0);
+
+    return $invNum;
+}
+
+function generate_next_order_number(int $businessId, ?PDO $db = null): string {
+    ensure_orders_invoices_schema();
+    $db = $db ?: get_db();
+    $chkStmt = $db->prepare("SELECT COUNT(*) FROM orders WHERE business_id = :bid AND order_number = :num");
+    do {
+        $orderNum = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        $chkStmt->execute(['bid' => $businessId, 'num' => $orderNum]);
+        $exists = (int) $chkStmt->fetchColumn();
+    } while ($exists > 0);
+    return $orderNum;
+}
+
 /* =========================================================================
    1. STORE BUSINESS SETTINGS
    ========================================================================= */
@@ -555,7 +661,7 @@ function process_pos_order(
         }
 
         // 4. Generate Order Number
-        $orderNumber = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        $orderNumber = generate_next_order_number($bid, $db);
 
         // 5. Insert Order Record
         $stmtOrder = $db->prepare('
@@ -701,11 +807,8 @@ function process_pos_order(
         $sgstAmount = round($totalTax - $cgstAmount, 2);
         $igstAmount = 0.00;
 
-        // Count existing invoices today for sequential numbering
-        $stmtInvCount = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-        $stmtInvCount->execute(['bid' => $bid]);
-        $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
-        $invoiceNumber = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+        // Generate sequential invoice number for this business
+        $invoiceNumber = generate_next_invoice_number($bid, $db);
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
@@ -870,24 +973,24 @@ function bill_generate_pos(int $orderId, array $options = []): array {
         $sgstAmount = round($taxAmount - $cgstAmount, 2);
         $igstAmount = 0.00;
 
-        $stmtInvCount = $db->query("SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE()");
-        $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
-        $invoiceNumber = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+        $invoiceBizId = (int)($order['business_id'] ?? 1);
+        $invoiceNumber = generate_next_invoice_number($invoiceBizId, $db);
 
         $stmtInsert = $db->prepare('
             INSERT INTO invoices (
-                invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
+                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
         $stmtInsert->execute([
+            'biz_id' => $invoiceBizId,
             'invoice_number' => $invoiceNumber,
             'order_id' => $orderId,
             'customer_id' => $order['customer_id'],
@@ -1794,10 +1897,7 @@ function create_custom_invoice(array $data, ?int $userId, ?int $businessId = nul
         // Auto-generate invoice number if not specified
         $invNum = trim((string)($data['invoice_number'] ?? ''));
         if ($invNum === '') {
-            $stmtInvCount = $db->prepare("SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()");
-            $stmtInvCount->execute(['bid' => $bid]);
-            $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
-            $invNum = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+            $invNum = generate_next_invoice_number($bid, $db);
         }
 
         $amountPaid = ($invoiceStatus === 'paid') ? $grandTotal : (float)($data['amount_paid'] ?? 0.0);

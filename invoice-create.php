@@ -26,9 +26,7 @@ $usersStmt = $db->query("SELECT id, name FROM users WHERE status = 'active' ORDE
 $salespersons = $usersStmt ? $usersStmt->fetchAll() : [];
 
 // Generate Next Invoice Number
-$stmtInvCount = $db->query("SELECT COUNT(*) FROM invoices WHERE DATE(created_at) = CURDATE()");
-$seqToday = (int) $stmtInvCount->fetchColumn() + 1;
-$nextInvoiceNum = 'INV-' . date('Ymd') . '-' . str_pad((string)$seqToday, 4, '0', STR_PAD_LEFT);
+$nextInvoiceNum = generate_next_invoice_number($bid, $db);
 
 // Handle POST Invoice Submission
 $error = null;

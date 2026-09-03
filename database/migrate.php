@@ -1256,6 +1256,51 @@ try {
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");
 
+    // Multi-tenant Unique Indexes for invoices, orders, credit_notes, purchase_orders
+    try {
+        $idxs = $pdo->query("SHOW INDEX FROM invoices WHERE Key_name = 'invoice_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $pdo->exec("ALTER TABLE invoices DROP INDEX `invoice_number`");
+        }
+        $chk = $pdo->query("SHOW INDEX FROM invoices WHERE Key_name = 'uk_business_invoice_number'")->fetchAll();
+        if (empty($chk)) {
+            $pdo->exec("ALTER TABLE invoices ADD UNIQUE KEY `uk_business_invoice_number` (`business_id`, `invoice_number`)");
+        }
+    } catch (Exception $ign) {}
+
+    try {
+        $idxs = $pdo->query("SHOW INDEX FROM orders WHERE Key_name = 'order_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $pdo->exec("ALTER TABLE orders DROP INDEX `order_number`");
+        }
+        $chk = $pdo->query("SHOW INDEX FROM orders WHERE Key_name = 'uk_business_order_number'")->fetchAll();
+        if (empty($chk)) {
+            $pdo->exec("ALTER TABLE orders ADD UNIQUE KEY `uk_business_order_number` (`business_id`, `order_number`)");
+        }
+    } catch (Exception $ign) {}
+
+    try {
+        $idxs = $pdo->query("SHOW INDEX FROM credit_notes WHERE Key_name = 'credit_note_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $pdo->exec("ALTER TABLE credit_notes DROP INDEX `credit_note_number`");
+        }
+        $chk = $pdo->query("SHOW INDEX FROM credit_notes WHERE Key_name = 'uk_business_credit_note_number'")->fetchAll();
+        if (empty($chk)) {
+            $pdo->exec("ALTER TABLE credit_notes ADD UNIQUE KEY `uk_business_credit_note_number` (`business_id`, `credit_note_number`)");
+        }
+    } catch (Exception $ign) {}
+
+    try {
+        $idxs = $pdo->query("SHOW INDEX FROM purchase_orders WHERE Key_name = 'po_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $pdo->exec("ALTER TABLE purchase_orders DROP INDEX `po_number`");
+        }
+        $chk = $pdo->query("SHOW INDEX FROM purchase_orders WHERE Key_name = 'uk_business_po_number'")->fetchAll();
+        if (empty($chk)) {
+            $pdo->exec("ALTER TABLE purchase_orders ADD UNIQUE KEY `uk_business_po_number` (`business_id`, `po_number`)");
+        }
+    } catch (Exception $ign) {}
+
     /* =========================================================================
        ONLINE STORE + CUSTOM DOMAIN (ZOHO POS PARITY) — ADDITIVE
        ========================================================================= */

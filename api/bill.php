@@ -237,10 +237,8 @@ try {
         }
     }
 
-    $stmtInvCount = $db->prepare('SELECT COUNT(*) FROM invoices WHERE business_id = :bid AND DATE(created_at) = CURDATE()');
-    $stmtInvCount->execute(['bid' => $businessId]);
-    $seqToday = (int) $stmtInvCount->fetchColumn() + 1;
-    $invoiceNumber = 'INV-' . date('Ymd') . '-' . str_pad((string) $seqToday, 4, '0', STR_PAD_LEFT);
+    require_once __DIR__ . '/../includes/orders_db.php';
+    $invoiceNumber = generate_next_invoice_number($businessId, $db);
     $taxable = max(0, $subtotal - $discountAmount);
     $cgst = round($taxAmount / 2, 2);
     $sgst = round($taxAmount - $cgst, 2);
