@@ -30,6 +30,13 @@ function get_db(): PDO {
                 throw $e;
             }
         }
+
+        require_once __DIR__ . '/organization_ids.php';
+        try {
+            ensure_pos_organization_ids($pdo);
+        } catch (\Throwable $e) {
+            // schema ensure is best-effort on first connect
+        }
     }
 
     return $pdo;

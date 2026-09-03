@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/organization_ids.php';
 
 try {
     $db = get_db();
@@ -49,7 +50,15 @@ $variantId = (int) ($payload['variant_id'] ?? 0);
 $sku = trim((string) ($payload['sku'] ?? ''));
 $quantity = max(1, (int) ($payload['quantity'] ?? 0));
 $reason = trim((string) ($payload['reason'] ?? 'WhatsApp order'));
-$businessId = (int) ($payload['business_id'] ?? 1);
+$orgId = trim((string) ($payload['organization_id'] ?? ''));
+$businessId = (int) ($payload['business_id'] ?? 0);
+
+if ($orgId !== '') {
+    $resolved = pos_resolve_store_id($db, $orgId);
+    if ($resolved > 0) {
+        $businessId = $resolved;
+    }
+}
 
 if ($quantity < 1) {
     http_response_code(422);
@@ -59,8 +68,13 @@ if ($quantity < 1) {
 
 try {
     if ($productId < 1 && $sku !== '') {
-        $lookup = $db->prepare('SELECT id FROM products WHERE sku = :sku OR barcode = :barcode LIMIT 1');
-        $lookup->execute(['sku' => $sku, 'barcode' => $sku]);
+        if ($businessId > 0) {
+            $lookup = $db->prepare('SELECT id FROM products WHERE (sku = :sku OR barcode = :barcode) AND business_id = :bid LIMIT 1');
+            $lookup->execute(['sku' => $sku, 'barcode' => $sku, 'bid' => $businessId]);
+        } else {
+            $lookup = $db->prepare('SELECT id FROM products WHERE sku = :sku OR barcode = :barcode LIMIT 1');
+            $lookup->execute(['sku' => $sku, 'barcode' => $sku]);
+        }
         $found = $lookup->fetch(PDO::FETCH_ASSOC);
         if ($found) {
             $productId = (int) $found['id'];
@@ -75,8 +89,13 @@ try {
 
     $db->beginTransaction();
 
-    $stmt = $db->prepare('SELECT id, stock_quantity, business_id FROM products WHERE id = :id LIMIT 1');
-    $stmt->execute(['id' => $productId]);
+    if ($businessId > 0) {
+        $stmt = $db->prepare('SELECT id, stock_quantity, business_id FROM products WHERE id = :id AND business_id = :bid LIMIT 1');
+        $stmt->execute(['id' => $productId, 'bid' => $businessId]);
+    } else {
+        $stmt = $db->prepare('SELECT id, stock_quantity, business_id FROM products WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $productId]);
+    }
     $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (! $product) {

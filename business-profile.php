@@ -18,6 +18,9 @@ $user = current_user();
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
 $db = get_db();
+$businessId = current_business_id();
+require_once __DIR__ . '/includes/organization_ids.php';
+$orgId = assign_organization_id_to_business($db, $businessId, (string) (current_business()['name'] ?? ''));
 
 // Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_business_profile') {
@@ -96,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 package_name = :package_name,
                 ' . ($logoPath ? 'logo_path = :logo,' : '') . '
                 updated_at = NOW()
-            WHERE id = 1
+            WHERE business_id = :bid
         ');
 
         $params = [
@@ -125,12 +128,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'terms' => $terms,
             'privacy' => $privacy,
             'package_name' => $packageName,
+            'bid' => $businessId,
         ];
         if ($logoPath) {
             $params['logo'] = $logoPath;
         }
 
         $stmt->execute($params);
+        if ($stmt->rowCount() < 1) {
+            $db->prepare('UPDATE business_profile SET business_name = :bname, updated_at = NOW() WHERE id = 1 AND (business_id IS NULL OR business_id = 0 OR business_id = :bid)')
+                ->execute(['bname' => $businessName, 'bid' => $businessId]);
+        }
+
+        try {
+            $db->prepare('UPDATE businesses SET name = ? WHERE id = ?')->execute([$businessName, $businessId]);
+        } catch (\Throwable $e) {
+            // name sync is optional
+        }
 
         // Sync with store_settings
         require_once __DIR__ . '/includes/orders_db.php';
@@ -162,10 +176,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Fetch Business Profile Data
-$stmtBP = $db->query('SELECT * FROM business_profile WHERE id = 1 LIMIT 1');
+$stmtBP = $db->prepare('SELECT * FROM business_profile WHERE business_id = ? LIMIT 1');
+$stmtBP->execute([$businessId]);
 $profile = $stmtBP->fetch() ?: [
-    'organization_id' => '60082591427',
-    'business_name' => 'Ominiflow',
+    'organization_id' => $orgId,
+    'business_name' => (string) (current_business()['name'] ?? 'Store'),
     'business_type' => 'Services',
     'business_location' => 'India',
     'phone_code' => '+91',
@@ -183,6 +198,7 @@ $profile = $stmtBP->fetch() ?: [
     'time_zone' => '(GMT 05:30) India Standard Time (Asia/Calcutta)',
     'date_format' => 'dd MMM yyyy',
 ];
+$profile['organization_id'] = $orgId;
 
 $indianStates = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',

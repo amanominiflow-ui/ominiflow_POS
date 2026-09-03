@@ -605,9 +605,35 @@ function get_tax_rates_list(?int $businessId = null): array {
 function get_product_brand_names(string $kind = 'brand', ?int $businessId = null): array {
     ensure_product_item_schema();
     $bid = $businessId ?: current_business_id();
-    $stmt = get_db()->prepare('SELECT name FROM product_brands WHERE business_id = :bid AND kind = :k ORDER BY name ASC');
-    $stmt->execute(['bid' => $bid, 'k' => $kind]);
-    return array_values(array_filter(array_map(static fn($r) => (string) $r['name'], $stmt->fetchAll())));
+    $db = get_db();
+    $kind = ($kind === 'manufacturer') ? 'manufacturer' : 'brand';
+    $list = [];
+
+    try {
+        $stmt = $db->prepare('SELECT name FROM product_brands WHERE business_id = :bid AND kind = :k ORDER BY name ASC');
+        $stmt->execute(['bid' => $bid, 'k' => $kind]);
+        foreach ($stmt->fetchAll() as $r) {
+            $val = trim((string) ($r['name'] ?? ''));
+            if ($val !== '' && !in_array($val, $list, true)) {
+                $list[] = $val;
+            }
+        }
+    } catch (PDOException $e) { /* ignore */ }
+
+    $col = ($kind === 'manufacturer') ? 'manufacturer' : 'brand';
+    try {
+        $stmtProd = $db->prepare("SELECT DISTINCT `{$col}` AS name FROM products WHERE business_id = :bid AND `{$col}` IS NOT NULL AND `{$col}` != ''");
+        $stmtProd->execute(['bid' => $bid]);
+        foreach ($stmtProd->fetchAll() as $r) {
+            $val = trim((string) ($r['name'] ?? ''));
+            if ($val !== '' && !in_array($val, $list, true)) {
+                $list[] = $val;
+            }
+        }
+    } catch (PDOException $e) { /* ignore */ }
+
+    natcasesort($list);
+    return array_values($list);
 }
 
 function remember_product_brand(string $kind, string $name, ?int $businessId = null): void {
@@ -673,7 +699,6 @@ function collect_product_form_data(): array {
     $attrOptions = (array) ($_POST['attr_options'] ?? []);
     foreach ($attrNames as $i => $aName) {
         $aName = trim((string) $aName);
-        if ($aName === '') continue;
         // Options come as comma-separated or as array
         $opts = $attrOptions[$i] ?? '';
         if (is_string($opts)) {
@@ -681,9 +706,12 @@ function collect_product_form_data(): array {
         } else {
             $opts = array_values(array_filter(array_map('trim', (array) $opts)));
         }
-        if (!empty($opts)) {
-            $variantAttributes[] = ['name' => $aName, 'options' => $opts];
+        if (empty($opts)) continue;
+
+        if ($aName === '' || strtolower($aName) === 'eg: color' || strtolower($aName) === 'select attribute') {
+            $aName = ($i === 0) ? 'Color' : ('Attribute ' . ($i + 1));
         }
+        $variantAttributes[] = ['name' => $aName, 'options' => $opts];
     }
 
     return [

@@ -194,6 +194,8 @@ function register_user(string $name, string $email, string $phone, string $passw
             'phone' => $phone ?: null,
         ]);
         $businessId = (int)$db->lastInsertId();
+        require_once __DIR__ . '/organization_ids.php';
+        assign_organization_id_to_business($db, $businessId, $businessName);
 
         try {
             $slug = generate_unique_store_slug($businessName, $businessId);
@@ -215,6 +217,11 @@ function register_user(string $name, string $email, string $phone, string $passw
             'status' => 'active',
         ]);
         $userId = (int) $db->lastInsertId();
+        try {
+            $db->prepare('UPDATE users SET public_id = ? WHERE id = ?')->execute([pos_public_user_id($userId), $userId]);
+        } catch (Exception $ePub) {
+            // public_id column may not exist on older schemas
+        }
 
         // 3. Seed Default Category
         try {

@@ -99,16 +99,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $attrOpts = (array) ($_POST['attr_options'] ?? []);
     foreach ($attrNames as $ai => $an) {
         $an = trim((string) $an);
-        if ($an === '') continue;
         $opts = $attrOpts[$ai] ?? '';
         if (is_string($opts)) {
             $opts = array_values(array_filter(array_map('trim', explode(',', $opts))));
         } else {
             $opts = array_values(array_filter(array_map('trim', (array) $opts)));
         }
-        if (!empty($opts)) {
-            $variantAttrs[] = ['name' => $an, 'options' => $opts];
+        if (empty($opts)) continue;
+        if ($an === '' || strtolower($an) === 'eg: color' || strtolower($an) === 'select attribute') {
+            $an = ($ai === 0) ? 'Color' : ('Attribute ' . ($ai + 1));
         }
+        $variantAttrs[] = ['name' => $an, 'options' => $opts];
     }
 } elseif ($isEdit && !empty($product['id']) && ($product['product_type'] ?? 'simple') === 'variable') {
     $variantAttrs = function_exists('get_product_attributes') ? get_product_attributes((int) $product['id']) : [];
@@ -231,6 +232,18 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
 .variant-table th { background: #f1f5f9 !important; color: #475569 !important; font-weight: 700 !important; text-align: left !important; padding: 9px 12px !important; border: 1px solid #e2e8f0 !important; }
 .variant-table td { padding: 8px 12px !important; border: 1px solid #e2e8f0 !important; background: #fff !important; }
 .variant-table td input { width: 100% !important; border: 1px solid #cbd5e1 !important; border-radius: 5px !important; padding: 6px 10px !important; font: inherit !important; font-size: 13px !important; }
+
+/* Custom Combobox Dropdown for Brand & Manufacturer */
+.custom-combobox-wrap { position: relative !important; width: 100% !important; }
+.custom-combobox-wrap .combobox-input { width: 100% !important; padding-right: 32px !important; }
+.combobox-toggle-btn { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; background: none !important; border: none !important; cursor: pointer !important; color: #64748b !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 4px !important; border-radius: 4px !important; z-index: 2 !important; }
+.combobox-toggle-btn:hover { color: #1e293b !important; background: #f1f5f9 !important; }
+.combobox-dropdown { position: absolute !important; top: calc(100% + 4px) !important; left: 0 !important; right: 0 !important; background: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important; z-index: 999 !important; max-height: 220px !important; overflow-y: auto !important; }
+.combobox-item { padding: 8px 12px !important; font-size: 13.5px !important; color: #1e293b !important; cursor: pointer !important; transition: background 0.1s ease !important; display: flex !important; align-items: center !important; justify-content: space-between !important; }
+.combobox-item:hover, .combobox-item.active { background: #f1f5f9 !important; color: #2563eb !important; font-weight: 600 !important; }
+.combobox-empty { padding: 10px 12px !important; font-size: 13px !important; color: #94a3b8 !important; text-align: center !important; }
+.combobox-add-action { padding: 8px 12px !important; font-size: 13px !important; color: #2563eb !important; background: #f8fafc !important; border-top: 1px solid #e2e8f0 !important; cursor: pointer !important; font-weight: 600 !important; }
+.combobox-add-action:hover { background: #eff6ff !important; color: #1d4ed8 !important; }
 </style>
 
 <div class="item-sheet <?= $itemType === 'variants' ? 'item-type-variants' : '' ?>" id="itemSheet">
@@ -260,19 +273,51 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                 </div>
                 <div class="item-row">
                     <label class="item-label" for="brand">Brand</label>
-                    <input class="item-input" list="brand-list" id="brand" name="brand" value="<?= e(product_form_val('brand')) ?>" placeholder="Select or Add Brand">
-                    <datalist id="brand-list">
-                        <?php foreach ($brands as $b): ?><option value="<?= e($b) ?>"><?php endforeach; ?>
-                    </datalist>
+                    <div class="custom-combobox-wrap" id="brandCombobox" data-kind="brand">
+                        <input class="item-input combobox-input" type="text" id="brand" name="brand" value="<?= e(product_form_val('brand')) ?>" placeholder="Select or Add Brand" autocomplete="off">
+                        <button type="button" class="combobox-toggle-btn" tabindex="-1" title="Show saved brands">
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <div class="combobox-dropdown" style="display:none;">
+                            <div class="combobox-items-list">
+                                <?php if (!empty($brands)): ?>
+                                    <?php foreach ($brands as $b): ?>
+                                        <div class="combobox-item" data-value="<?= e($b) ?>"><?= e($b) ?></div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <div class="combobox-empty">No saved brands found</div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="combobox-add-action" style="display:none;">
+                                <span class="combobox-add-text">+ Add "<b class="combobox-typed-val"></b>"</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="item-2">
                 <div class="item-row">
                     <label class="item-label" for="manufacturer">Manufacturer</label>
-                    <input class="item-input" list="mfr-list" id="manufacturer" name="manufacturer" value="<?= e(product_form_val('manufacturer')) ?>" placeholder="Select or Add Manufacturer">
-                    <datalist id="mfr-list">
-                        <?php foreach ($manufacturers as $m): ?><option value="<?= e($m) ?>"><?php endforeach; ?>
-                    </datalist>
+                    <div class="custom-combobox-wrap" id="mfrCombobox" data-kind="manufacturer">
+                        <input class="item-input combobox-input" type="text" id="manufacturer" name="manufacturer" value="<?= e(product_form_val('manufacturer')) ?>" placeholder="Select or Add Manufacturer" autocomplete="off">
+                        <button type="button" class="combobox-toggle-btn" tabindex="-1" title="Show saved manufacturers">
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <div class="combobox-dropdown" style="display:none;">
+                            <div class="combobox-items-list">
+                                <?php if (!empty($manufacturers)): ?>
+                                    <?php foreach ($manufacturers as $m): ?>
+                                        <div class="combobox-item" data-value="<?= e($m) ?>"><?= e($m) ?></div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <div class="combobox-empty">No saved manufacturers found</div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="combobox-add-action" style="display:none;">
+                                <span class="combobox-add-text">+ Add "<b class="combobox-typed-val"></b>"</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="item-row">
                     <label class="item-label" for="hsn_code">HSN Code</label>
@@ -389,9 +434,18 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                             <select class="item-select attr-name-select" name="attr_name[<?= $ai ?>]">
                                 <option value="">Select attribute</option>
                                 <?php foreach ($variantAttrNames as $van): ?>
-                                    <option value="<?= e($van) ?>" <?= $attr['name'] === $van ? 'selected' : '' ?>><?= e($van) ?></option>
+                                    <option value="<?= e($van) ?>" <?= strcasecmp($attr['name'], $van) === 0 ? 'selected' : '' ?>><?= e($van) ?></option>
                                 <?php endforeach; ?>
-                                <?php if (!in_array($attr['name'], $variantAttrNames, true) && $attr['name'] !== ''): ?>
+                                <?php 
+                                    $isPredefined = false;
+                                    foreach ($variantAttrNames as $van) {
+                                        if (strcasecmp($attr['name'], $van) === 0) {
+                                            $isPredefined = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!$isPredefined && $attr['name'] !== '' && strtolower($attr['name']) !== 'eg: color'): 
+                                ?>
                                     <option value="<?= e($attr['name']) ?>" selected><?= e($attr['name']) ?></option>
                                 <?php endif; ?>
                             </select>
@@ -414,9 +468,9 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                         <div>
                             <label class="item-label req">Attribute*</label>
                             <select class="item-select attr-name-select" name="attr_name[0]">
-                                <option value="">eg: color</option>
+                                <option value="">Select attribute</option>
                                 <?php foreach ($variantAttrNames as $van): ?>
-                                    <option value="<?= e($van) ?>"><?= e($van) ?></option>
+                                    <option value="<?= e($van) ?>" <?= $van === 'Color' ? 'selected' : '' ?>><?= e($van) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -762,16 +816,31 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
 
         // Collect attributes & options from DOM
         var attrList = [];
-        document.querySelectorAll('.variation-attr-row').forEach(function (row) {
+        document.querySelectorAll('.variation-attr-row').forEach(function (row, idx) {
             var nameSel = row.querySelector('.attr-name-select');
             var attrName = nameSel ? nameSel.value.trim() : '';
+
+            // If attrName is empty or placeholder, resolve intelligently
+            if (!attrName && nameSel && nameSel.selectedIndex >= 0) {
+                var optText = nameSel.options[nameSel.selectedIndex].text.trim();
+                if (optText && !optText.toLowerCase().startsWith('select')) {
+                    attrName = optText.replace(/^eg:\s*/i, '').trim();
+                    if (attrName) {
+                        attrName = attrName.charAt(0).toUpperCase() + attrName.slice(1);
+                    }
+                }
+            }
+            if (!attrName) {
+                attrName = (idx === 0) ? 'Color' : ('Attribute ' + (idx + 1));
+            }
+
             var chips = row.querySelectorAll('.tag-chip');
             var opts = [];
             chips.forEach(function (chip) {
                 var txt = chip.firstChild.textContent.trim();
                 if (txt) opts.push(txt);
             });
-            if (attrName && opts.length > 0) {
+            if (opts.length > 0) {
                 attrList.push({ name: attrName, options: opts });
             }
         });
@@ -802,22 +871,24 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
 
         tableWrap.style.display = 'block';
 
-        // Remember existing inputs in table by combo JSON key
+        // Remember existing inputs in table by combo JSON key or variant name
         var existingData = {};
         tbody.querySelectorAll('tr').forEach(function (tr) {
             var key = tr.getAttribute('data-combo');
-            if (key) {
-                var skuInp = tr.querySelector('input[name^="variant_sku"]');
-                var spInp = tr.querySelector('input[name^="variant_selling_price"]');
-                var cpInp = tr.querySelector('input[name^="variant_cost_price"]');
-                var stInp = tr.querySelector('input[name^="variant_stock"]');
-                existingData[key] = {
-                    sku: skuInp ? skuInp.value : '',
-                    selling_price: spInp ? spInp.value : '',
-                    cost_price: cpInp ? cpInp.value : '',
-                    stock: stInp ? stInp.value : ''
-                };
-            }
+            var nameCell = tr.querySelector('.variant-name-cell');
+            var varName = nameCell ? nameCell.textContent.trim() : '';
+            var skuInp = tr.querySelector('input[name^="variant_sku"]');
+            var spInp = tr.querySelector('input[name^="variant_selling_price"]');
+            var cpInp = tr.querySelector('input[name^="variant_cost_price"]');
+            var stInp = tr.querySelector('input[name^="variant_stock"]');
+            var rowData = {
+                sku: skuInp ? skuInp.value : '',
+                selling_price: spInp ? spInp.value : '',
+                cost_price: cpInp ? cpInp.value : '',
+                stock: stInp ? stInp.value : ''
+            };
+            if (key) existingData[key] = rowData;
+            if (varName) existingData['name:' + varName] = rowData;
         });
 
         tbody.innerHTML = '';
@@ -826,7 +897,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
         combos.forEach(function (combo, i) {
             var comboKey = JSON.stringify(combo);
             var varName = Object.values(combo).join(' / ');
-            var prev = existingData[comboKey] || {};
+            var prev = existingData[comboKey] || existingData['name:' + varName] || {};
 
             var skuVal = prev.sku !== undefined ? prev.sku : '';
             var spVal = prev.selling_price !== undefined ? prev.selling_price : '';
@@ -953,10 +1024,11 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
     }
 
     // Build attribute name dropdown options HTML
-    function buildAttrOptions() {
+    function buildAttrOptions(selectedVal) {
         var html = '<option value="">Select attribute</option>';
         attrNames.forEach(function (name) {
-            html += '<option value="' + name + '">' + name + '</option>';
+            var sel = (selectedVal && selectedVal.toLowerCase() === name.toLowerCase()) ? ' selected' : '';
+            html += '<option value="' + name + '"' + sel + '>' + name + '</option>';
         });
         return html;
     }
@@ -966,6 +1038,13 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
     if (addAttrBtn) {
         addAttrBtn.addEventListener('click', function () {
             var idx = getNextAttrIndex();
+            // Determine next unused default attribute name
+            var usedNames = [];
+            document.querySelectorAll('.variation-attr-row .attr-name-select').forEach(function(s) {
+                if (s.value) usedNames.push(s.value.toLowerCase());
+            });
+            var nextDefault = attrNames.find(function(n) { return usedNames.indexOf(n.toLowerCase()) === -1; }) || '';
+
             var row = document.createElement('div');
             row.className = 'variation-attr-row';
             row.setAttribute('data-attr-index', idx);
@@ -973,7 +1052,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                 '<div>' +
                     '<label class="item-label req">Attribute*</label>' +
                     '<select class="item-select attr-name-select" name="attr_name[' + idx + ']">' +
-                        buildAttrOptions() +
+                        buildAttrOptions(nextDefault) +
                     '</select>' +
                 '</div>' +
                 '<div>' +
@@ -986,6 +1065,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                 '<button type="button" class="attr-remove-btn" title="Remove attribute">&times;</button>';
             document.getElementById('attrsWrap').appendChild(row);
             setupTagInput(row.querySelector('.tag-input-wrap'));
+            rebuildVariantMatrix();
         });
     }
 
@@ -1002,5 +1082,153 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             }
         });
     }
+
+    // === CUSTOM COMBOBOX FOR BRAND & MANUFACTURER ===
+    function setupCombobox(wrap) {
+        var input = wrap.querySelector('.combobox-input');
+        var btn = wrap.querySelector('.combobox-toggle-btn');
+        var dropdown = wrap.querySelector('.combobox-dropdown');
+        var list = wrap.querySelector('.combobox-items-list');
+        var addAction = wrap.querySelector('.combobox-add-action');
+        var typedValEl = wrap.querySelector('.combobox-typed-val');
+        var kind = wrap.getAttribute('data-kind') || 'brand';
+
+        function showDropdown() {
+            document.querySelectorAll('.combobox-dropdown').forEach(function (d) {
+                if (d !== dropdown) d.style.display = 'none';
+            });
+            filterItems();
+            dropdown.style.display = 'block';
+        }
+
+        function hideDropdown() {
+            dropdown.style.display = 'none';
+        }
+
+        function filterItems() {
+            var q = input.value.trim().toLowerCase();
+            var items = list.querySelectorAll('.combobox-item');
+            var matched = 0;
+            var exactMatch = false;
+
+            items.forEach(function (it) {
+                var val = (it.getAttribute('data-value') || '').toLowerCase();
+                if (!q || val.indexOf(q) >= 0) {
+                    it.style.display = 'flex';
+                    matched++;
+                    if (val === q) exactMatch = true;
+                } else {
+                    it.style.display = 'none';
+                }
+            });
+
+            var emptyEl = list.querySelector('.combobox-empty');
+            if (emptyEl) {
+                emptyEl.style.display = (matched === 0 && !exactMatch) ? 'block' : 'none';
+            }
+
+            if (q && !exactMatch) {
+                if (typedValEl) typedValEl.textContent = input.value.trim();
+                if (addAction) addAction.style.display = 'block';
+            } else {
+                if (addAction) addAction.style.display = 'none';
+            }
+        }
+
+        function selectItem(val) {
+            input.value = val;
+            hideDropdown();
+        }
+
+        function addNewValue(val) {
+            val = val.trim();
+            if (!val) return;
+            selectItem(val);
+
+            // Add item to list if not present
+            var exists = false;
+            list.querySelectorAll('.combobox-item').forEach(function (it) {
+                if (it.getAttribute('data-value').toLowerCase() === val.toLowerCase()) exists = true;
+            });
+            if (!exists) {
+                var emptyEl = list.querySelector('.combobox-empty');
+                if (emptyEl) emptyEl.style.display = 'none';
+
+                var newItem = document.createElement('div');
+                newItem.className = 'combobox-item';
+                newItem.setAttribute('data-value', val);
+                newItem.textContent = val;
+                list.appendChild(newItem);
+            }
+
+            // Save to DB via AJAX so it's permanently remembered
+            try {
+                var formData = new FormData();
+                formData.append('kind', kind);
+                formData.append('name', val);
+                fetch('api/save_brand.php', {
+                    method: 'POST',
+                    body: formData
+                });
+            } catch (e) {}
+        }
+
+        if (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (dropdown.style.display === 'block') {
+                    hideDropdown();
+                } else {
+                    showDropdown();
+                }
+            });
+        }
+
+        input.addEventListener('focus', function () {
+            showDropdown();
+        });
+
+        input.addEventListener('input', function () {
+            showDropdown();
+            filterItems();
+        });
+
+        list.addEventListener('click', function (e) {
+            var item = e.target.closest('.combobox-item');
+            if (item) {
+                selectItem(item.getAttribute('data-value'));
+            }
+        });
+
+        if (addAction) {
+            addAction.addEventListener('click', function () {
+                addNewValue(input.value.trim());
+            });
+        }
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                hideDropdown();
+            } else if (e.key === 'Enter') {
+                if (dropdown.style.display === 'block') {
+                    e.preventDefault();
+                    if (input.value.trim()) {
+                        addNewValue(input.value.trim());
+                    }
+                }
+            }
+        });
+    }
+
+    document.querySelectorAll('.custom-combobox-wrap').forEach(setupCombobox);
+
+    // Click outside to close comboboxes
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.custom-combobox-wrap')) {
+            document.querySelectorAll('.combobox-dropdown').forEach(function (d) {
+                d.style.display = 'none';
+            });
+        }
+    });
 })();
 </script>

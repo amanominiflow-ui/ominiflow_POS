@@ -52,7 +52,9 @@ try {
     $profileLogoUrl = '';
 }
 
-$userIdLabel = (string) (60077667000 + (int) ($user['id'] ?? 379));
+$userIdLabel = function_exists('pos_public_user_id')
+    ? pos_public_user_id((int) ($user['id'] ?? 0))
+    : (string) (60077667000 + (int) ($user['id'] ?? 0));
 $isPremiumPlan = function_exists('is_premium_active') && is_premium_active();
 
 $currentPage = basename($_SERVER['PHP_SELF']);

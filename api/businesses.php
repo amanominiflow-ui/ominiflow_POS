@@ -22,14 +22,73 @@ require_once __DIR__ . '/../includes/db.php';
 
 try {
     $db = get_db();
-    $stmt = $db->query("SELECT id, name, legal_name, store_slug, email, phone, currency, status FROM businesses WHERE status = 'active' ORDER BY id ASC");
+    $stmt = $db->query("SELECT id, name, legal_name, store_slug, email, phone, currency, status, organization_id FROM businesses WHERE status = 'active' ORDER BY id ASC");
     $businesses = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Attach active product count per business
+    $profiles = [];
+    try {
+        $profiles = $db->query('SELECT id, organization_id, business_id, business_name FROM business_profile')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (\Throwable $e) {
+        $profiles = [];
+    }
+
     foreach ($businesses as &$b) {
         $pStmt = $db->prepare("SELECT COUNT(*) FROM products WHERE business_id = ? AND status = 'active'");
-        $pStmt->execute([(int)$b['id']]);
+        $pStmt->execute([(int) $b['id']]);
         $b['product_count'] = (int) $pStmt->fetchColumn();
+
+        $userIds = [];
+        try {
+            $uStmt = $db->prepare('SELECT id, public_id FROM users WHERE business_id = ? ORDER BY id ASC');
+            $uStmt->execute([(int) $b['id']]);
+            foreach ($uStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $user) {
+                $publicId = trim((string) ($user['public_id'] ?? ''));
+                if ($publicId === '') {
+                    $publicId = pos_public_user_id((int) ($user['id'] ?? 0));
+                }
+                if ($publicId !== '') {
+                    $userIds[] = $publicId;
+                }
+            }
+        } catch (\Throwable $e) {
+            try {
+                $uStmt = $db->prepare('SELECT id FROM users WHERE business_id = ? ORDER BY id ASC');
+                $uStmt->execute([(int) $b['id']]);
+                foreach ($uStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $user) {
+                    $publicId = pos_public_user_id((int) ($user['id'] ?? 0));
+                    if ($publicId !== '') {
+                        $userIds[] = $publicId;
+                    }
+                }
+            } catch (\Throwable $e2) {
+                $userIds = [];
+            }
+        }
+        $b['user_ids'] = $userIds;
+        $b['public_user_id'] = $userIds[0] ?? '';
+
+        $orgFromStore = trim((string) ($b['organization_id'] ?? ''));
+        if ($orgFromStore !== '') {
+            $b['organization_id'] = $orgFromStore;
+            continue;
+        }
+        if (($userIds[0] ?? '') !== '') {
+            $b['organization_id'] = $userIds[0];
+            continue;
+        }
+        $b['organization_id'] = '';
+        foreach ($profiles as $profile) {
+            $profileBiz = (int) ($profile['business_id'] ?? 0);
+            $profileRowId = (int) ($profile['id'] ?? 0);
+            $sameName = strcasecmp((string) ($profile['business_name'] ?? ''), (string) ($b['name'] ?? '')) === 0;
+            if (($profileBiz > 0 && $profileBiz === (int) $b['id'])
+                || ($profileBiz < 1 && $profileRowId === (int) $b['id'])
+                || ($profileBiz < 1 && $sameName)
+            ) {
+                $b['organization_id'] = (string) ($profile['organization_id'] ?? '');
+                break;
+            }
+        }
     }
     unset($b);
 

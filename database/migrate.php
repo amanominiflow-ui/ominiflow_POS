@@ -1444,6 +1444,8 @@ try {
     $helperAddCol($pdo, 'store_settings', 'privacy_policy', "MEDIUMTEXT NULL");
     $helperAddCol($pdo, 'store_settings', 'package_name', "VARCHAR(100) NULL DEFAULT 'Monthly'");
 
+    $helperAddCol($pdo, 'business_profile', 'business_id', 'INT UNSIGNED NULL');
+    $helperAddCol($pdo, 'businesses', 'organization_id', 'VARCHAR(50) NULL');
     $helperAddCol($pdo, 'business_profile', 'bank_name', "VARCHAR(100) NULL DEFAULT 'HDFC Bank'");
     $helperAddCol($pdo, 'business_profile', 'account_holder', "VARCHAR(191) NULL DEFAULT 'Ominiflow Enterprises'");
     $helperAddCol($pdo, 'business_profile', 'account_number', "VARCHAR(50) NULL DEFAULT '50200111653091'");
@@ -1454,6 +1456,9 @@ try {
     $helperAddCol($pdo, 'business_profile', 'terms_conditions', "TEXT NULL");
     $helperAddCol($pdo, 'business_profile', 'privacy_policy', "MEDIUMTEXT NULL");
     $helperAddCol($pdo, 'business_profile', 'package_name', "VARCHAR(100) NULL DEFAULT 'Monthly'");
+
+    require_once __DIR__ . '/../includes/organization_ids.php';
+    ensure_pos_organization_ids($pdo);
 
     // Mobile Store Payment Preferences Columns
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_cod', "TINYINT(1) NOT NULL DEFAULT 1");
