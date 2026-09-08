@@ -175,9 +175,36 @@ function get_store_settings(?int $businessId = null): array {
     $tagline = !empty($settings['tagline']) ? $settings['tagline'] :
         (!empty($mob['banner_subtitle']) ? $mob['banner_subtitle'] : 'easy, smarter, endless');
 
-    $logoPath = !empty($settings['logo_path']) ? $settings['logo_path'] :
-        (!empty($bizProfile['logo_path']) ? $bizProfile['logo_path'] :
-        (!empty($mob['logo_path']) ? $mob['logo_path'] : 'assets/images/logo.jpg'));
+    $rawLogos = [
+        $mob['logo_path'] ?? null,
+        $bizProfile['logo_path'] ?? null,
+        $settings['logo_path'] ?? null,
+    ];
+    $logoPath = null;
+    $blockedLogos = [
+        'assets/images/logo.jpg',
+        'assets/images/logo-sm.jpg',
+        'assets/images/logo-icon.png',
+        'assets/images/logo.png',
+        'assets/images/favicon.ico',
+        'assets/images/apple-touch-icon.png',
+    ];
+    foreach ($rawLogos as $l) {
+        if ($l && is_string($l)) {
+            $lTrim = trim(str_replace('\\', '/', $l));
+            $lLtrim = ltrim($lTrim, '/');
+            if (!in_array($lLtrim, $blockedLogos, true)) {
+                $full = dirname(__DIR__) . '/' . $lLtrim;
+                if (is_file($full) || str_starts_with($lTrim, 'http') || str_starts_with($lTrim, 'data:')) {
+                    $logoPath = $lLtrim;
+                    break;
+                }
+            }
+        }
+    }
+    if (!$logoPath) {
+        $logoPath = !empty($settings['logo_path']) ? $settings['logo_path'] : 'assets/images/logo.jpg';
+    }
 
     $city = !empty($settings['city']) ? $settings['city'] :
         (!empty($bizProfile['city']) ? $bizProfile['city'] :

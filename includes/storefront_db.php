@@ -1078,9 +1078,13 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     ]);
 
     try {
-        $db->prepare('UPDATE store_settings SET store_name = :n, updated_at = NOW() WHERE business_id = :bid')
-            ->execute(['n' => $display, 'bid' => $businessId]);
-    } catch (PDOException $e) {
+        $db->prepare('UPDATE store_settings SET store_name = :n, logo_path = :logo, updated_at = NOW() WHERE business_id = :bid')
+            ->execute(['n' => $display, 'logo' => $logoPath, 'bid' => $businessId]);
+        if ($logoPath !== null) {
+            $db->prepare('UPDATE business_profile SET logo_path = :logo WHERE business_id = :bid OR (id = 1 AND :bid2 = 1)')
+                ->execute(['logo' => $logoPath, 'bid' => $businessId, 'bid2' => $businessId]);
+        }
+    } catch (Throwable $e) {
         // optional sync
     }
 

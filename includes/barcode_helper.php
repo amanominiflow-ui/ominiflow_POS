@@ -5,7 +5,7 @@
 
 declare(strict_types=1);
 
-function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6): string {
+function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6, string $barColor = '#0f172a'): string {
     $text = trim($text);
     if ($text === '') {
         $text = '100001';
@@ -71,14 +71,14 @@ function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth
     for ($m = 0; $m < strlen($patternStr); $m++) {
         $w = (int)$patternStr[$m] * $barWidth;
         if ($isBar) {
-            $svg .= '<rect x="' . number_format($currentX, 2, '.', '') . '" y="0" width="' . number_format($w, 2, '.', '') . '" height="' . $barHeight . '" fill="#0f172a"/>';
+            $svg .= '<rect x="' . number_format($currentX, 2, '.', '') . '" y="0" width="' . number_format($w, 2, '.', '') . '" height="' . $barHeight . '" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '"/>';
         }
         $currentX += $w;
         $isBar = !$isBar;
     }
 
     // Human readable text
-    $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="#0f172a" text-anchor="middle">' . htmlspecialchars($text, ENT_QUOTES, 'UTF-8') . '</text>';
+    $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '" text-anchor="middle">' . htmlspecialchars($text, ENT_QUOTES, 'UTF-8') . '</text>';
     $svg .= '</svg>';
 
     return $svg;

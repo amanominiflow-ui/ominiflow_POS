@@ -42,11 +42,18 @@ try {
     $stLogo->execute(['bid' => current_business_id()]);
     $logoPath = (string) ($stLogo->fetchColumn() ?: '');
     if ($logoPath === '') {
+        $stLogoMob = get_db()->prepare('SELECT logo_path FROM mobile_store_settings WHERE business_id = :bid LIMIT 1');
+        $stLogoMob->execute(['bid' => current_business_id()]);
+        $logoPath = (string) ($stLogoMob->fetchColumn() ?: '');
+    }
+    if ($logoPath === '') {
         $stLogo2 = get_db()->query('SELECT logo_path FROM business_profile WHERE id = 1 LIMIT 1');
         $logoPath = $stLogo2 ? (string) ($stLogo2->fetchColumn() ?: '') : '';
     }
-    if ($logoPath !== '' && is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $logoPath))) {
-        $profileLogoUrl = asset($logoPath);
+    $blockedLogos = ['assets/images/logo.jpg', 'assets/images/logo-sm.jpg', 'assets/images/logo-icon.png', 'assets/images/logo.png'];
+    $cleanPath = trim(str_replace(['/', '\\'], '/', $logoPath), '/');
+    if ($cleanPath !== '' && !in_array($cleanPath, $blockedLogos, true) && is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $cleanPath))) {
+        $profileLogoUrl = asset($cleanPath);
     }
 } catch (Throwable $logoErr) {
     $profileLogoUrl = '';
