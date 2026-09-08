@@ -340,6 +340,32 @@ if (!function_exists('format_invoice_whatsapp_phone')) {
 }
 $formattedWhatsAppPhone = format_invoice_whatsapp_phone($rawWhatsApp);
 
+// 12. Dynamic Page Pagination & Item Chunking
+$totalItemsCount = count($items);
+$itemChunks = [];
+
+if ($requestedSize === '4x3') {
+    // 4x3 card: 2 items fit on single card with header and footer.
+    // When > 2 items (e.g. 6 items), paginate 3 items per card so card never exceeds 3 inches!
+    if ($totalItemsCount <= 2) {
+        $itemChunks = [$items];
+    } else {
+        $itemChunks = array_chunk($items, 3);
+    }
+} else {
+    // Default A4 size: Fits up to 8 items on single card, or 8 items per page on multi-page
+    if ($totalItemsCount <= 8) {
+        $itemChunks = [$items];
+    } else {
+        $itemChunks = array_chunk($items, 8);
+    }
+}
+
+if (empty($itemChunks)) {
+    $itemChunks = [[]];
+}
+$totalPages = count($itemChunks);
+
 // Public invoice verification URL for QR code
 $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&standalone=1';
 ?>
@@ -448,6 +474,14 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
             position: relative;
             background-clip: padding-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .inv-card + .inv-card {
+            margin-top: 28px;
+        }
+        body.size-4x3 .inv-card + .inv-card {
+            margin-top: 16px;
         }
 
         /* Cancellation Watermark */
@@ -581,6 +615,64 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         }
         .inv-cust-col .inv-row-kv {
             grid-template-columns: 72px 12px 1fr;
+        }
+
+        /* Page Badge & Continuation Styles */
+        .inv-page-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 750;
+            color: var(--inv-theme);
+            background: var(--inv-theme-tint);
+            border: 1px solid rgba(var(--inv-theme-rgb), 0.3);
+            border-radius: 12px;
+            padding: 2px 8px;
+            letter-spacing: 0.04em;
+        }
+        .inv-continue-note {
+            text-align: right;
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--inv-theme);
+            font-style: italic;
+            padding: 12px 4px 6px;
+        }
+        .inv-mini-top-grid {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1.5px solid var(--inv-theme);
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+        .inv-mini-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .inv-mini-brand-img {
+            max-height: 48px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        .inv-mini-peacock {
+            width: 44px;
+            height: 44px;
+            color: var(--inv-theme);
+        }
+        .inv-mini-title {
+            font-size: 14px;
+            font-weight: 900;
+            color: var(--inv-theme);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .inv-mini-meta {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #334155;
+            text-align: right;
+            line-height: 1.45;
         }
 
         /* PRODUCTS TABLE */
@@ -957,10 +1049,16 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 padding: 24px 28px !important;
                 margin: 0 auto !important;
                 max-width: 100% !important;
-                page-break-inside: avoid;
-                break-inside: avoid;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-after: always !important;
+                break-after: page !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+            }
+            .inv-card:last-child {
+                page-break-after: avoid !important;
+                break-after: avoid !important;
             }
             .inv-products-table thead {
                 background: var(--inv-theme) !important;
@@ -978,15 +1076,48 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             body.size-4x3 .inv-card {
                 width: 3.85in !important;
                 max-width: 3.85in !important;
+                min-height: 2.82in !important;
+                max-height: 2.92in !important;
+                overflow: hidden !important;
                 padding: 8px 10px !important;
                 border-radius: 10px !important;
                 margin: 0 auto !important;
                 border: 2px solid var(--inv-theme) !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-after: always !important;
+                break-after: page !important;
+            }
+            body.size-4x3 .inv-card:last-child {
+                page-break-after: avoid !important;
+                break-after: avoid !important;
             }
             body.size-4x3 .inv-top-grid {
                 grid-template-columns: 85px 1.15fr 1.25fr !important;
                 gap: 8px !important;
                 margin-bottom: 8px !important;
+            }
+            body.size-4x3 .inv-mini-top-grid {
+                padding-bottom: 6px !important;
+                margin-bottom: 8px !important;
+            }
+            body.size-4x3 .inv-mini-brand-img {
+                max-height: 28px !important;
+                max-width: 60px !important;
+            }
+            body.size-4x3 .inv-mini-peacock {
+                width: 26px !important;
+                height: 26px !important;
+            }
+            body.size-4x3 .inv-mini-title {
+                font-size: 10px !important;
+            }
+            body.size-4x3 .inv-mini-meta {
+                font-size: 8px !important;
+            }
+            body.size-4x3 .inv-continue-note {
+                font-size: 8px !important;
+                padding: 4px 2px 2px !important;
             }
             body.size-4x3 .inv-main-heading { font-size: 15px !important; margin-bottom: 2px !important; }
             body.size-4x3 .inv-thank-you { font-size: 7.5px !important; margin-bottom: 4px !important; }
@@ -1089,104 +1220,144 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         </div>
     </div>
 
-    <!-- MAIN BRANDED INVOICE CARD -->
-    <div class="inv-card">
+    <!-- MULTI-PAGE CHUNKED INVOICE CARDS -->
+    <?php 
+    $globalItemIdx = 1;
+    foreach ($itemChunks as $pageIdx => $chunkItems): 
+        $pageNumber = $pageIdx + 1;
+        $isFirstPage = ($pageIdx === 0);
+        $isLastPage = ($pageIdx === $totalPages - 1);
+    ?>
+    <div class="inv-card <?= !$isFirstPage ? 'inv-card-continue' : '' ?>">
         <?php if ($isCancelled): ?>
             <div class="inv-watermark">CANCELLED</div>
         <?php endif; ?>
 
-        <!-- TOP SECTION: Brand (Left) | Invoice Details (Center) | Customer Details (Right) -->
-        <div class="inv-top-grid">
-            <!-- Left: Brand Logo / Peacock Vector -->
-            <div class="inv-brand-col">
-                <?php if ($logoExists): ?>
-                    <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-brand-img">
-                <?php else: ?>
-                    <svg class="inv-brand-peacock-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Stylized Peacock Plume -->
-                        <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
-                        <!-- Crown 3 dots with stalks -->
-                        <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
-                        <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
-                        <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
-                        <line x1="50" y1="11" x2="50" y2="14" stroke="currentColor" stroke-width="1.2"/>
-                        <line x1="44" y1="12.5" x2="47" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
-                        <line x1="56" y1="12.5" x2="53" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
-                        <!-- Plume outer accent dots -->
-                        <circle cx="34" cy="21" r="1.4" fill="currentColor"/>
-                        <circle cx="66" cy="21" r="1.4" fill="currentColor"/>
-                        <circle cx="26" cy="31" r="1.4" fill="currentColor"/>
-                        <circle cx="74" cy="31" r="1.4" fill="currentColor"/>
-                        <circle cx="25" cy="44" r="1.4" fill="currentColor"/>
-                        <circle cx="75" cy="44" r="1.4" fill="currentColor"/>
-                        <!-- Peacock graceful curved neck & head cutout (white) -->
-                        <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
-                        <!-- Eye dot -->
-                        <circle cx="54.5" cy="25.5" r="0.8" fill="currentColor"/>
-                    </svg>
-                <?php endif; ?>
-                <div class="inv-brand-title"><?= e($storeDisplayName) ?></div>
-            </div>
-
-            <!-- Middle: Invoice Heading & Meta -->
-            <div class="inv-meta-col">
-                <h1 class="inv-main-heading">INVOICE</h1>
-                <div class="inv-thank-you">
-                    <span>THANK YOU FOR SHOPPING WITH US</span>
-                    <span class="heart-icon">♥</span>
+        <?php if ($isFirstPage): ?>
+            <!-- TOP SECTION: Brand (Left) | Invoice Details (Center) | Customer Details (Right) -->
+            <div class="inv-top-grid">
+                <!-- Left: Brand Logo / Peacock Vector -->
+                <div class="inv-brand-col">
+                    <?php if ($logoExists): ?>
+                        <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-brand-img">
+                    <?php else: ?>
+                        <svg class="inv-brand-peacock-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Stylized Peacock Plume -->
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
+                            <!-- Crown 3 dots with stalks -->
+                            <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
+                            <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
+                            <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
+                            <line x1="50" y1="11" x2="50" y2="14" stroke="currentColor" stroke-width="1.2"/>
+                            <line x1="44" y1="12.5" x2="47" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
+                            <line x1="56" y1="12.5" x2="53" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
+                            <!-- Plume outer accent dots -->
+                            <circle cx="34" cy="21" r="1.4" fill="currentColor"/>
+                            <circle cx="66" cy="21" r="1.4" fill="currentColor"/>
+                            <circle cx="26" cy="31" r="1.4" fill="currentColor"/>
+                            <circle cx="74" cy="31" r="1.4" fill="currentColor"/>
+                            <circle cx="25" cy="44" r="1.4" fill="currentColor"/>
+                            <circle cx="75" cy="44" r="1.4" fill="currentColor"/>
+                            <!-- Peacock graceful curved neck & head cutout (white) -->
+                            <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
+                            <!-- Eye dot -->
+                            <circle cx="54.5" cy="25.5" r="0.8" fill="currentColor"/>
+                        </svg>
+                    <?php endif; ?>
+                    <div class="inv-brand-title"><?= e($storeDisplayName) ?></div>
                 </div>
 
-                <div class="inv-meta-list">
-                    <div class="inv-row-kv">
-                        <span class="lbl">Order No</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($displayOrderNo) ?></span>
+                <!-- Middle: Invoice Heading & Meta -->
+                <div class="inv-meta-col">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <h1 class="inv-main-heading">INVOICE</h1>
+                        <?php if ($totalPages > 1): ?>
+                            <span class="inv-page-badge">Page <?= $pageNumber ?> of <?= $totalPages ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Order Date</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($invoiceDateStr) ?></span>
+                    <div class="inv-thank-you">
+                        <span>THANK YOU FOR SHOPPING WITH US</span>
+                        <span class="heart-icon">♥</span>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Invoice No</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($displayInvoiceNo) ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Payment Mode</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($paymentModeStr) ?></span>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Right: Customer Details -->
-            <div class="inv-cust-col">
-                <h3 class="inv-cust-heading">Customer Details</h3>
-                <div class="inv-cust-list">
-                    <div class="inv-row-kv">
-                        <span class="lbl">Name</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custName) ?></span>
+                    <div class="inv-meta-list">
+                        <div class="inv-row-kv">
+                            <span class="lbl">Order No</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($displayOrderNo) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Order Date</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($invoiceDateStr) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Invoice No</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($displayInvoiceNo) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Payment Mode</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($paymentModeStr) ?></span>
+                        </div>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Phone</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custPhone ?: 'N/A') ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Address</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custAddress) ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Pin Code</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custPincode) ?></span>
+                </div>
+
+                <!-- Right: Customer Details -->
+                <div class="inv-cust-col">
+                    <h3 class="inv-cust-heading">Customer Details</h3>
+                    <div class="inv-cust-list">
+                        <div class="inv-row-kv">
+                            <span class="lbl">Name</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custName) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Phone</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custPhone ?: 'N/A') ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Address</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custAddress) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Pin Code</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custPincode) ?></span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        <?php else: ?>
+            <!-- MINI TOP HEADER (Continuation Page) -->
+            <div class="inv-mini-top-grid">
+                <div class="inv-mini-brand">
+                    <?php if ($logoExists): ?>
+                        <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-mini-brand-img">
+                    <?php else: ?>
+                        <svg class="inv-mini-peacock" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
+                            <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
+                            <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
+                            <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
+                            <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
+                        </svg>
+                    <?php endif; ?>
+                    <div>
+                        <div class="inv-mini-title"><?= e($storeDisplayName) ?></div>
+                        <div style="font-size: 11px; font-weight: 700; color: #64748b;">INVOICE #<?= e($displayInvoiceNo) ?> (Cont.)</div>
+                    </div>
+                </div>
+                <div class="inv-mini-meta">
+                    <div><strong>Customer:</strong> <?= e($custName) ?></div>
+                    <div><strong>Date:</strong> <?= e($invoiceDateStr) ?></div>
+                    <div style="margin-top: 2px;"><span class="inv-page-badge">Page <?= $pageNumber ?> of <?= $totalPages ?></span></div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- PRODUCTS TABLE -->
         <div class="inv-table-wrap">
@@ -1203,21 +1374,20 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (empty($items)): ?>
+                    <?php if (empty($chunkItems)): ?>
                         <tr>
-                            <td colspan="7" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this invoice.</td>
+                            <td colspan="7" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this page.</td>
                         </tr>
                     <?php else: ?>
                         <?php 
-                        $rowIdx = 1;
-                        foreach ($items as $it): 
+                        foreach ($chunkItems as $it): 
                             $attrs = extract_item_attributes($it, $db);
                             $uPrice = (float)$it['unit_price'];
                             $qty = (int)$it['quantity'];
                             $lTotal = (float)$it['line_total'];
                         ?>
                             <tr>
-                                <td><?= $rowIdx++ ?></td>
+                                <td><?= $globalItemIdx++ ?></td>
                                 <td class="col-name"><?= e($it['product_name']) ?></td>
                                 <td><?= e($attrs['size']) ?></td>
                                 <td><?= e($attrs['colour']) ?></td>
@@ -1231,65 +1401,73 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             </table>
         </div>
 
-        <!-- FINANCIAL SUMMARY BOX (Right Aligned Below Table) -->
-        <div class="inv-summary-container">
-            <div class="inv-summary-box">
-                <div class="inv-summary-row">
-                    <span class="s-label">Total Amount</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($subtotal) ?></span>
-                </div>
-                <div class="inv-summary-row">
-                    <span class="s-label">Discount</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
-                </div>
-                <div class="inv-summary-row">
-                    <span class="s-label">Shipping</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($shippingFee) ?></span>
-                </div>
-                <div class="inv-summary-row grand-total-row">
-                    <span class="s-label">Grand Total</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($grandTotal) ?></span>
-                </div>
+        <?php if (!$isLastPage): ?>
+            <!-- Continuation Note -->
+            <div class="inv-continue-note">
+                Continued on Page <?= $pageNumber + 1 ?> &rarr;
             </div>
-        </div>
-
-        <!-- FOOTER SECTION: Barcode (Left) | Packed with love (Center) | QR Code & Help (Right) -->
-        <div class="inv-footer-grid">
-            <!-- Left: Order No Barcode -->
-            <div class="inv-footer-barcode">
-                <div class="inv-barcode-title">Order No: <?= e($displayOrderNo) ?></div>
-                <div class="inv-barcode-svg-wrap">
-                    <?= $barcodeSvg ?>
+        <?php else: ?>
+            <!-- FINANCIAL SUMMARY BOX (Right Aligned Below Table) -->
+            <div class="inv-summary-container">
+                <div class="inv-summary-box">
+                    <div class="inv-summary-row">
+                        <span class="s-label">Total Amount</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($subtotal) ?></span>
+                    </div>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Discount</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
+                    </div>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Shipping</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($shippingFee) ?></span>
+                    </div>
+                    <div class="inv-summary-row grand-total-row">
+                        <span class="s-label">Grand Total</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($grandTotal) ?></span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Center: Packed with love signature -->
-            <div class="inv-footer-love">
-                <div class="inv-love-script">Packed with love</div>
-                <div class="inv-love-heart">♥</div>
-                <div class="inv-love-brand"><?= e($storeDisplayName) ?></div>
-            </div>
+            <!-- FOOTER SECTION: Barcode (Left) | Packed with love (Center) | QR Code & Help (Right) -->
+            <div class="inv-footer-grid">
+                <!-- Left: Order No Barcode -->
+                <div class="inv-footer-barcode">
+                    <div class="inv-barcode-title">Order No: <?= e($displayOrderNo) ?></div>
+                    <div class="inv-barcode-svg-wrap">
+                        <?= $barcodeSvg ?>
+                    </div>
+                </div>
 
-            <!-- Right: Dynamic QR Code & WhatsApp Help Info -->
-            <div class="inv-footer-help">
-                <div class="inv-qr-box" id="invQrContainer" title="Scan to verify invoice">
-                    <!-- QR Code dynamically injected via qrcode.min.js with clean fallback -->
-                    <noscript>
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($invoiceVerifyUrl) ?>" alt="QR Code" style="width:100%;height:100%;">
-                    </noscript>
+                <!-- Center: Packed with love signature -->
+                <div class="inv-footer-love">
+                    <div class="inv-love-script">Packed with love</div>
+                    <div class="inv-love-heart">♥</div>
+                    <div class="inv-love-brand"><?= e($storeDisplayName) ?></div>
                 </div>
-                <div class="inv-help-text">
-                    <div class="inv-help-title">Need help?</div>
-                    <div class="inv-help-sub">WhatsApp us at</div>
-                    <div class="inv-help-phone"><?= e($formattedWhatsAppPhone) ?></div>
+
+                <!-- Right: Dynamic QR Code & WhatsApp Help Info -->
+                <div class="inv-footer-help">
+                    <div class="inv-qr-box invQrTarget" title="Scan to verify invoice">
+                        <!-- QR Code dynamically injected via qrcode.min.js with clean fallback -->
+                        <noscript>
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($invoiceVerifyUrl) ?>" alt="QR Code" style="width:100%;height:100%;">
+                        </noscript>
+                    </div>
+                    <div class="inv-help-text">
+                        <div class="inv-help-title">Need help?</div>
+                        <div class="inv-help-sub">WhatsApp us at</div>
+                        <div class="inv-help-phone"><?= e($formattedWhatsAppPhone) ?></div>
+                    </div>
                 </div>
             </div>
-        </div>
+        <?php endif; ?>
     </div>
+    <?php endforeach; ?>
 
 <?php if ($isAdmin && !$isPublicView): ?>
             </main>
@@ -1334,16 +1512,18 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 
 <script>
     function renderQrCode(dim = 68) {
-        const qrContainer = document.getElementById('invQrContainer');
-        if (qrContainer && typeof QRCode !== 'undefined') {
-            qrContainer.innerHTML = '';
-            new QRCode(qrContainer, {
-                text: '<?= addslashes($invoiceVerifyUrl) ?>',
-                width: dim,
-                height: dim,
-                colorDark: '<?= addslashes($storeThemeColor) ?>',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.M
+        const qrContainers = document.querySelectorAll('.invQrTarget');
+        if (qrContainers && typeof QRCode !== 'undefined') {
+            qrContainers.forEach(function(qrContainer) {
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: '<?= addslashes($invoiceVerifyUrl) ?>',
+                    width: dim,
+                    height: dim,
+                    colorDark: '<?= addslashes($storeThemeColor) ?>',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
             });
         }
     }
