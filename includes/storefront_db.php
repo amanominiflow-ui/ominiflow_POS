@@ -1943,6 +1943,32 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     if ($token !== '') {
         $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
 
+        $compBodyOnly = [
+            [
+                'type' => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ]
+        ];
+
+        $compCopyCodeCoupon = [
+            [
+                'type' => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'copy_code',
+                'index' => '0',
+                'parameters' => [
+                    ['type' => 'coupon_code', 'coupon_code' => (string)$otp]
+                ]
+            ]
+        ];
+
         $compCopyCodeButton = [
             [
                 'type' => 'body',
@@ -1977,20 +2003,23 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
             ]
         ];
 
-        $compBodyOnly = [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ]
-        ];
-
-        $componentsOrder = [
-            $compCopyCodeButton,
-            $compUrlButton,
-            $compBodyOnly,
-        ];
+        // If template is the default multi-variable otp_ver, try URL/CopyCode button first.
+        // For custom templates (which usually contain 1 body variable {{1}}), try Body Only first.
+        if (strtolower($template) === 'otp_ver') {
+            $componentsOrder = [
+                $compUrlButton,
+                $compCopyCodeButton,
+                $compCopyCodeCoupon,
+                $compBodyOnly,
+            ];
+        } else {
+            $componentsOrder = [
+                $compBodyOnly,
+                $compCopyCodeCoupon,
+                $compCopyCodeButton,
+                $compUrlButton,
+            ];
+        }
 
         $languagesToTry = array_unique(array_filter([
             $lang,
