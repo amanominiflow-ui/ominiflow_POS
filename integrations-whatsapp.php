@@ -542,70 +542,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 <!-- TAB 1: WhatsApp API & OTP Settings (Directly on page) -->
                 <div class="wa-tab-pane active" id="tab-settings">
+                    <!-- Quick Live Test Bar (Top) -->
+                    <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 14px 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">🧪</span>
+                            <div>
+                                <div style="font-size: 13.5px; font-weight: 700; color: #6b21a8;">Instant Live Test WhatsApp OTP</div>
+                                <div style="font-size: 12px; color: #7e22ce;">Test delivery directly to your WhatsApp number right now</div>
+                            </div>
+                        </div>
+                        <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="test_whatsapp_otp">
+                            <input type="text" name="test_phone" placeholder="Enter mobile e.g. 917879492987" required class="form-control" style="font-size: 13px; padding: 8px 12px; width: 220px; border-color: #d8b4fe;">
+                            <button type="submit" class="btn-secondary" style="background:#7e22ce;color:#fff;border:0;font-size:13px;font-weight:700;white-space:nowrap;padding:8px 18px;border-radius:6px;cursor:pointer;">
+                                🚀 Send Test OTP
+                            </button>
+                        </form>
+                    </div>
+
                     <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); margin-bottom: 24px;">
                         <!-- Quick Import via cURL Box -->
-                        <div style="padding: 18px 24px; background: #f0fdf4; border-bottom: 1px solid #dcfce7;">
-                            <label style="font-size: 13.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
-                                ⚡ Quick Import: Paste your cURL Command
-                            </label>
+                        <div style="padding: 14px 20px; background: #f0fdf4; border-bottom: 1px solid #dcfce7;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <label style="font-size: 13px; font-weight: 700; color: #166534; margin: 0;">
+                                    ⚡ Paste cURL Command (Or Click 1-Click Fill)
+                                </label>
+                                <button type="button" onclick="fillDefaultCredentials()" style="background:#059669;color:#fff;border:0;font-size:12px;font-weight:700;padding:4px 12px;border-radius:4px;cursor:pointer;">
+                                    ✨ 1-Click Auto-Fill My Credentials
+                                </button>
+                            </div>
                             <div style="display: flex; gap: 10px;">
                                 <textarea id="pageCurlInput" rows="2" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -H 'Content-Type: application/json' -d '{...}'"></textarea>
                                 <button type="button" id="btnParseCurl" class="btn-secondary" style="background:#15803d;color:#fff;border:0;font-size:13px;font-weight:700;white-space:nowrap;padding:0 18px;border-radius:6px;cursor:pointer;" onclick="parsePageCurlCommand()">
                                     Parse & Auto-Fill
                                 </button>
                             </div>
-                            <span style="font-size: 11.5px; color: #15803d; margin-top: 4px; display: block;">Paste any template cURL command to automatically extract Token, Company ID, and Template Name into the form below.</span>
                         </div>
 
                         <!-- Settings Form -->
-                        <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="padding: 24px;">
+                        <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="padding: 20px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="save_whatsapp_config">
 
-                            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 16px;">
+                            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 6px; font-weight: 600;">WhatsApp API Endpoint URL</label>
+                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Endpoint URL</label>
                                     <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= e($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 6px; font-weight: 600;">Company ID</label>
+                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
                                     <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= e($brand['wa_company_id'] ?? 162) ?>" class="form-control" required style="width: 100%;">
                                 </div>
                             </div>
 
-                            <div style="margin-bottom: 16px;">
-                                <label class="form-label required" style="display: block; margin-bottom: 6px; font-weight: 600;">WhatsApp API Token</label>
+                            <div style="margin-bottom: 14px;">
+                                <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
                                 <input type="text" name="wa_token" id="page_wa_token" value="<?= e($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
                             </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 16px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 6px; font-weight: 600;">OTP Template Name</label>
+                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">OTP Template Name</label>
                                     <input type="text" name="wa_template_name" id="page_wa_template_name" value="<?= e($brand['wa_template_name'] ?? 'otp_ver') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 6px; font-weight: 600;">Template Language</label>
+                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Template Language</label>
                                     <input type="text" name="wa_template_lang" id="page_wa_template_lang" value="<?= e($brand['wa_template_lang'] ?? 'en_US') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                             </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                                 <div>
-                                    <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">WhatsApp Phone Number ID (Optional)</label>
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp Phone Number ID (Optional)</label>
                                     <input type="text" name="wa_phone_number_id" id="page_wa_phone_number_id" value="<?= e($brand['wa_phone_number_id'] ?? '789955904210534') ?>" class="form-control" style="width: 100%;">
                                 </div>
                                 <div>
-                                    <label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 600;">WABA ID (Optional)</label>
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WABA ID (Optional)</label>
                                     <input type="text" name="wa_waba_id" id="page_wa_waba_id" value="<?= e($brand['wa_waba_id'] ?? '826751349830054') ?>" class="form-control" style="width: 100%;">
                                 </div>
                             </div>
 
-                            <div style="background: #f8fafc; padding: 14px 18px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a; margin-bottom: 8px;">
+                            <div style="background: #f8fafc; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 16px; display: flex; gap: 20px; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
                                     <input type="checkbox" name="wa_enable_storefront_otp" value="1" <?= !empty($brand['wa_enable_storefront_otp']) ? 'checked' : 'checked' ?> style="width: 16px; height: 16px;">
                                     <span>Enable WhatsApp Number & OTP on Online Storefront</span>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
                                     <input type="checkbox" name="auto_send_invoices" value="1" checked style="width: 16px; height: 16px;">
                                     <span>Auto-send Invoices on POS Checkout</span>
                                 </label>
@@ -613,23 +636,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                                 <button type="submit" class="btn-primary" style="background:#25d366;border-color:#25d366;font-size:14px;font-weight:700;padding:10px 24px;border-radius:6px;cursor:pointer;">
-                                    Save WhatsApp Settings
+                                    💾 Save WhatsApp Settings
                                 </button>
                             </div>
                         </form>
-
-                        <!-- Test WhatsApp Message Box -->
-                        <div style="padding: 16px 24px; background: #faf5ff; border-top: 1px solid #f3e8ff;">
-                            <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="display: flex; align-items: center; gap: 12px;">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="test_whatsapp_otp">
-                                <span style="font-size: 13px; font-weight: 700; color: #6b21a8; white-space: nowrap;">🧪 Send Live Test OTP:</span>
-                                <input type="text" name="test_phone" placeholder="e.g. 917879492987" required class="form-control" style="font-size: 13px; padding: 8px 12px; max-width: 240px;">
-                                <button type="submit" class="btn-secondary" style="background:#7e22ce;color:#fff;border:0;font-size:13px;font-weight:700;white-space:nowrap;padding:8px 18px;border-radius:6px;cursor:pointer;">
-                                    Send Test Message
-                                </button>
-                            </form>
-                        </div>
                     </div>
                 </div>
 
@@ -969,6 +979,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             } else {
                 showParseStatus('Could not find WhatsApp parameters in the text. Please check or fill fields manually.', false);
             }
+        }
+
+        function fillDefaultCredentials() {
+            document.getElementById('page_wa_api_url').value = 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
+            document.getElementById('page_wa_token').value = '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3';
+            document.getElementById('page_wa_company_id').value = '162';
+            document.getElementById('page_wa_template_name').value = 'otp_ver';
+            document.getElementById('page_wa_template_lang').value = 'en_US';
+
+            highlightField('page_wa_api_url');
+            highlightField('page_wa_token');
+            highlightField('page_wa_company_id');
+            highlightField('page_wa_template_name');
+            highlightField('page_wa_template_lang');
+
+            showParseStatus('Default WhatsApp Gateway credentials filled! Click "Save WhatsApp Settings" to save.', true);
         }
 
         const featureData = {
