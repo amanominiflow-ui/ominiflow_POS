@@ -29,7 +29,7 @@ $brand = get_mobile_store_settings($bizId);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         set_flash('error', 'Invalid session token. Please refresh.');
-        redirect(APP_URL . '/integrations-whatsapp.php');
+        redirect('integrations-whatsapp.php');
     }
 
     $action = (string)$_POST['action'];
@@ -46,8 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
         ]);
 
-        set_flash('success', 'WhatsApp Business API & OTP settings saved successfully for your store!');
-        redirect(APP_URL . '/integrations-whatsapp.php');
+        set_flash('success', 'WhatsApp settings saved successfully for your store!');
+        redirect('integrations-whatsapp.php');
     }
 
     if ($action === 'test_whatsapp_otp') {
@@ -60,13 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $res = send_storefront_otp_whatsapp($testPhone, $testOtp, $storeName, $bizId);
             
             if (!empty($res['api_success'])) {
-                set_flash('success', 'Test OTP (' . $testOtp . ') sent successfully to +' . $res['phone'] . ' via WhatsApp! API Response: ' . (is_string($res['response']) ? $res['response'] : 'Delivered'));
+                set_flash('success', 'Test OTP (' . $testOtp . ') sent successfully to +' . $res['phone'] . ' via WhatsApp!');
             } else {
                 $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : 'Unknown error';
                 set_flash('error', 'WhatsApp Gateway response: ' . $rawMsg);
             }
         }
-        redirect(APP_URL . '/integrations-whatsapp.php');
+        redirect('integrations-whatsapp.php');
     }
 }
 ?>
@@ -714,7 +714,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     <p style="font-size: 13px; color: #166534; margin: 4px 0 0;">Zero-setup WhatsApp OTP verification & customer checkout account creation is automatically enabled for your store.</p>
                                 </div>
                             </div>
-                            <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                            <form method="POST" action="integrations-whatsapp.php" style="display: flex; align-items: center; gap: 8px; margin: 0;">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="test_whatsapp_otp">
                                 <input type="text" name="test_phone" placeholder="Enter test number e.g. 919876543210" required class="form-control" style="font-size: 13px; padding: 9px 14px; width: 250px; background: #fff; border-color: #86efac;">
@@ -738,7 +738,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
 
                         <!-- Settings Form -->
-                        <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="padding: 20px;">
+                        <form method="POST" action="integrations-whatsapp.php" style="padding: 20px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="save_whatsapp_config">
 
