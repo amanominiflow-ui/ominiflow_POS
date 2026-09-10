@@ -1943,16 +1943,24 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     if ($token !== '') {
         $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
 
-        $bodyOnlyComponent = [
+        $compCopyCodeButton = [
             [
                 'type' => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'copy_code',
+                'index' => '0',
                 'parameters' => [
                     ['type' => 'text', 'text' => (string)$otp]
                 ]
             ]
         ];
 
-        $bodyAndButtonComponent = [
+        $compUrlButton = [
             [
                 'type' => 'body',
                 'parameters' => [
@@ -1969,37 +1977,58 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
             ]
         ];
 
-        // If template is 'otp_ver', it has dynamic URL button. For custom templates, use body-only!
-        $componentsOrder = ($template === 'otp_ver') 
-            ? [$bodyAndButtonComponent, $bodyOnlyComponent] 
-            : [$bodyOnlyComponent, $bodyAndButtonComponent];
+        $compBodyOnly = [
+            [
+                'type' => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ]
+        ];
+
+        $componentsOrder = [
+            $compCopyCodeButton,
+            $compUrlButton,
+            $compBodyOnly,
+        ];
+
+        $languagesToTry = array_unique(array_filter([
+            $lang,
+            ($lang === 'en_US' ? 'en' : ($lang === 'en' ? 'en_US' : null)),
+            'en_US',
+            'en'
+        ]));
 
         $candidatePayloads = [];
 
         if ($isMetaGraph) {
-            foreach ($componentsOrder as $comp) {
-                $candidatePayloads[] = [
-                    'messaging_product' => 'whatsapp',
-                    'recipient_type' => 'individual',
-                    'to' => $waPhone,
-                    'type' => 'template',
-                    'template' => [
-                        'name' => $template,
-                        'language' => ['code' => $lang],
-                        'components' => $comp,
-                    ]
-                ];
+            foreach ($languagesToTry as $l) {
+                foreach ($componentsOrder as $comp) {
+                    $candidatePayloads[] = [
+                        'messaging_product' => 'whatsapp',
+                        'recipient_type' => 'individual',
+                        'to' => $waPhone,
+                        'type' => 'template',
+                        'template' => [
+                            'name' => $template,
+                            'language' => ['code' => $l],
+                            'components' => $comp,
+                        ]
+                    ];
+                }
             }
         } else {
-            foreach ($componentsOrder as $comp) {
-                $candidatePayloads[] = [
-                    'token' => $token,
-                    'phone' => $waPhone,
-                    'company_id' => $companyId,
-                    'template_name' => $template,
-                    'template_language' => $lang,
-                    'components' => $comp,
-                ];
+            foreach ($languagesToTry as $l) {
+                foreach ($componentsOrder as $comp) {
+                    $candidatePayloads[] = [
+                        'token' => $token,
+                        'phone' => $waPhone,
+                        'company_id' => $companyId,
+                        'template_name' => $template,
+                        'template_language' => $l,
+                        'components' => $comp,
+                    ];
+                }
             }
         }
 
