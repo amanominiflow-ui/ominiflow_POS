@@ -63,17 +63,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $waCompanyId = (int)$m[1];
                 }
             }
-            if (preg_match('/(?:["\']?template_name["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
+            if (preg_match('/(?:["\']?template_name["\']?\s*[:=]\s*["\']?|["\']?template["\']?\s*:\s*["\']?|["\']?name["\']?\s*:\s*["\']?)([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
                 if ($waTemplateName === '') {
                     $waTemplateName = trim($m[1]);
                 }
             }
-            if (preg_match('/(?:["\']?template_language["\']?|["\']?template_lang["\']?)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
+            if (preg_match('/(?:["\']?template_language["\']?|["\']?template_lang["\']?|["\']?language["\']?|["\']?code["\']?)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
                 if ($waTemplateLang === '') {
                     $waTemplateLang = trim($m[1]);
                 }
             }
-            if (preg_match('/(?:["\']?phone_number_id["\']?|["\']?wa_phone_number_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m)) {
+            if (preg_match('/(?:["\']?phone_number_id["\']?|["\']?wa_phone_number_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m) || preg_match('/\/v\d+\.\d+\/([0-9]{10,})\/messages/i', $rawCurl, $m)) {
                 if ($waPhoneId === '') {
                     $waPhoneId = trim($m[1]);
                 }
@@ -239,6 +239,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // 4. Extract Template Name
             const tmplMatch = raw.match(/"template_name"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
                               raw.match(/'template_name'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
+                              raw.match(/"template"\s*:\s*["']?([^"',}\s{}]+)["']?/i) ||
+                              raw.match(/"name"\s*:\s*["']?([a-zA-Z0-9_-]+)["']?/i) ||
                               raw.match(/template_name["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
             if (tmplMatch && tmplMatch[1]) {
                 if (document.getElementById('page_wa_template_name')) {
@@ -251,6 +253,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // 5. Extract Template Language
             const langMatch = raw.match(/"template_language"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
                               raw.match(/'template_language'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
+                              raw.match(/"language"\s*:\s*["']?([^"',}\s{}]+)["']?/i) ||
+                              raw.match(/"code"\s*:\s*["']?([a-zA-Z0-9_-]+)["']?/i) ||
                               raw.match(/template_language["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
             if (langMatch && langMatch[1]) {
                 if (document.getElementById('page_wa_template_lang')) {
@@ -261,7 +265,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             // 6. Phone Number ID
-            const phoneIdMatch = raw.match(/["']?(?:phone_number_id|wa_phone_number_id)["']?\s*[:=]\s*["']?([0-9]+)["']?/i);
+            const phoneIdMatch = raw.match(/["']?(?:phone_number_id|wa_phone_number_id)["']?\s*[:=]\s*["']?([0-9]+)["']?/i) ||
+                                 raw.match(/\/v\d+\.\d+\/([0-9]{10,})\/messages/i);
             if (phoneIdMatch && phoneIdMatch[1]) {
                 if (document.getElementById('page_wa_phone_number_id')) {
                     document.getElementById('page_wa_phone_number_id').value = phoneIdMatch[1].trim();

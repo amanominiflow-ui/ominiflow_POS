@@ -1922,6 +1922,7 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
 
     $brand = $businessId > 0 ? get_mobile_store_settings($businessId) : [];
 
+    // Dynamically retrieve configured credentials for this store
     $apiUrl = !empty(trim((string)($brand['wa_api_url'] ?? ''))) ? trim((string)$brand['wa_api_url']) : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
     $token = !empty(trim((string)($brand['wa_token'] ?? ''))) ? trim((string)$brand['wa_token']) : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3');
     $companyId = !empty($brand['wa_company_id']) ? (int)$brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int)OMINIFLOW_WA_COMPANY_ID : 162);
@@ -1940,12 +1941,59 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     $apiSuccess = false;
 
     if ($token !== '') {
-        // Multi-tier payload structure:
-        // 1. with_button: for templates like otp_ver that have both body param & button param
-        // 2. body_only: for custom templates that only have body param ({{1}})
-        // 3. simple_params: for direct parameters format
-        $candidatePayloads = [
-            [
+        $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
+
+        $candidatePayloads = [];
+
+        if ($isMetaGraph) {
+            // Meta WhatsApp Cloud API formats
+            $candidatePayloads[] = [
+                'messaging_product' => 'whatsapp',
+                'recipient_type' => 'individual',
+                'to' => $waPhone,
+                'type' => 'template',
+                'template' => [
+                    'name' => $template,
+                    'language' => ['code' => $lang],
+                    'components' => [
+                        [
+                            'type' => 'body',
+                            'parameters' => [
+                                ['type' => 'text', 'text' => (string)$otp]
+                            ]
+                        ],
+                        [
+                            'type' => 'button',
+                            'sub_type' => 'url',
+                            'index' => '0',
+                            'parameters' => [
+                                ['type' => 'text', 'text' => (string)$otp]
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+            $candidatePayloads[] = [
+                'messaging_product' => 'whatsapp',
+                'recipient_type' => 'individual',
+                'to' => $waPhone,
+                'type' => 'template',
+                'template' => [
+                    'name' => $template,
+                    'language' => ['code' => $lang],
+                    'components' => [
+                        [
+                            'type' => 'body',
+                            'parameters' => [
+                                ['type' => 'text', 'text' => (string)$otp]
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+        } else {
+            // Gateway / WpBox API formats
+            $candidatePayloads[] = [
                 'token' => $token,
                 'phone' => $waPhone,
                 'company_id' => $companyId,
@@ -1955,7 +2003,7 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
                     [
                         'type' => 'body',
                         'parameters' => [
-                            ['type' => 'text', 'text' => (string) $otp]
+                            ['type' => 'text', 'text' => (string)$otp]
                         ]
                     ],
                     [
@@ -1963,12 +2011,12 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
                         'sub_type' => 'url',
                         'index' => '0',
                         'parameters' => [
-                            ['type' => 'text', 'text' => (string) $otp]
+                            ['type' => 'text', 'text' => (string)$otp]
                         ]
                     ]
                 ]
-            ],
-            [
+            ];
+            $candidatePayloads[] = [
                 'token' => $token,
                 'phone' => $waPhone,
                 'company_id' => $companyId,
@@ -1978,22 +2026,22 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
                     [
                         'type' => 'body',
                         'parameters' => [
-                            ['type' => 'text', 'text' => (string) $otp]
+                            ['type' => 'text', 'text' => (string)$otp]
                         ]
                     ]
                 ]
-            ],
-            [
+            ];
+            $candidatePayloads[] = [
                 'token' => $token,
                 'phone' => $waPhone,
                 'company_id' => $companyId,
                 'template_name' => $template,
                 'template_language' => $lang,
                 'parameters' => [
-                    ['type' => 'text', 'text' => (string) $otp]
+                    ['type' => 'text', 'text' => (string)$otp]
                 ]
-            ]
-        ];
+            ];
+        }
 
         foreach ($candidatePayloads as $payload) {
             try {
@@ -2018,7 +2066,7 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
 
                 if ($responseRaw) {
                     $decoded = json_decode((string) $responseRaw, true);
-                    if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']))) {
+                    if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']) || !empty($decoded['messages']))) {
                         $apiSuccess = true;
                         break;
                     }
