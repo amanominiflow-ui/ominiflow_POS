@@ -711,7 +711,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <form method="POST" action="<?= asset('integrations-whatsapp.php') ?>" style="display: flex; align-items: center; gap: 8px; margin: 0;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="test_whatsapp_otp">
-                            <input type="text" name="test_phone" placeholder="Enter mobile e.g. 917879492987" required class="form-control" style="font-size: 13px; padding: 8px 12px; width: 220px; border-color: #d8b4fe;">
+                            <input type="text" name="test_phone" placeholder="Type Any WhatsApp No. (e.g. 919876543210)" required class="form-control" style="font-size: 13px; padding: 8px 12px; width: 280px; border-color: #d8b4fe;">
                             <button type="submit" class="btn-secondary" style="background:#7e22ce;color:#fff;border:0;font-size:13px;font-weight:700;white-space:nowrap;padding:8px 18px;border-radius:6px;cursor:pointer;">
                                 🚀 Send Test OTP
                             </button>
