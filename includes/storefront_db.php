@@ -694,6 +694,16 @@ function get_mobile_store_settings(int $businessId): array {
         'home_hero_banner_link_5' => (string) ($row['home_hero_banner_link_5'] ?? ''),
         'home_hero_autoplay' => (int) ($row['home_hero_autoplay'] ?? 1) === 1,
         'home_hero_autoplay_speed' => (int) ($row['home_hero_autoplay_speed'] ?? 4000),
+
+        // Dynamic WhatsApp Business API Settings per Business
+        'wa_api_url' => (string) ($row['wa_api_url'] ?? ''),
+        'wa_token' => (string) ($row['wa_token'] ?? ''),
+        'wa_company_id' => !empty($row['wa_company_id']) ? (int) $row['wa_company_id'] : null,
+        'wa_template_name' => (string) ($row['wa_template_name'] ?? ''),
+        'wa_template_lang' => (string) ($row['wa_template_lang'] ?? ''),
+        'wa_phone_number_id' => (string) ($row['wa_phone_number_id'] ?? ''),
+        'wa_waba_id' => (string) ($row['wa_waba_id'] ?? ''),
+        'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
     ];
 }
 
