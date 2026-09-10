@@ -1880,6 +1880,205 @@ function login_storefront_shopper(int $businessId, string $identifier, string $p
     return ['success' => true];
 }
 
+function format_storefront_whatsapp_phone(string $phone): string {
+    $digits = preg_replace('/\D+/', '', $phone) ?? '';
+    if (strlen($digits) === 10) {
+        return '91' . $digits;
+    }
+    if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+        return '91' . substr($digits, 1);
+    }
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        return $digits;
+    }
+    return $digits;
+}
+
+function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName): array {
+    $waPhone = format_storefront_whatsapp_phone($phone);
+    if (strlen($waPhone) < 10) {
+        return ['success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
+    }
+
+    $apiUrl = defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
+    $token = defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '';
+    $companyId = defined('OMINIFLOW_WA_COMPANY_ID') ? (int) OMINIFLOW_WA_COMPANY_ID : 162;
+    $template = defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver';
+    $lang = defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US';
+
+    $payload = [
+        'token' => $token,
+        'phone' => $waPhone,
+        'company_id' => $companyId,
+        'template_name' => $template,
+        'template_language' => $lang,
+        'components' => [
+            [
+                'type' => 'body',
+                'parameters' => [
+                    [
+                        'type' => 'text',
+                        'text' => (string) $otp,
+                    ]
+                ]
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'url',
+                'index' => '0',
+                'parameters' => [
+                    [
+                        'type' => 'text',
+                        'text' => (string) $otp,
+                    ]
+                ]
+            ]
+        ]
+    ];
+
+    $_SESSION['sf_last_wa_otp'] = [
+        'phone' => $waPhone,
+        'raw_phone' => $phone,
+        'otp' => $otp,
+        'time' => time(),
+    ];
+
+    $responseRaw = null;
+    $httpCode = 0;
+    $apiSuccess = false;
+
+    if ($token !== '') {
+        try {
+            $ch = curl_init($apiUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                ],
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_SSL_VERIFYPEER => false,
+            ]);
+            $responseRaw = curl_exec($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($responseRaw) {
+                $decoded = json_decode((string) $responseRaw, true);
+                if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] !== 'error'))) {
+                    $apiSuccess = true;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
+        }
+    }
+
+    return [
+        'success' => true,
+        'api_success' => $apiSuccess,
+        'phone' => $waPhone,
+        'otp' => $otp,
+        'http_code' => $httpCode,
+        'response' => $responseRaw,
+    ];
+}
+
+function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $enteredOtp, string $name = '', string $email = ''): array {
+    $waPhone = format_storefront_whatsapp_phone($phone);
+    $cleanEntered = trim($enteredOtp);
+
+    if ($cleanEntered === '') {
+        return ['success' => false, 'error' => 'Please enter the 6-digit OTP verification code.'];
+    }
+
+    $otpSession = $_SESSION['sf_wa_otp_data'] ?? null;
+    if (!$otpSession || empty($otpSession['otp'])) {
+        return ['success' => false, 'error' => 'No active OTP verification session found. Please request a new OTP code.'];
+    }
+
+    if (time() > (int)($otpSession['expires_at'] ?? 0)) {
+        unset($_SESSION['sf_wa_otp_data']);
+        return ['success' => false, 'error' => 'The OTP code has expired. Please request a new one.'];
+    }
+
+    $attempts = (int)($otpSession['attempts'] ?? 0);
+    if ($attempts >= 5) {
+        unset($_SESSION['sf_wa_otp_data']);
+        return ['success' => false, 'error' => 'Too many incorrect attempts. Please request a new OTP code.'];
+    }
+
+    $expectedPhone = (string)($otpSession['phone'] ?? '');
+    if ($expectedPhone !== $waPhone && clean_customer_phone($expectedPhone) !== clean_customer_phone($phone)) {
+        return ['success' => false, 'error' => 'Mobile number mismatch. Please enter OTP for the requested number.'];
+    }
+
+    $expectedOtp = (string)$otpSession['otp'];
+    if ($cleanEntered !== $expectedOtp) {
+        $_SESSION['sf_wa_otp_data']['attempts'] = $attempts + 1;
+        $remaining = 5 - ($attempts + 1);
+        return [
+            'success' => false,
+            'error' => 'Invalid OTP code. ' . ($remaining > 0 ? "You have {$remaining} attempt(s) left." : 'Please request a new code.')
+        ];
+    }
+
+    // OTP verified successfully
+    unset($_SESSION['sf_wa_otp_data']);
+
+    $fullName = trim($name !== '' ? $name : ($otpSession['name'] ?? ''));
+    if ($fullName === '') {
+        $fullName = 'Shopper ' . substr($waPhone, -4);
+    }
+    $cleanPhone = clean_customer_phone($phone);
+
+    // Check if customer already exists by phone or email
+    $cust = find_store_customer_by_phone($businessId, $cleanPhone);
+    if (!$cust && $email !== '') {
+        $cust = find_store_customer_by_email($businessId, $email);
+    }
+
+    $db = get_db();
+    if ($cust) {
+        $db->prepare('UPDATE customers SET name = COALESCE(NULLIF(:name, ""), name), phone = COALESCE(NULLIF(:phone, ""), phone), updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute([
+                'name' => $fullName,
+                'phone' => $cleanPhone,
+                'id' => (int)$cust['id'],
+                'bid' => $businessId,
+            ]);
+        $cust['name'] = $fullName ?: $cust['name'];
+        $cust['phone'] = $cleanPhone ?: $cust['phone'];
+        set_storefront_shopper($businessId, $cust);
+        return ['success' => true, 'customer' => $cust, 'is_new' => false];
+    }
+
+    // Register new customer in database
+    $res = save_customer([
+        'name' => $fullName,
+        'phone' => $cleanPhone,
+        'email' => $email,
+        'address' => '',
+    ], $businessId);
+
+    if (empty($res['success']) || empty($res['customer_id'])) {
+        $err = $res['errors'] ?? [];
+        $msg = is_array($err) ? implode(' ', $err) : 'Could not create account.';
+        return ['success' => false, 'error' => $msg];
+    }
+
+    $newCust = [
+        'id' => (int)$res['customer_id'],
+        'name' => $fullName,
+        'phone' => $cleanPhone,
+        'email' => $email,
+    ];
+    set_storefront_shopper($businessId, $newCust);
+    return ['success' => true, 'customer' => $newCust, 'is_new' => true];
+}
+
 function send_storefront_otp_sms(string $phone, string $otp, string $storeName): bool {
     $cleanPhone = clean_customer_phone($phone);
     if (strlen($cleanPhone) < 10) {
