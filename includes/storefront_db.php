@@ -1912,11 +1912,11 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
 
     $brand = $businessId > 0 ? get_mobile_store_settings($businessId) : [];
 
-    $apiUrl = !empty($brand['wa_api_url']) ? (string)$brand['wa_api_url'] : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
-    $token = !empty($brand['wa_token']) ? (string)$brand['wa_token'] : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '');
+    $apiUrl = !empty(trim((string)($brand['wa_api_url'] ?? ''))) ? trim((string)$brand['wa_api_url']) : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
+    $token = !empty(trim((string)($brand['wa_token'] ?? ''))) ? trim((string)$brand['wa_token']) : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3');
     $companyId = !empty($brand['wa_company_id']) ? (int)$brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int)OMINIFLOW_WA_COMPANY_ID : 162);
-    $template = !empty($brand['wa_template_name']) ? (string)$brand['wa_template_name'] : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
-    $lang = !empty($brand['wa_template_lang']) ? (string)$brand['wa_template_lang'] : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
+    $template = !empty(trim((string)($brand['wa_template_name'] ?? ''))) ? trim((string)$brand['wa_template_name']) : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
+    $lang = !empty(trim((string)($brand['wa_template_lang'] ?? ''))) ? trim((string)$brand['wa_template_lang']) : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
 
     $payload = [
         'token' => $token,
