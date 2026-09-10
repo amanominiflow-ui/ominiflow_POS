@@ -125,11 +125,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $storeName = (string)($brand['display_name'] ?? 'OminiFlow Retail');
             $res = send_storefront_otp_whatsapp($testPhone, $testOtp, $storeName, $bizId);
             
+            $usedTmpl = !empty($brand['wa_template_name']) ? $brand['wa_template_name'] : 'otp_ver (default)';
+            $usedUrl = !empty($brand['wa_api_url']) ? $brand['wa_api_url'] : 'Default Master Gateway';
+            $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : json_encode($res['response'] ?? []);
+
             if (!empty($res['api_success'])) {
-                set_flash('success', 'Test OTP (' . $testOtp . ') sent successfully to +' . $res['phone'] . ' via WhatsApp!');
+                set_flash('success', 'Test OTP (' . $testOtp . ') dispatched to +' . $res['phone'] . ' using Template [' . $usedTmpl . ']! Gateway Response: ' . $rawMsg);
             } else {
-                $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : 'Unknown error';
-                set_flash('error', 'WhatsApp Gateway response: ' . $rawMsg);
+                set_flash('error', 'WhatsApp Gateway Error using Template [' . $usedTmpl . '] | Response: ' . $rawMsg);
             }
         }
         redirect('integrations-whatsapp.php');
