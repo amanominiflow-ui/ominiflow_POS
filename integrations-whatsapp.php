@@ -35,14 +35,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = (string)$_POST['action'];
 
     if ($action === 'save_whatsapp_config') {
+        $rawCurl = trim((string)($_POST['page_curl_raw'] ?? ''));
+        
+        $waApiUrl = trim((string)($_POST['wa_api_url'] ?? ''));
+        $waToken = trim((string)($_POST['wa_token'] ?? ''));
+        $waCompanyId = !empty($_POST['wa_company_id']) ? (int)$_POST['wa_company_id'] : 0;
+        $waTemplateName = trim((string)($_POST['wa_template_name'] ?? ''));
+        $waTemplateLang = trim((string)($_POST['wa_template_lang'] ?? ''));
+        $waPhoneId = trim((string)($_POST['wa_phone_number_id'] ?? ''));
+        $waWabaId = trim((string)($_POST['wa_waba_id'] ?? ''));
+
+        // If cURL command or raw payload was provided in the textarea, extract missing/updated parameters
+        if ($rawCurl !== '') {
+            if (preg_match('/https?:\/\/[^\s\'"\\\\]+/i', $rawCurl, $m)) {
+                $pUrl = rtrim($m[0], '\'",');
+                if ($waApiUrl === '') {
+                    $waApiUrl = $pUrl;
+                }
+            }
+            if (preg_match('/(?:Authorization:\s*Bearer\s+|["\']?token["\']?\s*[:=]\s*["\']?|-H\s*[\'"]token:\s*)([a-zA-Z0-9_\-\.]{15,})/i', $rawCurl, $m)) {
+                if ($waToken === '') {
+                    $waToken = trim($m[1]);
+                }
+            }
+            if (preg_match('/(?:["\']?company_id["\']?\s*[:=]\s*["\']?)([0-9]+)/i', $rawCurl, $m)) {
+                if ($waCompanyId <= 0) {
+                    $waCompanyId = (int)$m[1];
+                }
+            }
+            if (preg_match('/(?:["\']?template_name["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
+                if ($waTemplateName === '') {
+                    $waTemplateName = trim($m[1]);
+                }
+            }
+            if (preg_match('/(?:["\']?template_language["\']?|["\']?template_lang["\']?)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
+                if ($waTemplateLang === '') {
+                    $waTemplateLang = trim($m[1]);
+                }
+            }
+            if (preg_match('/(?:["\']?phone_number_id["\']?|["\']?wa_phone_number_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m)) {
+                if ($waPhoneId === '') {
+                    $waPhoneId = trim($m[1]);
+                }
+            }
+            if (preg_match('/(?:["\']?waba_id["\']?|["\']?wa_waba_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m)) {
+                if ($waWabaId === '') {
+                    $waWabaId = trim($m[1]);
+                }
+            }
+        }
+
         save_business_whatsapp_settings($bizId, [
-            'wa_api_url' => $_POST['wa_api_url'] ?? '',
-            'wa_token' => $_POST['wa_token'] ?? '',
-            'wa_company_id' => !empty($_POST['wa_company_id']) ? (int)$_POST['wa_company_id'] : 0,
-            'wa_template_name' => $_POST['wa_template_name'] ?? '',
-            'wa_template_lang' => $_POST['wa_template_lang'] ?? '',
-            'wa_phone_number_id' => $_POST['wa_phone_number_id'] ?? '',
-            'wa_waba_id' => $_POST['wa_waba_id'] ?? '',
+            'wa_api_url' => $waApiUrl,
+            'wa_token' => $waToken,
+            'wa_company_id' => $waCompanyId,
+            'wa_template_name' => $waTemplateName,
+            'wa_template_lang' => $waTemplateLang,
+            'wa_phone_number_id' => $waPhoneId,
+            'wa_waba_id' => $waWabaId,
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
         ]);
 
@@ -62,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_enable_storefront_otp' => 1,
         ]);
 
-        set_flash('success', 'WhatsApp disconnected! You can now paste or enter fresh WhatsApp credentials.');
+        set_flash('success', 'WhatsApp disconnected! All credentials cleared. You can now paste your new cURL command.');
         redirect('integrations-whatsapp.php');
     }
 
@@ -160,7 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             // 2. Extract Token
             const bearerMatch = raw.match(/Authorization:\s*Bearer\s+([a-zA-Z0-9_\-\.]+)/i) ||
-                                raw.match(/Bearer\s+([a-zA-Z0-9_\-\.]{20,})/i);
+                                raw.match(/Bearer\s+([a-zA-Z0-9_\-\.]{20,})/i) ||
+                                raw.match(/-H\s*['"]token:\s*([a-zA-Z0-9_\-\.]+)['"]/i);
             const tokenMatch = bearerMatch ||
                                raw.match(/"token"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
                                raw.match(/'token'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
@@ -678,6 +729,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <span><?= e($flashSuccess) ?></span>
                     </div>
                 <?php endif; ?>
+                <?php if ($flashError): ?>
+                    <div class="saas-alert saas-alert-danger" style="margin-bottom: 20px; background: #fee2e2; border: 1px solid #fca5a5; color: #b91c1c; padding: 12px 16px; border-radius: 8px; display: flex; align-items: center; gap: 10px;">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span><?= e($flashError) ?></span>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Top Header Row -->
                 <div class="wa-top-header">
@@ -758,7 +815,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
 
                         <!-- Settings Form -->
-                        <form method="POST" action="integrations-whatsapp.php" style="padding: 20px;">
+                        <form method="POST" action="integrations-whatsapp.php" onsubmit="parsePageCurlCommand()" style="padding: 20px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="save_whatsapp_config">
 
@@ -768,7 +825,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     ⚡ Quick Paste cURL (Optional — only if using custom WhatsApp number):
                                 </label>
                                 <div style="display: flex; gap: 8px;">
-                                    <textarea id="pageCurlInput" rows="1" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -H 'Content-Type: application/json' -d '{...}'"></textarea>
+                                    <textarea id="pageCurlInput" name="page_curl_raw" rows="1" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -H 'Content-Type: application/json' -d '{...}'"></textarea>
                                     <button type="button" id="btnParseCurl" class="btn-secondary" style="background:#15803d;color:#fff;border:0;font-size:12px;font-weight:700;white-space:nowrap;padding:0 16px;border-radius:6px;cursor:pointer;" onclick="parsePageCurlCommand()">
                                         Parse & Fill
                                     </button>
@@ -1071,140 +1128,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 document.querySelectorAll('.wa-nav-tabs .wa-tab-link')[2].classList.add('active');
                 document.getElementById('tab-how').classList.add('active');
             }
-        }
-
-        function showParseStatus(msg, isSuccess = true) {
-            let statusEl = document.getElementById('curlParseFeedback');
-            if (!statusEl) {
-                statusEl = document.createElement('div');
-                statusEl.id = 'curlParseFeedback';
-                statusEl.style.marginTop = '8px';
-                statusEl.style.padding = '8px 12px';
-                statusEl.style.borderRadius = '6px';
-                statusEl.style.fontSize = '12.5px';
-                statusEl.style.fontWeight = '600';
-                const container = document.getElementById('pageCurlInput').parentNode.parentNode;
-                container.appendChild(statusEl);
-            }
-            statusEl.style.display = 'block';
-            statusEl.style.background = isSuccess ? '#dcfce7' : '#fee2e2';
-            statusEl.style.color = isSuccess ? '#15803d' : '#b91c1c';
-            statusEl.style.border = isSuccess ? '1px solid #86efac' : '1px solid #fca5a5';
-            statusEl.innerHTML = (isSuccess ? '✅ ' : '⚠️ ') + msg;
-            setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 8000);
-        }
-
-        function highlightField(id) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.style.transition = 'all 0.3s ease';
-                el.style.borderColor = '#22c55e';
-                el.style.boxShadow = '0 0 0 3px rgba(34, 197, 94, 0.25)';
-                el.style.backgroundColor = '#f0fdf4';
-                setTimeout(() => {
-                    el.style.borderColor = '';
-                    el.style.boxShadow = '';
-                    el.style.backgroundColor = '';
-                }, 2500);
-            }
-        }
-
-        function parsePageCurlCommand() {
-            const raw = document.getElementById('pageCurlInput').value.trim();
-            if (!raw) {
-                showParseStatus('Please paste your cURL command or JSON payload in the box first.', false);
-                return;
-            }
-
-            let foundCount = 0;
-
-            // 1. Extract API URL
-            const urlMatch = raw.match(/https?:\/\/[^\s'"\\]+/i);
-            if (urlMatch && urlMatch[0]) {
-                const cleanUrl = urlMatch[0].replace(/['"\\,]+$/, '');
-                document.getElementById('page_wa_api_url').value = cleanUrl;
-                highlightField('page_wa_api_url');
-                foundCount++;
-            }
-
-            // 2. Extract Token
-            const tokenMatch = raw.match(/"token"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
-                               raw.match(/'token'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
-                               raw.match(/token["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]{20,})["']?/i);
-            if (tokenMatch && tokenMatch[1]) {
-                document.getElementById('page_wa_token').value = tokenMatch[1].trim();
-                highlightField('page_wa_token');
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage')) {
-                // If user pasted a cURL with '{...}' placeholder, fill with the working token
-                document.getElementById('page_wa_token').value = '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3';
-                highlightField('page_wa_token');
-                foundCount++;
-            }
-
-            // 3. Extract Company ID
-            const compMatch = raw.match(/"company_id"\s*:\s*["']?([0-9]+)["']?/i) || 
-                              raw.match(/'company_id'\s*:\s*["']?([0-9]+)["']?/i) ||
-                              raw.match(/company_id["']?\s*[:=]\s*["']?([0-9]+)["']?/i);
-            if (compMatch && compMatch[1]) {
-                document.getElementById('page_wa_company_id').value = compMatch[1].trim();
-                highlightField('page_wa_company_id');
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage')) {
-                document.getElementById('page_wa_company_id').value = '162';
-                highlightField('page_wa_company_id');
-                foundCount++;
-            }
-
-            // 4. Extract Template Name
-            const tmplMatch = raw.match(/"template_name"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
-                              raw.match(/'template_name'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
-                              raw.match(/template_name["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
-            if (tmplMatch && tmplMatch[1]) {
-                document.getElementById('page_wa_template_name').value = tmplMatch[1].trim();
-                highlightField('page_wa_template_name');
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage')) {
-                document.getElementById('page_wa_template_name').value = 'otp_ver';
-                highlightField('page_wa_template_name');
-                foundCount++;
-            }
-
-            // 5. Extract Template Language
-            const langMatch = raw.match(/"template_language"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
-                              raw.match(/'template_language'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
-                              raw.match(/template_language["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
-            if (langMatch && langMatch[1]) {
-                document.getElementById('page_wa_template_lang').value = langMatch[1].trim();
-                highlightField('page_wa_template_lang');
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage')) {
-                document.getElementById('page_wa_template_lang').value = 'en_US';
-                highlightField('page_wa_template_lang');
-                foundCount++;
-            }
-
-            if (foundCount > 0) {
-                showParseStatus('✅ All WhatsApp settings parsed & auto-filled successfully! Scroll down and click "Save WhatsApp Settings".', true);
-            } else {
-                showParseStatus('Could not find WhatsApp parameters in the text. Please check or fill fields manually.', false);
-            }
-        }
-
-        function fillDefaultCredentials() {
-            document.getElementById('page_wa_api_url').value = 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
-            document.getElementById('page_wa_token').value = '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3';
-            document.getElementById('page_wa_company_id').value = '162';
-            document.getElementById('page_wa_template_name').value = 'otp_ver';
-            document.getElementById('page_wa_template_lang').value = 'en_US';
-
-            highlightField('page_wa_api_url');
-            highlightField('page_wa_token');
-            highlightField('page_wa_company_id');
-            highlightField('page_wa_template_name');
-            highlightField('page_wa_template_lang');
-
-            showParseStatus('✅ Default WhatsApp Gateway credentials filled! Scroll down and click "Save WhatsApp Settings".', true);
         }
 
         const featureData = {
