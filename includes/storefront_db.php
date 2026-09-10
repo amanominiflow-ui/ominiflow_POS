@@ -1943,104 +1943,64 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     if ($token !== '') {
         $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
 
-        $candidatePayloads = [];
-
-        if ($isMetaGraph) {
-            // Meta WhatsApp Cloud API formats
-            $candidatePayloads[] = [
-                'messaging_product' => 'whatsapp',
-                'recipient_type' => 'individual',
-                'to' => $waPhone,
-                'type' => 'template',
-                'template' => [
-                    'name' => $template,
-                    'language' => ['code' => $lang],
-                    'components' => [
-                        [
-                            'type' => 'body',
-                            'parameters' => [
-                                ['type' => 'text', 'text' => (string)$otp]
-                            ]
-                        ],
-                        [
-                            'type' => 'button',
-                            'sub_type' => 'url',
-                            'index' => '0',
-                            'parameters' => [
-                                ['type' => 'text', 'text' => (string)$otp]
-                            ]
-                        ]
-                    ]
-                ]
-            ];
-            $candidatePayloads[] = [
-                'messaging_product' => 'whatsapp',
-                'recipient_type' => 'individual',
-                'to' => $waPhone,
-                'type' => 'template',
-                'template' => [
-                    'name' => $template,
-                    'language' => ['code' => $lang],
-                    'components' => [
-                        [
-                            'type' => 'body',
-                            'parameters' => [
-                                ['type' => 'text', 'text' => (string)$otp]
-                            ]
-                        ]
-                    ]
-                ]
-            ];
-        } else {
-            // Gateway / WpBox API formats
-            $candidatePayloads[] = [
-                'token' => $token,
-                'phone' => $waPhone,
-                'company_id' => $companyId,
-                'template_name' => $template,
-                'template_language' => $lang,
-                'components' => [
-                    [
-                        'type' => 'body',
-                        'parameters' => [
-                            ['type' => 'text', 'text' => (string)$otp]
-                        ]
-                    ],
-                    [
-                        'type' => 'button',
-                        'sub_type' => 'url',
-                        'index' => '0',
-                        'parameters' => [
-                            ['type' => 'text', 'text' => (string)$otp]
-                        ]
-                    ]
-                ]
-            ];
-            $candidatePayloads[] = [
-                'token' => $token,
-                'phone' => $waPhone,
-                'company_id' => $companyId,
-                'template_name' => $template,
-                'template_language' => $lang,
-                'components' => [
-                    [
-                        'type' => 'body',
-                        'parameters' => [
-                            ['type' => 'text', 'text' => (string)$otp]
-                        ]
-                    ]
-                ]
-            ];
-            $candidatePayloads[] = [
-                'token' => $token,
-                'phone' => $waPhone,
-                'company_id' => $companyId,
-                'template_name' => $template,
-                'template_language' => $lang,
+        $bodyOnlyComponent = [
+            [
+                'type' => 'body',
                 'parameters' => [
                     ['type' => 'text', 'text' => (string)$otp]
                 ]
-            ];
+            ]
+        ];
+
+        $bodyAndButtonComponent = [
+            [
+                'type' => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'url',
+                'index' => '0',
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string)$otp]
+                ]
+            ]
+        ];
+
+        // If template is 'otp_ver', it has dynamic URL button. For custom templates, use body-only!
+        $componentsOrder = ($template === 'otp_ver') 
+            ? [$bodyAndButtonComponent, $bodyOnlyComponent] 
+            : [$bodyOnlyComponent, $bodyAndButtonComponent];
+
+        $candidatePayloads = [];
+
+        if ($isMetaGraph) {
+            foreach ($componentsOrder as $comp) {
+                $candidatePayloads[] = [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $waPhone,
+                    'type' => 'template',
+                    'template' => [
+                        'name' => $template,
+                        'language' => ['code' => $lang],
+                        'components' => $comp,
+                    ]
+                ];
+            }
+        } else {
+            foreach ($componentsOrder as $comp) {
+                $candidatePayloads[] = [
+                    'token' => $token,
+                    'phone' => $waPhone,
+                    'company_id' => $companyId,
+                    'template_name' => $template,
+                    'template_language' => $lang,
+                    'components' => $comp,
+                ];
+            }
         }
 
         foreach ($candidatePayloads as $payload) {
