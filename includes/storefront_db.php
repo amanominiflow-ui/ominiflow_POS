@@ -2114,14 +2114,18 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
         WHERE business_id = :bid
     ');
     
+    $companyId = isset($data['wa_company_id']) && $data['wa_company_id'] !== '' && (int)$data['wa_company_id'] > 0 
+        ? (int)$data['wa_company_id'] 
+        : null;
+
     return $stmt->execute([
-        'wa_url' => trim((string)($data['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage')),
-        'wa_token' => trim((string)($data['wa_token'] ?? '')),
-        'wa_company_id' => !empty($data['wa_company_id']) ? (int)$data['wa_company_id'] : 162,
-        'wa_template_name' => trim((string)($data['wa_template_name'] ?? 'otp_ver')),
-        'wa_template_lang' => trim((string)($data['wa_template_lang'] ?? 'en_US')),
-        'wa_phone_number_id' => trim((string)($data['wa_phone_number_id'] ?? '')),
-        'wa_waba_id' => trim((string)($data['wa_waba_id'] ?? '')),
+        'wa_url' => isset($data['wa_api_url']) && trim((string)$data['wa_api_url']) !== '' ? trim((string)$data['wa_api_url']) : null,
+        'wa_token' => isset($data['wa_token']) && trim((string)$data['wa_token']) !== '' ? trim((string)$data['wa_token']) : null,
+        'wa_company_id' => $companyId,
+        'wa_template_name' => isset($data['wa_template_name']) && trim((string)$data['wa_template_name']) !== '' ? trim((string)$data['wa_template_name']) : null,
+        'wa_template_lang' => isset($data['wa_template_lang']) && trim((string)$data['wa_template_lang']) !== '' ? trim((string)$data['wa_template_lang']) : null,
+        'wa_phone_number_id' => isset($data['wa_phone_number_id']) && trim((string)$data['wa_phone_number_id']) !== '' ? trim((string)$data['wa_phone_number_id']) : null,
+        'wa_waba_id' => isset($data['wa_waba_id']) && trim((string)$data['wa_waba_id']) !== '' ? trim((string)$data['wa_waba_id']) : null,
         'wa_otp' => !empty($data['wa_enable_storefront_otp']) ? 1 : 0,
         'bid' => $businessId,
     ]);

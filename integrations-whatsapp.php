@@ -36,17 +36,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'save_whatsapp_config') {
         save_business_whatsapp_settings($bizId, [
-            'wa_api_url' => $_POST['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage',
+            'wa_api_url' => $_POST['wa_api_url'] ?? '',
             'wa_token' => $_POST['wa_token'] ?? '',
-            'wa_company_id' => !empty($_POST['wa_company_id']) ? (int)$_POST['wa_company_id'] : 162,
-            'wa_template_name' => $_POST['wa_template_name'] ?? 'otp_ver',
-            'wa_template_lang' => $_POST['wa_template_lang'] ?? 'en_US',
+            'wa_company_id' => !empty($_POST['wa_company_id']) ? (int)$_POST['wa_company_id'] : 0,
+            'wa_template_name' => $_POST['wa_template_name'] ?? '',
+            'wa_template_lang' => $_POST['wa_template_lang'] ?? '',
             'wa_phone_number_id' => $_POST['wa_phone_number_id'] ?? '',
             'wa_waba_id' => $_POST['wa_waba_id'] ?? '',
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
         ]);
 
         set_flash('success', 'WhatsApp settings saved successfully for your store!');
+        redirect('integrations-whatsapp.php');
+    }
+
+    if ($action === 'disconnect_whatsapp') {
+        save_business_whatsapp_settings($bizId, [
+            'wa_api_url' => '',
+            'wa_token' => '',
+            'wa_company_id' => 0,
+            'wa_template_name' => '',
+            'wa_template_lang' => '',
+            'wa_phone_number_id' => '',
+            'wa_waba_id' => '',
+            'wa_enable_storefront_otp' => 1,
+        ]);
+
+        set_flash('success', 'WhatsApp disconnected! You can now paste or enter fresh WhatsApp credentials.');
         redirect('integrations-whatsapp.php');
     }
 
@@ -143,18 +159,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             // 2. Extract Token
-            const tokenMatch = raw.match(/"token"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
+            const bearerMatch = raw.match(/Authorization:\s*Bearer\s+([a-zA-Z0-9_\-\.]+)/i) ||
+                                raw.match(/Bearer\s+([a-zA-Z0-9_\-\.]{20,})/i);
+            const tokenMatch = bearerMatch ||
+                               raw.match(/"token"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
                                raw.match(/'token'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
-                               raw.match(/token["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]{20,})["']?/i);
+                               raw.match(/token["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]{15,})["']?/i);
             if (tokenMatch && tokenMatch[1]) {
                 if (document.getElementById('page_wa_token')) {
                     document.getElementById('page_wa_token').value = tokenMatch[1].trim();
-                    highlightField('page_wa_token');
-                }
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage') || raw.includes('0g7QLm')) {
-                if (document.getElementById('page_wa_token')) {
-                    document.getElementById('page_wa_token').value = '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3';
                     highlightField('page_wa_token');
                 }
                 foundCount++;
@@ -170,12 +183,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     highlightField('page_wa_company_id');
                 }
                 foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage') || raw.includes('162')) {
-                if (document.getElementById('page_wa_company_id')) {
-                    document.getElementById('page_wa_company_id').value = '162';
-                    highlightField('page_wa_company_id');
-                }
-                foundCount++;
             }
 
             // 4. Extract Template Name
@@ -185,12 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (tmplMatch && tmplMatch[1]) {
                 if (document.getElementById('page_wa_template_name')) {
                     document.getElementById('page_wa_template_name').value = tmplMatch[1].trim();
-                    highlightField('page_wa_template_name');
-                }
-                foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage') || raw.includes('otp_ver')) {
-                if (document.getElementById('page_wa_template_name')) {
-                    document.getElementById('page_wa_template_name').value = 'otp_ver';
                     highlightField('page_wa_template_name');
                 }
                 foundCount++;
@@ -206,16 +207,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     highlightField('page_wa_template_lang');
                 }
                 foundCount++;
-            } else if (raw.includes('{...}') || raw.includes('sendtemplatemessage') || raw.includes('en_US')) {
-                if (document.getElementById('page_wa_template_lang')) {
-                    document.getElementById('page_wa_template_lang').value = 'en_US';
-                    highlightField('page_wa_template_lang');
+            }
+
+            // 6. Phone Number ID
+            const phoneIdMatch = raw.match(/["']?(?:phone_number_id|wa_phone_number_id)["']?\s*[:=]\s*["']?([0-9]+)["']?/i);
+            if (phoneIdMatch && phoneIdMatch[1]) {
+                if (document.getElementById('page_wa_phone_number_id')) {
+                    document.getElementById('page_wa_phone_number_id').value = phoneIdMatch[1].trim();
+                    highlightField('page_wa_phone_number_id');
+                }
+                foundCount++;
+            }
+
+            // 7. WABA ID
+            const wabaIdMatch = raw.match(/["']?(?:waba_id|wa_waba_id)["']?\s*[:=]\s*["']?([0-9]+)["']?/i);
+            if (wabaIdMatch && wabaIdMatch[1]) {
+                if (document.getElementById('page_wa_waba_id')) {
+                    document.getElementById('page_wa_waba_id').value = wabaIdMatch[1].trim();
+                    highlightField('page_wa_waba_id');
                 }
                 foundCount++;
             }
 
             if (foundCount > 0) {
-                showParseStatus('All WhatsApp settings parsed & auto-filled! Please click "Save WhatsApp Settings" below.', true);
+                showParseStatus('✅ Parsed ' + foundCount + ' settings successfully! Click "Save WhatsApp Settings" below.', true);
             } else {
                 showParseStatus('Could not find WhatsApp parameters. Please check or fill manually.', false);
             }
@@ -727,14 +742,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                     <!-- Store WhatsApp Configuration Card -->
                     <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); margin-bottom: 24px;">
-                        <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                        <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                             <div>
                                 <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin: 0;">⚙️ WhatsApp Integration Credentials & Templates</h4>
                                 <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Pre-configured with OminiFlow Master API. You can paste custom cURL if you want your own number.</div>
                             </div>
-                            <button type="button" onclick="fillDefaultCredentials()" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-size:12px;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer;">
-                                🔄 Reset to OminiFlow Master Credentials
-                            </button>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button type="button" onclick="fillDefaultCredentials()" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-size:12px;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer;">
+                                    🔄 Reset to OminiFlow Master Credentials
+                                </button>
+                                <button type="button" onclick="confirmDisconnect()" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:12px;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer;">
+                                    🔌 Disconnect
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Settings Form -->
@@ -757,39 +777,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Endpoint URL</label>
-                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Endpoint URL</label>
+                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage" style="width: 100%;">
                                 </div>
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= htmlspecialchars((string)($brand['wa_company_id'] ?? 162), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
+                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="162" style="width: 100%;">
                                 </div>
                             </div>
 
                             <div style="margin-bottom: 14px;">
-                                <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                                <input type="text" name="wa_token" id="page_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
+                                <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
+                                <input type="text" name="wa_token" id="page_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="Leave blank to use default OminiFlow Master API">
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">OTP Template Name</label>
-                                    <input type="text" name="wa_template_name" id="page_wa_template_name" value="<?= htmlspecialchars((string)($brand['wa_template_name'] ?? 'otp_ver'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">OTP Template Name</label>
+                                    <input type="text" name="wa_template_name" id="page_wa_template_name" value="<?= htmlspecialchars((string)($brand['wa_template_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="otp_ver" style="width: 100%;">
                                 </div>
                                 <div>
-                                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Template Language</label>
-                                    <input type="text" name="wa_template_lang" id="page_wa_template_lang" value="<?= htmlspecialchars((string)($brand['wa_template_lang'] ?? 'en_US'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
+                                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Template Language</label>
+                                    <input type="text" name="wa_template_lang" id="page_wa_template_lang" value="<?= htmlspecialchars((string)($brand['wa_template_lang'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="en_US" style="width: 100%;">
                                 </div>
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp Phone Number ID (Optional)</label>
-                                    <input type="text" name="wa_phone_number_id" id="page_wa_phone_number_id" value="<?= htmlspecialchars((string)($brand['wa_phone_number_id'] ?? '789955904210534'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
+                                    <input type="text" name="wa_phone_number_id" id="page_wa_phone_number_id" value="<?= htmlspecialchars((string)($brand['wa_phone_number_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="Phone Number ID (Optional)" style="width: 100%;">
                                 </div>
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WABA ID (Optional)</label>
-                                    <input type="text" name="wa_waba_id" id="page_wa_waba_id" value="<?= htmlspecialchars((string)($brand['wa_waba_id'] ?? '826751349830054'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
+                                    <input type="text" name="wa_waba_id" id="page_wa_waba_id" value="<?= htmlspecialchars((string)($brand['wa_waba_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="WABA ID (Optional)" style="width: 100%;">
                                 </div>
                             </div>
 
@@ -804,7 +824,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 </label>
                             </div>
 
-                            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                                <button type="button" onclick="confirmDisconnect()" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:13px;font-weight:700;padding:10px 18px;border-radius:6px;cursor:pointer;">
+                                    🔌 Disconnect
+                                </button>
                                 <button type="submit" class="btn-primary" style="background:#25d366;border-color:#25d366;font-size:14px;font-weight:700;padding:10px 24px;border-radius:6px;cursor:pointer;">
                                     💾 Save WhatsApp Settings
                                 </button>
@@ -1270,6 +1293,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 alert('Could not fully parse cURL: ' + err.message + '. Please verify the JSON body in your cURL command.');
             }
         }
+
+        function confirmDisconnect() {
+            if (confirm('Are you sure you want to disconnect WhatsApp and clean current credentials to paste a new cURL?')) {
+                document.getElementById('disconnectForm').submit();
+            }
+        }
+        window.confirmDisconnect = confirmDisconnect;
     </script>
+
+    <!-- Hidden Disconnect Form -->
+    <form id="disconnectForm" method="POST" action="integrations-whatsapp.php" style="display: none;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="disconnect_whatsapp">
+    </form>
 </body>
 </html>
