@@ -1928,36 +1928,6 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     $template = !empty(trim((string)($brand['wa_template_name'] ?? ''))) ? trim((string)$brand['wa_template_name']) : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
     $lang = !empty(trim((string)($brand['wa_template_lang'] ?? ''))) ? trim((string)$brand['wa_template_lang']) : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
 
-    $payload = [
-        'token' => $token,
-        'phone' => $waPhone,
-        'company_id' => $companyId,
-        'template_name' => $template,
-        'template_language' => $lang,
-        'components' => [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    [
-                        'type' => 'text',
-                        'text' => (string) $otp,
-                    ]
-                ]
-            ],
-            [
-                'type' => 'button',
-                'sub_type' => 'url',
-                'index' => '0',
-                'parameters' => [
-                    [
-                        'type' => 'text',
-                        'text' => (string) $otp,
-                    ]
-                ]
-            ]
-        ]
-    ];
-
     $_SESSION['sf_last_wa_otp'] = [
         'phone' => $waPhone,
         'raw_phone' => $phone,
@@ -1970,33 +1940,92 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     $apiSuccess = false;
 
     if ($token !== '') {
-        try {
-            $ch = curl_init($apiUrl);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => http_build_query($payload),
-                CURLOPT_HTTPHEADER => [
-                    'Authorization: Bearer ' . $token,
-                    'Content-Type: application/x-www-form-urlencoded',
-                    'Accept: application/json',
-                ],
-                CURLOPT_TIMEOUT => 15,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => 0,
-            ]);
-            $responseRaw = curl_exec($ch);
-            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+        // Multi-tier payload structure:
+        // 1. with_button: for templates like otp_ver that have both body param & button param
+        // 2. body_only: for custom templates that only have body param ({{1}})
+        // 3. simple_params: for direct parameters format
+        $candidatePayloads = [
+            [
+                'token' => $token,
+                'phone' => $waPhone,
+                'company_id' => $companyId,
+                'template_name' => $template,
+                'template_language' => $lang,
+                'components' => [
+                    [
+                        'type' => 'body',
+                        'parameters' => [
+                            ['type' => 'text', 'text' => (string) $otp]
+                        ]
+                    ],
+                    [
+                        'type' => 'button',
+                        'sub_type' => 'url',
+                        'index' => '0',
+                        'parameters' => [
+                            ['type' => 'text', 'text' => (string) $otp]
+                        ]
+                    ]
+                ]
+            ],
+            [
+                'token' => $token,
+                'phone' => $waPhone,
+                'company_id' => $companyId,
+                'template_name' => $template,
+                'template_language' => $lang,
+                'components' => [
+                    [
+                        'type' => 'body',
+                        'parameters' => [
+                            ['type' => 'text', 'text' => (string) $otp]
+                        ]
+                    ]
+                ]
+            ],
+            [
+                'token' => $token,
+                'phone' => $waPhone,
+                'company_id' => $companyId,
+                'template_name' => $template,
+                'template_language' => $lang,
+                'parameters' => [
+                    ['type' => 'text', 'text' => (string) $otp]
+                ]
+            ]
+        ];
 
-            if ($responseRaw) {
-                $decoded = json_decode((string) $responseRaw, true);
-                if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']))) {
-                    $apiSuccess = true;
+        foreach ($candidatePayloads as $payload) {
+            try {
+                $ch = curl_init($apiUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload),
+                    CURLOPT_HTTPHEADER => [
+                        'Authorization: Bearer ' . $token,
+                        'token: ' . $token,
+                        'Content-Type: application/json',
+                        'Accept: application/json',
+                    ],
+                    CURLOPT_TIMEOUT => 12,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                ]);
+                $responseRaw = curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($responseRaw) {
+                    $decoded = json_decode((string) $responseRaw, true);
+                    if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']))) {
+                        $apiSuccess = true;
+                        break;
+                    }
                 }
+            } catch (Throwable $e) {
+                error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
             }
-        } catch (Throwable $e) {
-            error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
         }
     }
 
