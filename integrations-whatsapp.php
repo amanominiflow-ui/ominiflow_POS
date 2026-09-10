@@ -745,38 +745,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
                                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Endpoint URL</label>
-                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= e($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage') ?>" class="form-control" required style="width: 100%;">
+                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                                 <div>
                                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= e($brand['wa_company_id'] ?? 162) ?>" class="form-control" required style="width: 100%;">
+                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= htmlspecialchars((string)($brand['wa_company_id'] ?? 162), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                             </div>
 
                             <div style="margin-bottom: 14px;">
                                 <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                                <input type="text" name="wa_token" id="page_wa_token" value="<?= e($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
+                                <input type="text" name="wa_token" id="page_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
                                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">OTP Template Name</label>
-                                    <input type="text" name="wa_template_name" id="page_wa_template_name" value="<?= e($brand['wa_template_name'] ?? 'otp_ver') ?>" class="form-control" required style="width: 100%;">
+                                    <input type="text" name="wa_template_name" id="page_wa_template_name" value="<?= htmlspecialchars((string)($brand['wa_template_name'] ?? 'otp_ver'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                                 <div>
                                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Template Language</label>
-                                    <input type="text" name="wa_template_lang" id="page_wa_template_lang" value="<?= e($brand['wa_template_lang'] ?? 'en_US') ?>" class="form-control" required style="width: 100%;">
+                                    <input type="text" name="wa_template_lang" id="page_wa_template_lang" value="<?= htmlspecialchars((string)($brand['wa_template_lang'] ?? 'en_US'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                                 </div>
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp Phone Number ID (Optional)</label>
-                                    <input type="text" name="wa_phone_number_id" id="page_wa_phone_number_id" value="<?= e($brand['wa_phone_number_id'] ?? '789955904210534') ?>" class="form-control" style="width: 100%;">
+                                    <input type="text" name="wa_phone_number_id" id="page_wa_phone_number_id" value="<?= htmlspecialchars((string)($brand['wa_phone_number_id'] ?? '789955904210534'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
                                 </div>
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WABA ID (Optional)</label>
-                                    <input type="text" name="wa_waba_id" id="page_wa_waba_id" value="<?= e($brand['wa_waba_id'] ?? '826751349830054') ?>" class="form-control" style="width: 100%;">
+                                    <input type="text" name="wa_waba_id" id="page_wa_waba_id" value="<?= htmlspecialchars((string)($brand['wa_waba_id'] ?? '826751349830054'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
                                 </div>
                             </div>
 
@@ -953,38 +953,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px;">
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">API Endpoint URL</label>
-                        <input type="url" name="wa_api_url" id="field_wa_api_url" value="<?= e($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage') ?>" class="form-control" required style="width: 100%;">
+                        <input type="url" name="wa_api_url" id="field_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                     </div>
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= e($brand['wa_company_id'] ?? 162) ?>" class="form-control" required style="width: 100%;">
+                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= htmlspecialchars((string)($brand['wa_company_id'] ?? 162), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                     </div>
                 </div>
 
                 <div style="margin-bottom: 12px;">
                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                    <input type="text" name="wa_token" id="field_wa_token" value="<?= e($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
+                    <input type="text" name="wa_token" id="field_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%; font-family: monospace;" placeholder="0g7QLm...">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">OTP Template Name</label>
-                        <input type="text" name="wa_template_name" id="field_wa_template_name" value="<?= e($brand['wa_template_name'] ?? 'otp_ver') ?>" class="form-control" required style="width: 100%;">
+                        <input type="text" name="wa_template_name" id="field_wa_template_name" value="<?= htmlspecialchars((string)($brand['wa_template_name'] ?? 'otp_ver'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                     </div>
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Template Language</label>
-                        <input type="text" name="wa_template_lang" id="field_wa_template_lang" value="<?= e($brand['wa_template_lang'] ?? 'en_US') ?>" class="form-control" required style="width: 100%;">
+                        <input type="text" name="wa_template_lang" id="field_wa_template_lang" value="<?= htmlspecialchars((string)($brand['wa_template_lang'] ?? 'en_US'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" required style="width: 100%;">
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
                     <div>
                         <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Phone Number ID (Optional)</label>
-                        <input type="text" name="wa_phone_number_id" id="field_wa_phone_number_id" value="<?= e($brand['wa_phone_number_id'] ?? '789955904210534') ?>" class="form-control" style="width: 100%;">
+                        <input type="text" name="wa_phone_number_id" id="field_wa_phone_number_id" value="<?= htmlspecialchars((string)($brand['wa_phone_number_id'] ?? '789955904210534'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
                     </div>
                     <div>
                         <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WABA ID (Optional)</label>
-                        <input type="text" name="wa_waba_id" id="field_wa_waba_id" value="<?= e($brand['wa_waba_id'] ?? '826751349830054') ?>" class="form-control" style="width: 100%;">
+                        <input type="text" name="wa_waba_id" id="field_wa_waba_id" value="<?= htmlspecialchars((string)($brand['wa_waba_id'] ?? '826751349830054'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%;">
                     </div>
                 </div>
 
