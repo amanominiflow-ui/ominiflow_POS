@@ -530,15 +530,6 @@ $dispPhone = $activePhone !== '' ? ('+' . $activePhone) : '';
                 </button>
             </form>
 
-            <?php 
-            $devOtp = (string) ($otpSession['otp'] ?? '');
-            if ($devOtp !== '' && defined('APP_ENV') && APP_ENV === 'development'): 
-            ?>
-                <div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:8px;font-size:13px;color:#92400e;text-align:center;">
-                    🧪 <strong>Testing Code:</strong> <span style="font-family:monospace;font-size:16px;font-weight:800;background:#ffffff;padding:2px 8px;border-radius:4px;color:#0f172a;letter-spacing:2px;margin-left:4px;"><?= e($devOtp) ?></span>
-                </div>
-            <?php endif; ?>
-
             <div class="sf-resend-timer" id="resendWrap">
                 <span id="timerText">Resend OTP in <strong id="secondsLeft">60</strong>s</span>
                 <form method="post" id="resendForm" style="display:none;margin-top:8px;">
