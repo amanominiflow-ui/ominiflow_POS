@@ -1965,9 +1965,10 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_POSTFIELDS => http_build_query($payload),
                 CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
+                    'Authorization: Bearer ' . $token,
+                    'Content-Type: application/x-www-form-urlencoded',
                     'Accept: application/json',
                 ],
                 CURLOPT_TIMEOUT => 15,
@@ -1980,7 +1981,7 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
 
             if ($responseRaw) {
                 $decoded = json_decode((string) $responseRaw, true);
-                if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] !== 'error'))) {
+                if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']))) {
                     $apiSuccess = true;
                 }
             }
