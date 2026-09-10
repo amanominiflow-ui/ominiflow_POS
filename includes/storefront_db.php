@@ -104,6 +104,16 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_us_text', "TEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_whatsapp', "VARCHAR(50) NULL");
 
+    // Dynamic WhatsApp Business API Settings per Business
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_api_url', "VARCHAR(255) NULL DEFAULT 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_token', "VARCHAR(255) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_company_id', "INT NULL DEFAULT 162");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_name', "VARCHAR(100) NULL DEFAULT 'otp_ver'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_lang', "VARCHAR(20) NULL DEFAULT 'en_US'");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_phone_number_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_waba_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
+
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_bg_color', "VARCHAR(20) NOT NULL DEFAULT '#ffffff'");
@@ -1894,17 +1904,19 @@ function format_storefront_whatsapp_phone(string $phone): string {
     return $digits;
 }
 
-function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName): array {
+function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName, int $businessId = 0): array {
     $waPhone = format_storefront_whatsapp_phone($phone);
     if (strlen($waPhone) < 10) {
         return ['success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
     }
 
-    $apiUrl = defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
-    $token = defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '';
-    $companyId = defined('OMINIFLOW_WA_COMPANY_ID') ? (int) OMINIFLOW_WA_COMPANY_ID : 162;
-    $template = defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver';
-    $lang = defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US';
+    $brand = $businessId > 0 ? get_mobile_store_settings($businessId) : [];
+
+    $apiUrl = !empty($brand['wa_api_url']) ? (string)$brand['wa_api_url'] : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
+    $token = !empty($brand['wa_token']) ? (string)$brand['wa_token'] : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '');
+    $companyId = !empty($brand['wa_company_id']) ? (int)$brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int)OMINIFLOW_WA_COMPANY_ID : 162);
+    $template = !empty($brand['wa_template_name']) ? (string)$brand['wa_template_name'] : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
+    $lang = !empty($brand['wa_template_lang']) ? (string)$brand['wa_template_lang'] : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
 
     $payload = [
         'token' => $token,
@@ -1958,8 +1970,9 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
                     'Content-Type: application/json',
                     'Accept: application/json',
                 ],
-                CURLOPT_TIMEOUT => 8,
+                CURLOPT_TIMEOUT => 15,
                 CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
             ]);
             $responseRaw = curl_exec($ch);
             $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -2077,6 +2090,40 @@ function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $
     ];
     set_storefront_shopper($businessId, $newCust);
     return ['success' => true, 'customer' => $newCust, 'is_new' => true];
+}
+
+function save_business_whatsapp_settings(int $businessId, array $data): bool {
+    ensure_online_store_schema();
+    $db = get_db();
+    
+    // Ensure mobile_store_settings row exists
+    get_mobile_store_settings($businessId);
+    
+    $stmt = $db->prepare('
+        UPDATE mobile_store_settings
+        SET wa_api_url = :wa_url,
+            wa_token = :wa_token,
+            wa_company_id = :wa_company_id,
+            wa_template_name = :wa_template_name,
+            wa_template_lang = :wa_template_lang,
+            wa_phone_number_id = :wa_phone_number_id,
+            wa_waba_id = :wa_waba_id,
+            wa_enable_storefront_otp = :wa_otp,
+            updated_at = NOW()
+        WHERE business_id = :bid
+    ');
+    
+    return $stmt->execute([
+        'wa_url' => trim((string)($data['wa_api_url'] ?? 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage')),
+        'wa_token' => trim((string)($data['wa_token'] ?? '')),
+        'wa_company_id' => !empty($data['wa_company_id']) ? (int)$data['wa_company_id'] : 162,
+        'wa_template_name' => trim((string)($data['wa_template_name'] ?? 'otp_ver')),
+        'wa_template_lang' => trim((string)($data['wa_template_lang'] ?? 'en_US')),
+        'wa_phone_number_id' => trim((string)($data['wa_phone_number_id'] ?? '')),
+        'wa_waba_id' => trim((string)($data['wa_waba_id'] ?? '')),
+        'wa_otp' => !empty($data['wa_enable_storefront_otp']) ? 1 : 0,
+        'bid' => $businessId,
+    ]);
 }
 
 function send_storefront_otp_sms(string $phone, string $otp, string $storeName): bool {

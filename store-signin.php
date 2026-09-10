@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
 
                 // Dispatch WhatsApp Message via OminiFlow / WPBox WhatsApp API
-                $res = send_storefront_otp_whatsapp($waPhone, $otp, $storeName);
+                $res = send_storefront_otp_whatsapp($waPhone, $otp, $storeName, $bid);
 
                 // Also trigger SMS fallback if SMS gateways are defined
                 send_storefront_otp_sms($rawPhone, $otp, $storeName);
@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['sf_wa_otp_data']['attempts'] = 0;
                 $_SESSION['sf_wa_otp_data']['created_at'] = time();
 
-                send_storefront_otp_whatsapp((string) $otpSession['phone'], $newOtp, $storeName);
+                send_storefront_otp_whatsapp((string) $otpSession['phone'], $newOtp, $storeName, $bid);
                 send_storefront_otp_sms((string) ($otpSession['raw_phone'] ?? $otpSession['phone']), $newOtp, $storeName);
 
                 set_flash('success', 'A fresh OTP code was sent to your WhatsApp.');
@@ -529,6 +529,15 @@ $dispPhone = $activePhone !== '' ? ('+' . $activePhone) : '';
                     Verify & Continue
                 </button>
             </form>
+
+            <?php 
+            $devOtp = (string) ($otpSession['otp'] ?? '');
+            if ($devOtp !== '' && defined('APP_ENV') && APP_ENV === 'development'): 
+            ?>
+                <div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:8px;font-size:13px;color:#92400e;text-align:center;">
+                    🧪 <strong>Testing Code:</strong> <span style="font-family:monospace;font-size:16px;font-weight:800;background:#ffffff;padding:2px 8px;border-radius:4px;color:#0f172a;letter-spacing:2px;margin-left:4px;"><?= e($devOtp) ?></span>
+                </div>
+            <?php endif; ?>
 
             <div class="sf-resend-timer" id="resendWrap">
                 <span id="timerText">Resend OTP in <strong id="secondsLeft">60</strong>s</span>
