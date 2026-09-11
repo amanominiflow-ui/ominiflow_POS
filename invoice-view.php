@@ -1022,9 +1022,13 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 
         /* PRINT MEDIA STYLES FOR CRISP OUTPUT */
         @media print {
-            .no-print, .inv-action-bar, .app-sidebar, .app-header, button, a.inv-btn {
+            .no-print, .inv-action-bar, .app-sidebar, .app-header, button, a.inv-btn,
+            .modal-overlay, .spotlight-overlay {
                 display: none !important;
                 visibility: hidden !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
             }
             html, body {
                 background: #ffffff !important;
@@ -1032,15 +1036,26 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
             .app-layout, .app-main, .dashboard-content {
                 display: block !important;
+                position: static !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 background: transparent !important;
                 width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
             }
             .inv-card {
                 border: 2.5px solid var(--inv-theme) !important;
@@ -1057,8 +1072,8 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 print-color-adjust: exact !important;
             }
             .inv-card:last-child {
-                page-break-after: avoid !important;
-                break-after: avoid !important;
+                page-break-after: auto !important;
+                break-after: auto !important;
             }
             .inv-products-table thead {
                 background: var(--inv-theme) !important;
@@ -1072,34 +1087,119 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 print-color-adjust: exact !important;
             }
 
-            /* 4x3 Compact Print Rules */
-            body.size-4x3 .inv-card {
-                width: 3.85in !important;
-                max-width: 3.85in !important;
-                min-height: 2.82in !important;
-                max-height: 2.92in !important;
+            /*
+             * 4x3 print: Chrome collapses CSS Grid `fr` columns and word-break
+             * wraps customer text character-by-character. Use flex + fixed
+             * widths so print matches the on-screen card, one page, no overflow.
+             */
+            html:has(body.size-4x3) {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                height: auto !important;
                 overflow: hidden !important;
-                padding: 8px 10px !important;
-                border-radius: 10px !important;
-                margin: 0 auto !important;
-                border: 2px solid var(--inv-theme) !important;
+            }
+            body.size-4x3 {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                height: auto !important;
+                overflow: hidden !important;
+            }
+            body.size-4x3 .app-layout,
+            body.size-4x3 .app-main,
+            body.size-4x3 .dashboard-content {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                height: auto !important;
+                overflow: hidden !important;
+            }
+            body.size-4x3 .inv-card {
+                width: 100% !important;
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: 3in !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
+                padding: 0.08in 0.1in !important;
+                border-radius: 8px !important;
+                margin: 0 !important;
+                border: 1.75pt solid var(--inv-theme) !important;
+                box-sizing: border-box !important;
+                page: card4x3;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
                 page-break-after: always !important;
                 break-after: page !important;
             }
             body.size-4x3 .inv-card:last-child {
-                page-break-after: avoid !important;
-                break-after: avoid !important;
+                page-break-after: auto !important;
+                break-after: auto !important;
             }
             body.size-4x3 .inv-top-grid {
-                grid-template-columns: 85px 1.15fr 1.25fr !important;
-                gap: 8px !important;
-                margin-bottom: 8px !important;
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                align-items: flex-start !important;
+                width: 100% !important;
+                gap: 6px !important;
+                margin-bottom: 6px !important;
+                grid-template-columns: none !important;
+            }
+            body.size-4x3 .inv-brand-col {
+                flex: 0 0 22% !important;
+                width: 22% !important;
+                min-width: 0 !important;
+                max-width: 24% !important;
+                padding-right: 4px !important;
+                justify-content: flex-start !important;
+                align-self: flex-start !important;
+            }
+            body.size-4x3 .inv-meta-col {
+                flex: 1 1 38% !important;
+                min-width: 0 !important;
+                width: auto !important;
+                padding-left: 0 !important;
+                padding-right: 6px !important;
+            }
+            body.size-4x3 .inv-cust-col {
+                flex: 1 1 40% !important;
+                min-width: 0 !important;
+                width: auto !important;
+                padding-left: 8px !important;
+                border-left: 1px solid var(--inv-theme) !important;
+            }
+            body.size-4x3 .inv-row-kv {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: flex-start !important;
+                gap: 3px !important;
+                grid-template-columns: none !important;
+            }
+            body.size-4x3 .inv-row-kv .lbl {
+                flex: 0 0 62px !important;
+                width: 62px !important;
+                white-space: nowrap !important;
+            }
+            body.size-4x3 .inv-row-kv .sep {
+                flex: 0 0 6px !important;
+                width: 6px !important;
+            }
+            body.size-4x3 .inv-row-kv .val {
+                flex: 1 1 auto !important;
+                min-width: 0 !important;
+                word-break: normal !important;
+                overflow-wrap: break-word !important;
+                white-space: normal !important;
+            }
+            body.size-4x3 .inv-cust-col .inv-row-kv .lbl {
+                flex-basis: 48px !important;
+                width: 48px !important;
             }
             body.size-4x3 .inv-mini-top-grid {
-                padding-bottom: 6px !important;
-                margin-bottom: 8px !important;
+                padding-bottom: 4px !important;
+                margin-bottom: 6px !important;
             }
             body.size-4x3 .inv-mini-brand-img {
                 max-height: 28px !important;
@@ -1119,41 +1219,66 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 font-size: 8px !important;
                 padding: 4px 2px 2px !important;
             }
-            body.size-4x3 .inv-main-heading { font-size: 15px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-thank-you { font-size: 7.5px !important; margin-bottom: 4px !important; }
-            body.size-4x3 .inv-brand-peacock-icon { width: 38px !important; height: 38px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-brand-img { max-height: 38px !important; max-width: 85px !important; }
-            body.size-4x3 .inv-brand-title { font-size: 9px !important; }
-            body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 8px !important; gap: 1px !important; }
-            body.size-4x3 .inv-row-kv { grid-template-columns: 65px 6px 1fr !important; }
-            body.size-4x3 .inv-cust-heading { font-size: 10px !important; margin-bottom: 4px !important; }
-            body.size-4x3 .inv-cust-col .inv-row-kv { grid-template-columns: 50px 6px 1fr !important; }
-            body.size-4x3 .inv-table-wrap { margin-bottom: 8px !important; border-width: 1px !important; }
-            body.size-4x3 .inv-products-table th, 
-            body.size-4x3 .inv-products-table tbody td { padding: 3px 4px !important; font-size: 8px !important; border-width: 1px !important; }
-            body.size-4x3 .inv-summary-container { margin-bottom: 8px !important; }
-            body.size-4x3 .inv-summary-box { width: 160px !important; padding: 5px 8px !important; gap: 2px !important; border-radius: 6px !important; }
-            body.size-4x3 .inv-summary-row { font-size: 8px !important; grid-template-columns: 70px 8px 1fr !important; }
-            body.size-4x3 .inv-summary-row.grand-total-row { font-size: 9.5px !important; padding-top: 3px !important; margin-top: 2px !important; }
-            body.size-4x3 .inv-footer-grid { gap: 6px !important; padding-top: 4px !important; }
-            body.size-4x3 .inv-barcode-title { font-size: 8px !important; margin-bottom: 1px !important; }
-            body.size-4x3 .inv-barcode-svg-wrap { max-width: 115px !important; }
-            body.size-4x3 .inv-barcode-svg-wrap svg { height: 26px !important; }
-            body.size-4x3 .inv-love-script { font-size: 13px !important; }
-            body.size-4x3 .inv-love-heart { font-size: 8px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-love-brand { font-size: 8px !important; }
-            body.size-4x3 .inv-qr-box { width: 40px !important; height: 40px !important; }
-            body.size-4x3 .inv-qr-box canvas, body.size-4x3 .inv-qr-box img { width: 40px !important; height: 40px !important; }
-            body.size-4x3 .inv-help-text { font-size: 7.5px !important; line-height: 1.15 !important; }
-            body.size-4x3 .inv-help-title { font-size: 8px !important; }
+            body.size-4x3 .inv-main-heading { font-size: 14px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-thank-you {
+                font-size: 6.5px !important;
+                margin-bottom: 3px !important;
+                white-space: normal !important;
+                letter-spacing: 0.02em !important;
+            }
+            body.size-4x3 .inv-brand-peacock-icon { width: 36px !important; height: 36px !important; margin-bottom: 2px !important; }
+            body.size-4x3 .inv-brand-img { max-height: 36px !important; max-width: 80px !important; }
+            body.size-4x3 .inv-brand-title { font-size: 8px !important; }
+            body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 7.5px !important; gap: 1px !important; }
+            body.size-4x3 .inv-cust-heading { font-size: 9.5px !important; margin-bottom: 3px !important; }
+            body.size-4x3 .inv-table-wrap { margin-bottom: 5px !important; border-width: 1px !important; overflow: hidden !important; }
+            body.size-4x3 .inv-products-table { table-layout: fixed !important; width: 100% !important; }
+            body.size-4x3 .inv-products-table th,
+            body.size-4x3 .inv-products-table tbody td { padding: 2px 3px !important; font-size: 7.5px !important; border-width: 1px !important; }
+            body.size-4x3 .inv-summary-container { margin-bottom: 5px !important; }
+            body.size-4x3 .inv-summary-box { width: 1.55in !important; padding: 4px 6px !important; gap: 1px !important; border-radius: 5px !important; }
+            body.size-4x3 .inv-summary-row {
+                display: flex !important;
+                font-size: 7.5px !important;
+                grid-template-columns: none !important;
+                gap: 4px !important;
+            }
+            body.size-4x3 .inv-summary-row .s-label { flex: 0 0 70px !important; }
+            body.size-4x3 .inv-summary-row .s-sep { flex: 0 0 6px !important; }
+            body.size-4x3 .inv-summary-row .s-val { flex: 1 1 auto !important; }
+            body.size-4x3 .inv-summary-row.grand-total-row { font-size: 9px !important; padding-top: 2px !important; margin-top: 1px !important; }
+            body.size-4x3 .inv-footer-grid {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+                gap: 4px !important;
+                padding-top: 2px !important;
+                grid-template-columns: none !important;
+            }
+            body.size-4x3 .inv-footer-barcode { flex: 1 1 0 !important; min-width: 0 !important; }
+            body.size-4x3 .inv-footer-love { flex: 0 0 auto !important; min-height: 42px !important; padding: 2px 6px !important; }
+            body.size-4x3 .inv-footer-help { flex: 1 1 0 !important; min-width: 0 !important; gap: 6px !important; padding-left: 4px !important; }
+            body.size-4x3 .inv-barcode-title { font-size: 7px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-barcode-svg-wrap { max-width: 1.2in !important; }
+            body.size-4x3 .inv-barcode-svg-wrap svg { height: 22px !important; }
+            body.size-4x3 .inv-love-script { font-size: 12px !important; }
+            body.size-4x3 .inv-love-heart { font-size: 7px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-love-brand { font-size: 7px !important; }
+            body.size-4x3 .inv-qr-box { width: 36px !important; height: 36px !important; }
+            body.size-4x3 .inv-qr-box canvas, body.size-4x3 .inv-qr-box img { width: 36px !important; height: 36px !important; }
+            body.size-4x3 .inv-help-text { font-size: 7px !important; line-height: 1.15 !important; }
+            body.size-4x3 .inv-help-title { font-size: 7.5px !important; }
         }
     </style>
 
     <style id="dynamicPageSizeStyle">
         <?php if ($requestedSize === '4x3'): ?>
-            @media print { @page { size: 4in 3in; margin: 2mm 2mm; } }
+            @page { size: 4in 3in; margin: 0; }
+            @page card4x3 { size: 4in 3in; margin: 0; }
+            @media print { @page { size: 4in 3in; margin: 0; } }
         <?php else: ?>
-            @media print { @page { size: A4 portrait; margin: 8mm 8mm; } }
+            @page { size: A4 portrait; margin: 8mm; }
+            @media print { @page { size: A4 portrait; margin: 8mm; } }
         <?php endif; ?>
     </style>
 </head>
@@ -1201,7 +1326,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             </div>
 
             <!-- Print Button -->
-            <button type="button" class="inv-btn inv-btn-primary" onclick="window.print();">
+            <button type="button" class="inv-btn inv-btn-primary" onclick="printInvoiceCard();">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
                 <span>Print / Save PDF</span>
             </button>
@@ -1528,6 +1653,26 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         }
     }
 
+    function printInvoiceCard() {
+        const select = document.getElementById('invPageSizeSelect');
+        const size = select ? select.value : 'default';
+        const params = new URLSearchParams(window.location.search);
+        const alreadyStandalone = params.get('standalone') === '1' || params.has('print');
+
+        if (size === '4x3' && !alreadyStandalone) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('size', '4x3');
+            url.searchParams.set('standalone', '1');
+            url.searchParams.set('print', '1');
+            const popup = window.open(url.toString(), 'invoicePrint4x3', 'width=920,height=720');
+            if (!popup) {
+                window.print();
+            }
+            return;
+        }
+        window.print();
+    }
+
     function switchInvoiceSize(size) {
         document.body.classList.remove('size-4x3');
         if (size === '4x3') {
@@ -1553,10 +1698,10 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             document.head.appendChild(dynStyle);
         }
         if (size === '4x3') {
-            dynStyle.innerHTML = '@media print { @page { size: 4in 3in; margin: 2mm 2mm; } }';
+            dynStyle.innerHTML = '@page { size: 4in 3in; margin: 0; } @page card4x3 { size: 4in 3in; margin: 0; } @media print { @page { size: 4in 3in; margin: 0; } }';
             renderQrCode(44);
         } else {
-            dynStyle.innerHTML = '@media print { @page { size: A4 portrait; margin: 8mm 8mm; } }';
+            dynStyle.innerHTML = '@page { size: A4 portrait; margin: 8mm; } @media print { @page { size: A4 portrait; margin: 8mm; } }';
             renderQrCode(68);
         }
     }
@@ -1566,7 +1711,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         renderQrCode(initialSize === '4x3' ? 44 : 68);
 
         <?php if ($autoPrint): ?>
-            setTimeout(() => window.print(), 350);
+            setTimeout(() => window.print(), <?= $requestedSize === '4x3' ? 500 : 350 ?>);
         <?php endif; ?>
 
         const cancelModal = document.getElementById('cancelInvoiceModal');
