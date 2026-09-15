@@ -104,15 +104,37 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_us_text', "TEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_whatsapp', "VARCHAR(50) NULL");
 
-    // Dynamic WhatsApp Business API Settings per Business
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_api_url', "VARCHAR(255) NULL DEFAULT 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_token', "VARCHAR(255) NULL");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_company_id', "INT NULL DEFAULT 162");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_name', "VARCHAR(100) NULL DEFAULT 'otp_ver'");
-    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_lang', "VARCHAR(20) NULL DEFAULT 'en_US'");
+    // Dynamic WhatsApp Business API Settings per Business (no shared platform defaults)
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_api_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_token', "TEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_company_id', "INT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_name', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_lang', "VARCHAR(20) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_phone_number_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_waba_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_raw', "MEDIUMTEXT NULL");
+
+    try {
+        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_token` TEXT NULL");
+    } catch (PDOException $e) {
+        // Column type already compatible
+    }
+    try {
+        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_api_url` VARCHAR(500) NULL DEFAULT NULL");
+    } catch (PDOException $e) {
+        // Column type already compatible
+    }
+    try {
+        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_company_id` INT NULL DEFAULT NULL");
+    } catch (PDOException $e) {
+        // Column type already compatible
+    }
+    try {
+        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_template_name` VARCHAR(100) NULL DEFAULT NULL");
+    } catch (PDOException $e) {
+        // Column type already compatible
+    }
 
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
@@ -704,6 +726,7 @@ function get_mobile_store_settings(int $businessId): array {
         'wa_phone_number_id' => (string) ($row['wa_phone_number_id'] ?? ''),
         'wa_waba_id' => (string) ($row['wa_waba_id'] ?? ''),
         'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
+        'wa_curl_raw' => (string) ($row['wa_curl_raw'] ?? ''),
     ];
 }
 
@@ -1914,35 +1937,170 @@ function format_storefront_whatsapp_phone(string $phone): string {
     return $digits;
 }
 
+function ominiflow_master_wa_token(): string {
+    return defined('OMINIFLOW_WA_TOKEN') ? trim((string) OMINIFLOW_WA_TOKEN) : '';
+}
+
+function is_store_own_whatsapp_token(string $token): bool {
+    $token = trim($token);
+    if ($token === '') {
+        return false;
+    }
+    $master = ominiflow_master_wa_token();
+    return $master === '' || $token !== $master;
+}
+
+function parse_whatsapp_curl_command(string $raw): array {
+    $out = [];
+    $raw = html_entity_decode(trim($raw), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if ($raw === '') {
+        return $out;
+    }
+
+    if (preg_match('/https?:\/\/[^\s\'"\\\\]+/i', $raw, $m)) {
+        $out['wa_api_url'] = rtrim($m[0], '\'",\\');
+    }
+
+    if (
+        preg_match('/(?:Authorization:\s*Bearer\s+|Bearer\s+)([A-Za-z0-9_\-\.]{20,})/i', $raw, $m)
+        || preg_match('/-H\s*[\'"]token:\s*([A-Za-z0-9_\-\.]{15,})/i', $raw, $m)
+        || preg_match('/["\'](?:token|access_token)["\']\s*:\s*["\']([A-Za-z0-9_\-\.]{15,})["\']/i', $raw, $m)
+        || preg_match('/["\']?token["\']?\s*[:=]\s*["\']?([A-Za-z0-9_\-\.]{15,})/i', $raw, $m)
+    ) {
+        $out['wa_token'] = trim($m[1]);
+    }
+
+    if (preg_match('/["\']?company_id["\']?\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)) {
+        $out['wa_company_id'] = (int) $m[1];
+    }
+
+    if (
+        preg_match('/["\']template_name["\']\s*:\s*["\']([a-zA-Z0-9_-]+)/i', $raw, $m)
+        || preg_match('/"template"\s*:\s*\{[^}]*"name"\s*:\s*"([a-zA-Z0-9_-]+)"/s', $raw, $m)
+    ) {
+        $out['wa_template_name'] = trim($m[1]);
+    }
+
+    if (
+        preg_match('/["\'](?:template_language|template_lang)["\']\s*:\s*["\']([a-zA-Z0-9_-]+)/i', $raw, $m)
+        || preg_match('/"language"\s*:\s*\{[^}]*"code"\s*:\s*"([a-zA-Z0-9_-]+)"/s', $raw, $m)
+    ) {
+        $out['wa_template_lang'] = trim($m[1]);
+    }
+
+    if (
+        preg_match('/["\'](?:phone_number_id|wa_phone_number_id)["\']\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)
+        || preg_match('/graph\.facebook\.com\/v\d+\.\d+\/([0-9]{10,})\/messages/i', $raw, $m)
+    ) {
+        $out['wa_phone_number_id'] = trim($m[1]);
+    }
+
+    if (preg_match('/["\'](?:waba_id|wa_waba_id)["\']\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)) {
+        $out['wa_waba_id'] = trim($m[1]);
+    }
+
+    return $out;
+}
+
+/**
+ * Resolve WhatsApp API credentials saved for THIS business only.
+ * Never falls back to the platform/client master token or company 162.
+ */
+function get_business_whatsapp_gateway(int $businessId): array {
+    $empty = [
+        'configured' => false,
+        'api_url' => '',
+        'token' => '',
+        'company_id' => 0,
+        'template' => 'otp_ver',
+        'lang' => 'en_US',
+        'phone_number_id' => '',
+        'waba_id' => '',
+        'is_meta_graph' => false,
+        'error' => 'WhatsApp API is not connected for this store. Paste this store\'s cURL and token in Settings → WhatsApp.',
+    ];
+
+    if ($businessId <= 0) {
+        return $empty;
+    }
+
+    $brand = get_mobile_store_settings($businessId);
+    $token = trim((string) ($brand['wa_token'] ?? ''));
+    $apiUrl = trim((string) ($brand['wa_api_url'] ?? ''));
+    $phoneId = trim((string) ($brand['wa_phone_number_id'] ?? ''));
+    $companyId = !empty($brand['wa_company_id']) ? (int) $brand['wa_company_id'] : 0;
+    $template = trim((string) ($brand['wa_template_name'] ?? ''));
+    $lang = trim((string) ($brand['wa_template_lang'] ?? ''));
+    $wabaId = trim((string) ($brand['wa_waba_id'] ?? ''));
+
+    if (!is_store_own_whatsapp_token($token)) {
+        return $empty;
+    }
+
+    $isMasterUrl = $apiUrl === '' || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+    $isGraphUrl = stripos($apiUrl, 'graph.facebook.com') !== false;
+    $looksLikeMetaToken = str_starts_with($token, 'EAA');
+
+    if ($phoneId !== '' && ($isGraphUrl || $apiUrl === '' || ($isMasterUrl && $looksLikeMetaToken))) {
+        $version = 'v21.0';
+        if (preg_match('#graph\.facebook\.com/(v\d+\.\d+)/#i', $apiUrl, $m)) {
+            $version = $m[1];
+        }
+        $apiUrl = 'https://graph.facebook.com/' . $version . '/' . $phoneId . '/messages';
+        $isGraphUrl = true;
+    }
+
+    if ($apiUrl === '') {
+        $empty['error'] = 'WhatsApp API URL is missing for this store. Paste the store cURL in Settings → WhatsApp and save.';
+        return $empty;
+    }
+
+    return [
+        'configured' => true,
+        'api_url' => $apiUrl,
+        'token' => $token,
+        'company_id' => $companyId,
+        'template' => $template !== '' ? $template : 'otp_ver',
+        'lang' => $lang !== '' ? $lang : 'en_US',
+        'phone_number_id' => $phoneId,
+        'waba_id' => $wabaId,
+        'is_meta_graph' => $isGraphUrl || stripos($apiUrl, 'graph.facebook.com') !== false,
+        'error' => '',
+    ];
+}
+
 function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName, int $businessId = 0): array {
     $waPhone = format_storefront_whatsapp_phone($phone);
     if (strlen($waPhone) < 10) {
-        return ['success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
+        return ['success' => false, 'api_success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
     }
 
-    $brand = $businessId > 0 ? get_mobile_store_settings($businessId) : [];
+    $gateway = get_business_whatsapp_gateway($businessId);
+    if (empty($gateway['configured'])) {
+        return [
+            'success' => false,
+            'api_success' => false,
+            'phone' => $waPhone,
+            'otp' => $otp,
+            'http_code' => 0,
+            'response' => null,
+            'error' => (string) ($gateway['error'] ?? 'WhatsApp API is not connected for this store.'),
+        ];
+    }
 
-    // Dynamically retrieve configured credentials for this store
-    $apiUrl = !empty(trim((string)($brand['wa_api_url'] ?? ''))) ? trim((string)$brand['wa_api_url']) : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
-    $token = !empty(trim((string)($brand['wa_token'] ?? ''))) ? trim((string)$brand['wa_token']) : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3');
-    $companyId = !empty($brand['wa_company_id']) ? (int)$brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int)OMINIFLOW_WA_COMPANY_ID : 162);
-    $template = !empty(trim((string)($brand['wa_template_name'] ?? ''))) ? trim((string)$brand['wa_template_name']) : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
-    $lang = !empty(trim((string)($brand['wa_template_lang'] ?? ''))) ? trim((string)$brand['wa_template_lang']) : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
-
-    $_SESSION['sf_last_wa_otp'] = [
-        'phone' => $waPhone,
-        'raw_phone' => $phone,
-        'otp' => $otp,
-        'time' => time(),
-    ];
+    $apiUrl = (string) $gateway['api_url'];
+    $token = (string) $gateway['token'];
+    $companyId = (int) $gateway['company_id'];
+    $template = (string) $gateway['template'];
+    $lang = (string) $gateway['lang'];
+    $isMetaGraph = !empty($gateway['is_meta_graph']);
 
     $responseRaw = null;
     $httpCode = 0;
     $apiSuccess = false;
+    $curlError = '';
 
     if ($token !== '') {
-        $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
-
         $compBodyOnly = [
             [
                 'type' => 'body',
@@ -2080,6 +2238,9 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
                 ]);
                 $responseRaw = curl_exec($ch);
                 $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                if ($responseRaw === false) {
+                    $curlError = (string) curl_error($ch);
+                }
                 curl_close($ch);
 
                 if ($responseRaw) {
@@ -2095,13 +2256,34 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
         }
     }
 
+    $error = null;
+    if (!$apiSuccess) {
+        $error = 'Could not send OTP from this store\'s WhatsApp API.';
+        if ($curlError !== '') {
+            $error .= ' ' . $curlError;
+        } elseif (is_string($responseRaw) && $responseRaw !== '') {
+            $decodedErr = json_decode($responseRaw, true);
+            if (is_array($decodedErr)) {
+                $msg = $decodedErr['error']['message'] ?? $decodedErr['message'] ?? $decodedErr['error'] ?? null;
+                if (is_string($msg) && $msg !== '') {
+                    $error .= ' ' . $msg;
+                }
+            }
+        } elseif ($httpCode > 0) {
+            $error .= ' Gateway HTTP ' . $httpCode . '.';
+        }
+    }
+
     return [
-        'success' => true,
+        'success' => $apiSuccess,
         'api_success' => $apiSuccess,
         'phone' => $waPhone,
         'otp' => $otp,
         'http_code' => $httpCode,
         'response' => $responseRaw,
+        'error' => $error,
+        'api_url' => $apiUrl,
+        'template' => $template,
     ];
 }
 
@@ -2205,7 +2387,8 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
     // Ensure mobile_store_settings row exists
     get_mobile_store_settings($businessId);
     
-    $stmt = $db->prepare('
+    $setCurl = array_key_exists('wa_curl_raw', $data);
+    $sql = '
         UPDATE mobile_store_settings
         SET wa_api_url = :wa_url,
             wa_token = :wa_token,
@@ -2214,16 +2397,19 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
             wa_template_lang = :wa_template_lang,
             wa_phone_number_id = :wa_phone_number_id,
             wa_waba_id = :wa_waba_id,
-            wa_enable_storefront_otp = :wa_otp,
+            wa_enable_storefront_otp = :wa_otp' .
+            ($setCurl ? ',
+            wa_curl_raw = :wa_curl_raw' : '') . ',
             updated_at = NOW()
         WHERE business_id = :bid
-    ');
+    ';
+    $stmt = $db->prepare($sql);
     
     $companyId = isset($data['wa_company_id']) && $data['wa_company_id'] !== '' && (int)$data['wa_company_id'] > 0 
         ? (int)$data['wa_company_id'] 
         : null;
 
-    return $stmt->execute([
+    $params = [
         'wa_url' => isset($data['wa_api_url']) && trim((string)$data['wa_api_url']) !== '' ? trim((string)$data['wa_api_url']) : null,
         'wa_token' => isset($data['wa_token']) && trim((string)$data['wa_token']) !== '' ? trim((string)$data['wa_token']) : null,
         'wa_company_id' => $companyId,
@@ -2233,7 +2419,12 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
         'wa_waba_id' => isset($data['wa_waba_id']) && trim((string)$data['wa_waba_id']) !== '' ? trim((string)$data['wa_waba_id']) : null,
         'wa_otp' => !empty($data['wa_enable_storefront_otp']) ? 1 : 0,
         'bid' => $businessId,
-    ]);
+    ];
+    if ($setCurl) {
+        $params['wa_curl_raw'] = trim((string) $data['wa_curl_raw']) !== '' ? trim((string) $data['wa_curl_raw']) : null;
+    }
+
+    return $stmt->execute($params);
 }
 
 function send_storefront_otp_sms(string $phone, string $otp, string $storeName): bool {

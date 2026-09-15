@@ -24,6 +24,17 @@ $db = get_db();
 
 ensure_online_store_schema();
 $brand = get_mobile_store_settings($bizId);
+$waGateway = get_business_whatsapp_gateway($bizId);
+$waConnected = !empty($waGateway['configured']);
+if (!is_store_own_whatsapp_token((string) ($brand['wa_token'] ?? ''))) {
+    $brand['wa_token'] = '';
+    if (stripos((string) ($brand['wa_api_url'] ?? ''), 'whatsapp.ominiflow.com') !== false) {
+        $brand['wa_api_url'] = '';
+    }
+    if ((int) ($brand['wa_company_id'] ?? 0) === 162) {
+        $brand['wa_company_id'] = null;
+    }
+}
 
 // Handle WhatsApp Integration Save
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -35,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = (string)$_POST['action'];
 
     if ($action === 'save_whatsapp_config') {
-        $rawCurl = trim((string)($_POST['page_curl_raw'] ?? ''));
+        $rawCurl = trim((string)($_POST['page_curl_raw'] ?? $_POST['curl_raw'] ?? ''));
         
         $waApiUrl = trim((string)($_POST['wa_api_url'] ?? ''));
         $waToken = trim((string)($_POST['wa_token'] ?? ''));
@@ -45,47 +56,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $waPhoneId = trim((string)($_POST['wa_phone_number_id'] ?? ''));
         $waWabaId = trim((string)($_POST['wa_waba_id'] ?? ''));
 
-        // If cURL command or raw payload was provided in the textarea, extract missing/updated parameters
+        // Pasted cURL always wins so this store does not keep another client's URL/token.
         if ($rawCurl !== '') {
-            if (preg_match('/https?:\/\/[^\s\'"\\\\]+/i', $rawCurl, $m)) {
-                $pUrl = rtrim($m[0], '\'",');
-                if ($waApiUrl === '') {
-                    $waApiUrl = $pUrl;
-                }
+            $parsed = parse_whatsapp_curl_command($rawCurl);
+            if (!empty($parsed['wa_api_url'])) {
+                $waApiUrl = (string) $parsed['wa_api_url'];
             }
-            if (preg_match('/(?:Authorization:\s*Bearer\s+|["\']?token["\']?\s*[:=]\s*["\']?|-H\s*[\'"]token:\s*)([a-zA-Z0-9_\-\.]{15,})/i', $rawCurl, $m)) {
-                if ($waToken === '') {
-                    $waToken = trim($m[1]);
-                }
+            if (!empty($parsed['wa_token'])) {
+                $waToken = (string) $parsed['wa_token'];
             }
-            if (preg_match('/(?:["\']?company_id["\']?\s*[:=]\s*["\']?)([0-9]+)/i', $rawCurl, $m)) {
-                if ($waCompanyId <= 0) {
-                    $waCompanyId = (int)$m[1];
-                }
+            if (!empty($parsed['wa_company_id'])) {
+                $waCompanyId = (int) $parsed['wa_company_id'];
             }
-            if (preg_match('/(?:["\']?template_name["\']?\s*[:=]\s*["\']?|["\']?template["\']?\s*:\s*["\']?|["\']?name["\']?\s*:\s*["\']?)([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
-                if ($waTemplateName === '') {
-                    $waTemplateName = trim($m[1]);
-                }
+            if (!empty($parsed['wa_template_name'])) {
+                $waTemplateName = (string) $parsed['wa_template_name'];
             }
-            if (preg_match('/(?:["\']?template_language["\']?|["\']?template_lang["\']?|["\']?language["\']?|["\']?code["\']?)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)/i', $rawCurl, $m)) {
-                if ($waTemplateLang === '') {
-                    $waTemplateLang = trim($m[1]);
-                }
+            if (!empty($parsed['wa_template_lang'])) {
+                $waTemplateLang = (string) $parsed['wa_template_lang'];
             }
-            if (preg_match('/(?:["\']?phone_number_id["\']?|["\']?wa_phone_number_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m) || preg_match('/\/v\d+\.\d+\/([0-9]{10,})\/messages/i', $rawCurl, $m)) {
-                if ($waPhoneId === '') {
-                    $waPhoneId = trim($m[1]);
-                }
+            if (!empty($parsed['wa_phone_number_id'])) {
+                $waPhoneId = (string) $parsed['wa_phone_number_id'];
             }
-            if (preg_match('/(?:["\']?waba_id["\']?|["\']?wa_waba_id["\']?)\s*[:=]\s*["\']?([0-9]+)/i', $rawCurl, $m)) {
-                if ($waWabaId === '') {
-                    $waWabaId = trim($m[1]);
-                }
+            if (!empty($parsed['wa_waba_id'])) {
+                $waWabaId = (string) $parsed['wa_waba_id'];
             }
         }
 
-        save_business_whatsapp_settings($bizId, [
+        $saveData = [
             'wa_api_url' => $waApiUrl,
             'wa_token' => $waToken,
             'wa_company_id' => $waCompanyId,
@@ -94,9 +91,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_phone_number_id' => $waPhoneId,
             'wa_waba_id' => $waWabaId,
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
-        ]);
+        ];
+        if ($rawCurl !== '') {
+            $saveData['wa_curl_raw'] = $rawCurl;
+        }
 
-        set_flash('success', 'WhatsApp settings saved successfully for your store!');
+        save_business_whatsapp_settings($bizId, $saveData);
+
+        set_flash('success', 'WhatsApp settings saved for this store. Storefront OTP will use only these credentials.');
         redirect('integrations-whatsapp.php');
     }
 
@@ -110,6 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_phone_number_id' => '',
             'wa_waba_id' => '',
             'wa_enable_storefront_otp' => 1,
+            'wa_curl_raw' => '',
         ]);
 
         set_flash('success', 'WhatsApp disconnected! All credentials cleared. You can now paste your new cURL command.');
@@ -125,14 +128,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $storeName = (string)($brand['display_name'] ?? 'OminiFlow Retail');
             $res = send_storefront_otp_whatsapp($testPhone, $testOtp, $storeName, $bizId);
             
-            $usedTmpl = !empty($brand['wa_template_name']) ? $brand['wa_template_name'] : 'otp_ver (default)';
-            $usedUrl = !empty($brand['wa_api_url']) ? $brand['wa_api_url'] : 'Default Master Gateway';
+            $usedTmpl = (string) ($res['template'] ?? (($brand['wa_template_name'] ?? '') !== '' ? $brand['wa_template_name'] : 'otp_ver'));
+            $usedUrl = (string) ($res['api_url'] ?? ($waGateway['api_url'] ?? ''));
             $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : json_encode($res['response'] ?? []);
 
             if (!empty($res['api_success'])) {
-                set_flash('success', 'Test OTP (' . $testOtp . ') dispatched to +' . $res['phone'] . ' using Template [' . $usedTmpl . ']! Gateway Response: ' . $rawMsg);
+                set_flash('success', 'Test OTP (' . $testOtp . ') sent from this store\'s WhatsApp API to +' . $res['phone'] . ' via ' . $usedUrl . ' (template ' . $usedTmpl . ').');
             } else {
-                set_flash('error', 'WhatsApp Gateway Error using Template [' . $usedTmpl . '] | Response: ' . $rawMsg);
+                $err = trim((string) ($res['error'] ?? ''));
+                set_flash('error', ($err !== '' ? $err : 'WhatsApp send failed for this store.') . ($rawMsg ? ' Response: ' . $rawMsg : ''));
             }
         }
         redirect('integrations-whatsapp.php');
@@ -212,13 +216,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             // 2. Extract Token
-            const bearerMatch = raw.match(/Authorization:\s*Bearer\s+([a-zA-Z0-9_\-\.]+)/i) ||
-                                raw.match(/Bearer\s+([a-zA-Z0-9_\-\.]{20,})/i) ||
-                                raw.match(/-H\s*['"]token:\s*([a-zA-Z0-9_\-\.]+)['"]/i);
+            const bearerMatch = raw.match(/Authorization:\s*Bearer\s+([A-Za-z0-9_\-\.]+)/i) ||
+                                raw.match(/Bearer\s+([A-Za-z0-9_\-\.]{20,})/i) ||
+                                raw.match(/-H\s*['"]token:\s*([A-Za-z0-9_\-\.]+)['"]/i);
             const tokenMatch = bearerMatch ||
                                raw.match(/"token"\s*:\s*["']?([^"',}\s]+)["']?/i) || 
                                raw.match(/'token'\s*:\s*["']?([^"',}\s]+)["']?/i) ||
-                               raw.match(/token["']?\s*[:=]\s*["']?([a-zA-Z0-9_-]{15,})["']?/i);
+                               raw.match(/token["']?\s*[:=]\s*["']?([A-Za-z0-9_\-.]{15,})["']?/i);
             if (tokenMatch && tokenMatch[1]) {
                 if (document.getElementById('page_wa_token')) {
                     document.getElementById('page_wa_token').value = tokenMatch[1].trim();
@@ -289,30 +293,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             if (foundCount > 0) {
-                showParseStatus('✅ Parsed ' + foundCount + ' settings successfully! Click "Save WhatsApp Settings" below.', true);
+                showParseStatus('✅ Parsed ' + foundCount + ' settings from this store\'s cURL. Click "Save WhatsApp Settings".', true);
             } else {
                 showParseStatus('Could not find WhatsApp parameters. Please check or fill manually.', false);
             }
         }
 
-        function fillDefaultCredentials() {
-            if (document.getElementById('page_wa_api_url')) document.getElementById('page_wa_api_url').value = 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
-            if (document.getElementById('page_wa_token')) document.getElementById('page_wa_token').value = '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3';
-            if (document.getElementById('page_wa_company_id')) document.getElementById('page_wa_company_id').value = '162';
-            if (document.getElementById('page_wa_template_name')) document.getElementById('page_wa_template_name').value = 'otp_ver';
-            if (document.getElementById('page_wa_template_lang')) document.getElementById('page_wa_template_lang').value = 'en_US';
-
-            highlightField('page_wa_api_url');
-            highlightField('page_wa_token');
-            highlightField('page_wa_company_id');
-            highlightField('page_wa_template_name');
-            highlightField('page_wa_template_lang');
-
-            showParseStatus('Default WhatsApp Gateway credentials filled! Click "Save WhatsApp Settings".', true);
-        }
-
         window.parsePageCurlCommand = parsePageCurlCommand;
-        window.fillDefaultCredentials = fillDefaultCredentials;
     </script>
     <style>
         .wa-page-container {
@@ -780,18 +767,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 <!-- TAB 1: WhatsApp API & OTP Settings (Directly on page) -->
                 <div class="wa-tab-pane active" id="tab-settings">
                     <!-- Native Cloud Banner -->
-                    <div style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #86efac; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 2px 6px rgba(22, 101, 52, 0.06);">
+                    <div style="background: linear-gradient(135deg, <?= $waConnected ? '#f0fdf4 0%, #dcfce7 100%' : '#fff7ed 0%, #ffedd5 100%' ?>); border: 1px solid <?= $waConnected ? '#86efac' : '#fdba74' ?>; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 2px 6px rgba(22, 101, 52, 0.06);">
                         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
                             <div style="display: flex; align-items: center; gap: 16px;">
-                                <div style="width: 48px; height: 48px; border-radius: 50%; background: #22c55e; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35);">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; background: <?= $waConnected ? '#22c55e' : '#f97316' ?>; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35);">
                                     <svg width="26" height="26" fill="#ffffff" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
                                 </div>
                                 <div>
                                     <div style="display: flex; align-items: center; gap: 10px;">
-                                        <h3 style="font-size: 16px; font-weight: 800; color: #14532d; margin: 0;">OminiFlow Master WhatsApp Service</h3>
-                                        <span style="background: #22c55e; color: #fff; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; text-transform: uppercase;">Active & Ready</span>
+                                        <h3 style="font-size: 16px; font-weight: 800; color: <?= $waConnected ? '#14532d' : '#9a3412' ?>; margin: 0;"><?= $waConnected ? 'This store\'s WhatsApp API is connected' : 'Connect this store\'s WhatsApp API' ?></h3>
+                                        <span style="background: <?= $waConnected ? '#22c55e' : '#f97316' ?>; color: #fff; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; text-transform: uppercase;"><?= $waConnected ? 'Store API Ready' : 'Not connected' ?></span>
                                     </div>
-                                    <p style="font-size: 13px; color: #166534; margin: 4px 0 0;">Zero-setup WhatsApp OTP verification & customer checkout account creation is automatically enabled for your store.</p>
+                                    <p style="font-size: 13px; color: <?= $waConnected ? '#166534' : '#9a3412' ?>; margin: 4px 0 0;"><?= $waConnected ? 'Storefront OTP and other WhatsApp messages will be sent using only the cURL and token saved below for this store.' : 'Paste this store\'s WhatsApp cURL and token below. OTP will not use another client\'s WhatsApp API.' ?></p>
                                 </div>
                             </div>
                             <form method="POST" action="integrations-whatsapp.php" style="display: flex; align-items: center; gap: 8px; margin: 0;">
@@ -809,13 +796,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); margin-bottom: 24px;">
                         <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                             <div>
-                                <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin: 0;">⚙️ WhatsApp Integration Credentials & Templates</h4>
-                                <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Pre-configured with OminiFlow Master API. You can paste custom cURL if you want your own number.</div>
+                                <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin: 0;">⚙️ This store's WhatsApp API credentials</h4>
+                                <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Paste this store's cURL and token. Storefront OTP uses only these values — never another client's API.</div>
                             </div>
                             <div style="display: flex; gap: 8px; align-items: center;">
-                                <button type="button" onclick="fillDefaultCredentials()" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-size:12px;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer;">
-                                    🔄 Reset to OminiFlow Master Credentials
-                                </button>
                                 <button type="button" onclick="confirmDisconnect()" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:12px;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer;">
                                     🔌 Disconnect
                                 </button>
@@ -830,10 +814,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             <!-- Quick Import via cURL Box (Optional) -->
                             <div style="margin-bottom: 18px; padding: 12px 16px; background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 8px;">
                                 <label style="font-size: 12.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
-                                    ⚡ Quick Paste cURL (Optional — only if using custom WhatsApp number):
+                                    ⚡ Paste this store's WhatsApp API cURL
                                 </label>
                                 <div style="display: flex; gap: 8px;">
-                                    <textarea id="pageCurlInput" name="page_curl_raw" rows="1" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -H 'Content-Type: application/json' -d '{...}'"></textarea>
+                                    <textarea id="pageCurlInput" name="page_curl_raw" rows="4" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://graph.facebook.com/v21.0/PHONE_NUMBER_ID/messages' -H 'Authorization: Bearer EAAG...'"><?= htmlspecialchars((string)($brand['wa_curl_raw'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
                                     <button type="button" id="btnParseCurl" class="btn-secondary" style="background:#15803d;color:#fff;border:0;font-size:12px;font-weight:700;white-space:nowrap;padding:0 16px;border-radius:6px;cursor:pointer;" onclick="parsePageCurlCommand()">
                                         Parse & Fill
                                     </button>
@@ -843,17 +827,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 14px;">
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Endpoint URL</label>
-                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage" style="width: 100%;">
+                                    <input type="url" name="wa_api_url" id="page_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://graph.facebook.com/v21.0/PHONE_NUMBER_ID/messages" style="width: 100%;">
                                 </div>
                                 <div>
                                     <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="162" style="width: 100%;">
+                                    <input type="number" name="wa_company_id" id="page_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="Company ID (WPBox)" style="width: 100%;">
                                 </div>
                             </div>
 
                             <div style="margin-bottom: 14px;">
                                 <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                                <input type="text" name="wa_token" id="page_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="Leave blank to use default OminiFlow Master API">
+                                <input type="text" name="wa_token" id="page_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="This store's WhatsApp API token">
                             </div>
 
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;">
@@ -1054,17 +1038,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px;">
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">API Endpoint URL</label>
-                        <input type="url" name="wa_api_url" id="field_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage" style="width: 100%;">
+                        <input type="url" name="wa_api_url" id="field_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://graph.facebook.com/v21.0/PHONE_NUMBER_ID/messages" style="width: 100%;">
                     </div>
                     <div>
                         <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="162" style="width: 100%;">
+                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="Company ID (WPBox)" style="width: 100%;">
                     </div>
                 </div>
 
                 <div style="margin-bottom: 12px;">
                     <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                    <input type="text" name="wa_token" id="field_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="Leave blank to use default OminiFlow Master API">
+                    <input type="text" name="wa_token" id="field_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="This store's WhatsApp API token">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
