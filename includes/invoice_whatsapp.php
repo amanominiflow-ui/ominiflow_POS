@@ -156,23 +156,12 @@ function send_invoice_whatsapp_via_saved_curl(
 
     $parsed = json_decode($raw, true);
     $apiUrl = trim((string) ($brand['wa_invoice_api_url'] ?? ''));
-    $token = '';
+    $fromRaw = parse_whatsapp_curl_command((string) ($brand['wa_invoice_curl_raw'] ?? $raw));
     if (!is_array($parsed)) {
-        $parsedCurl = parse_whatsapp_curl_command($raw);
-        $parsed = is_array($parsedCurl['payload'] ?? null) ? $parsedCurl['payload'] : null;
-        if ($apiUrl === '') {
-            $apiUrl = trim((string) ($parsedCurl['wa_api_url'] ?? ''));
-        }
-        $token = trim((string) ($parsedCurl['wa_token'] ?? ''));
-    } else {
-        $token = trim((string) ($parsed['token'] ?? ''));
-        if ($apiUrl === '') {
-            $fromRaw = parse_whatsapp_curl_command((string) ($brand['wa_invoice_curl_raw'] ?? ''));
-            $apiUrl = trim((string) ($fromRaw['wa_api_url'] ?? ''));
-            if ($token === '') {
-                $token = trim((string) ($fromRaw['wa_token'] ?? ''));
-            }
-        }
+        $parsed = is_array($fromRaw['payload'] ?? null) ? $fromRaw['payload'] : null;
+    }
+    if ($apiUrl === '') {
+        $apiUrl = trim((string) ($fromRaw['wa_api_url'] ?? ''));
     }
 
     if (!is_array($parsed)) {
@@ -181,8 +170,26 @@ function send_invoice_whatsapp_via_saved_curl(
     if ($apiUrl === '') {
         return ['success' => false, 'error' => 'Invoice WhatsApp API URL is missing in the pasted cURL.'];
     }
+
+    $token = trim((string) ($parsed['token'] ?? $parsed['access_token'] ?? ''));
     if ($token === '') {
-        $token = trim((string) ($brand['wa_token'] ?? ''));
+        $token = trim((string) ($fromRaw['wa_token'] ?? ''));
+    }
+    $invoiceCompanyId = (int) ($parsed['company_id'] ?? $fromRaw['wa_company_id'] ?? 0);
+
+    $isWpbox = stripos($apiUrl, '/api/wpbox') !== false || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+    if ($token === '') {
+        $otpToken = trim((string) ($brand['wa_token'] ?? ''));
+        $otpUrl = trim((string) ($brand['wa_api_url'] ?? ''));
+        $otpHost = (string) (parse_url($otpUrl, PHP_URL_HOST) ?? '');
+        $invHost = (string) (parse_url($apiUrl, PHP_URL_HOST) ?? '');
+        $sameHost = $otpHost !== '' && $invHost !== '' && strcasecmp($otpHost, $invHost) === 0;
+        if ($otpToken !== '' && !str_starts_with($otpToken, 'EAA') && ($isWpbox || $sameHost)) {
+            $token = $otpToken;
+        }
+    }
+    if ($token === '') {
+        return ['success' => false, 'error' => 'Invoice cURL has no token. Paste the full invoice/utility cURL from WPBox (the JSON must include "token").'];
     }
 
     $filename = preg_replace('/[^A-Za-z0-9._-]+/', '_', $invNum) . '.pdf';
@@ -207,12 +214,13 @@ function send_invoice_whatsapp_via_saved_curl(
         }
     }
 
-    if ($token !== '' && empty($payload['token'])) {
+    if ($isWpbox || empty($payload['messaging_product'])) {
         $payload['token'] = $token;
-    }
-    $companyId = (int) ($brand['wa_company_id'] ?? 0);
-    if ($companyId > 0 && empty($payload['company_id']) && empty($payload['messaging_product'])) {
-        $payload['company_id'] = $companyId;
+        if ($invoiceCompanyId > 0) {
+            $payload['company_id'] = $invoiceCompanyId;
+        } else {
+            unset($payload['company_id']);
+        }
     }
 
     $looksLikeTemplate = !empty($payload['template_name'])

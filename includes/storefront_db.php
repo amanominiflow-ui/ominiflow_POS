@@ -1986,12 +1986,11 @@ function parse_whatsapp_curl_command(string $raw): array {
     }
 
     if (
-        preg_match('/(?:Authorization:\s*Bearer\s+|Bearer\s+)([A-Za-z0-9_\-\.]{20,})/i', $raw, $m)
-        || preg_match('/-H\s*[\'"]token:\s*([A-Za-z0-9_\-\.]{15,})/i', $raw, $m)
-        || preg_match('/["\'](?:token|access_token)["\']\s*:\s*["\']([A-Za-z0-9_\-\.]{15,})["\']/i', $raw, $m)
-        || preg_match('/["\']?token["\']?\s*[:=]\s*["\']?([A-Za-z0-9_\-\.]{15,})/i', $raw, $m)
+        preg_match('/(?:Authorization:\s*Bearer\s+|Bearer\s+)(\S{15,})/i', $raw, $m)
+        || preg_match('/-H\s*[\'"]token:\s*([^\'"]+)/i', $raw, $m)
+        || preg_match('/["\'](?:token|access_token)["\']\s*:\s*["\']([^"\']+)["\']/i', $raw, $m)
     ) {
-        $out['wa_token'] = trim($m[1]);
+        $out['wa_token'] = trim($m[1], " \t\n\r\0\x0B,\\");
     }
 
     if (preg_match('/["\']?company_id["\']?\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)) {
@@ -2038,10 +2037,9 @@ function parse_whatsapp_curl_command(string $raw): array {
         }
         if (is_array($parsed)) {
             $out['payload'] = $parsed;
-            if ($out['wa_token'] === '' && !empty($parsed['token'])) {
+            if (!empty($parsed['token'])) {
                 $out['wa_token'] = trim((string) $parsed['token']);
-            }
-            if ($out['wa_token'] === '' && !empty($parsed['access_token'])) {
+            } elseif ($out['wa_token'] === '' && !empty($parsed['access_token'])) {
                 $out['wa_token'] = trim((string) $parsed['access_token']);
             }
             if (empty($out['wa_company_id']) && !empty($parsed['company_id'])) {
@@ -2445,7 +2443,10 @@ function post_whatsapp_json(string $apiUrl, string $token, array $payload, int $
         'Accept: application/json',
     ];
     if ($token !== '') {
-        $headers[] = 'Authorization: Bearer ' . $token;
+        $isWpbox = stripos($apiUrl, '/api/wpbox') !== false || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+        if (!$isWpbox) {
+            $headers[] = 'Authorization: Bearer ' . $token;
+        }
         $headers[] = 'token: ' . $token;
     }
     curl_setopt_array($ch, [

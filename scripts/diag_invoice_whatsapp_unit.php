@@ -139,3 +139,10 @@ $parsedCurl = parse_whatsapp_curl_command(
 $parseUrlOk = ($parsedCurl['wa_api_url'] ?? '') === 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'
     && is_array($parsedCurl['payload'] ?? null);
 echo 'parse prefers sendtemplatemessage URL: ' . ($parseUrlOk ? 'PASS' : 'FAIL') . "\n";
+
+$jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0In0.abc+def/ghi=';
+$parsedJwt = parse_whatsapp_curl_command(
+    'curl -X POST \'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage\' -d \'{"token":"' . $jwt . '","phone":"9191","template_name":"invoice"}\''
+);
+$jwtOk = ($parsedJwt['wa_token'] ?? '') === $jwt;
+echo 'parse keeps full JSON token: ' . ($jwtOk ? 'PASS' : 'FAIL') . "\n";
