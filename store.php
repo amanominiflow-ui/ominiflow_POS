@@ -3306,7 +3306,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
             <?php elseif ($page === 'order' || $page === 'thanks'):
                 $ordParam = trim((string)($_GET['id'] ?? $_GET['order'] ?? ''));
-                $order = $ordParam !== '' ? get_storefront_order_details($bid, $ordParam, $storeShopper ? (int)$storeShopper['id'] : null) : null;
+                $order = $ordParam !== '' ? get_storefront_order_details($bid, $ordParam) : null;
                 $isNewOrder = !empty($_GET['new']);
                 ?>
                 <?php if (!$order): ?>

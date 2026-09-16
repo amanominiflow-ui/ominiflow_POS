@@ -3170,44 +3170,64 @@ function place_online_store_order(int $businessId, array $checkout): array {
 
 function get_storefront_order_details(int $businessId, string $orderIdentifier, ?int $customerId = null): ?array {
     $db = get_db();
+    $cleanId = trim($orderIdentifier);
+    if ($cleanId === '') {
+        return null;
+    }
+
     $sql = '
         SELECT o.*, 
                c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address,
                inv.id AS invoice_id, inv.invoice_number
         FROM orders o
-        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
-        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN invoices inv ON inv.order_id = o.id
         WHERE o.business_id = :bid AND (o.order_number = :num OR CAST(o.id AS CHAR) = :num_id)
+        ORDER BY o.id DESC
+        LIMIT 1
     ';
     $params = [
         'bid' => $businessId,
-        'bid_c' => $businessId,
-        'bid_inv' => $businessId,
-        'num' => trim($orderIdentifier),
-        'num_id' => trim($orderIdentifier),
+        'num' => $cleanId,
+        'num_id' => $cleanId,
     ];
-    if ($customerId !== null && $customerId > 0) {
-        $sql .= ' AND o.customer_id = :cid';
-        $params['cid'] = $customerId;
-    }
-    $sql .= ' LIMIT 1';
-
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     $order = $stmt->fetch();
+
+    if (!$order) {
+        // Fallback by order_number across business scope in case slug resolution differed
+        $stmtFb = $db->prepare('
+            SELECT o.*, 
+                   c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address,
+                   inv.id AS invoice_id, inv.invoice_number
+            FROM orders o
+            LEFT JOIN customers c ON c.id = o.customer_id
+            LEFT JOIN invoices inv ON inv.order_id = o.id
+            WHERE o.order_number = :num OR CAST(o.id AS CHAR) = :num_id
+            ORDER BY o.id DESC
+            LIMIT 1
+        ');
+        $stmtFb->execute(['num' => $cleanId, 'num_id' => $cleanId]);
+        $order = $stmtFb->fetch();
+    }
+
     if (!$order) {
         return null;
+    }
+
+    if (empty($order['invoice_number']) && !empty($_GET['invoice'])) {
+        $order['invoice_number'] = trim((string) $_GET['invoice']);
     }
 
     $stmtItems = $db->prepare('
         SELECT oi.*, p.image_path, p.description, p.product_type, p.sku AS p_sku
         FROM order_items oi
-        LEFT JOIN products p ON p.id = oi.product_id AND p.business_id = :bid
+        LEFT JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id = :order_id
         ORDER BY oi.id ASC
     ');
     $stmtItems->execute([
-        'bid' => $businessId,
         'order_id' => (int) $order['id'],
     ]);
     $order['items'] = $stmtItems->fetchAll() ?: [];
