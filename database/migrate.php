@@ -1512,6 +1512,7 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
     $helperAddCol($pdo, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");

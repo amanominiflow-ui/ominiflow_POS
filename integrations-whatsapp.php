@@ -91,6 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_phone_number_id' => $waPhoneId,
             'wa_waba_id' => $waWabaId,
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
+            'wa_auto_send_invoices' => isset($_POST['wa_auto_send_invoices']) ? 1 : 0,
         ];
         if ($rawCurl !== '') {
             $saveData['wa_curl_raw'] = $rawCurl;
@@ -112,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_phone_number_id' => '',
             'wa_waba_id' => '',
             'wa_enable_storefront_otp' => 1,
+            'wa_auto_send_invoices' => 1,
             'wa_curl_raw' => '',
         ]);
 
@@ -868,8 +870,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     <span>Enable WhatsApp Number & OTP on Online Storefront</span>
                                 </label>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
-                                    <input type="checkbox" name="auto_send_invoices" value="1" checked style="width: 16px; height: 16px;">
-                                    <span>Auto-send Invoices on POS Checkout</span>
+                                    <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
+                                    <span>Auto-send invoice PDF on online orders — COD & paid (logged-in customer WhatsApp)</span>
                                 </label>
                             </div>
 
@@ -1079,8 +1081,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <span>Enable WhatsApp Number & OTP on Online Storefront</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a;">
-                        <input type="checkbox" name="auto_send_invoices" value="1" checked style="width: 16px; height: 16px;">
-                        <span>Auto-send Invoices on POS Checkout</span>
+                        <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
+                        <span>Auto-send invoice PDF on online orders — COD & paid (logged-in customer WhatsApp)</span>
                     </label>
                 </div>
 

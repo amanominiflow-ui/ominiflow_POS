@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
 
 require_auth();
+repair_unpaid_store_invoices();
 
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
@@ -194,6 +195,7 @@ $flashError = get_flash('error');
                             <select name="status" class="form-control">
                                 <option value="">All Statuses</option>
                                 <option value="paid" <?= $status === 'paid' ? 'selected' : '' ?>>Paid</option>
+                                <option value="unpaid" <?= $status === 'unpaid' ? 'selected' : '' ?>>Unpaid</option>
                                 <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
                             </select>
                         </div>
@@ -249,9 +251,10 @@ $flashError = get_flash('error');
                                 <?php else: ?>
                                     <?php foreach ($invoices as $inv): ?>
                                         <?php
+                                            $invStatusUi = invoice_status_display($inv);
                                             $isCancelled = ($inv['invoice_status'] === 'cancelled');
-                                            $statusBadge = $isCancelled ? 'badge-cancelled' : 'badge-paid';
-                                            $statusLabel = $isCancelled ? 'Cancelled' : 'Paid';
+                                            $statusBadge = $invStatusUi['badge'];
+                                            $statusLabel = $invStatusUi['label'];
                                         ?>
                                         <tr style="<?= $isCancelled ? 'opacity: 0.75; background: #fffafb;' : '' ?>">
                                             <td>

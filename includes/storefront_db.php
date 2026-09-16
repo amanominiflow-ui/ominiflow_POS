@@ -114,6 +114,7 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_waba_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_payload', "MEDIUMTEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_raw', "MEDIUMTEXT NULL");
 
     try {
@@ -192,6 +193,10 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
+
+    if (function_exists('repair_unpaid_store_invoices')) {
+        repair_unpaid_store_invoices($db);
+    }
     add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
 
     // Footer Customization & Legal Pages
@@ -730,6 +735,7 @@ function get_mobile_store_settings(int $businessId): array {
         'wa_waba_id' => (string) ($row['wa_waba_id'] ?? ''),
         'wa_curl_payload' => (string) ($row['wa_curl_payload'] ?? ''),
         'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
+        'wa_auto_send_invoices' => (int) ($row['wa_auto_send_invoices'] ?? 1) === 1,
         'wa_curl_raw' => (string) ($row['wa_curl_raw'] ?? ''),
     ];
 }
@@ -2575,8 +2581,8 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
     $db = get_db();
     
     // Ensure mobile_store_settings row exists
-    get_mobile_store_settings($businessId);
-    
+    $currentWa = get_mobile_store_settings($businessId);
+
     $setCurl = array_key_exists('wa_curl_raw', $data);
     $sql = '
         UPDATE mobile_store_settings
@@ -2587,7 +2593,8 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
             wa_template_lang = :wa_template_lang,
             wa_phone_number_id = :wa_phone_number_id,
             wa_waba_id = :wa_waba_id,
-            wa_enable_storefront_otp = :wa_otp' .
+            wa_enable_storefront_otp = :wa_otp,
+            wa_auto_send_invoices = :wa_auto_inv' .
             ($setCurl ? ',
             wa_curl_raw = :wa_curl_raw' : '') . ',
             updated_at = NOW()
@@ -2608,6 +2615,9 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
         'wa_phone_number_id' => isset($data['wa_phone_number_id']) && trim((string)$data['wa_phone_number_id']) !== '' ? trim((string)$data['wa_phone_number_id']) : null,
         'wa_waba_id' => isset($data['wa_waba_id']) && trim((string)$data['wa_waba_id']) !== '' ? trim((string)$data['wa_waba_id']) : null,
         'wa_otp' => !empty($data['wa_enable_storefront_otp']) ? 1 : 0,
+        'wa_auto_inv' => array_key_exists('wa_auto_send_invoices', $data)
+            ? (!empty($data['wa_auto_send_invoices']) ? 1 : 0)
+            : (!empty($currentWa['wa_auto_send_invoices']) ? 1 : 0),
         'bid' => $businessId,
     ];
     if ($setCurl) {
@@ -3082,6 +3092,23 @@ function place_online_store_order(int $businessId, array $checkout): array {
             clear_storefront_buynow($businessId);
         } else {
             save_storefront_cart($businessId, []);
+        }
+
+        try {
+            require_once __DIR__ . '/invoice_whatsapp.php';
+            $waRes = send_storefront_order_invoice_whatsapp(
+                $businessId,
+                $orderId,
+                (string) ($checkout['phone'] ?? ''),
+                $result
+            );
+            if (!empty($waRes['success'])) {
+                $result['whatsapp_invoice_sent'] = true;
+            } elseif (empty($waRes['skipped'])) {
+                $result['whatsapp_invoice_error'] = (string) ($waRes['error'] ?? 'WhatsApp invoice not sent.');
+            }
+        } catch (Throwable $e) {
+            error_log('Storefront invoice WhatsApp: ' . $e->getMessage());
         }
     }
     return $result;

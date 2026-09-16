@@ -847,6 +847,7 @@ function process_pos_order(
         $invoiceNumber = generate_next_invoice_number($bid, $db);
         $invoicePaymentStatus = ($resolvedPaymentStatus === 'paid') ? 'paid' : 'unpaid';
         $invoiceAmountPaid = ($resolvedPaymentStatus === 'paid') ? $grandTotal : 0.00;
+        $invoiceDocumentStatus = ($resolvedPaymentStatus === 'paid') ? 'paid' : 'draft';
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
@@ -880,7 +881,7 @@ function process_pos_order(
             'change_amount' => ($resolvedPaymentStatus === 'paid') ? $changeAmount : 0.00,
             'payment_method' => $paymentMethod ?: 'cash',
             'payment_status' => $invoicePaymentStatus,
-            'invoice_status' => 'paid',
+            'invoice_status' => $invoiceDocumentStatus,
             'notes' => $notes ?: null,
         ]);
         $invoiceId = (int) $db->lastInsertId();
@@ -968,7 +969,7 @@ function process_pos_order(
             'cashier_name' => $cashierName,
             'payment_method' => $paymentMethod,
             'payment_status' => $resolvedPaymentStatus,
-            'invoice_status' => 'paid',
+            'invoice_status' => $invoiceDocumentStatus,
             'created_at' => date('Y-m-d H:i:s'),
         ];
     } catch (Exception $e) {
@@ -1041,6 +1042,9 @@ function bill_generate_pos(int $orderId, array $options = []): array {
         ');
         $orderPayStatus = (string) ($order['payment_status'] ?? 'paid');
         $invoicePayStatus = ($orderPayStatus === 'paid') ? 'paid' : 'unpaid';
+        $invoiceDocStatus = ($order['order_status'] ?? '') === 'cancelled'
+            ? 'cancelled'
+            : (($orderPayStatus === 'paid') ? 'paid' : 'draft');
         $stmtInsert->execute([
             'biz_id' => $invoiceBizId,
             'invoice_number' => $invoiceNumber,
@@ -1060,7 +1064,7 @@ function bill_generate_pos(int $orderId, array $options = []): array {
             'change_amount' => 0.00,
             'payment_method' => $order['payment_method'] ?? 'cash',
             'payment_status' => $invoicePayStatus,
-            'invoice_status' => ($order['order_status'] === 'cancelled') ? 'cancelled' : 'paid',
+            'invoice_status' => $invoiceDocStatus,
             'notes' => $order['notes'] ?? null,
         ]);
         $invoiceId = (int) $db->lastInsertId();
@@ -1081,6 +1085,57 @@ function bill_generate_pos(int $orderId, array $options = []): array {
 /* =========================================================================
    5. INVOICES LISTING & DETAILS
    ========================================================================= */
+
+function invoice_is_financially_paid(array $invoice): bool {
+    if (($invoice['invoice_status'] ?? '') === 'cancelled') {
+        return false;
+    }
+    $pay = strtolower((string) ($invoice['payment_status'] ?? 'paid'));
+    return in_array($pay, ['paid'], true);
+}
+
+function invoice_status_display(array $invoice): array {
+    if (($invoice['invoice_status'] ?? '') === 'cancelled') {
+        return ['label' => 'Cancelled', 'badge' => 'badge-cancelled'];
+    }
+    if (invoice_is_financially_paid($invoice)) {
+        return ['label' => 'Paid', 'badge' => 'badge-paid'];
+    }
+    return ['label' => 'Unpaid', 'badge' => 'badge-draft'];
+}
+
+function repair_unpaid_store_invoices(?PDO $db = null): void {
+    $db = $db ?: get_db();
+    try {
+        $db->exec('
+            UPDATE orders o
+            SET o.payment_status = "pending"
+            WHERE o.payment_method IN ("cod", "pickup")
+              AND o.payment_status = "paid"
+              AND (
+                    o.sales_channel = "online_store"
+                    OR IFNULL(o.notes, "") LIKE "%Online Store order%"
+              )
+        ');
+        $db->exec('
+            UPDATE invoices inv
+            INNER JOIN orders o ON o.id = inv.order_id AND o.business_id = inv.business_id
+            SET inv.payment_status = "unpaid",
+                inv.amount_paid = 0,
+                inv.invoice_status = "draft"
+            WHERE inv.invoice_status != "cancelled"
+              AND o.payment_method IN ("cod", "pickup")
+              AND (
+                    o.payment_status = "pending"
+                    OR o.sales_channel = "online_store"
+                    OR IFNULL(o.notes, "") LIKE "%Online Store order%"
+              )
+              AND (inv.payment_status = "paid" OR inv.invoice_status = "paid")
+        ');
+    } catch (Throwable $e) {
+        // Non-fatal schema/repair
+    }
+}
 
 function get_invoices(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50, ?int $businessId = null): array {
     $db = get_db();
@@ -1108,7 +1163,11 @@ function get_invoices(string $search = '', string $status = '', string $dateFrom
         $params['search4'] = '%' . $search . '%';
     }
 
-    if ($status !== '' && in_array($status, ['paid', 'draft', 'cancelled', 'refunded'], true)) {
+    if ($status === 'paid') {
+        $sql .= ' AND inv.invoice_status != "cancelled" AND inv.payment_status = "paid"';
+    } elseif ($status === 'unpaid') {
+        $sql .= ' AND inv.invoice_status != "cancelled" AND inv.payment_status IN ("unpaid", "pending", "partially_paid")';
+    } elseif ($status !== '' && in_array($status, ['draft', 'cancelled', 'refunded'], true)) {
         $sql .= ' AND inv.invoice_status = :status';
         $params['status'] = $status;
     }
@@ -1423,7 +1482,7 @@ function get_sales_stats(?int $businessId = null): array {
     $stmtInvoices = $db->prepare('
         SELECT 
             COUNT(*) AS total_invoices,
-            SUM(CASE WHEN invoice_status = "paid" THEN 1 ELSE 0 END) AS paid_invoices,
+            SUM(CASE WHEN invoice_status != "cancelled" AND payment_status = "paid" THEN 1 ELSE 0 END) AS paid_invoices,
             SUM(CASE WHEN invoice_status = "cancelled" THEN 1 ELSE 0 END) AS cancelled_invoices
         FROM invoices
         WHERE business_id = :bid
