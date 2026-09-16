@@ -2190,6 +2190,71 @@ function wa_gateway_error_message($raw, int $httpCode): string {
     return 'WhatsApp gateway returned HTTP ' . $httpCode . '.';
 }
 
+/**
+ * WPBox stores often save the template endpoint; invoices need message/document APIs.
+ *
+ * @return list<string>
+ */
+function whatsapp_outbound_api_urls(string $apiUrl): array {
+    $apiUrl = trim($apiUrl);
+    if ($apiUrl === '') {
+        return [];
+    }
+    $urls = [$apiUrl];
+    $replacements = [
+        'sendtemplatemessage' => 'sendmessage',
+        'SendTemplateMessage' => 'SendMessage',
+        'send-template-message' => 'send-message',
+    ];
+    foreach ($replacements as $from => $to) {
+        if (stripos($apiUrl, $from) !== false) {
+            $urls[] = str_ireplace($from, $to, $apiUrl);
+        }
+    }
+    if (stripos($apiUrl, 'whatsapp.ominiflow.com') !== false) {
+        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage';
+        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/sendMessage';
+        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/send';
+    }
+    return array_values(array_unique(array_filter($urls)));
+}
+
+function upload_whatsapp_meta_document(string $phoneNumberId, string $token, string $filePath, string $version = 'v21.0'): ?string {
+    $phoneNumberId = trim($phoneNumberId);
+    $token = trim($token);
+    if ($phoneNumberId === '' || $token === '' || !is_readable($filePath)) {
+        return null;
+    }
+    $uploadUrl = 'https://graph.facebook.com/' . $version . '/' . rawurlencode($phoneNumberId) . '/media';
+    $mime = 'application/pdf';
+    $postFields = [
+        'messaging_product' => 'whatsapp',
+        'type' => $mime,
+        'file' => new CURLFile($filePath, $mime, basename($filePath)),
+    ];
+    $ch = curl_init($uploadUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $postFields,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+        ],
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+    $responseRaw = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($responseRaw === false || $httpCode < 200 || $httpCode >= 300) {
+        return null;
+    }
+    $decoded = json_decode((string) $responseRaw, true);
+    $id = is_array($decoded) ? trim((string) ($decoded['id'] ?? '')) : '';
+    return $id !== '' ? $id : null;
+}
+
 function post_whatsapp_json(string $apiUrl, string $token, array $payload): array {
     $ch = curl_init($apiUrl);
     $headers = [
@@ -2254,11 +2319,16 @@ function get_business_whatsapp_gateway(int $businessId): array {
     $lang = trim((string) ($brand['wa_template_lang'] ?? ''));
     $wabaId = trim((string) ($brand['wa_waba_id'] ?? ''));
 
-    if (!is_store_own_whatsapp_token($token)) {
+    $isMasterUrl = $apiUrl === '' || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+    $master = ominiflow_master_wa_token();
+    $usingSharedWpbox = $master !== ''
+        && $token === $master
+        && $companyId > 0
+        && $isMasterUrl;
+    if (!is_store_own_whatsapp_token($token) && !$usingSharedWpbox) {
         return $empty;
     }
 
-    $isMasterUrl = $apiUrl === '' || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
     $isGraphUrl = stripos($apiUrl, 'graph.facebook.com') !== false;
     $looksLikeMetaToken = str_starts_with($token, 'EAA');
 
@@ -2269,6 +2339,10 @@ function get_business_whatsapp_gateway(int $businessId): array {
         }
         $apiUrl = 'https://graph.facebook.com/' . $version . '/' . $phoneId . '/messages';
         $isGraphUrl = true;
+    }
+
+    if ($apiUrl === '' && $token !== '') {
+        $apiUrl = defined('OMINIFLOW_WA_API_URL') ? trim((string) OMINIFLOW_WA_API_URL) : '';
     }
 
     if ($apiUrl === '') {

@@ -104,6 +104,7 @@ if (!$storeBiz) {
 
     $flashSuccess = get_flash('success');
     $flashError = get_flash('error');
+    $flashWarning = get_flash('warning');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
@@ -334,6 +335,11 @@ if (!$storeBiz) {
                 'buy_now' => $isBuyNowCheckout,
             ]);
             if (!empty($result['success'])) {
+                if (!empty($result['whatsapp_invoice_sent'])) {
+                    set_flash('success', 'Your tax invoice has been sent to your WhatsApp number.');
+                } elseif (!empty($result['whatsapp_invoice_error'])) {
+                    set_flash('warning', 'Order placed, but we could not send the invoice on WhatsApp: ' . (string) $result['whatsapp_invoice_error']);
+                }
                 $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
@@ -2031,6 +2037,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <div class="ms-empty"><?= e($pageTitle) ?> is closed right now.</div>
         <?php else: ?>
             <?php if (!empty($flashSuccess)): ?><div class="ms-alert ms-ok"><?= e($flashSuccess) ?></div><?php endif; ?>
+            <?php if (!empty($flashWarning)): ?><div class="ms-alert" style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:12px 16px;border-radius:10px;margin:12px 16px;font-size:14px;font-weight:600;"><?= e($flashWarning) ?></div><?php endif; ?>
             <?php if (!empty($flashError)): ?><div class="ms-alert ms-err"><?= e($flashError) ?></div><?php endif; ?>
 
             <?php if ($page === 'home'):

@@ -131,5 +131,9 @@ function invoice_pdf_public_url(int $invoiceId, int $businessId): string {
         'b' => $businessId,
         't' => $token,
     ]);
-    return pos_webhook_public_url('invoice-pdf.php?' . $query);
+    $path = 'invoice-pdf.php?' . $query;
+    if (function_exists('is_local_app_host') && !is_local_app_host()) {
+        return pos_public_url($path);
+    }
+    return pos_webhook_public_url($path);
 }

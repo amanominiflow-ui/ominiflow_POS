@@ -5,6 +5,107 @@ declare(strict_types=1);
 require_once __DIR__ . '/storefront_db.php';
 require_once __DIR__ . '/invoice_pdf.php';
 
+/**
+ * @return list<array{url: string, payload: array<string, mixed>}>
+ */
+function build_invoice_whatsapp_send_attempts(
+    array $gateway,
+    string $waPhone,
+    string $caption,
+    string $pdfUrl,
+    string $invNum,
+    ?string $metaMediaId = null
+): array {
+    $token = (string) ($gateway['token'] ?? '');
+    $companyId = (int) ($gateway['company_id'] ?? 0);
+    $isMeta = !empty($gateway['is_meta_graph']);
+    $attempts = [];
+
+    if ($isMeta) {
+        $metaBase = [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $waPhone,
+            'type' => 'document',
+        ];
+        if ($metaMediaId !== null && $metaMediaId !== '') {
+            $attempts[] = [
+                'url' => (string) $gateway['api_url'],
+                'payload' => $metaBase + [
+                    'document' => [
+                        'id' => $metaMediaId,
+                        'filename' => $invNum . '.pdf',
+                        'caption' => $caption,
+                    ],
+                ],
+            ];
+        }
+        $attempts[] = [
+            'url' => (string) $gateway['api_url'],
+            'payload' => $metaBase + [
+                'document' => [
+                    'link' => $pdfUrl,
+                    'filename' => $invNum . '.pdf',
+                    'caption' => $caption,
+                ],
+            ],
+        ];
+        $attempts[] = [
+            'url' => (string) $gateway['api_url'],
+            'payload' => [
+                'messaging_product' => 'whatsapp',
+                'recipient_type' => 'individual',
+                'to' => $waPhone,
+                'type' => 'text',
+                'text' => [
+                    'preview_url' => true,
+                    'body' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
+                ],
+            ],
+        ];
+        return $attempts;
+    }
+
+    $wpboxDoc = [
+        'token' => $token,
+        'phone' => $waPhone,
+        'type' => 'document',
+        'document_url' => $pdfUrl,
+        'link' => $pdfUrl,
+        'url' => $pdfUrl,
+        'filename' => $invNum . '.pdf',
+        'caption' => $caption,
+        'message' => $caption,
+    ];
+    if ($companyId > 0) {
+        $wpboxDoc['company_id'] = $companyId;
+    }
+
+    $wpboxText = [
+        'token' => $token,
+        'phone' => $waPhone,
+        'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
+    ];
+    if ($companyId > 0) {
+        $wpboxText['company_id'] = $companyId;
+    }
+
+    $apiUrls = whatsapp_outbound_api_urls((string) ($gateway['api_url'] ?? ''));
+    $apiUrls = array_values(array_filter(
+        $apiUrls,
+        static fn (string $url): bool => stripos($url, 'sendtemplate') === false
+    ));
+    if ($apiUrls === []) {
+        $apiUrls = whatsapp_outbound_api_urls((string) ($gateway['api_url'] ?? ''));
+    }
+    foreach ($apiUrls as $url) {
+        $attempts[] = ['url' => $url, 'payload' => $wpboxDoc];
+        $attempts[] = ['url' => $url, 'payload' => $wpboxText];
+    }
+
+    return $attempts;
+}
+
 function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, string $customerPhone, array $orderResult = []): array {
     $brand = get_mobile_store_settings($businessId);
     if (empty($brand['wa_auto_send_invoices'])) {
@@ -54,7 +155,8 @@ function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, s
         return ['success' => false, 'error' => (string) ($gateway['error'] ?? 'WhatsApp is not connected for this store.')];
     }
 
-    if (!ensure_invoice_pdf_file($invoiceId, $businessId)) {
+    $pdfPath = ensure_invoice_pdf_file($invoiceId, $businessId);
+    if ($pdfPath === null) {
         return ['success' => false, 'error' => 'Could not generate invoice PDF.'];
     }
 
@@ -68,43 +170,32 @@ function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, s
         $caption .= ' Payment is due on delivery / at pickup.';
     }
 
-    $isMeta = !empty($gateway['is_meta_graph']);
-    $payloads = [];
-
-    if ($isMeta) {
-        $payloads[] = [
-            'messaging_product' => 'whatsapp',
-            'recipient_type' => 'individual',
-            'to' => $waPhone,
-            'type' => 'document',
-            'document' => [
-                'link' => $pdfUrl,
-                'filename' => $invNum . '.pdf',
-                'caption' => $caption,
-            ],
-        ];
-    } else {
-        $payloads[] = [
-            'token' => (string) $gateway['token'],
-            'phone' => $waPhone,
-            'message' => $caption . "\n" . $pdfUrl,
-        ];
-        $payloads[] = [
-            'token' => (string) $gateway['token'],
-            'phone' => $waPhone,
-            'type' => 'document',
-            'document_url' => $pdfUrl,
-            'filename' => $invNum . '.pdf',
-            'caption' => $caption,
-        ];
+    $metaMediaId = null;
+    if (!empty($gateway['is_meta_graph'])) {
+        $phoneId = trim((string) ($gateway['phone_number_id'] ?? ''));
+        $metaMediaId = upload_whatsapp_meta_document($phoneId, (string) $gateway['token'], $pdfPath);
     }
 
-    $apiUrl = (string) $gateway['api_url'];
+    $attempts = build_invoice_whatsapp_send_attempts(
+        $gateway,
+        $waPhone,
+        $caption,
+        $pdfUrl,
+        $invNum,
+        $metaMediaId
+    );
+
     $token = (string) $gateway['token'];
     $lastRaw = null;
     $httpCode = 0;
+    $lastError = 'WhatsApp invoice could not be delivered.';
 
-    foreach ($payloads as $payload) {
+    foreach ($attempts as $attempt) {
+        $apiUrl = trim((string) ($attempt['url'] ?? ''));
+        $payload = $attempt['payload'] ?? null;
+        if ($apiUrl === '' || !is_array($payload)) {
+            continue;
+        }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
         try {
             $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
@@ -119,14 +210,25 @@ function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, s
                     'http_code' => $httpCode,
                 ];
             }
+            $lastError = wa_gateway_error_message($lastRaw, $httpCode);
         } catch (Throwable $e) {
             error_log('Invoice WhatsApp send error: ' . $e->getMessage());
+            $lastError = $e->getMessage();
         }
     }
 
+    error_log(sprintf(
+        'Storefront invoice WhatsApp failed biz=%d order=%d phone=%s pdf=%s err=%s',
+        $businessId,
+        $orderId,
+        $waPhone,
+        $pdfUrl,
+        $lastError
+    ));
+
     return [
         'success' => false,
-        'error' => wa_gateway_error_message($lastRaw, $httpCode),
+        'error' => $lastError,
         'phone' => $waPhone,
         'pdf_url' => $pdfUrl,
     ];
