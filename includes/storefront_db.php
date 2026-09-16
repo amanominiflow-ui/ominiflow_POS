@@ -2210,7 +2210,7 @@ function upload_whatsapp_meta_document(string $phoneNumberId, string $token, str
         CURLOPT_HTTPHEADER => [
             'Authorization: Bearer ' . $token,
         ],
-        CURLOPT_TIMEOUT => 60,
+        CURLOPT_TIMEOUT => 12,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
     ]);
@@ -2225,7 +2225,7 @@ function upload_whatsapp_meta_document(string $phoneNumberId, string $token, str
     return $id !== '' ? $id : null;
 }
 
-function post_whatsapp_json(string $apiUrl, string $token, array $payload): array {
+function post_whatsapp_json(string $apiUrl, string $token, array $payload, int $timeoutSeconds = 15): array {
     $ch = curl_init($apiUrl);
     $headers = [
         'Content-Type: application/json',
@@ -2240,7 +2240,8 @@ function post_whatsapp_json(string $apiUrl, string $token, array $payload): arra
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES),
         CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 15,
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_CONNECTTIMEOUT => min(5, $timeoutSeconds),
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
     ]);
@@ -3163,27 +3164,6 @@ function place_online_store_order(int $businessId, array $checkout): array {
             clear_storefront_buynow($businessId);
         } else {
             save_storefront_cart($businessId, []);
-        }
-
-        try {
-            require_once __DIR__ . '/invoice_whatsapp.php';
-            $shopper = function_exists('get_storefront_shopper') ? get_storefront_shopper($businessId) : null;
-            $loginPhone = is_array($shopper) ? trim((string) ($shopper['phone'] ?? '')) : '';
-            $phone = $loginPhone !== ''
-                ? $loginPhone
-                : (string) ($result['customer_phone'] ?? $checkout['phone'] ?? '');
-            $result['whatsapp_invoice'] = send_order_invoice_whatsapp(
-                $businessId,
-                (int) ($result['order_id'] ?? 0),
-                $phone,
-                $result + ['customer_phone' => $phone]
-            );
-        } catch (Throwable $e) {
-            error_log('Store invoice WhatsApp: ' . $e->getMessage());
-            $result['whatsapp_invoice'] = [
-                'success' => false,
-                'error' => 'Could not send invoice on WhatsApp.',
-            ];
         }
     }
     return $result;

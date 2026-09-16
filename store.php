@@ -366,7 +366,6 @@ if (!$storeBiz) {
                 ];
             }
             if (!empty($result['success'])) {
-                $_SESSION['sf_wa_invoice_notice'] = $result['whatsapp_invoice'] ?? null;
                 $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
@@ -3328,14 +3327,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $ordStatus = strtolower((string)($order['order_status'] ?? 'pending'));
                     $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing', 'hold'], true);
                     $ordType = (($order['payment_method'] ?? '') === 'pickup') ? 'Store Pickup' : 'Home Delivery';
-                    $custName = trim((string)($order['customer_name'] ?? $storeShopper['name'] ?? 'Guest Customer'));
-                    $loginPhone = trim((string) ($storeShopper['phone'] ?? ''));
+                    $custName = trim((string)($order['customer_name'] ?? (is_array($storeShopper) ? ($storeShopper['name'] ?? '') : '') ?: 'Guest Customer'));
+                    $loginPhone = is_array($storeShopper) ? trim((string) ($storeShopper['phone'] ?? '')) : '';
                     $custPhone = $loginPhone !== '' ? $loginPhone : trim((string)($order['customer_phone'] ?? ''));
-                    $custAddress = trim((string)($order['customer_address'] ?? $storeShopper['address'] ?? ''));
-                    $waInvoiceNotice = $_SESSION['sf_wa_invoice_notice'] ?? null;
-                    unset($_SESSION['sf_wa_invoice_notice']);
+                    $custAddress = trim((string)($order['customer_address'] ?? (is_array($storeShopper) ? ($storeShopper['address'] ?? '') : '')));
+                    $waInvoiceNotice = null;
                     if ($isNewOrder) {
                         try {
+                            @set_time_limit(20);
                             require_once __DIR__ . '/includes/invoice_whatsapp.php';
                             $payStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
                             if ($payStatus === '') {
@@ -3349,9 +3348,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             ]);
                         } catch (Throwable $e) {
                             error_log('Store confirmation invoice WhatsApp: ' . $e->getMessage());
-                            if (!is_array($waInvoiceNotice)) {
-                                $waInvoiceNotice = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
-                            }
+                            $waInvoiceNotice = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
                         }
                     }
                     ?>

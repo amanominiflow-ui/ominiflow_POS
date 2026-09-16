@@ -212,20 +212,15 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
         $caption .= ' Payment is due on delivery / at pickup.';
     }
 
-    $metaMediaId = null;
-    if (!empty($gateway['is_meta_graph'])) {
-        $phoneId = trim((string) ($gateway['phone_number_id'] ?? ''));
-        $metaMediaId = upload_whatsapp_meta_document($phoneId, (string) $gateway['token'], $pdfPath);
-    }
-
     $attempts = build_invoice_whatsapp_send_attempts(
         $gateway,
         $waPhone,
         $caption,
         $pdfUrl,
         $invNum,
-        $metaMediaId
+        null
     );
+    $attempts = array_slice($attempts, 0, 2);
 
     $token = (string) $gateway['token'];
     $lastRaw = null;
@@ -240,7 +235,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 8);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
@@ -369,20 +364,15 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
     }
     $caption .= '.';
 
-    $metaMediaId = null;
-    if (!empty($gateway['is_meta_graph'])) {
-        $phoneId = trim((string) ($gateway['phone_number_id'] ?? ''));
-        $metaMediaId = upload_whatsapp_meta_document($phoneId, (string) $gateway['token'], $pdfPath);
-    }
-
     $attempts = build_invoice_whatsapp_send_attempts(
         $gateway,
         $waPhone,
         $caption,
         $pdfUrl,
         $invNum,
-        $metaMediaId
+        null
     );
+    $attempts = array_slice($attempts, 0, 2);
 
     $token = (string) $gateway['token'];
     $lastRaw = null;
@@ -397,7 +387,7 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 8);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
