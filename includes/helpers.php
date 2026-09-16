@@ -58,3 +58,19 @@ function asset(string $path): string {
     $base = rtrim(defined('APP_URL') ? (string) APP_URL : '', '/');
     return ($base !== '' ? $base : '') . '/' . ltrim($path, '/');
 }
+
+function pos_public_base_url(): string {
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    if ($host === '') {
+        return 'https://pos.ominiflow.com';
+    }
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443)
+        || str_contains(strtolower($host), 'ominiflow.com');
+    $scheme = $https ? 'https' : 'http';
+    return $scheme . '://' . $host . rtrim((string) APP_URL, '/');
+}
+
+function pos_public_url(string $path = ''): string {
+    return rtrim(pos_public_base_url(), '/') . '/' . ltrim($path, '/');
+}

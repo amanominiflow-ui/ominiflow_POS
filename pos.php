@@ -13,6 +13,7 @@ require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/payment_options_db.php';
 require_once __DIR__ . '/includes/payment_integrations_db.php';
+require_once __DIR__ . '/includes/razorpay_oauth.php';
 
 require_auth();
 
@@ -51,6 +52,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loyaltyDiscount = !empty($_POST['loyalty_discount']) ? (float)$_POST['loyalty_discount'] : 0.00;
         $priceListId = !empty($_POST['price_list_id']) ? (int)$_POST['price_list_id'] : null;
 
+        if ($paymentMethod === 'razorpay') {
+            $rzpOrderId = trim((string) ($_POST['razorpay_order_id'] ?? ''));
+            $rzpPaymentId = trim((string) ($_POST['razorpay_payment_id'] ?? ''));
+            $rzpSignature = trim((string) ($_POST['razorpay_signature'] ?? ''));
+            $verified = $rzpOrderId !== '' && $rzpPaymentId !== '' && razorpay_verify_checkout($rzpOrderId, $rzpPaymentId, $rzpSignature);
+            if (!$verified) {
+                $fail = ['success' => false, 'errors' => ['payment' => 'Razorpay payment could not be verified. Please try again.']];
+                if (!empty($_POST['is_ajax'])) {
+                    header('Content-Type: application/json');
+                    echo json_encode($fail);
+                    exit;
+                }
+                set_flash('error', $fail['errors']['payment']);
+                redirect(APP_URL . '/pos.php');
+            }
+            $notes = trim($notes . "\nRazorpay order: {$rzpOrderId}; payment: {$rzpPaymentId}");
+        }
+
         $result = process_pos_order(
             $cartItems, $customerId, $userId, $discountVal, $discountType, $paymentMethod,
             $notes, $amountTendered, $outletId, $clientOrderUuid, $couponId, $couponCode,
@@ -71,6 +90,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', $msg);
             redirect(APP_URL . '/pos.php');
         }
+    } elseif ($action === 'create_razorpay_order') {
+        $amount = (float) ($_POST['amount'] ?? 0);
+        $amountPaise = (int) round($amount * 100);
+        if ($amountPaise < 100) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'Amount must be at least ₹1.00']);
+            exit;
+        }
+        $receipt = 'POS-' . current_business_id() . '-' . time();
+        $created = razorpay_create_order($amountPaise, $receipt, [
+            'source' => 'pos',
+            'business_id' => (string) current_business_id(),
+        ]);
+        header('Content-Type: application/json');
+        if (empty($created['success'])) {
+            echo json_encode(['success' => false, 'error' => $created['error'] ?? 'Could not start Razorpay']);
+            exit;
+        }
+        echo json_encode([
+            'success' => true,
+            'key' => razorpay_checkout_key(),
+            'order_id' => $created['order']['id'],
+            'amount' => $created['order']['amount'] ?? $amountPaise,
+            'currency' => $created['order']['currency'] ?? 'INR',
+            'name' => APP_NAME,
+        ]);
+        exit;
     } elseif ($action === 'validate_coupon') {
         require_once __DIR__ . '/includes/promotions_db.php';
         $couponCode = trim($_POST['coupon_code'] ?? '');
@@ -391,6 +437,9 @@ $flashError = get_flash('error');
                 <input type="hidden" name="discount_value" id="hiddenDiscountValue" value="0">
                 <input type="hidden" name="discount_type" id="hiddenDiscountType" value="fixed">
                 <input type="hidden" name="payment_method" id="hiddenPaymentMethod" value="cash">
+                <input type="hidden" name="razorpay_order_id" id="hiddenRazorpayOrderId" value="">
+                <input type="hidden" name="razorpay_payment_id" id="hiddenRazorpayPaymentId" value="">
+                <input type="hidden" name="razorpay_signature" id="hiddenRazorpaySignature" value="">
 
                 <div class="modal-body">
                     <!-- Grand Total Banner -->
@@ -1019,6 +1068,12 @@ $flashError = get_flash('error');
                 modalPayableText.textContent = cartGrandTotalEl.textContent;
                 tenderedInput.value = '';
                 changeDueVal.textContent = '₹0.00';
+                const rzpOid = document.getElementById('hiddenRazorpayOrderId');
+                const rzpPid = document.getElementById('hiddenRazorpayPaymentId');
+                const rzpSig = document.getElementById('hiddenRazorpaySignature');
+                if (rzpOid) rzpOid.value = '';
+                if (rzpPid) rzpPid.value = '';
+                if (rzpSig) rzpSig.value = '';
 
                 paymentModal.classList.add('open');
                 tenderedInput.focus();
@@ -1083,6 +1138,7 @@ $flashError = get_flash('error');
                 const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
                 const total = parseFloat(totalStr) || 0;
                 const method = hiddenPaymentMethod.value;
+                const formEl = this;
 
                 if (method === 'cash') {
                     const tendered = parseFloat(tenderedInput.value) || 0;
@@ -1093,33 +1149,85 @@ $flashError = get_flash('error');
                     }
                 }
 
-                // Prevent double clicking
-                confirmPaymentBtn.disabled = true;
-                confirmPaymentBtn.innerHTML = '<span>Processing Sale...</span>';
+                const finishCheckout = function () {
+                    confirmPaymentBtn.disabled = true;
+                    confirmPaymentBtn.innerHTML = '<span>Processing Sale...</span>';
 
-                const formData = new FormData(this);
+                    const formData = new FormData(formEl);
 
-                fetch('<?= asset('pos.php') ?>', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(r => r.json())
-                .then(data => {
-                    confirmPaymentBtn.disabled = false;
-                    confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                    fetch('<?= asset('pos.php') ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        confirmPaymentBtn.disabled = false;
+                        confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
 
-                    if (data.success) {
-                        paymentModal.classList.remove('open');
-                        showSaleCompletedModal(data);
-                    } else {
-                        alert('Checkout Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not complete sale.')));
-                    }
-                })
-                .catch(err => {
-                    confirmPaymentBtn.disabled = false;
-                    confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
-                    alert('Network/API Error: ' + err);
-                });
+                        if (data.success) {
+                            paymentModal.classList.remove('open');
+                            showSaleCompletedModal(data);
+                        } else {
+                            alert('Checkout Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not complete sale.')));
+                        }
+                    })
+                    .catch(err => {
+                        confirmPaymentBtn.disabled = false;
+                        confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                        alert('Network/API Error: ' + err);
+                    });
+                };
+
+                if (method === 'razorpay' && !document.getElementById('hiddenRazorpayPaymentId').value) {
+                    confirmPaymentBtn.disabled = true;
+                    confirmPaymentBtn.innerHTML = '<span>Opening Razorpay...</span>';
+                    const rzpForm = new FormData();
+                    rzpForm.append('csrf_token', '<?= e(csrf_token()) ?>');
+                    rzpForm.append('action', 'create_razorpay_order');
+                    rzpForm.append('amount', String(total.toFixed(2)));
+                    fetch('<?= asset('pos.php') ?>', { method: 'POST', body: rzpForm })
+                        .then(r => r.json())
+                        .then(data => {
+                            confirmPaymentBtn.disabled = false;
+                            confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                            if (!data.success) {
+                                alert(data.error || 'Could not start Razorpay checkout.');
+                                return;
+                            }
+                            if (typeof Razorpay === 'undefined') {
+                                alert('Razorpay checkout script failed to load. Please refresh and try again.');
+                                return;
+                            }
+                            const rzp = new Razorpay({
+                                key: data.key,
+                                amount: data.amount,
+                                currency: data.currency || 'INR',
+                                name: data.name || 'OminiFlow POS',
+                                description: 'POS Checkout',
+                                order_id: data.order_id,
+                                handler: function (resp) {
+                                    document.getElementById('hiddenRazorpayOrderId').value = resp.razorpay_order_id || data.order_id;
+                                    document.getElementById('hiddenRazorpayPaymentId').value = resp.razorpay_payment_id || '';
+                                    document.getElementById('hiddenRazorpaySignature').value = resp.razorpay_signature || '';
+                                    finishCheckout();
+                                },
+                                modal: {
+                                    ondismiss: function () {
+                                        confirmPaymentBtn.disabled = false;
+                                    }
+                                }
+                            });
+                            rzp.open();
+                        })
+                        .catch(err => {
+                            confirmPaymentBtn.disabled = false;
+                            confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                            alert('Razorpay error: ' + err);
+                        });
+                    return;
+                }
+
+                finishCheckout();
             });
 
             // 10. Display Sale Completed Modal / Receipt
@@ -1354,5 +1462,8 @@ $flashError = get_flash('error');
             }
         });
     </script>
+    <?php if (!empty($activeGateways['razorpay'])): ?>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <?php endif; ?>
 </body>
 </html>

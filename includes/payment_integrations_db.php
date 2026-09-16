@@ -55,15 +55,12 @@ function get_master_payment_gateways(): array {
             'code' => 'razorpay',
             'name' => 'Razorpay',
             'in_store' => false,
+            'oauth_only' => true,
             'learn_more_url' => 'https://razorpay.com/docs/payments/payment-gateway/',
             'signup_url' => 'https://razorpay.com/signup',
             'description' => "Razorpay is a payments platform supporting both domestic and international payments. Enjoy the industry's best success rates & 100+ payment options to grow your business. Also, empower your customers with various EMI options.",
             'logo_type' => 'razorpay',
-            'fields' => [
-                ['name' => 'api_key', 'label' => 'Key ID', 'type' => 'text', 'placeholder' => 'rzp_test_...', 'required' => true],
-                ['name' => 'api_secret', 'label' => 'Key Secret', 'type' => 'password', 'placeholder' => 'Enter Razorpay Secret Key', 'required' => true],
-                ['name' => 'webhook_secret', 'label' => 'Webhook Secret (Optional)', 'type' => 'text', 'placeholder' => 'Enter webhook secret for auto-capture'],
-            ]
+            'fields' => [],
         ],
         'paytm' => [
             'code' => 'paytm',
@@ -186,6 +183,7 @@ function get_payment_integrations(?int $businessId = null): array {
         $result = [];
         foreach ($master as $code => $meta) {
             $config = $configured[$code] ?? null;
+            $extraMerged = is_array($config) ? ($config['extra_config_data'] ?? []) : [];
             $result[$code] = array_merge($meta, [
                 'is_configured' => ($config !== null && in_array($config['status'], ['connected', 'active'], true)),
                 'status' => $config['status'] ?? 'disconnected',
@@ -193,6 +191,9 @@ function get_payment_integrations(?int $businessId = null): array {
                 'enable_in_pos' => isset($config['enable_in_pos']) ? (int)$config['enable_in_pos'] : 1,
                 'enable_in_store' => isset($config['enable_in_store']) ? (int)$config['enable_in_store'] : 1,
                 'db_record' => $config,
+                'extra_config_data' => $extraMerged,
+                'connect_mode' => (string) ($extraMerged['connect_mode'] ?? ''),
+                'webhook_token' => (string) ($extraMerged['webhook_token'] ?? ''),
             ]);
         }
         return $result;
@@ -207,6 +208,9 @@ function get_payment_integrations(?int $businessId = null): array {
                 'enable_in_pos' => 1,
                 'enable_in_store' => 1,
                 'db_record' => null,
+                'extra_config_data' => [],
+                'connect_mode' => '',
+                'webhook_token' => '',
             ]);
         }
         return $result;
@@ -259,6 +263,26 @@ function save_payment_integration(array $data, ?int $businessId = null): array {
         }
     }
     $extraJson = !empty($extraData) ? json_encode($extraData) : null;
+    if (isset($data['extra_config_override']) && is_array($data['extra_config_override'])) {
+        $extraJson = json_encode($data['extra_config_override']);
+    } elseif ($gatewayCode === 'razorpay') {
+        $prevExtra = [];
+        try {
+            $prevStmt = $db->prepare('SELECT extra_config FROM payment_integrations WHERE business_id = :bid AND gateway_code = "razorpay" LIMIT 1');
+            $prevStmt->execute(['bid' => $bid]);
+            $prevRow = $prevStmt->fetch(PDO::FETCH_ASSOC);
+            if ($prevRow && !empty($prevRow['extra_config'])) {
+                $prevExtra = json_decode((string) $prevRow['extra_config'], true) ?: [];
+            }
+        } catch (Throwable $ePrev) {
+            $prevExtra = [];
+        }
+        if (empty($prevExtra['webhook_token'])) {
+            $prevExtra['webhook_token'] = bin2hex(random_bytes(16));
+        }
+        $prevExtra['connect_mode'] = 'keys';
+        $extraJson = json_encode(array_merge($prevExtra, $extraData));
+    }
 
     try {
         $stmt = $db->prepare("

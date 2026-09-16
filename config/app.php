@@ -32,6 +32,17 @@ if (!defined('OMINIFLOW_WA_LANG')) define('OMINIFLOW_WA_LANG', 'en_US');
 if (!defined('OMINIFLOW_WA_PHONE_ID')) define('OMINIFLOW_WA_PHONE_ID', '789955904210534');
 if (!defined('OMINIFLOW_WA_WABA_ID')) define('OMINIFLOW_WA_WABA_ID', '826751349830054');
 
+// Razorpay OAuth & Webhook Configuration (Zoho POS Exact Parity)
+if (!defined('RAZORPAY_OAUTH_CLIENT_ID')) define('RAZORPAY_OAUTH_CLIENT_ID', getenv('RAZORPAY_OAUTH_CLIENT_ID') ?: '');
+if (!defined('RAZORPAY_OAUTH_CLIENT_SECRET')) define('RAZORPAY_OAUTH_CLIENT_SECRET', getenv('RAZORPAY_OAUTH_CLIENT_SECRET') ?: '');
+// Register these on Razorpay Partner Dashboard. Redirect URI must be:
+// https://pos.ominiflow.com/razorpay-callback.php
+if (!defined('RAZORPAY_OAUTH_REDIRECT_URI')) {
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? STORE_CNAME_TARGET;
+    define('RAZORPAY_OAUTH_REDIRECT_URI', $proto . '://' . $host . APP_URL . '/razorpay-callback.php');
+}
+
 // Session configuration
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');

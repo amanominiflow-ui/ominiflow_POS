@@ -112,6 +112,7 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_lang', "VARCHAR(20) NULL DEFAULT 'en_US'");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_phone_number_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_waba_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_payload', "MEDIUMTEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
 
     // Visual Builder / Home Layout Components
@@ -703,6 +704,7 @@ function get_mobile_store_settings(int $businessId): array {
         'wa_template_lang' => (string) ($row['wa_template_lang'] ?? ''),
         'wa_phone_number_id' => (string) ($row['wa_phone_number_id'] ?? ''),
         'wa_waba_id' => (string) ($row['wa_waba_id'] ?? ''),
+        'wa_curl_payload' => (string) ($row['wa_curl_payload'] ?? ''),
         'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
     ];
 }
@@ -1914,20 +1916,252 @@ function format_storefront_whatsapp_phone(string $phone): string {
     return $digits;
 }
 
+function parse_whatsapp_curl_command(string $raw): array {
+    $out = [
+        'api_url' => '',
+        'token' => '',
+        'company_id' => 0,
+        'template_name' => '',
+        'template_lang' => '',
+        'phone_number_id' => '',
+        'waba_id' => '',
+        'payload' => null,
+    ];
+    $raw = trim($raw);
+    if ($raw === '') {
+        return $out;
+    }
+
+    if (preg_match('/https?:\/\/[^\s\'"\\\\]+/i', $raw, $m)) {
+        $out['api_url'] = rtrim($m[0], '\'",\\');
+    }
+    if (preg_match('/Authorization:\s*Bearer\s+([A-Za-z0-9_\-\.]+)/i', $raw, $m)
+        || preg_match('/-H\s*[\'"]token:\s*([A-Za-z0-9_\-\.]+)[\'"]/i', $raw, $m)
+    ) {
+        $out['token'] = trim($m[1]);
+    }
+    if (preg_match('/\/v\d+\.\d+\/(\d{10,})\/messages/i', $raw, $m)) {
+        $out['phone_number_id'] = $m[1];
+    }
+
+    $jsonStr = null;
+    if (preg_match('/(?:--data-raw|--data|-d)\s+[\'"](\{.*\})[\'"]/s', $raw, $m)) {
+        $jsonStr = $m[1];
+    } elseif (preg_match('/(\{.*\})/s', $raw, $m)) {
+        $jsonStr = $m[1];
+    }
+
+    if (is_string($jsonStr) && $jsonStr !== '') {
+        $jsonStr = str_replace(["\\\n", "\\r\\n"], "\n", $jsonStr);
+        $parsed = json_decode($jsonStr, true);
+        if (!is_array($parsed)) {
+            $parsed = json_decode(stripslashes($jsonStr), true);
+        }
+        if (is_array($parsed)) {
+            $out['payload'] = $parsed;
+            if (!empty($parsed['token'])) {
+                $out['token'] = trim((string) $parsed['token']);
+            }
+            if (!empty($parsed['access_token'])) {
+                $out['token'] = trim((string) $parsed['access_token']);
+            }
+            if (!empty($parsed['company_id'])) {
+                $out['company_id'] = (int) $parsed['company_id'];
+            }
+            if (!empty($parsed['template_name'])) {
+                $out['template_name'] = trim((string) $parsed['template_name']);
+            }
+            if (!empty($parsed['template_language'])) {
+                $out['template_lang'] = trim((string) $parsed['template_language']);
+            }
+            $tmpl = $parsed['template'] ?? null;
+            if (is_array($tmpl)) {
+                if (!empty($tmpl['name'])) {
+                    $out['template_name'] = trim((string) $tmpl['name']);
+                }
+                $lang = $tmpl['language'] ?? null;
+                if (is_array($lang) && !empty($lang['code'])) {
+                    $out['template_lang'] = trim((string) $lang['code']);
+                } elseif (is_string($lang) && $lang !== '') {
+                    $out['template_lang'] = trim($lang);
+                }
+            } elseif (is_string($tmpl) && $tmpl !== '') {
+                $out['template_name'] = trim($tmpl);
+            }
+            if (!empty($parsed['phone_number_id'])) {
+                $out['phone_number_id'] = trim((string) $parsed['phone_number_id']);
+            }
+            if (!empty($parsed['waba_id'])) {
+                $out['waba_id'] = trim((string) $parsed['waba_id']);
+            }
+        }
+    }
+
+    return $out;
+}
+
+function inject_otp_into_wa_payload(array $payload, string $phone, string $otp): array {
+    $payload['phone'] = $phone;
+    if (isset($payload['to']) || isset($payload['messaging_product'])) {
+        $payload['to'] = $phone;
+    }
+
+    $walk = static function (&$node) use (&$walk, $otp): void {
+        if (!is_array($node)) {
+            return;
+        }
+        if (isset($node['coupon_code'])) {
+            $node['coupon_code'] = $otp;
+        }
+        if (array_key_exists('text', $node) && is_string($node['text'])) {
+            $val = trim($node['text']);
+            if ($val === ''
+                || preg_match('/^\d{4,8}$/', $val)
+                || preg_match('/\{\{\s*(1|otp|code)\s*\}\}/i', $val)
+                || strcasecmp($val, 'otp') === 0
+                || strcasecmp($val, '123456') === 0
+            ) {
+                $node['text'] = $otp;
+            }
+        }
+        foreach ($node as &$child) {
+            if (is_array($child)) {
+                $walk($child);
+            }
+        }
+        unset($child);
+    };
+
+    $walk($payload);
+
+    // OTP / authentication templates: force every template parameter to the live code.
+    $templateName = strtolower((string) (
+        $payload['template']['name'] ?? $payload['template_name'] ?? ''
+    ));
+    if ($templateName !== '' && (str_contains($templateName, 'otp') || str_contains($templateName, 'auth'))) {
+        $force = static function (&$node) use (&$force, $otp): void {
+            if (!is_array($node)) {
+                return;
+            }
+            if (isset($node['coupon_code'])) {
+                $node['coupon_code'] = $otp;
+            }
+            if (array_key_exists('text', $node) && is_string($node['text']) && isset($node['type']) && $node['type'] === 'text') {
+                $node['text'] = $otp;
+            }
+            foreach ($node as &$child) {
+                if (is_array($child)) {
+                    $force($child);
+                }
+            }
+            unset($child);
+        };
+        if (isset($payload['template']['components']) && is_array($payload['template']['components'])) {
+            $force($payload['template']['components']);
+        }
+        if (isset($payload['components']) && is_array($payload['components'])) {
+            $force($payload['components']);
+        }
+    }
+
+    return $payload;
+}
+
+function wa_gateway_response_is_success($raw, int $httpCode): bool {
+    if ($httpCode > 0 && ($httpCode < 200 || $httpCode >= 300)) {
+        return false;
+    }
+    $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+    if (!is_array($decoded)) {
+        return $httpCode >= 200 && $httpCode < 300 && is_string($raw) && trim($raw) !== '';
+    }
+    if (!empty($decoded['error'])) {
+        return false;
+    }
+    $status = strtolower((string) ($decoded['status'] ?? ''));
+    if (in_array($status, ['error', 'failed', 'fail'], true)) {
+        return false;
+    }
+    if (!empty($decoded['success']) || !empty($decoded['message_id']) || !empty($decoded['messages']) || !empty($decoded['whatsapp_message_id'])) {
+        return true;
+    }
+    if (in_array($status, ['success', 'ok', 'sent'], true)) {
+        return true;
+    }
+    $msg = strtolower((string) ($decoded['message'] ?? ''));
+    if ($msg !== '' && (str_contains($msg, 'sent') || str_contains($msg, 'success') || str_contains($msg, 'queued'))) {
+        return true;
+    }
+    return false;
+}
+
+function wa_gateway_error_message($raw, int $httpCode): string {
+    $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+    if (is_array($decoded)) {
+        if (is_array($decoded['error'] ?? null) && !empty($decoded['error']['message'])) {
+            return (string) $decoded['error']['message'];
+        }
+        if (!empty($decoded['error']) && is_string($decoded['error'])) {
+            return $decoded['error'];
+        }
+        if (!empty($decoded['message'])) {
+            return (string) $decoded['message'];
+        }
+    }
+    if ($httpCode === 0) {
+        return 'WhatsApp gateway did not respond.';
+    }
+    return 'WhatsApp gateway returned HTTP ' . $httpCode . '.';
+}
+
+function post_whatsapp_json(string $apiUrl, string $token, array $payload): array {
+    $ch = curl_init($apiUrl);
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json',
+    ];
+    if ($token !== '') {
+        $headers[] = 'Authorization: Bearer ' . $token;
+        $headers[] = 'token: ' . $token;
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+    $responseRaw = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+    if ($responseRaw === false) {
+        $responseRaw = $curlErr !== '' ? $curlErr : null;
+    }
+    return [
+        'raw' => $responseRaw,
+        'http_code' => $httpCode,
+        'success' => wa_gateway_response_is_success($responseRaw, $httpCode),
+    ];
+}
+
 function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName, int $businessId = 0): array {
     $waPhone = format_storefront_whatsapp_phone($phone);
     if (strlen($waPhone) < 10) {
-        return ['success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
+        return ['success' => false, 'api_success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
     }
 
     $brand = $businessId > 0 ? get_mobile_store_settings($businessId) : [];
 
-    // Dynamically retrieve configured credentials for this store
-    $apiUrl = !empty(trim((string)($brand['wa_api_url'] ?? ''))) ? trim((string)$brand['wa_api_url']) : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
-    $token = !empty(trim((string)($brand['wa_token'] ?? ''))) ? trim((string)$brand['wa_token']) : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3');
-    $companyId = !empty($brand['wa_company_id']) ? (int)$brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int)OMINIFLOW_WA_COMPANY_ID : 162);
-    $template = !empty(trim((string)($brand['wa_template_name'] ?? ''))) ? trim((string)$brand['wa_template_name']) : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
-    $lang = !empty(trim((string)($brand['wa_template_lang'] ?? ''))) ? trim((string)$brand['wa_template_lang']) : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
+    $apiUrl = !empty(trim((string) ($brand['wa_api_url'] ?? ''))) ? trim((string) $brand['wa_api_url']) : (defined('OMINIFLOW_WA_API_URL') ? OMINIFLOW_WA_API_URL : 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
+    $token = !empty(trim((string) ($brand['wa_token'] ?? ''))) ? trim((string) $brand['wa_token']) : (defined('OMINIFLOW_WA_TOKEN') ? OMINIFLOW_WA_TOKEN : '');
+    $companyId = !empty($brand['wa_company_id']) ? (int) $brand['wa_company_id'] : (defined('OMINIFLOW_WA_COMPANY_ID') ? (int) OMINIFLOW_WA_COMPANY_ID : 0);
+    $template = !empty(trim((string) ($brand['wa_template_name'] ?? ''))) ? trim((string) $brand['wa_template_name']) : (defined('OMINIFLOW_WA_TEMPLATE') ? OMINIFLOW_WA_TEMPLATE : 'otp_ver');
+    $lang = !empty(trim((string) ($brand['wa_template_lang'] ?? ''))) ? trim((string) $brand['wa_template_lang']) : (defined('OMINIFLOW_WA_LANG') ? OMINIFLOW_WA_LANG : 'en_US');
+    $phoneNumberId = trim((string) ($brand['wa_phone_number_id'] ?? ''));
+    $storedPayloadRaw = trim((string) ($brand['wa_curl_payload'] ?? ''));
 
     $_SESSION['sf_last_wa_otp'] = [
         'phone' => $waPhone,
@@ -1940,168 +2174,130 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
     $httpCode = 0;
     $apiSuccess = false;
 
-    if ($token !== '') {
-        $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
-
-        $compBodyOnly = [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ]
+    if ($token === '' && $storedPayloadRaw === '') {
+        return [
+            'success' => false,
+            'api_success' => false,
+            'phone' => $waPhone,
+            'otp' => $otp,
+            'http_code' => 0,
+            'response' => null,
+            'error' => 'WhatsApp API token is missing. Paste your cURL on WhatsApp settings and save.',
         ];
+    }
 
-        $compCopyCodeCoupon = [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ],
-            [
-                'type' => 'button',
-                'sub_type' => 'copy_code',
-                'index' => '0',
-                'parameters' => [
-                    ['type' => 'coupon_code', 'coupon_code' => (string)$otp]
-                ]
-            ]
-        ];
+    $isMetaGraph = str_contains(strtolower($apiUrl), 'graph.facebook.com');
+    if ($isMetaGraph && $phoneNumberId !== '' && !preg_match('/\/\d{10,}\/messages/', $apiUrl)) {
+        $apiUrl = 'https://graph.facebook.com/v21.0/' . rawurlencode($phoneNumberId) . '/messages';
+    }
 
-        $compCopyCodeButton = [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ],
-            [
-                'type' => 'button',
-                'sub_type' => 'copy_code',
-                'index' => '0',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ]
-        ];
+    $candidatePayloads = [];
 
-        $compUrlButton = [
-            [
-                'type' => 'body',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ],
-            [
-                'type' => 'button',
-                'sub_type' => 'url',
-                'index' => '0',
-                'parameters' => [
-                    ['type' => 'text', 'text' => (string)$otp]
-                ]
-            ]
-        ];
-
-        // If template is the default multi-variable otp_ver, try URL/CopyCode button first.
-        // For custom templates (which usually contain 1 body variable {{1}}), try Body Only first.
-        if (strtolower($template) === 'otp_ver') {
-            $componentsOrder = [
-                $compUrlButton,
-                $compCopyCodeButton,
-                $compCopyCodeCoupon,
-                $compBodyOnly,
-            ];
-        } else {
-            $componentsOrder = [
-                $compBodyOnly,
-                $compCopyCodeCoupon,
-                $compCopyCodeButton,
-                $compUrlButton,
-            ];
+    if ($storedPayloadRaw !== '') {
+        $stored = json_decode($storedPayloadRaw, true);
+        if (!is_array($stored)) {
+            $parsedCurl = parse_whatsapp_curl_command($storedPayloadRaw);
+            $stored = is_array($parsedCurl['payload'] ?? null) ? $parsedCurl['payload'] : null;
         }
-
-        $languagesToTry = array_unique(array_filter([
-            $lang,
-            ($lang === 'en_US' ? 'en' : ($lang === 'en' ? 'en_US' : null)),
-            'en_US',
-            'en'
-        ]));
-
-        $candidatePayloads = [];
-
-        if ($isMetaGraph) {
-            foreach ($languagesToTry as $l) {
-                foreach ($componentsOrder as $comp) {
-                    $candidatePayloads[] = [
-                        'messaging_product' => 'whatsapp',
-                        'recipient_type' => 'individual',
-                        'to' => $waPhone,
-                        'type' => 'template',
-                        'template' => [
-                            'name' => $template,
-                            'language' => ['code' => $l],
-                            'components' => $comp,
-                        ]
-                    ];
-                }
+        if (is_array($stored)) {
+            if ($token === '' && !empty($stored['token'])) {
+                $token = (string) $stored['token'];
             }
-        } else {
-            foreach ($languagesToTry as $l) {
-                foreach ($componentsOrder as $comp) {
-                    $candidatePayloads[] = [
-                        'token' => $token,
-                        'phone' => $waPhone,
-                        'company_id' => $companyId,
-                        'template_name' => $template,
-                        'template_language' => $l,
+            $candidatePayloads[] = inject_otp_into_wa_payload($stored, $waPhone, $otp);
+        }
+    }
+
+    $compBodyOnly = [[
+        'type' => 'body',
+        'parameters' => [['type' => 'text', 'text' => (string) $otp]],
+    ]];
+    $compCopyCodeCoupon = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'copy_code', 'index' => '0', 'parameters' => [['type' => 'coupon_code', 'coupon_code' => (string) $otp]]],
+    ];
+    $compCopyCodeButton = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'copy_code', 'index' => '0', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+    ];
+    $compUrlButton = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'url', 'index' => '0', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+    ];
+
+    $isOtpTemplate = str_contains(strtolower($template), 'otp') || str_contains(strtolower($template), 'auth');
+    $componentsOrder = $isOtpTemplate
+        ? [$compCopyCodeCoupon, $compUrlButton, $compCopyCodeButton, $compBodyOnly]
+        : [$compBodyOnly, $compCopyCodeCoupon, $compCopyCodeButton, $compUrlButton];
+
+    $languagesToTry = array_values(array_unique(array_filter([
+        $lang,
+        ($lang === 'en_US' ? 'en' : ($lang === 'en' ? 'en_US' : null)),
+    ])));
+
+    foreach ($languagesToTry as $l) {
+        foreach ($componentsOrder as $comp) {
+            if ($isMetaGraph) {
+                $candidatePayloads[] = [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $waPhone,
+                    'type' => 'template',
+                    'template' => [
+                        'name' => $template,
+                        'language' => ['code' => $l],
                         'components' => $comp,
-                    ];
-                }
-            }
-        }
-
-        foreach ($candidatePayloads as $payload) {
-            try {
-                $ch = curl_init($apiUrl);
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => json_encode($payload),
-                    CURLOPT_HTTPHEADER => [
-                        'Authorization: Bearer ' . $token,
-                        'token: ' . $token,
-                        'Content-Type: application/json',
-                        'Accept: application/json',
                     ],
-                    CURLOPT_TIMEOUT => 12,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_SSL_VERIFYHOST => 0,
-                ]);
-                $responseRaw = curl_exec($ch);
-                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-
-                if ($responseRaw) {
-                    $decoded = json_decode((string) $responseRaw, true);
-                    if (is_array($decoded) && (!empty($decoded['success']) || (isset($decoded['status']) && $decoded['status'] === 'success') || !empty($decoded['message_id']) || !empty($decoded['messages']))) {
-                        $apiSuccess = true;
-                        break;
-                    }
+                ];
+            } else {
+                $nested = [
+                    'token' => $token,
+                    'phone' => $waPhone,
+                    'template' => [
+                        'name' => $template,
+                        'language' => ['code' => $l],
+                        'components' => $comp,
+                    ],
+                ];
+                if ($companyId > 0) {
+                    $nested['company_id'] = $companyId;
                 }
-            } catch (Throwable $e) {
-                error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
+                $candidatePayloads[] = $nested;
+                $candidatePayloads[] = [
+                    'token' => $token,
+                    'phone' => $waPhone,
+                    'company_id' => $companyId,
+                    'template_name' => $template,
+                    'template_language' => $l,
+                    'components' => $comp,
+                ];
             }
         }
     }
 
+    foreach ($candidatePayloads as $payload) {
+        $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
+        try {
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
+            $responseRaw = $posted['raw'];
+            $httpCode = $posted['http_code'];
+            if (!empty($posted['success'])) {
+                $apiSuccess = true;
+                break;
+            }
+        } catch (Throwable $e) {
+            error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
+            $responseRaw = $e->getMessage();
+        }
+    }
+
     return [
-        'success' => true,
+        'success' => $apiSuccess,
         'api_success' => $apiSuccess,
         'phone' => $waPhone,
         'otp' => $otp,
         'http_code' => $httpCode,
         'response' => $responseRaw,
+        'error' => $apiSuccess ? null : wa_gateway_error_message($responseRaw, $httpCode),
     ];
 }
 
