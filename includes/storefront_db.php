@@ -2164,8 +2164,15 @@ function wa_gateway_error_message($raw, int $httpCode): string {
     return 'WhatsApp gateway returned HTTP ' . $httpCode . '.';
 }
 
+function wa_error_is_missing_route(string $error): bool {
+    $error = strtolower($error);
+    return str_contains($error, 'could not be found')
+        || (str_contains($error, 'route') && str_contains($error, 'not found'));
+}
+
 /**
- * WPBox stores often save the template endpoint; invoices need message/document APIs.
+ * WPBox routes are case-sensitive. Invoice PDFs use sendmessage + sendmedia,
+ * never SendMessage / sendtemplatemessage.
  *
  * @return list<string>
  */
@@ -2174,23 +2181,46 @@ function whatsapp_outbound_api_urls(string $apiUrl): array {
     if ($apiUrl === '') {
         return [];
     }
-    $urls = [$apiUrl];
-    $replacements = [
-        'sendtemplatemessage' => 'sendmessage',
-        'SendTemplateMessage' => 'SendMessage',
-        'send-template-message' => 'send-message',
-    ];
-    foreach ($replacements as $from => $to) {
-        if (stripos($apiUrl, $from) !== false) {
-            $urls[] = str_ireplace($from, $to, $apiUrl);
+
+    $urls = [];
+    $add = static function (string $url) use (&$urls): void {
+        $url = trim($url);
+        if ($url === '') {
+            return;
         }
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+        $leaf = strtolower((string) basename($path));
+        // Laravel 404s these mixed-case aliases.
+        if (in_array($leaf, ['sendmessage', 'sendmedia', 'send', 'send-message'], true)
+            && $leaf !== basename($path)
+        ) {
+            return;
+        }
+        if (!in_array($url, $urls, true)) {
+            $urls[] = $url;
+        }
+    };
+
+    $add($apiUrl);
+
+    $wpboxBase = '';
+    if (preg_match('#^(https?://[^/]+/api/wpbox)#i', $apiUrl, $m)) {
+        $wpboxBase = $m[1];
+    } elseif (stripos($apiUrl, 'whatsapp.ominiflow.com') !== false) {
+        $wpboxBase = 'https://whatsapp.ominiflow.com/api/wpbox';
     }
-    if (stripos($apiUrl, 'whatsapp.ominiflow.com') !== false) {
-        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage';
-        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/sendMessage';
-        $urls[] = 'https://whatsapp.ominiflow.com/api/wpbox/send';
+
+    if ($wpboxBase !== '') {
+        $add($wpboxBase . '/sendmessage');
+        $add($wpboxBase . '/sendmedia');
+    } elseif (stripos($apiUrl, 'sendtemplatemessage') !== false) {
+        $add(str_ireplace('sendtemplatemessage', 'sendmessage', $apiUrl));
+        $add(str_ireplace('sendtemplatemessage', 'sendmedia', $apiUrl));
+    } elseif (stripos($apiUrl, 'send-template-message') !== false) {
+        $add(str_ireplace('send-template-message', 'send-message', $apiUrl));
     }
-    return array_values(array_unique(array_filter($urls)));
+
+    return $urls;
 }
 
 function upload_whatsapp_meta_document(string $phoneNumberId, string $token, string $filePath, string $version = 'v21.0'): ?string {

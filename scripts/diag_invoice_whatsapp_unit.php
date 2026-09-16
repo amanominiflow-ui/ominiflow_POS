@@ -13,8 +13,17 @@ require_once $root . '/includes/storefront_db.php';
 
 // storefront_db calls get_db on ensure - only call pure functions
 $urls = whatsapp_outbound_api_urls('https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
-$ok = count($urls) >= 3 && in_array('https://whatsapp.ominiflow.com/api/wpbox/sendmessage', $urls, true);
+$ok = in_array('https://whatsapp.ominiflow.com/api/wpbox/sendmessage', $urls, true)
+    && in_array('https://whatsapp.ominiflow.com/api/wpbox/sendmedia', $urls, true);
+$noBadCase = true;
+foreach ($urls as $u) {
+    $leaf = basename((string) (parse_url($u, PHP_URL_PATH) ?? ''));
+    if (in_array($leaf, ['SendMessage', 'sendMessage'], true)) {
+        $noBadCase = false;
+    }
+}
 echo 'whatsapp_outbound_api_urls: ' . ($ok ? 'PASS' : 'FAIL') . "\n";
+echo 'no mixed-case SendMessage: ' . ($noBadCase ? 'PASS' : 'FAIL') . "\n";
 foreach ($urls as $u) {
     echo "  {$u}\n";
 }
@@ -42,12 +51,24 @@ $attempts = build_invoice_whatsapp_send_attempts(
     null
 );
 $hasSendMessage = false;
+$hasSendMedia = false;
+$hasBadCase = false;
 foreach ($attempts as $a) {
-    if (str_contains((string) $a['url'], 'sendmessage')) {
+    $url = (string) $a['url'];
+    $leaf = basename((string) (parse_url($url, PHP_URL_PATH) ?? ''));
+    if (str_contains(strtolower($url), 'sendmessage')) {
         $hasSendMessage = true;
+    }
+    if (str_contains(strtolower($url), 'sendmedia')) {
+        $hasSendMedia = true;
+    }
+    if (in_array($leaf, ['SendMessage', 'sendMessage'], true)) {
+        $hasBadCase = true;
     }
 }
 echo 'build_invoice_whatsapp_send_attempts includes sendmessage: ' . ($hasSendMessage ? 'PASS' : 'FAIL') . "\n";
+echo 'build_invoice_whatsapp_send_attempts includes sendmedia: ' . ($hasSendMedia ? 'PASS' : 'FAIL') . "\n";
+echo 'attempts avoid SendMessage: ' . (!$hasBadCase ? 'PASS' : 'FAIL') . "\n";
 echo 'attempt count: ' . count($attempts) . "\n";
 
 $fromArg = resolve_invoice_whatsapp_phone('9876543210', []);

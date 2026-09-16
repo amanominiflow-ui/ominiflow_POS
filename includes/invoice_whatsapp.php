@@ -54,66 +54,65 @@ function build_invoice_whatsapp_send_attempts(
             ];
         }
         if ($companyId > 0 && !str_starts_with($token, 'EAA')) {
-            $wpboxDoc = [
-                'token' => $token,
-                'phone' => $waPhone,
-                'type' => 'document',
-                'document_url' => $pdfUrl,
-                'filename' => $invNum . '.pdf',
-                'caption' => $caption,
-                'message' => $caption,
-                'company_id' => $companyId,
-            ];
-            $wpboxText = [
-                'token' => $token,
-                'phone' => $waPhone,
-                'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
-                'company_id' => $companyId,
-            ];
-            $attempts[] = ['url' => 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage', 'payload' => $wpboxText];
-            $attempts[] = ['url' => 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage', 'payload' => $wpboxDoc];
+            foreach (build_wpbox_invoice_send_attempts($token, $companyId, $waPhone, $caption, $pdfUrl, $invNum, (string) ($gateway['api_url'] ?? '')) as $wpboxAttempt) {
+                $attempts[] = $wpboxAttempt;
+            }
         }
         return $attempts;
     }
 
-    $wpboxDoc = [
+    return build_wpbox_invoice_send_attempts($token, $companyId, $waPhone, $caption, $pdfUrl, $invNum, (string) ($gateway['api_url'] ?? ''));
+}
+
+/**
+ * @return list<array{url: string, payload: array<string, mixed>}>
+ */
+function build_wpbox_invoice_send_attempts(
+    string $token,
+    int $companyId,
+    string $waPhone,
+    string $caption,
+    string $pdfUrl,
+    string $invNum,
+    string $apiUrl
+): array {
+    $sendMessageUrl = 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage';
+    $sendMediaUrl = 'https://whatsapp.ominiflow.com/api/wpbox/sendmedia';
+    foreach (whatsapp_outbound_api_urls($apiUrl) as $url) {
+        $leaf = strtolower((string) basename((string) (parse_url($url, PHP_URL_PATH) ?? '')));
+        if ($leaf === 'sendmedia') {
+            $sendMediaUrl = $url;
+        } elseif ($leaf === 'sendmessage') {
+            $sendMessageUrl = $url;
+        }
+    }
+
+    $textPayload = [
         'token' => $token,
         'phone' => $waPhone,
+        'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
+    ];
+    $mediaPayload = [
+        'token' => $token,
+        'phone' => $waPhone,
+        'media_type' => 'document',
         'type' => 'document',
-        'document_url' => $pdfUrl,
-        'link' => $pdfUrl,
+        'media_url' => $pdfUrl,
         'url' => $pdfUrl,
+        'document_url' => $pdfUrl,
         'filename' => $invNum . '.pdf',
         'caption' => $caption,
         'message' => $caption,
     ];
     if ($companyId > 0) {
-        $wpboxDoc['company_id'] = $companyId;
+        $textPayload['company_id'] = $companyId;
+        $mediaPayload['company_id'] = $companyId;
     }
 
-    $wpboxText = [
-        'token' => $token,
-        'phone' => $waPhone,
-        'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
+    return [
+        ['url' => $sendMediaUrl, 'payload' => $mediaPayload],
+        ['url' => $sendMessageUrl, 'payload' => $textPayload],
     ];
-    if ($companyId > 0) {
-        $wpboxText['company_id'] = $companyId;
-    }
-
-    $apiUrls = whatsapp_outbound_api_urls((string) ($gateway['api_url'] ?? ''));
-    $apiUrls = array_values(array_filter(
-        $apiUrls,
-        static fn (string $url): bool => stripos($url, 'sendtemplate') === false
-    ));
-    if ($apiUrls === []) {
-        $apiUrls = whatsapp_outbound_api_urls((string) ($gateway['api_url'] ?? ''));
-    }
-    foreach ($apiUrls as $url) {
-        $attempts[] = ['url' => $url, 'payload' => $wpboxText];
-        $attempts[] = ['url' => $url, 'payload' => $wpboxDoc];
-    }
-
-    return $attempts;
 }
 
 function resolve_invoice_whatsapp_phone(string $customerPhone, array $orderResult = [], int $businessId = 0): string {
@@ -258,7 +257,10 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
                     'http_code' => $httpCode,
                 ];
             }
-            $lastError = wa_gateway_error_message($lastRaw, $httpCode);
+            $attemptError = wa_gateway_error_message($lastRaw, $httpCode);
+            if ($lastError === 'WhatsApp invoice could not be delivered.' || !wa_error_is_missing_route($attemptError)) {
+                $lastError = $attemptError;
+            }
         } catch (Throwable $e) {
             error_log('Invoice WhatsApp send error: ' . $e->getMessage());
             $lastError = $e->getMessage();
@@ -410,7 +412,10 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
                     'http_code' => $httpCode,
                 ];
             }
-            $lastError = wa_gateway_error_message($lastRaw, $httpCode);
+            $attemptError = wa_gateway_error_message($lastRaw, $httpCode);
+            if ($lastError === 'WhatsApp invoice could not be delivered.' || !wa_error_is_missing_route($attemptError)) {
+                $lastError = $attemptError;
+            }
         } catch (Throwable $e) {
             error_log('Offline bill WhatsApp send error: ' . $e->getMessage());
             $lastError = $e->getMessage();
