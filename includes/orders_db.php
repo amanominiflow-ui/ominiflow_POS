@@ -68,6 +68,9 @@ function ensure_orders_invoices_schema(): void {
 
 function normalize_order_status_for_db(string $status): string {
     $status = strtolower(trim($status));
+    if (in_array($status, ['processing', 'pending', 'new', 'placed'], true)) {
+        return 'hold';
+    }
     $allowed = ['completed', 'hold', 'cancelled', 'processing', 'pending'];
     if (in_array($status, $allowed, true)) {
         return $status;
@@ -733,8 +736,9 @@ function process_pos_order(
         $resolvedPaymentStatus = in_array($overridePaymentStatus, ['paid', 'pending', 'partially_paid', 'cancelled'], true)
             ? $overridePaymentStatus
             : 'paid';
+        // Use `hold` for open online orders — compatible with legacy ENUM (completed/hold/cancelled).
         $orderStatus = ($salesChannel === 'online_store' && $fulfillmentStatus !== 'delivered')
-            ? 'processing'
+            ? 'hold'
             : 'completed';
         $orderStatus = normalize_order_status_for_db($orderStatus);
         $stmtOrder->execute([

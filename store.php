@@ -322,19 +322,27 @@ if (!$storeBiz) {
                 set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
                 redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
             }
-            $result = place_online_store_order($bid, [
-                'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
-                'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
-                'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
-                'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
-                'notes' => (string) ($_POST['notes'] ?? ''),
-                'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
-                'checkout_mode' => (string) ($_POST['checkout_mode'] ?? ($isBuyNowCheckout ? 'buynow' : '')),
-                'razorpay_order_id' => (string) ($_POST['razorpay_order_id'] ?? ''),
-                'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
-                'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
-                'buy_now' => $isBuyNowCheckout,
-            ]);
+            try {
+                $result = place_online_store_order($bid, [
+                    'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
+                    'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
+                    'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
+                    'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
+                    'notes' => (string) ($_POST['notes'] ?? ''),
+                    'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
+                    'checkout_mode' => (string) ($_POST['checkout_mode'] ?? ($isBuyNowCheckout ? 'buynow' : '')),
+                    'razorpay_order_id' => (string) ($_POST['razorpay_order_id'] ?? ''),
+                    'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
+                    'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
+                    'buy_now' => $isBuyNowCheckout,
+                ]);
+            } catch (Throwable $placeEx) {
+                error_log('Store place_order failed: ' . $placeEx->getMessage());
+                $result = [
+                    'success' => false,
+                    'errors' => ['checkout' => 'Could not place order. Please try again or contact the store.'],
+                ];
+            }
             if (!empty($result['success'])) {
                 if (!empty($result['whatsapp_invoice_sent'])) {
                     set_flash('success', 'Your tax invoice has been sent to your WhatsApp number.');
@@ -3295,7 +3303,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $orderNum = (string)($order['order_number'] ?? ('#' . $orderId));
                     $ordTotal = (float)($order['total_amount'] ?? 0);
                     $ordStatus = strtolower((string)($order['order_status'] ?? 'pending'));
-                    $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing'], true);
+                    $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing', 'hold'], true);
                     $ordType = (($order['payment_method'] ?? '') === 'pickup') ? 'Store Pickup' : 'Home Delivery';
                     $custName = trim((string)($order['customer_name'] ?? $storeShopper['name'] ?? 'Guest Customer'));
                     $custPhone = trim((string)($order['customer_phone'] ?? $storeShopper['phone'] ?? ''));
@@ -3888,11 +3896,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
 
+    $cartShopper = is_array($storeShopper) ? $storeShopper : [];
     $savedLoc = get_storefront_delivery_location($bid);
-    $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
-    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
-    $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
-    $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
+    $locAddress = trim((string)($savedLoc['formatted'] ?? $cartShopper['address'] ?? ''));
+    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $cartShopper['name'] ?? ''));
+    $locPhone = trim((string)($savedLoc['phone'] ?? $cartShopper['phone'] ?? ''));
+    $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($cartShopper['address']) ? (string) $cartShopper['address'] : 'Set delivery location');
     $hasDeliveryLoc = ($locAddress !== '');
 
     $osBuyNow = !empty($openBuyNowSummary);
@@ -4170,7 +4179,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php endif; ?>
                 <input type="hidden" name="name" value="<?= e($locName) ?>">
                 <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
-                <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
+                <input type="hidden" name="email" value="<?= e((string) ($cartShopper['email'] ?? '')) ?>">
                 <input type="hidden" name="address" value="<?= e($locAddress) ?>">
                 <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="<?= e($firstKey) ?>">
                 <input type="hidden" name="razorpay_order_id" id="msDrawerRzpOrderId" value="">
@@ -5001,7 +5010,7 @@ var msStoreCheckout = {
     razorpayActive: <?= !empty($storeRazorpayActive) ? 'true' : 'false' ?>,
     orderAmount: <?= json_encode((float) ($osTotal ?? ($drawerCart['total'] ?? 0))) ?>,
     csrfToken: <?= json_encode(csrf_token()) ?>,
-    postUrl: <?= json_encode($drawerCheckoutActionUrl ?? public_store_url($storeBiz, $page, $_GET)) ?>
+    postUrl: <?= json_encode(isset($drawerCheckoutActionUrl) ? $drawerCheckoutActionUrl : public_store_url($storeBiz ?? null, $page ?? 'home', $_GET ?? [])) ?>
 };
 
 function storefrontPaymentNeedsRazorpay(method) {

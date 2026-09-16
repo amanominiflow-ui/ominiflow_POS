@@ -23,6 +23,16 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'businesses', 'store_slug', "VARCHAR(80) NULL");
     add_schema_column_if_missing($db, 'businesses', 'store_published', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'orders', 'sales_channel', "VARCHAR(30) NOT NULL DEFAULT 'pos'");
+    try {
+        $db->exec("
+            ALTER TABLE `orders`
+            MODIFY COLUMN `order_status`
+            ENUM('completed', 'hold', 'cancelled', 'processing', 'pending')
+            NOT NULL DEFAULT 'completed'
+        ");
+    } catch (Throwable $e) {
+        // Legacy hosts may already have compatible enum or lack ALTER permission.
+    }
     add_schema_column_if_missing($db, 'payments', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'customers', 'password', "VARCHAR(255) NULL");
 
