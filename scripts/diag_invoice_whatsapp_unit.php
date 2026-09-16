@@ -33,8 +33,13 @@ $_SERVER['HTTP_HOST'] = 'pos.ominiflow.com';
 $_SERVER['HTTPS'] = 'on';
 $sampleUrl = invoice_pdf_public_url(99, 1);
 echo 'invoice_pdf_public_url (prod host): ' . $sampleUrl . "\n";
-$okUrl = str_starts_with($sampleUrl, 'https://pos.ominiflow.com/') && str_contains($sampleUrl, 'invoice-pdf.php');
+$okUrl = str_starts_with($sampleUrl, 'https://pos.ominiflow.com/')
+    && str_contains($sampleUrl, 'wa-invoices/')
+    && str_ends_with($sampleUrl, '.pdf')
+    && !str_contains($sampleUrl, '?');
 echo 'PDF URL shape: ' . ($okUrl ? 'PASS' : 'FAIL') . "\n";
+$tokOk = invoice_pdf_verify_token(99, 1, invoice_pdf_public_token(99, 1));
+echo 'short PDF token verifies: ' . ($tokOk ? 'PASS' : 'FAIL') . "\n";
 
 require_once $root . '/includes/invoice_whatsapp.php';
 $attempts = build_invoice_whatsapp_send_attempts(

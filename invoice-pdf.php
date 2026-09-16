@@ -12,6 +12,27 @@ $businessId = (int) ($_GET['b'] ?? 0);
 $token = (string) ($_GET['t'] ?? '');
 $isOfflineBill = (string) ($_GET['ofb'] ?? '') === '1';
 
+$combined = trim((string) ($_GET['k'] ?? ''));
+if ($combined !== '' && preg_match('/^(\d+)-(\d+)-([a-fA-F0-9]{32,64})$/', $combined, $m)) {
+    $invoiceId = (int) $m[1];
+    $businessId = (int) $m[2];
+    $token = $m[3];
+}
+
+if ($invoiceId <= 0 || $businessId <= 0 || $token === '') {
+    $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+    if (preg_match('#wa-invoices/ofb-(\d+)-(\d+)-([a-fA-F0-9]+)\.pdf#i', $uri, $m)) {
+        $invoiceId = (int) $m[1];
+        $businessId = (int) $m[2];
+        $token = $m[3];
+        $isOfflineBill = true;
+    } elseif (preg_match('#wa-invoices/(\d+)-(\d+)-([a-fA-F0-9]+)\.pdf#i', $uri, $m)) {
+        $invoiceId = (int) $m[1];
+        $businessId = (int) $m[2];
+        $token = $m[3];
+    }
+}
+
 if ($invoiceId <= 0 || $businessId <= 0) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=UTF-8');

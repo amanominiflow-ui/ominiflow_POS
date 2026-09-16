@@ -230,7 +230,7 @@ function send_invoice_whatsapp_via_saved_curl(
         $apiUrl = whatsapp_template_api_url($apiUrl);
     }
 
-    $posted = post_whatsapp_json($apiUrl, $token, $payload, 12);
+    $posted = post_whatsapp_json($apiUrl, $token, $payload, 25);
     if (!empty($posted['success'])) {
         return [
             'success' => true,

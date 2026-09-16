@@ -17,12 +17,37 @@ function invoice_pdf_access_token(int $invoiceId, int $businessId): string {
     return hash_hmac('sha256', $businessId . ':' . $invoiceId, invoice_pdf_signing_secret());
 }
 
+function invoice_pdf_public_token(int $invoiceId, int $businessId): string {
+    return substr(invoice_pdf_access_token($invoiceId, $businessId), 0, 32);
+}
+
 function invoice_pdf_verify_token(int $invoiceId, int $businessId, string $token): bool {
-    $token = trim($token);
+    $token = strtolower(trim($token));
     if ($token === '') {
         return false;
     }
-    return hash_equals(invoice_pdf_access_token($invoiceId, $businessId), $token);
+    $expected = strtolower(invoice_pdf_access_token($invoiceId, $businessId));
+    if (hash_equals($expected, $token)) {
+        return true;
+    }
+    $short = substr($expected, 0, 32);
+    return strlen($token) >= 32 && hash_equals($short, substr($token, 0, 32));
+}
+
+function invoice_pdf_web_dir(): string {
+    $dir = dirname(__DIR__) . '/wa-invoices';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $deny = $dir . '/index.html';
+    if (!is_file($deny)) {
+        @file_put_contents($deny, '');
+    }
+    return $dir;
+}
+
+function invoice_pdf_web_filename(int $invoiceId, int $businessId): string {
+    return $invoiceId . '-' . $businessId . '-' . invoice_pdf_public_token($invoiceId, $businessId) . '.pdf';
 }
 
 function invoice_pdf_storage_dir(int $businessId): string {
@@ -122,6 +147,7 @@ function ensure_invoice_pdf_file(int $invoiceId, int $businessId): ?string {
     if (@file_put_contents($path, $pdf) === false) {
         return null;
     }
+    @copy($path, invoice_pdf_web_dir() . '/' . invoice_pdf_web_filename($invoiceId, $businessId));
     return $path;
 }
 
@@ -130,22 +156,24 @@ function offline_bill_pdf_access_token(int $billId, int $businessId): string {
 }
 
 function offline_bill_pdf_verify_token(int $billId, int $businessId, string $token): bool {
-    $token = trim($token);
+    $token = strtolower(trim($token));
     if ($token === '') {
         return false;
     }
-    return hash_equals(offline_bill_pdf_access_token($billId, $businessId), $token);
+    $expected = strtolower(offline_bill_pdf_access_token($billId, $businessId));
+    if (hash_equals($expected, $token)) {
+        return true;
+    }
+    $short = substr($expected, 0, 32);
+    return strlen($token) >= 32 && hash_equals($short, substr($token, 0, 32));
+}
+
+function offline_bill_pdf_web_filename(int $billId, int $businessId): string {
+    return 'ofb-' . $billId . '-' . $businessId . '-' . substr(offline_bill_pdf_access_token($billId, $businessId), 0, 32) . '.pdf';
 }
 
 function offline_bill_pdf_public_url(int $billId, int $businessId): string {
-    $token = offline_bill_pdf_access_token($billId, $businessId);
-    $query = http_build_query([
-        'id' => $billId,
-        'b' => $businessId,
-        't' => $token,
-        'ofb' => 1,
-    ]);
-    $path = 'invoice-pdf.php?' . $query;
+    $path = 'wa-invoices/' . offline_bill_pdf_web_filename($billId, $businessId);
     if (function_exists('is_local_app_host') && !is_local_app_host()) {
         return pos_public_url($path);
     }
@@ -190,17 +218,12 @@ function ensure_offline_bill_pdf_file(int $billId, int $businessId): ?string {
     if (@file_put_contents($path, $pdf) === false) {
         return null;
     }
+    @copy($path, invoice_pdf_web_dir() . '/' . offline_bill_pdf_web_filename($billId, $businessId));
     return $path;
 }
 
 function invoice_pdf_public_url(int $invoiceId, int $businessId): string {
-    $token = invoice_pdf_access_token($invoiceId, $businessId);
-    $query = http_build_query([
-        'id' => $invoiceId,
-        'b' => $businessId,
-        't' => $token,
-    ]);
-    $path = 'invoice-pdf.php?' . $query;
+    $path = 'wa-invoices/' . invoice_pdf_web_filename($invoiceId, $businessId);
     if (function_exists('is_local_app_host') && !is_local_app_host()) {
         return pos_public_url($path);
     }
