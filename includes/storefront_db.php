@@ -2155,6 +2155,10 @@ function wa_gateway_error_message($raw, int $httpCode): string {
         }
     }
     if ($httpCode === 0) {
+        $hint = is_string($raw) ? trim($raw) : '';
+        if ($hint !== '' && strlen($hint) < 180 && !str_starts_with($hint, '{')) {
+            return 'WhatsApp gateway did not respond (' . $hint . ').';
+        }
         return 'WhatsApp gateway did not respond.';
     }
     return 'WhatsApp gateway returned HTTP ' . $httpCode . '.';
@@ -2301,6 +2305,10 @@ function get_business_whatsapp_gateway(int $businessId): array {
     }
 
     $isGraphUrl = stripos($apiUrl, 'graph.facebook.com') !== false;
+    if ($isGraphUrl && preg_match('/PHONE_NUMBER_ID|PHONE_N([^0-9]|$)/i', $apiUrl)) {
+        $apiUrl = '';
+        $isGraphUrl = false;
+    }
     $looksLikeMetaToken = str_starts_with($token, 'EAA');
 
     if ($phoneId !== '' && ($isGraphUrl || $apiUrl === '' || ($isMasterUrl && $looksLikeMetaToken))) {

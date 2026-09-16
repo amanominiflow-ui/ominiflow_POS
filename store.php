@@ -107,12 +107,62 @@ if (!$storeBiz) {
     $flashWarning = get_flash('warning');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = (string) ($_POST['action'] ?? '');
+        $isWaInvoiceAjax = $action === 'send_order_invoice_whatsapp';
         if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            if ($isWaInvoiceAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'Your session expired. Please refresh and try again.']);
+                exit;
+            }
             set_flash('error', 'Your session expired. Please try again.');
             redirect(public_store_url($storeBiz, $page, $_GET));
         }
 
-        $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'send_order_invoice_whatsapp') {
+            header('Content-Type: application/json; charset=utf-8');
+            ignore_user_abort(true);
+            @set_time_limit(60);
+            $orderId = (int) ($_POST['order_id'] ?? 0);
+            $shopper = get_storefront_shopper($bid);
+            if ($orderId <= 0) {
+                echo json_encode(['success' => false, 'error' => 'Order not found.']);
+                exit;
+            }
+            $orderRow = get_storefront_order_details($bid, (string) $orderId);
+            if (!$orderRow) {
+                echo json_encode(['success' => false, 'error' => 'Order not found.']);
+                exit;
+            }
+            $shopperId = is_array($shopper) ? (int) ($shopper['id'] ?? 0) : 0;
+            $orderCustId = (int) ($orderRow['customer_id'] ?? 0);
+            if ($shopperId > 0 && $orderCustId > 0 && $shopperId !== $orderCustId) {
+                echo json_encode(['success' => false, 'error' => 'Not allowed.']);
+                exit;
+            }
+            $phone = is_array($shopper) ? trim((string) ($shopper['phone'] ?? '')) : '';
+            if ($phone === '') {
+                $phone = trim((string) ($orderRow['customer_phone'] ?? ''));
+            }
+            try {
+                require_once __DIR__ . '/includes/invoice_whatsapp.php';
+                $payStatus = strtolower((string) ($orderRow['payment_status'] ?? 'pending'));
+                if ($payStatus === '') {
+                    $payStatus = 'pending';
+                }
+                $res = send_order_invoice_whatsapp($bid, $orderId, $phone, [
+                    'invoice_id' => (int) ($orderRow['invoice_id'] ?? 0),
+                    'order_number' => (string) ($orderRow['order_number'] ?? ''),
+                    'payment_status' => $payStatus,
+                    'customer_phone' => $phone,
+                ]);
+            } catch (Throwable $e) {
+                error_log('Async invoice WhatsApp: ' . $e->getMessage());
+                $res = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
+            }
+            echo json_encode($res);
+            exit;
+        }
 
         if ($action === 'add_to_cart') {
             $pid = (int) ($_POST['product_id'] ?? 0);
@@ -3331,26 +3381,6 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $loginPhone = is_array($storeShopper) ? trim((string) ($storeShopper['phone'] ?? '')) : '';
                     $custPhone = $loginPhone !== '' ? $loginPhone : trim((string)($order['customer_phone'] ?? ''));
                     $custAddress = trim((string)($order['customer_address'] ?? (is_array($storeShopper) ? ($storeShopper['address'] ?? '') : '')));
-                    $waInvoiceNotice = null;
-                    if ($isNewOrder) {
-                        try {
-                            @set_time_limit(20);
-                            require_once __DIR__ . '/includes/invoice_whatsapp.php';
-                            $payStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
-                            if ($payStatus === '') {
-                                $payStatus = 'pending';
-                            }
-                            $waInvoiceNotice = send_order_invoice_whatsapp($bid, $orderId, $custPhone, [
-                                'invoice_id' => (int) ($order['invoice_id'] ?? 0),
-                                'order_number' => $orderNum,
-                                'payment_status' => $payStatus,
-                                'customer_phone' => $custPhone,
-                            ]);
-                        } catch (Throwable $e) {
-                            error_log('Store confirmation invoice WhatsApp: ' . $e->getMessage());
-                            $waInvoiceNotice = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
-                        }
-                    }
                     ?>
                     <div class="ms-order-view-wrap">
                         <?php if ($isNewOrder): ?>
@@ -3365,11 +3395,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         <?php if (!empty($_GET['invoice']) || !empty($order['invoice_number'])): ?>
                                             Invoice <strong><?= e((string) ($_GET['invoice'] ?? $order['invoice_number'])) ?></strong> has been generated.
                                         <?php endif; ?>
-                                        <?php if (!empty($waInvoiceNotice['success'])): ?>
-                                            Invoice PDF sent to WhatsApp<?= !empty($waInvoiceNotice['phone']) ? ' ' . e((string) $waInvoiceNotice['phone']) : '' ?>.
-                                        <?php elseif (!empty($waInvoiceNotice['error'])): ?>
-                                            We could not send the invoice PDF on WhatsApp<?= !empty($waInvoiceNotice['error']) ? ': ' . e((string) $waInvoiceNotice['error']) : '' ?>. Use View / Print Invoice below.
-                                        <?php endif; ?>
+                                        <span id="msWaInvoiceStatus"><?= $custPhone !== '' ? ' Sending invoice PDF to WhatsApp…' : '' ?></span>
                                     </div>
                                 </div>
                             </div>
@@ -5480,6 +5506,37 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }, 150);
 });
+<?php endif; ?>
+<?php if (!empty($isNewOrder) && !empty($orderId) && !empty($custPhone)): ?>
+(function sendOrderInvoiceWhatsAppAsync() {
+    var statusEl = document.getElementById('msWaInvoiceStatus');
+    var body = new FormData();
+    body.append('csrf_token', (window.msStoreCheckout && msStoreCheckout.csrfToken) ? msStoreCheckout.csrfToken : <?= json_encode(csrf_token()) ?>);
+    body.append('action', 'send_order_invoice_whatsapp');
+    body.append('order_id', String(<?= (int) $orderId ?>));
+    var postUrl = (window.msStoreCheckout && msStoreCheckout.postUrl)
+        ? msStoreCheckout.postUrl
+        : <?= json_encode(public_store_url($storeBiz, 'order', ['id' => (string) ($orderNum ?? $orderId)])) ?>;
+    fetch(postUrl, { method: 'POST', body: body, credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!statusEl) return;
+            if (data && data.success) {
+                var phone = data.phone ? (' ' + data.phone) : '';
+                statusEl.textContent = ' Invoice PDF sent to WhatsApp' + phone + '.';
+            } else if (data && data.skipped) {
+                statusEl.textContent = '';
+            } else {
+                var err = (data && data.error) ? (': ' + data.error) : '';
+                statusEl.textContent = ' We could not send the invoice PDF on WhatsApp' + err + '. Use View / Print Invoice below.';
+            }
+        })
+        .catch(function () {
+            if (statusEl) {
+                statusEl.textContent = ' Invoice generated. WhatsApp send may still be in progress — check your chat shortly.';
+            }
+        });
+})();
 <?php endif; ?>
 </script>
 <?php if (!empty($storeRazorpayActive)): ?>

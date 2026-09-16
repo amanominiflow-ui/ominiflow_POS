@@ -22,34 +22,8 @@ function build_invoice_whatsapp_send_attempts(
     $attempts = [];
 
     if ($isMeta) {
-        $metaBase = [
-            'messaging_product' => 'whatsapp',
-            'recipient_type' => 'individual',
-            'to' => $waPhone,
-            'type' => 'document',
-        ];
-        if ($metaMediaId !== null && $metaMediaId !== '') {
-            $attempts[] = [
-                'url' => (string) $gateway['api_url'],
-                'payload' => $metaBase + [
-                    'document' => [
-                        'id' => $metaMediaId,
-                        'filename' => $invNum . '.pdf',
-                        'caption' => $caption,
-                    ],
-                ],
-            ];
-        }
-        $attempts[] = [
-            'url' => (string) $gateway['api_url'],
-            'payload' => $metaBase + [
-                'document' => [
-                    'link' => $pdfUrl,
-                    'filename' => $invNum . '.pdf',
-                    'caption' => $caption,
-                ],
-            ],
-        ];
+        // Text first. Document-by-link makes Meta fetch the PDF and can hang
+        // until PHP times out ("WhatsApp gateway did not respond").
         $attempts[] = [
             'url' => (string) $gateway['api_url'],
             'payload' => [
@@ -63,6 +37,42 @@ function build_invoice_whatsapp_send_attempts(
                 ],
             ],
         ];
+        if ($metaMediaId !== null && $metaMediaId !== '') {
+            $attempts[] = [
+                'url' => (string) $gateway['api_url'],
+                'payload' => [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $waPhone,
+                    'type' => 'document',
+                    'document' => [
+                        'id' => $metaMediaId,
+                        'filename' => $invNum . '.pdf',
+                        'caption' => $caption,
+                    ],
+                ],
+            ];
+        }
+        if ($companyId > 0 && !str_starts_with($token, 'EAA')) {
+            $wpboxDoc = [
+                'token' => $token,
+                'phone' => $waPhone,
+                'type' => 'document',
+                'document_url' => $pdfUrl,
+                'filename' => $invNum . '.pdf',
+                'caption' => $caption,
+                'message' => $caption,
+                'company_id' => $companyId,
+            ];
+            $wpboxText = [
+                'token' => $token,
+                'phone' => $waPhone,
+                'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
+                'company_id' => $companyId,
+            ];
+            $attempts[] = ['url' => 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage', 'payload' => $wpboxText];
+            $attempts[] = ['url' => 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage', 'payload' => $wpboxDoc];
+        }
         return $attempts;
     }
 
@@ -99,8 +109,8 @@ function build_invoice_whatsapp_send_attempts(
         $apiUrls = whatsapp_outbound_api_urls((string) ($gateway['api_url'] ?? ''));
     }
     foreach ($apiUrls as $url) {
-        $attempts[] = ['url' => $url, 'payload' => $wpboxDoc];
         $attempts[] = ['url' => $url, 'payload' => $wpboxText];
+        $attempts[] = ['url' => $url, 'payload' => $wpboxDoc];
     }
 
     return $attempts;
@@ -220,7 +230,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
         $invNum,
         null
     );
-    $attempts = array_slice($attempts, 0, 2);
+    $attempts = array_slice($attempts, 0, 4);
 
     $token = (string) $gateway['token'];
     $lastRaw = null;
@@ -235,7 +245,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 8);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 15);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
@@ -372,7 +382,7 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
         $invNum,
         null
     );
-    $attempts = array_slice($attempts, 0, 2);
+    $attempts = array_slice($attempts, 0, 4);
 
     $token = (string) $gateway['token'];
     $lastRaw = null;
@@ -387,7 +397,7 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 8);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 15);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
