@@ -133,15 +133,8 @@ if (!$latest) {
     }
 
     if ($sendTest && !empty($gateway['configured'])) {
-        echo "\n--send-test: calling send_storefront_order_invoice_whatsapp (needs logged-in session — may skip)\n";
-        $_SESSION[storefront_shopper_key($businessId)] = [
-            'id' => (int) ($db->query("SELECT customer_id FROM invoices WHERE id = {$invoiceId}")->fetchColumn() ?: 1),
-            'name' => 'Diag Test',
-            'phone' => '9876543210',
-            'email' => '',
-            'address' => '',
-        ];
-        $res = send_storefront_order_invoice_whatsapp($businessId, $orderId, '9876543210', [
+        echo "\n--send-test: calling send_order_invoice_whatsapp\n";
+        $res = send_order_invoice_whatsapp($businessId, $orderId, '9876543210', [
             'invoice_id' => $invoiceId,
             'order_number' => (string) $latest['order_number'],
             'payment_status' => (string) $latest['payment_status'],

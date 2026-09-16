@@ -49,3 +49,10 @@ foreach ($attempts as $a) {
 }
 echo 'build_invoice_whatsapp_send_attempts includes sendmessage: ' . ($hasSendMessage ? 'PASS' : 'FAIL') . "\n";
 echo 'attempt count: ' . count($attempts) . "\n";
+
+$fromArg = resolve_invoice_whatsapp_phone('9876543210', []);
+$fromOrder = resolve_invoice_whatsapp_phone('', ['customer_phone' => '+91 90000 11111']);
+$emptyPhone = resolve_invoice_whatsapp_phone('', []);
+echo 'resolve phone from arg: ' . ($fromArg === '9876543210' ? 'PASS' : 'FAIL') . "\n";
+echo 'resolve phone from order: ' . ($fromOrder === '+91 90000 11111' ? 'PASS' : 'FAIL') . "\n";
+echo 'resolve phone empty: ' . ($emptyPhone === '' ? 'PASS' : 'FAIL') . "\n";

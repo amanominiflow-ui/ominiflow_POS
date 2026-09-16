@@ -106,13 +106,40 @@ function build_invoice_whatsapp_send_attempts(
     return $attempts;
 }
 
-function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, string $customerPhone, array $orderResult = []): array {
+function resolve_invoice_whatsapp_phone(string $customerPhone, array $orderResult = [], int $businessId = 0): string {
+    $candidates = [
+        trim($customerPhone),
+        trim((string) ($orderResult['customer_phone'] ?? '')),
+    ];
+    if ($businessId > 0 && function_exists('get_storefront_shopper')) {
+        $shopper = get_storefront_shopper($businessId);
+        if (is_array($shopper)) {
+            $candidates[] = trim((string) ($shopper['phone'] ?? ''));
+        }
+    }
+    foreach ($candidates as $phone) {
+        if ($phone !== '') {
+            return $phone;
+        }
+    }
+    return '';
+}
+
+/**
+ * Send tax-invoice PDF to a customer WhatsApp number.
+ * Used by POS checkout and (optionally) online storefront.
+ * Never requires a logged-in storefront session.
+ */
+function send_order_invoice_whatsapp(int $businessId, int $orderId, string $customerPhone = '', array $orderResult = []): array {
     $brand = get_mobile_store_settings($businessId);
     if (empty($brand['wa_auto_send_invoices'])) {
         return ['success' => false, 'skipped' => true, 'error' => 'Auto-send invoices is disabled.'];
     }
 
-    $orderPayStatus = strtolower((string) ($orderResult['payment_status'] ?? ''));
+    $orderPayStatus = strtolower(trim((string) ($orderResult['payment_status'] ?? '')));
+    if ($orderPayStatus === '') {
+        $orderPayStatus = 'paid';
+    }
     if (!in_array($orderPayStatus, ['paid', 'pending'], true)) {
         return [
             'success' => false,
@@ -121,19 +148,9 @@ function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, s
         ];
     }
 
-    if (!get_storefront_shopper($businessId)) {
-        return ['success' => false, 'skipped' => true, 'error' => 'No logged-in customer session for WhatsApp delivery.'];
-    }
-    $shopper = function_exists('refresh_storefront_shopper')
-        ? (refresh_storefront_shopper($businessId) ?? get_storefront_shopper($businessId))
-        : get_storefront_shopper($businessId);
-    if (!$shopper) {
-        return ['success' => false, 'skipped' => true, 'error' => 'No logged-in customer session for WhatsApp delivery.'];
-    }
-
-    $targetPhone = trim((string) ($shopper['phone'] ?? ''));
+    $targetPhone = resolve_invoice_whatsapp_phone($customerPhone, $orderResult, $businessId);
     if ($targetPhone === '') {
-        return ['success' => false, 'error' => 'Logged-in customer has no mobile number on file.'];
+        return ['success' => false, 'skipped' => true, 'error' => 'Customer has no WhatsApp number on file.'];
     }
 
     $invoiceId = (int) ($orderResult['invoice_id'] ?? 0);
@@ -232,4 +249,46 @@ function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, s
         'phone' => $waPhone,
         'pdf_url' => $pdfUrl,
     ];
+}
+
+function send_storefront_order_invoice_whatsapp(int $businessId, int $orderId, string $customerPhone, array $orderResult = []): array {
+    return send_order_invoice_whatsapp($businessId, $orderId, $customerPhone, $orderResult);
+}
+
+/**
+ * Attach WhatsApp invoice send result to a completed POS order payload.
+ * Failures never undo the sale.
+ *
+ * @param array<string, mixed> $orderResult
+ * @return array<string, mixed>
+ */
+function attach_pos_invoice_whatsapp(array $orderResult, int $businessId): array {
+    if (empty($orderResult['success'])) {
+        return $orderResult;
+    }
+    if (!empty($orderResult['synced_existing'])) {
+        $orderResult['whatsapp_invoice'] = [
+            'success' => false,
+            'skipped' => true,
+            'error' => 'Already synced; invoice was not re-sent.',
+        ];
+        return $orderResult;
+    }
+
+    try {
+        $orderResult['whatsapp_invoice'] = send_order_invoice_whatsapp(
+            $businessId,
+            (int) ($orderResult['order_id'] ?? 0),
+            (string) ($orderResult['customer_phone'] ?? ''),
+            $orderResult
+        );
+    } catch (Throwable $e) {
+        error_log('POS invoice WhatsApp: ' . $e->getMessage());
+        $orderResult['whatsapp_invoice'] = [
+            'success' => false,
+            'error' => 'Could not send invoice on WhatsApp.',
+        ];
+    }
+
+    return $orderResult;
 }

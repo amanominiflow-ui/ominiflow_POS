@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/payment_options_db.php';
 require_once __DIR__ . '/includes/payment_integrations_db.php';
 require_once __DIR__ . '/includes/razorpay_oauth.php';
+require_once __DIR__ . '/includes/invoice_whatsapp.php';
 
 require_auth();
 
@@ -76,6 +77,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $loyaltyPoints, $loyaltyDiscount, $priceListId
         );
 
+        if (!empty($result['success'])) {
+            $result = attach_pos_invoice_whatsapp($result, current_business_id());
+        }
+
         if (!empty($_POST['is_ajax'])) {
             header('Content-Type: application/json');
             echo json_encode($result);
@@ -83,7 +88,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($result['success']) {
-            set_flash('success', 'Order #' . $result['order_number'] . ' completed successfully! Total: ₹' . number_format($result['total_amount'], 2));
+            $wa = $result['whatsapp_invoice'] ?? [];
+            $flash = 'Order #' . $result['order_number'] . ' completed successfully! Total: ₹' . number_format($result['total_amount'], 2);
+            if (!empty($wa['success'])) {
+                $flash .= ' Invoice PDF sent to WhatsApp.';
+            }
+            set_flash('success', $flash);
             redirect(APP_URL . '/orders.php?highlight=' . $result['order_id']);
         } else {
             $msg = implode(' ', $result['errors']);
@@ -612,6 +622,8 @@ $flashError = get_flash('error');
                         Thank you for shopping with us!
                     </div>
                 </div>
+
+                <div id="receiptWhatsAppStatus" class="no-print" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 650; line-height: 1.45;"></div>
             </div>
 
             <div class="modal-footer no-print" style="justify-content: space-between; gap: 8px; flex-wrap: wrap;">
@@ -1294,6 +1306,43 @@ $flashError = get_flash('error');
                 const invLink = document.getElementById('viewInvoiceLink');
                 if (invLink && data.invoice_id) {
                     invLink.href = '<?= asset('invoice-view.php?id=') ?>' + data.invoice_id;
+                }
+
+                const waStatus = document.getElementById('receiptWhatsAppStatus');
+                if (waStatus) {
+                    const wa = data.whatsapp_invoice || {};
+                    const phoneLabel = wa.phone || data.customer_phone || '';
+                    if (wa.success) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#ecfdf5';
+                        waStatus.style.color = '#047857';
+                        waStatus.style.border = '1px solid #a7f3d0';
+                        waStatus.textContent = 'Invoice PDF sent to WhatsApp' + (phoneLabel ? ' ' + phoneLabel : '') + '.';
+                    } else if (wa.skipped) {
+                        const skipErr = String(wa.error || '');
+                        const quietSkip = /disabled|already synced|payment state/i.test(skipErr);
+                        if (quietSkip) {
+                            waStatus.style.display = 'none';
+                            waStatus.textContent = '';
+                        } else {
+                            waStatus.style.display = 'block';
+                            waStatus.style.background = '#f8fafc';
+                            waStatus.style.color = '#475569';
+                            waStatus.style.border = '1px solid #e2e8f0';
+                            waStatus.textContent = phoneLabel
+                                ? ('Invoice not sent on WhatsApp: ' + (skipErr || 'skipped'))
+                                : 'Invoice not sent on WhatsApp — add a customer mobile number to auto-send the PDF.';
+                        }
+                    } else if (wa.error) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#fff7ed';
+                        waStatus.style.color = '#9a3412';
+                        waStatus.style.border = '1px solid #fed7aa';
+                        waStatus.textContent = 'Sale completed. WhatsApp invoice could not be sent' + (wa.error ? ': ' + wa.error : '.');
+                    } else {
+                        waStatus.style.display = 'none';
+                        waStatus.textContent = '';
+                    }
                 }
 
                 saleCompletedModal.classList.add('open');

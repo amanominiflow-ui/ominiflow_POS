@@ -871,7 +871,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 </label>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
                                     <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
-                                    <span>Auto-send invoice PDF on online orders — COD & paid (logged-in customer WhatsApp)</span>
+                                    <span>Auto-send invoice PDF after POS and online orders to the customer WhatsApp number</span>
                                 </label>
                             </div>
 
@@ -1082,7 +1082,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </label>
                     <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a;">
                         <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
-                        <span>Auto-send invoice PDF on online orders — COD & paid (logged-in customer WhatsApp)</span>
+                        <span>Auto-send invoice PDF after POS and online orders to the customer WhatsApp number</span>
                     </label>
                 </div>
 
