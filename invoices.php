@@ -12,7 +12,6 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
 
 require_auth();
-repair_unpaid_store_invoices();
 
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;

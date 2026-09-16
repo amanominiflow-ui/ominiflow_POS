@@ -23,16 +23,6 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'businesses', 'store_slug', "VARCHAR(80) NULL");
     add_schema_column_if_missing($db, 'businesses', 'store_published', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'orders', 'sales_channel', "VARCHAR(30) NOT NULL DEFAULT 'pos'");
-    try {
-        $db->exec("
-            ALTER TABLE `orders`
-            MODIFY COLUMN `order_status`
-            ENUM('completed', 'hold', 'cancelled', 'processing', 'pending')
-            NOT NULL DEFAULT 'completed'
-        ");
-    } catch (Throwable $e) {
-        // Legacy hosts may already have compatible enum or lack ALTER permission.
-    }
     add_schema_column_if_missing($db, 'payments', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'customers', 'password', "VARCHAR(255) NULL");
 
@@ -81,12 +71,6 @@ function ensure_online_store_schema(): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
-    try {
-        $db->exec("ALTER TABLE `businesses` ADD UNIQUE INDEX `uq_businesses_store_slug` (`store_slug`)");
-    } catch (PDOException $e) {
-        // Index already exists
-    }
-
     seed_missing_store_slugs();
 
     add_schema_column_if_missing($db, 'mobile_store_settings', 'favicon_path', "VARCHAR(255) NULL");
@@ -126,27 +110,6 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_raw', "MEDIUMTEXT NULL");
-
-    try {
-        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_token` TEXT NULL");
-    } catch (PDOException $e) {
-        // Column type already compatible
-    }
-    try {
-        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_api_url` VARCHAR(500) NULL DEFAULT NULL");
-    } catch (PDOException $e) {
-        // Column type already compatible
-    }
-    try {
-        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_company_id` INT NULL DEFAULT NULL");
-    } catch (PDOException $e) {
-        // Column type already compatible
-    }
-    try {
-        $db->exec("ALTER TABLE `mobile_store_settings` MODIFY `wa_template_name` VARCHAR(100) NULL DEFAULT NULL");
-    } catch (PDOException $e) {
-        // Column type already compatible
-    }
 
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
@@ -204,9 +167,6 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
 
-    if (function_exists('repair_unpaid_store_invoices')) {
-        repair_unpaid_store_invoices($db);
-    }
     add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
 
     // Footer Customization & Legal Pages
@@ -3203,23 +3163,6 @@ function place_online_store_order(int $businessId, array $checkout): array {
             clear_storefront_buynow($businessId);
         } else {
             save_storefront_cart($businessId, []);
-        }
-
-        try {
-            require_once __DIR__ . '/invoice_whatsapp.php';
-            $waRes = send_storefront_order_invoice_whatsapp(
-                $businessId,
-                $orderId,
-                (string) ($checkout['phone'] ?? ''),
-                $result
-            );
-            if (!empty($waRes['success'])) {
-                $result['whatsapp_invoice_sent'] = true;
-            } elseif (empty($waRes['skipped'])) {
-                $result['whatsapp_invoice_error'] = (string) ($waRes['error'] ?? 'WhatsApp invoice not sent.');
-            }
-        } catch (Throwable $e) {
-            error_log('Storefront invoice WhatsApp: ' . $e->getMessage());
         }
     }
     return $result;

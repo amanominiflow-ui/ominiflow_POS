@@ -318,6 +318,28 @@ if (!$storeBiz) {
         if ($action === 'place_order') {
             $isBuyNowCheckout = storefront_checkout_is_buynow($bid, $_POST);
             $shopper = get_storefront_shopper($bid);
+            if (!$shopper && !empty($_POST['phone'])) {
+                $postPhone = trim((string) $_POST['phone']);
+                $postName = trim((string) ($_POST['name'] ?? 'Customer'));
+                if ($postPhone !== '') {
+                    $cRes = find_or_create_store_customer($bid, [
+                        'name' => $postName,
+                        'phone' => $postPhone,
+                        'email' => (string) ($_POST['email'] ?? ''),
+                        'address' => (string) ($_POST['address'] ?? ''),
+                    ]);
+                    if (!empty($cRes['success'])) {
+                        $shopper = [
+                            'id' => (int) $cRes['customer_id'],
+                            'name' => $postName,
+                            'phone' => $postPhone,
+                            'email' => (string) ($_POST['email'] ?? ''),
+                            'address' => (string) ($_POST['address'] ?? ''),
+                        ];
+                        set_storefront_shopper($bid, $shopper);
+                    }
+                }
+            }
             if (!$shopper) {
                 set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
                 redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
@@ -344,11 +366,6 @@ if (!$storeBiz) {
                 ];
             }
             if (!empty($result['success'])) {
-                if (!empty($result['whatsapp_invoice_sent'])) {
-                    set_flash('success', 'Your tax invoice has been sent to your WhatsApp number.');
-                } elseif (!empty($result['whatsapp_invoice_error'])) {
-                    set_flash('warning', 'Order placed, but we could not send the invoice on WhatsApp: ' . (string) $result['whatsapp_invoice_error']);
-                }
                 $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
@@ -360,7 +377,12 @@ if (!$storeBiz) {
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
-            redirect(public_store_url($storeBiz, $isBuyNowCheckout ? 'home' : 'checkout', $isBuyNowCheckout ? ['buynow' => '1'] : []));
+            $redirectPage = ($page === 'product' && !empty($_GET['id'])) ? 'product' : ($isBuyNowCheckout ? 'home' : 'checkout');
+            $redirectParams = $isBuyNowCheckout ? ['buynow' => '1'] : [];
+            if ($redirectPage === 'product' && !empty($_GET['id'])) {
+                $redirectParams['id'] = (int) $_GET['id'];
+            }
+            redirect(public_store_url($storeBiz, $redirectPage, $redirectParams));
         }
 
         if ($action === 'cancel_order') {

@@ -53,17 +53,6 @@ function ensure_orders_invoices_schema(): void {
             }
         } catch (Exception $e) {}
     }
-
-    try {
-        $db->exec("
-            ALTER TABLE `orders`
-            MODIFY COLUMN `order_status`
-            ENUM('completed', 'hold', 'cancelled', 'processing', 'pending')
-            NOT NULL DEFAULT 'completed'
-        ");
-    } catch (Throwable $e) {
-        // Best-effort: older MySQL/MariaDB hosts may already have compatible enum.
-    }
 }
 
 function normalize_order_status_for_db(string $status): string {
@@ -873,7 +862,6 @@ function process_pos_order(
         $invoiceNumber = generate_next_invoice_number($bid, $db);
         $invoicePaymentStatus = ($resolvedPaymentStatus === 'paid') ? 'paid' : 'unpaid';
         $invoiceAmountPaid = ($resolvedPaymentStatus === 'paid') ? $grandTotal : 0.00;
-        $invoiceDocumentStatus = ($resolvedPaymentStatus === 'paid') ? 'paid' : 'draft';
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
@@ -907,7 +895,7 @@ function process_pos_order(
             'change_amount' => ($resolvedPaymentStatus === 'paid') ? $changeAmount : 0.00,
             'payment_method' => $paymentMethod ?: 'cash',
             'payment_status' => $invoicePaymentStatus,
-            'invoice_status' => $invoiceDocumentStatus,
+            'invoice_status' => 'paid',
             'notes' => $notes ?: null,
         ]);
         $invoiceId = (int) $db->lastInsertId();
@@ -995,7 +983,7 @@ function process_pos_order(
             'cashier_name' => $cashierName,
             'payment_method' => $paymentMethod,
             'payment_status' => $resolvedPaymentStatus,
-            'invoice_status' => $invoiceDocumentStatus,
+            'invoice_status' => 'paid',
             'created_at' => date('Y-m-d H:i:s'),
         ];
     } catch (Exception $e) {
@@ -1068,9 +1056,7 @@ function bill_generate_pos(int $orderId, array $options = []): array {
         ');
         $orderPayStatus = (string) ($order['payment_status'] ?? 'paid');
         $invoicePayStatus = ($orderPayStatus === 'paid') ? 'paid' : 'unpaid';
-        $invoiceDocStatus = ($order['order_status'] ?? '') === 'cancelled'
-            ? 'cancelled'
-            : (($orderPayStatus === 'paid') ? 'paid' : 'draft');
+        $invoiceDocStatus = ($order['order_status'] ?? '') === 'cancelled' ? 'cancelled' : 'paid';
         $stmtInsert->execute([
             'biz_id' => $invoiceBizId,
             'invoice_number' => $invoiceNumber,
