@@ -213,6 +213,19 @@ try {
             // attributes optional
         }
         $img = trim((string) ($p['image_path'] ?? ''));
+        $rawDesc = trim((string) ($p['sales_description'] ?? ''));
+        if ($rawDesc === '') {
+            $rawDesc = trim((string) ($p['description'] ?? ''));
+        }
+        $rawDesc = trim(preg_replace('/\s+/u', ' ', strip_tags($rawDesc)) ?? '');
+        if (function_exists('mb_strlen') && mb_strlen($rawDesc) > 78) {
+            $rawDesc = mb_substr($rawDesc, 0, 76) . '…';
+        } elseif (strlen($rawDesc) > 78) {
+            $rawDesc = substr($rawDesc, 0, 76) . '…';
+        }
+        if ($rawDesc === '') {
+            $rawDesc = trim((string) ($p['category_name'] ?? ''));
+        }
         $catalog[] = [
             'id' => (int) $p['id'],
             'name' => (string) $p['name'],
@@ -220,6 +233,7 @@ try {
             'price' => (float) ($p['selling_price'] ?? 0),
             'stock' => (int) ($p['stock_quantity'] ?? 0),
             'image' => $img !== '' ? asset($img) : '',
+            'description' => $rawDesc,
             'sizes' => array_values(array_unique(array_filter($sizes))),
             'colours' => array_values(array_unique(array_filter($colours))),
             'variants' => $variants,
@@ -246,7 +260,12 @@ if ($editBill) {
 }
 
 $verifyUrl = APP_URL . '/offline-billing.php' . ($editId > 0 ? ('?id=' . $editId . '&standalone=1') : '');
-$pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : 'Offline Billing';
+$pageTitle = 'Offline Billing';
+$paymentModes = ['Cash on Delivery (COD)', 'Cash', 'UPI', 'Card', 'Net Banking', 'Wallet'];
+$currentPayMode = (string) ($editBill['payment_mode'] ?? 'Cash on Delivery (COD)');
+if ($currentPayMode !== '' && !in_array($currentPayMode, $paymentModes, true)) {
+    array_unshift($paymentModes, $currentPayMode);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -277,18 +296,18 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
             margin: 0;
         }
 
-        .ofb-page-wrap { padding: 16px 20px 40px; }
+        .dashboard-content.ofb-page-wrap,
+        .ofb-page-wrap { padding: 8px 16px 24px; }
         .ofb-standalone-wrap { padding: 16px 12px 32px; }
         .ofb-page-header {
             display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
+            align-items: center;
+            justify-content: flex-end;
             gap: 12px;
             flex-wrap: wrap;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
         }
-        .ofb-page-header h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; color: #0f172a; }
-        .ofb-page-header p { margin: 0; color: #64748b; font-size: 13.5px; }
+        .ofb-page-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .ofb-step { display: none; }
         .ofb-step.active { display: block; }
         .ofb-steps {
@@ -303,34 +322,66 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
         .ofb-step-pill.on { background: var(--inv-theme); color: #fff; }
         .ofb-workspace {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
-            gap: 20px;
+            grid-template-columns: minmax(0, 1.75fr) minmax(300px, 380px);
+            gap: 18px;
             align-items: start;
         }
         .ofb-products-pane, .ofb-cart-pane {
             background: #fff;
             border: 1px solid #e2e8f0;
             border-radius: 14px;
-            padding: 14px;
+            padding: 16px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
-        .ofb-cart-pane { position: sticky; top: 12px; max-height: calc(100vh - 120px); }
+        .ofb-cart-pane { position: sticky; top: 12px; max-height: calc(100vh - 110px); }
         .ofb-cart-title { font-size: 15px; font-weight: 800; color: #0f172a; margin: 0 0 12px; }
-        .ofb-cart-fields { display: grid; gap: 8px; margin-bottom: 12px; }
-        .ofb-cart-fields input, .ofb-cart-fields textarea {
+        .ofb-pane-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            margin-bottom: 12px; flex-wrap: wrap;
+        }
+        .ofb-pane-head .ofb-cart-title { margin: 0; }
+        .ofb-cart-fields { display: grid; gap: 8px; margin: 10px 0 12px; }
+        .ofb-cart-fields input, .ofb-cart-fields textarea, .ofb-cart-fields select {
             width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px;
-            font-size: 13px; font-family: inherit; box-sizing: border-box;
+            font-size: 13px; font-family: inherit; box-sizing: border-box; background: #fff;
         }
-        .ofb-cart-list { overflow-y: auto; flex: 1; min-height: 80px; }
+        .ofb-cart-list { overflow-y: auto; flex: 1; min-height: 120px; display: flex; flex-direction: column; gap: 10px; }
         .ofb-cart-row {
-            border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #f8fafc;
+            display: grid;
+            grid-template-columns: 58px minmax(0, 1fr);
+            gap: 10px;
+            border: 1.5px solid #d1fae5;
+            border-radius: 12px;
+            padding: 10px;
+            background: #f0fdf4;
+            align-items: start;
         }
-        .ofb-cart-row .nm { font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 6px; }
-        .ofb-cart-grid { display: grid; grid-template-columns: 1fr 1fr 64px 72px 28px; gap: 6px; align-items: center; }
-        .ofb-cart-grid input, .ofb-cart-grid select {
-            width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 6px; font-size: 12px;
+        .ofb-cart-row.ofb-cart-flash { box-shadow: 0 0 0 3px rgba(var(--inv-theme-rgb), 0.28); }
+        .ofb-cart-thumb {
+            width: 58px; height: 58px; border-radius: 10px; overflow: hidden;
+            background: #e2e8f0; display: flex; align-items: center; justify-content: center;
+            color: #94a3b8; font-size: 10px; font-weight: 700;
+        }
+        .ofb-cart-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ofb-cart-row .nm { font-weight: 800; font-size: 13.5px; color: #0f172a; line-height: 1.25; margin: 0 0 3px; }
+        .ofb-cart-row .desc { font-size: 11.5px; color: #64748b; line-height: 1.35; margin: 0 0 8px; }
+        .ofb-cart-qtyrow { display: grid; grid-template-columns: 72px 1fr 28px; gap: 8px; align-items: center; }
+        .ofb-cart-qtyrow input {
+            width: 100%; height: 36px; border: 1px solid #cbd5e1; border-radius: 8px;
+            padding: 6px 8px; font-size: 13px; box-sizing: border-box;
+        }
+        .ofb-cart-amt { font-size: 13px; font-weight: 800; color: var(--inv-theme); margin-top: 6px; }
+        .ofb-page-size {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            margin-top: 10px; padding: 8px 10px; background: #f8fafc;
+            border: 1px solid #cbd5e1; border-radius: 8px;
+        }
+        .ofb-page-size label { font-size: 12px; font-weight: 700; color: #475569; margin: 0; white-space: nowrap; }
+        .ofb-page-size select {
+            border: none; background: transparent; font-size: 13px; font-weight: 700;
+            cursor: pointer; outline: none; color: #0f172a; min-width: 0;
         }
         .ofb-goto-inv {
             width: 100%; margin-top: 10px; background: var(--inv-theme); color: #fff; border: 0;
@@ -353,29 +404,55 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
             margin-bottom: 10px;
         }
         .ofb-search:focus { outline: none; border-color: var(--inv-theme); box-shadow: 0 0 0 3px rgba(var(--inv-theme-rgb), 0.15); }
-        .ofb-product-list { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 240px; max-height: 62vh; }
-        .ofb-prod-card {
+        .ofb-product-list {
+            overflow-y: auto;
+            flex: 1;
             display: grid;
-            grid-template-columns: 48px 1fr auto;
-            gap: 10px;
-            align-items: center;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 8px;
-            background: #f8fafc;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            align-content: start;
+            min-height: 240px;
+            max-height: 66vh;
+            padding: 2px;
+        }
+        .ofb-prod-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 10px;
+            background: #fff;
+            cursor: pointer;
+            position: relative;
+            min-width: 0;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        .ofb-prod-card:hover { border-color: #94a3b8; }
+        .ofb-prod-card.selected {
+            border-color: var(--inv-theme);
+            background: rgba(var(--inv-theme-rgb), 0.07);
+            box-shadow: 0 0 0 2px rgba(var(--inv-theme-rgb), 0.16);
+        }
+        .ofb-prod-check {
+            position: absolute; top: 10px; left: 10px; z-index: 2;
+            width: 18px; height: 18px; margin: 0; accent-color: var(--inv-theme); cursor: pointer;
         }
         .ofb-prod-img {
-            width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #e2e8f0;
+            width: 100%; height: 112px; border-radius: 10px; object-fit: cover; background: #e2e8f0;
             display: flex; align-items: center; justify-content: center; font-size: 11px; color: #94a3b8; overflow: hidden;
         }
         .ofb-prod-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .ofb-prod-name { font-size: 13px; font-weight: 700; color: #0f172a; line-height: 1.25; }
-        .ofb-prod-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
-        .ofb-add-btn {
-            background: var(--inv-theme); color: #fff; border: 0; border-radius: 7px;
-            padding: 7px 12px; font-weight: 800; font-size: 12px; cursor: pointer; white-space: nowrap;
+        .ofb-prod-name { font-size: 13.5px; font-weight: 800; color: #0f172a; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .ofb-prod-desc { font-size: 11.5px; color: #64748b; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.7em; }
+        .ofb-prod-meta { font-size: 12.5px; font-weight: 800; color: var(--inv-theme); margin-top: auto; }
+        .ofb-prod-sku { font-size: 11px; color: #94a3b8; font-weight: 600; }
+        @media screen and (max-width: 1200px) {
+            .ofb-product-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
-        .ofb-add-btn:hover { opacity: 0.92; }
+        @media screen and (max-width: 700px) {
+            .ofb-product-list { grid-template-columns: 1fr; }
+        }
         .ofb-recent { margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px; max-height: 220px; overflow-y: auto; }
         .ofb-recent h3 { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; margin: 0 0 8px; }
         .ofb-recent a {
@@ -1025,38 +1102,39 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
         <div class="app-main">
             <?php require_once __DIR__ . '/includes/header.php'; ?>
             <main class="dashboard-content ofb-page-wrap">
-                <div class="ofb-page-header no-print">
-                    <div>
-                        <h1>Offline Billing</h1>
-                        <p>Pehle products add karein, phir invoice check karke print karein.</p>
-                    </div>
-                    <a href="<?= asset('consignment-manifest.php') ?>" class="inv-btn inv-btn-outline">Back to COD Manifest</a>
-                </div>
-                <div class="ofb-steps no-print">
-                    <span class="ofb-step-pill <?= $startOnInvoice ? '' : 'on' ?>" id="pillProducts">1. Add Products</span>
-                    <span>→</span>
-                    <span class="ofb-step-pill <?= $startOnInvoice ? 'on' : '' ?>" id="pillInvoice">2. Check Invoice</span>
-                </div>
-
                 <div id="ofbStepProducts" class="ofb-step no-print <?= $startOnInvoice ? '' : 'active' ?>">
                     <div class="ofb-workspace">
                     <aside class="ofb-products-pane">
-                        <div class="ofb-cart-title">Products</div>
+                        <div class="ofb-pane-head">
+                            <div class="ofb-cart-title">Products</div>
+                            <div class="ofb-page-header-actions">
+                                <button type="button" class="inv-btn inv-btn-primary" id="ofbViewInvoiceBtn"<?= $startOnInvoice ? ' style="display:none"' : '' ?>>View Invoice</button>
+                                <a href="<?= asset('consignment-manifest.php') ?>" class="inv-btn inv-btn-outline">Back</a>
+                            </div>
+                        </div>
                         <input type="search" id="ofbProductSearch" class="ofb-search" placeholder="Search products by name or SKU..." autocomplete="off">
                         <div id="ofbProductList" class="ofb-product-list"></div>
                     </aside>
                     <aside class="ofb-cart-pane">
                         <div class="ofb-cart-title">Bill items</div>
-                        <div class="ofb-cart-fields">
-                            <input id="cartCustName" placeholder="Customer name" value="<?= e((string) ($editBill['customer_name'] ?? '')) ?>">
-                            <input id="cartCustPhone" placeholder="Phone" value="<?= e((string) ($editBill['customer_phone'] ?? '')) ?>">
-                            <textarea id="cartCustAddress" rows="2" placeholder="Address"><?= e((string) ($editBill['customer_address'] ?? '')) ?></textarea>
-                            <input id="cartCustPin" placeholder="Pin code" value="<?= e((string) ($editBill['customer_pincode'] ?? '')) ?>">
-                        </div>
                         <div id="ofbCartList" class="ofb-cart-list"></div>
                         <div class="ofb-cart-total" id="cartGrand">₹ 0</div>
-                        <button type="button" class="ofb-goto-inv" id="ofbGoInvoiceBtn">Go to Invoice</button>
-                        <div class="ofb-empty" style="padding:8px 0 0;">Add products, check the bill, then open invoice.</div>
+                        <div class="ofb-cart-fields">
+                            <input id="cartCustPhone" type="tel" inputmode="numeric" placeholder="Phone number" value="<?= e((string) ($editBill['customer_phone'] ?? '')) ?>">
+                            <select id="cartPayMode" aria-label="Payment method">
+                                <?php foreach ($paymentModes as $pm): ?>
+                                    <option value="<?= e($pm) ?>" <?= $currentPayMode === $pm ? 'selected' : '' ?>><?= e($pm) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="ofb-page-size">
+                            <label for="cartPageSizeSelect">Page Size</label>
+                            <select id="cartPageSizeSelect">
+                                <option value="default" <?= $requestedSize === 'default' ? 'selected' : '' ?>>Default (A4)</option>
+                                <option value="4x3" <?= $requestedSize === '4x3' ? 'selected' : '' ?>>4x3 inch (Card)</option>
+                            </select>
+                        </div>
+                        <button type="button" class="ofb-goto-inv" id="ofbPrintFromCartBtn">Print Invoice</button>
                         <div class="ofb-recent">
                             <h3>Recent offline bills</h3>
                             <?php if (empty($recentBills)): ?>
@@ -1064,7 +1142,7 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
                             <?php else: ?>
                                 <?php foreach ($recentBills as $rb): ?>
                                     <a href="<?= asset('offline-billing.php?id=' . (int) $rb['id'] . '&step=invoice') ?>" class="<?= $editId === (int) $rb['id'] ? 'active' : '' ?>">
-                                        <span><?= e($rb['invoice_number']) ?><br><small><?= e($rb['customer_name'] ?: 'No name') ?></small></span>
+                                        <span><?= e($rb['invoice_number']) ?><br><small><?= e($rb['customer_phone'] ?: 'No phone') ?></small></span>
                                         <strong>₹<?= number_format((float) $rb['grand_total'], 0) ?></strong>
                                     </a>
                                 <?php endforeach; ?>
@@ -1141,20 +1219,8 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
                     <h3 class="inv-cust-heading">Customer Details</h3>
                     <div class="inv-cust-list">
                         <div class="inv-row-kv">
-                            <span class="lbl">Name</span><span class="sep">:</span>
-                            <span class="val"><input class="inv-edit" id="fldCustName" placeholder="Customer name" value="<?= e((string) ($editBill['customer_name'] ?? '')) ?>"></span>
-                        </div>
-                        <div class="inv-row-kv">
                             <span class="lbl">Phone</span><span class="sep">:</span>
                             <span class="val"><input class="inv-edit" id="fldCustPhone" placeholder="Phone" value="<?= e((string) ($editBill['customer_phone'] ?? '')) ?>"></span>
-                        </div>
-                        <div class="inv-row-kv">
-                            <span class="lbl">Address</span><span class="sep">:</span>
-                            <span class="val"><textarea class="inv-edit" id="fldCustAddress" rows="2" placeholder="Address"><?= e((string) ($editBill['customer_address'] ?? '')) ?></textarea></span>
-                        </div>
-                        <div class="inv-row-kv">
-                            <span class="lbl">Pin Code</span><span class="sep">:</span>
-                            <span class="val"><input class="inv-edit" id="fldCustPin" placeholder="Pin code" value="<?= e((string) ($editBill['customer_pincode'] ?? '')) ?>"></span>
                         </div>
                     </div>
                 </div>
@@ -1248,7 +1314,8 @@ const OFB = {
     pageUrl: <?= json_encode(asset('offline-billing.php')) ?>,
     verifyBase: <?= json_encode(rtrim((string) APP_URL, '/') . '/offline-billing.php') ?>,
     defaultSizes: <?= json_encode($defaultSizes) ?>,
-    barcodeTimer: null
+    barcodeTimer: null,
+    flashId: null
 };
 
 function fieldText(id) {
@@ -1293,32 +1360,71 @@ function colourOptions(item) {
     return colours;
 }
 
+function productById(id) {
+    return OFB.catalog.find(function(x) { return Number(x.id) === Number(id); }) || null;
+}
+
+function isProductSelected(id) {
+    return OFB.items.some(function(it) { return Number(it.product_id) === Number(id); });
+}
+
+function syncProductChecks() {
+    document.querySelectorAll('.ofb-prod-card').forEach(function(card) {
+        var id = card.getAttribute('data-id');
+        var on = isProductSelected(id);
+        card.classList.toggle('selected', on);
+        var cb = card.querySelector('.ofb-prod-check');
+        if (cb) cb.checked = on;
+    });
+}
+
 function renderProducts(query) {
     var box = document.getElementById('ofbProductList');
     if (!box) return;
     var q = (query || '').toLowerCase().trim();
     var list = OFB.catalog.filter(function(p) {
         if (!q) return true;
-        return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.sku || '').toLowerCase().indexOf(q) !== -1;
+        return (p.name || '').toLowerCase().indexOf(q) !== -1
+            || (p.sku || '').toLowerCase().indexOf(q) !== -1
+            || (p.description || '').toLowerCase().indexOf(q) !== -1;
     });
     if (!list.length) {
-        box.innerHTML = '<div class="ofb-empty">No products found</div>';
+        box.innerHTML = '<div class="ofb-empty" style="grid-column:1/-1;">No products found</div>';
         return;
     }
     box.innerHTML = list.map(function(p) {
+        var selected = isProductSelected(p.id);
         var img = p.image
             ? '<img src="' + escapeHtml(p.image) + '" alt="">'
-            : '<span>IMG</span>';
-        return '<div class="ofb-prod-card">' +
+            : '<span>NO IMG</span>';
+        var desc = p.description || p.sku || '';
+        return '<label class="ofb-prod-card' + (selected ? ' selected' : '') + '" data-id="' + p.id + '">' +
+            '<input type="checkbox" class="ofb-prod-check" data-id="' + p.id + '"' + (selected ? ' checked' : '') + '>' +
             '<div class="ofb-prod-img">' + img + '</div>' +
-            '<div><div class="ofb-prod-name">' + escapeHtml(p.name) + '</div>' +
-            '<div class="ofb-prod-meta">' + escapeHtml(p.sku || '') + ' · ₹' + money(p.price) + ' · Stk ' + (p.stock || 0) + '</div></div>' +
-            '<button type="button" class="ofb-add-btn" data-add="' + p.id + '">Add</button></div>';
+            '<div class="ofb-prod-name">' + escapeHtml(p.name) + '</div>' +
+            (desc ? '<div class="ofb-prod-desc">' + escapeHtml(desc) + '</div>' : '') +
+            '<div class="ofb-prod-meta">₹' + money(p.price) + ' <span class="ofb-prod-sku">' + escapeHtml(p.sku || '') + '</span></div>' +
+            '</label>';
     }).join('');
 }
 
+function toggleProduct(id, on) {
+    var exists = OFB.items.findIndex(function(it) { return Number(it.product_id) === Number(id); });
+    if (on) {
+        if (exists === -1) addProduct(id);
+        else syncProductChecks();
+        return;
+    }
+    if (exists !== -1) {
+        OFB.items.splice(exists, 1);
+        renderItems();
+        renderCart();
+        syncProductChecks();
+    }
+}
+
 function addProduct(id) {
-    var p = OFB.catalog.find(function(x) { return Number(x.id) === Number(id); });
+    var p = productById(id);
     if (!p) return;
     var size = (p.sizes && p.sizes[0]) ? p.sizes[0] : '-';
     var colour = (p.colours && p.colours[0]) ? p.colours[0] : '-';
@@ -1337,10 +1443,14 @@ function addProduct(id) {
         quantity: 1,
         unit_price: price,
         sizes: p.sizes || [],
-        colours: p.colours || []
+        colours: p.colours || [],
+        description: p.description || '',
+        image: p.image || ''
     });
+    OFB.flashId = p.id;
     renderItems();
     renderCart();
+    syncProductChecks();
 }
 
 function addBlankRow() {
@@ -1413,38 +1523,42 @@ function renderCart() {
     var box = document.getElementById('ofbCartList');
     if (!box) return;
     if (!OFB.items.length) {
-        box.innerHTML = '<div class="ofb-empty" style="padding:12px;">Add products from the left</div>';
+        box.innerHTML = '<div class="ofb-empty" style="padding:16px;">Select products from the left</div>';
         recalc();
+        syncProductChecks();
         return;
     }
     box.innerHTML = OFB.items.map(function(item, idx) {
         item = hydrateItemOptions(item);
-        var sizes = sizeOptions(item);
-        var sizeHtml = '<input class="ofb-size" list="ofbSizeList" data-i="' + idx + '" value="' + escapeHtml(item.size || '-') + '">';
-        if (item.sizes && item.sizes.length) {
-            sizeHtml = '<select class="ofb-size" data-i="' + idx + '">' +
-                sizes.map(function(s) {
-                    return '<option value="' + escapeHtml(s) + '"' + ((item.size === s) ? ' selected' : '') + '>' + escapeHtml(s) + '</option>';
-                }).join('') + '</select>';
-        }
-        var colours = colourOptions(item);
-        var colourHtml = '<input class="ofb-colour" data-i="' + idx + '" value="' + escapeHtml(item.colour || '-') + '">';
-        if (colours.length) {
-            colourHtml = '<select class="ofb-colour" data-i="' + idx + '">' +
-                ['-'].concat(colours.filter(function(c){ return c !== '-'; })).map(function(c) {
-                    return '<option value="' + escapeHtml(c) + '"' + ((item.colour === c) ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';
-                }).join('') + '</select>';
-        }
-        return '<div class="ofb-cart-row">' +
+        var p = productById(item.product_id);
+        var img = (item.image || (p && p.image))
+            ? '<img src="' + escapeHtml(item.image || p.image) + '" alt="">'
+            : '<span>IMG</span>';
+        var desc = item.description || (p && p.description) || item.sku || '';
+        var line = (Number(item.quantity) || 0) * (Number(item.unit_price) || 0);
+        return '<div class="ofb-cart-row" data-pid="' + (item.product_id || 0) + '">' +
+            '<div class="ofb-cart-thumb">' + img + '</div>' +
+            '<div>' +
             '<div class="nm">' + escapeHtml(item.product_name || 'Item') + '</div>' +
-            '<div class="ofb-cart-grid">' +
-            sizeHtml + colourHtml +
-            '<input class="ofb-qty" data-i="' + idx + '" type="number" min="1" value="' + (item.quantity || 1) + '">' +
-            '<input class="ofb-price" data-i="' + idx + '" type="number" min="0" step="0.01" value="' + (item.unit_price || 0) + '">' +
+            (desc ? '<div class="desc">' + escapeHtml(desc) + '</div>' : '') +
+            '<div class="ofb-cart-qtyrow">' +
+            '<input class="ofb-qty" data-i="' + idx + '" type="number" min="1" value="' + (item.quantity || 1) + '" title="Qty">' +
+            '<input class="ofb-price" data-i="' + idx + '" type="number" min="0" step="0.01" value="' + (item.unit_price || 0) + '" title="Price">' +
             '<button type="button" class="ofb-cart-del" data-del="' + idx + '" title="Remove">×</button>' +
+            '</div>' +
+            '<div class="ofb-cart-amt">₹' + money(line) + '</div>' +
             '</div></div>';
     }).join('');
     recalc();
+    syncProductChecks();
+    if (OFB.flashId) {
+        var row = box.querySelector('[data-pid="' + OFB.flashId + '"]');
+        if (row) {
+            row.classList.add('ofb-cart-flash');
+            row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        OFB.flashId = null;
+    }
 }
 
 function activeStepRoot() {
@@ -1494,27 +1608,45 @@ function showStep(name) {
     var pi = document.getElementById('pillInvoice');
     if (pp) pp.classList.toggle('on', name === 'products');
     if (pi) pi.classList.toggle('on', name === 'invoice');
+    var viewBtn = document.getElementById('ofbViewInvoiceBtn');
+    if (viewBtn) viewBtn.style.display = name === 'invoice' ? 'none' : '';
     window.scrollTo(0, 0);
 }
 
 function syncCartToInvoice() {
-    setFieldText('fldCustName', fieldText('cartCustName') || fieldText('fldCustName'));
     setFieldText('fldCustPhone', fieldText('cartCustPhone') || fieldText('fldCustPhone'));
-    var addr = document.getElementById('fldCustAddress');
-    var cartAddr = document.getElementById('cartCustAddress');
-    if (addr && cartAddr) addr.value = cartAddr.value;
-    setFieldText('fldCustPin', fieldText('cartCustPin') || fieldText('fldCustPin'));
+    var pay = document.getElementById('cartPayMode');
+    if (pay) setFieldText('fldPayMode', pay.value);
 }
 
 function syncInvoiceToCart() {
-    var map = [['cartCustName', 'fldCustName'], ['cartCustPhone', 'fldCustPhone'], ['cartCustPin', 'fldCustPin']];
-    map.forEach(function(pair) {
-        var dest = document.getElementById(pair[0]);
-        if (dest) dest.value = fieldText(pair[1]);
-    });
-    var cartAddr = document.getElementById('cartCustAddress');
-    var addr = document.getElementById('fldCustAddress');
-    if (cartAddr && addr) cartAddr.value = addr.value;
+    var dest = document.getElementById('cartCustPhone');
+    if (dest) dest.value = fieldText('fldCustPhone');
+    var pay = document.getElementById('cartPayMode');
+    var mode = fieldText('fldPayMode');
+    if (pay && mode) {
+        var found = false;
+        for (var i = 0; i < pay.options.length; i++) {
+            if (pay.options[i].value === mode) { found = true; break; }
+        }
+        if (!found) {
+            var opt = document.createElement('option');
+            opt.value = mode;
+            opt.textContent = mode;
+            pay.appendChild(opt);
+        }
+        pay.value = mode;
+    }
+}
+
+function getPrintSize() {
+    var productsOn = document.getElementById('ofbStepProducts') && document.getElementById('ofbStepProducts').classList.contains('active');
+    var cart = document.getElementById('cartPageSizeSelect');
+    var inv = document.getElementById('invPageSizeSelect');
+    if (productsOn && cart) return cart.value || 'default';
+    if (inv) return inv.value || 'default';
+    if (cart) return cart.value || 'default';
+    return 'default';
 }
 
 function goToInvoice() {
@@ -1524,12 +1656,27 @@ function goToInvoice() {
         return;
     }
     syncCartToInvoice();
+    switchInvoiceSize(getPrintSize());
     showStep('invoice');
     renderItems();
     recalc();
     refreshBarcode();
     renderQrCode(document.body.classList.contains('size-4x3') ? 48 : 68);
     saveBill().catch(function() {});
+}
+
+function printFromCart() {
+    readItemsFromDom();
+    if (!OFB.items.length) {
+        alert('Pehle kam se kam ek product Add karein.');
+        return;
+    }
+    syncCartToInvoice();
+    switchInvoiceSize(getPrintSize());
+    renderItems();
+    recalc();
+    refreshBarcode();
+    printInvoice();
 }
 
 function goToProducts() {
@@ -1560,14 +1707,14 @@ function collectPayload() {
         invoice_number: fieldText('fldInvoiceNo'),
         order_number: fieldText('fldOrderNo'),
         invoice_date: toYmd(fieldText('fldOrderDate')),
-        payment_mode: fieldText('fldPayMode') || 'Cash on Delivery (COD)',
+        payment_mode: (document.getElementById('cartPayMode') ? document.getElementById('cartPayMode').value : '') || fieldText('fldPayMode') || 'Cash on Delivery (COD)',
         customer_name: fieldText('fldCustName'),
         customer_phone: fieldText('fldCustPhone'),
         customer_address: fieldText('fldCustAddress'),
         customer_pincode: fieldText('fldCustPin'),
         discount_amount: (document.getElementById('fldDiscount') ? document.getElementById('fldDiscount').value : '0') || '0',
         shipping_fee: (document.getElementById('fldShipping') ? document.getElementById('fldShipping').value : '0') || '0',
-        print_size: (document.getElementById('invPageSizeSelect') ? document.getElementById('invPageSizeSelect').value : 'default') || 'default',
+        print_size: getPrintSize(),
         items_json: JSON.stringify(OFB.items.map(function(it) {
             return {
                 product_id: it.product_id || 0,
@@ -1647,8 +1794,13 @@ function renderQrCode(dim) {
 }
 
 function switchInvoiceSize(size) {
+    size = size || 'default';
     document.body.classList.remove('size-4x3');
     if (size === '4x3') document.body.classList.add('size-4x3');
+    var cart = document.getElementById('cartPageSizeSelect');
+    var inv = document.getElementById('invPageSizeSelect');
+    if (cart && cart.value !== size) cart.value = size;
+    if (inv && inv.value !== size) inv.value = size;
     var url = new URL(window.location.href);
     if (size === '4x3') url.searchParams.set('size', '4x3');
     else url.searchParams.delete('size');
@@ -1663,8 +1815,7 @@ function switchInvoiceSize(size) {
 }
 
 function printInvoice() {
-    var sizeSel = document.getElementById('invPageSizeSelect');
-    var size = sizeSel ? sizeSel.value : 'default';
+    var size = getPrintSize();
     var go = function() {
         if (size === '4x3' && <?= $isStandalone ? 'false' : 'true' ?>) {
             var url = new URL(window.location.href);
@@ -1692,13 +1843,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (search) search.addEventListener('input', function() { renderProducts(this.value); });
 
     var list = document.getElementById('ofbProductList');
-    if (list) list.addEventListener('click', function(e) {
-        var btn = e.target.closest('[data-add]');
-        if (btn) addProduct(btn.getAttribute('data-add'));
+    if (list) list.addEventListener('change', function(e) {
+        var cb = e.target.closest('.ofb-prod-check');
+        if (!cb) return;
+        toggleProduct(cb.getAttribute('data-id'), cb.checked);
     });
 
-    var goInv = document.getElementById('ofbGoInvoiceBtn');
-    if (goInv) goInv.addEventListener('click', goToInvoice);
+    var viewInv = document.getElementById('ofbViewInvoiceBtn');
+    if (viewInv) viewInv.addEventListener('click', goToInvoice);
+    var printCart = document.getElementById('ofbPrintFromCartBtn');
+    if (printCart) printCart.addEventListener('click', printFromCart);
+    var cartSize = document.getElementById('cartPageSizeSelect');
+    if (cartSize) cartSize.addEventListener('change', function() { switchInvoiceSize(this.value); });
+    var cartPay = document.getElementById('cartPayMode');
+    if (cartPay) cartPay.addEventListener('change', syncCartToInvoice);
     var backProd = document.getElementById('ofbBackProductsBtn');
     if (backProd) backProd.addEventListener('click', goToProducts);
     var pillP = document.getElementById('pillProducts');
@@ -1715,6 +1873,7 @@ document.addEventListener('DOMContentLoaded', function() {
             OFB.items.splice(parseInt(del.getAttribute('data-del'), 10), 1);
             renderCart();
             renderItems();
+            syncProductChecks();
         });
         cartList.addEventListener('change', function() { readItemsFromDom(); renderCart(); });
         cartList.addEventListener('input', function() { readItemsFromDom(); recalc(); });

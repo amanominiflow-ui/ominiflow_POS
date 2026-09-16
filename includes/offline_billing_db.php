@@ -107,7 +107,7 @@ function list_recent_offline_bills(int $limit = 25, ?int $businessId = null): ar
     $bid = $businessId ?: current_business_id();
     $limit = max(1, min(100, $limit));
     $stmt = $db->prepare("
-        SELECT id, invoice_number, order_number, customer_name, grand_total, invoice_date, print_size, created_at
+        SELECT id, invoice_number, order_number, customer_name, customer_phone, grand_total, invoice_date, print_size, created_at
         FROM offline_bills
         WHERE business_id = :bid
         ORDER BY id DESC
