@@ -431,9 +431,24 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
             align-items: start;
             margin-bottom: clamp(14px, 2.4vw, 24px);
         }
-        .inv-brand-col { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-right: 8px; min-width: 0; }
+        .inv-brand-col { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-right: 8px; min-width: 0; max-width: 100%; overflow: hidden; }
         .inv-brand-img { max-height: clamp(56px, 8vw, 98px); max-width: min(160px, 100%); object-fit: contain; margin-bottom: 8px; }
-        .inv-brand-title { font-size: clamp(11px, 1.6vw, 16.5px); font-weight: 900; color: var(--inv-theme); letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.25; }
+        .inv-brand-title {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            font-size: clamp(8.5px, 1.35vw, 15px);
+            font-weight: 900;
+            color: var(--inv-theme);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            hyphens: auto;
+        }
         .inv-meta-col { padding-left: 4px; padding-right: 8px; min-width: 0; }
         .inv-main-heading { font-size: clamp(20px, 2.6vw, 26px); font-weight: 800; color: var(--inv-theme); letter-spacing: 0.05em; line-height: 1; margin: 0 0 5px; }
         .inv-thank-you { font-size: clamp(8px, 1vw, 10px); font-weight: 700; color: var(--inv-theme); letter-spacing: 0.04em; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
@@ -606,19 +621,22 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
             text-align: center;
             padding-right: 4px;
             width: auto;
-            max-width: none;
+            max-width: 100%;
+            min-width: 0;
+            overflow: hidden;
             border-bottom: none;
             gap: 0;
         }
         body.size-4x3 .inv-brand-img { max-height: 52px; max-width: 78px; margin-bottom: 4px; }
         body.size-4x3 .inv-brand-col svg { width: 52px; height: 52px; margin-bottom: 4px !important; }
         body.size-4x3 .inv-brand-title {
-            font-size: 10px;
+            font-size: clamp(7.5px, 1.6vw, 10px);
             font-weight: 900;
-            letter-spacing: 0.08em;
-            overflow-wrap: break-word;
+            letter-spacing: 0.03em;
+            overflow-wrap: anywhere;
             word-break: break-word;
             max-width: 100%;
+            width: 100%;
         }
         body.size-4x3 .inv-meta-col { padding: 0 6px 0 0; min-width: 0; }
         body.size-4x3 .inv-main-heading { font-size: 18px; margin: 0 0 2px; }
@@ -949,7 +967,14 @@ $pageTitle = $editBill ? ('Offline Invoice #' . $editBill['invoice_number']) : '
             body.size-4x3 .inv-main-heading { font-size: 14px !important; margin-bottom: 1px !important; }
             body.size-4x3 .inv-thank-you { font-size: 6.5px !important; margin-bottom: 3px !important; white-space: normal !important; }
             body.size-4x3 .inv-brand-img { max-height: 36px !important; max-width: 80px !important; }
-            body.size-4x3 .inv-brand-title { font-size: 8px !important; }
+            body.size-4x3 .inv-brand-title {
+                font-size: 8px !important;
+                letter-spacing: 0.02em !important;
+                overflow-wrap: anywhere !important;
+                word-break: break-word !important;
+                max-width: 100% !important;
+                width: 100% !important;
+            }
             body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 7.5px !important; gap: 1px !important; }
             body.size-4x3 .inv-cust-heading { font-size: 9.5px !important; margin-bottom: 3px !important; }
             body.size-4x3 .inv-table-wrap { margin-bottom: 5px !important; border-width: 1px !important; overflow: hidden !important; }
