@@ -336,7 +336,7 @@ function razorpay_webhook_url_for(?array $integration): string {
     if ($token === '') {
         return '';
     }
-    return pos_public_url('webhooks/razorpay/' . $token);
+    return pos_webhook_public_url('webhooks/razorpay/' . $token);
 }
 
 function save_razorpay_oauth_connection(array $tokenData, ?int $businessId = null, array $existingExtra = []): array {

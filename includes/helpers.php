@@ -74,3 +74,20 @@ function pos_public_base_url(): string {
 function pos_public_url(string $path = ''): string {
     return rtrim(pos_public_base_url(), '/') . '/' . ltrim($path, '/');
 }
+
+/**
+ * Public URL for inbound webhooks (Razorpay, etc.). Uses production domain so
+ * merchants always paste a URL Razorpay can reach — not localhost.
+ */
+function pos_webhook_public_url(string $path = ''): string {
+    $host = defined('STORE_CNAME_TARGET') && trim((string) STORE_CNAME_TARGET) !== ''
+        ? trim((string) STORE_CNAME_TARGET)
+        : 'pos.ominiflow.com';
+    $base = 'https://' . $host;
+    if (defined('WEBHOOK_PUBLIC_APP_PATH')) {
+        $base .= rtrim((string) WEBHOOK_PUBLIC_APP_PATH, '/');
+    } elseif (function_exists('is_local_app_host') && !is_local_app_host()) {
+        $base .= rtrim((string) APP_URL, '/');
+    }
+    return rtrim($base, '/') . '/' . ltrim($path, '/');
+}

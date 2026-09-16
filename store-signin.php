@@ -94,28 +94,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Generate 6-digit OTP
                 $otp = sprintf('%06d', mt_rand(100000, 999999));
 
-                $_SESSION['sf_wa_otp_data'] = [
-                    'phone' => $waPhone,
-                    'raw_phone' => $rawPhone,
-                    'name' => $name,
-                    'otp' => $otp,
-                    'expires_at' => time() + 600, // 10 minutes
-                    'attempts' => 0,
-                    'auth_mode' => $authMode,
-                    'created_at' => time(),
-                ];
-
-                // Dispatch WhatsApp Message via OminiFlow / WPBox WhatsApp API
+                // Dispatch WhatsApp using THIS store's saved API only
                 $res = send_storefront_otp_whatsapp($waPhone, $otp, $storeName, $bid);
 
-                // Also trigger SMS fallback if SMS gateways are defined
-                send_storefront_otp_sms($rawPhone, $otp, $storeName);
+                if (empty($res['api_success'])) {
+                    $errors['general'] = $res['error'] ?? 'Could not send WhatsApp OTP. Ask the store to connect their WhatsApp API.';
+                } else {
+                    $_SESSION['sf_wa_otp_data'] = [
+                        'phone' => $waPhone,
+                        'raw_phone' => $rawPhone,
+                        'name' => $name,
+                        'otp' => $otp,
+                        'expires_at' => time() + 600, // 10 minutes
+                        'attempts' => 0,
+                        'auth_mode' => $authMode,
+                        'created_at' => time(),
+                    ];
 
-                clear_old_input();
-                set_flash('success', 'Verification code sent to WhatsApp (+' . $waPhone . ').');
-                
-                $verifyParams = array_merge(['mode' => 'verify_otp', 'phone' => $waPhone], $returnParams);
-                redirect(public_store_signin_url($storeBiz, $verifyParams));
+                    send_storefront_otp_sms($rawPhone, $otp, $storeName);
+
+                    clear_old_input();
+                    set_flash('success', 'Verification code sent to WhatsApp (+' . $waPhone . ').');
+
+                    $verifyParams = array_merge(['mode' => 'verify_otp', 'phone' => $waPhone], $returnParams);
+                    redirect(public_store_signin_url($storeBiz, $verifyParams));
+                }
             }
         }
 
@@ -160,17 +163,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mode = 'signup';
             } else {
                 $newOtp = sprintf('%06d', mt_rand(100000, 999999));
-                $_SESSION['sf_wa_otp_data']['otp'] = $newOtp;
-                $_SESSION['sf_wa_otp_data']['expires_at'] = time() + 600;
-                $_SESSION['sf_wa_otp_data']['attempts'] = 0;
-                $_SESSION['sf_wa_otp_data']['created_at'] = time();
+                $sendRes = send_storefront_otp_whatsapp((string) $otpSession['phone'], $newOtp, $storeName, $bid);
+                if (empty($sendRes['api_success'])) {
+                    $errors['general'] = $sendRes['error'] ?? 'Could not resend WhatsApp OTP. Check this store\'s WhatsApp API settings.';
+                    $mode = 'verify_otp';
+                } else {
+                    $_SESSION['sf_wa_otp_data']['otp'] = $newOtp;
+                    $_SESSION['sf_wa_otp_data']['expires_at'] = time() + 600;
+                    $_SESSION['sf_wa_otp_data']['attempts'] = 0;
+                    $_SESSION['sf_wa_otp_data']['created_at'] = time();
 
-                send_storefront_otp_whatsapp((string) $otpSession['phone'], $newOtp, $storeName, $bid);
-                send_storefront_otp_sms((string) ($otpSession['raw_phone'] ?? $otpSession['phone']), $newOtp, $storeName);
+                    send_storefront_otp_sms((string) ($otpSession['raw_phone'] ?? $otpSession['phone']), $newOtp, $storeName);
 
-                set_flash('success', 'A fresh OTP code was sent to your WhatsApp.');
-                $verifyParams = array_merge(['mode' => 'verify_otp', 'phone' => (string) $otpSession['phone']], $returnParams);
-                redirect(public_store_signin_url($storeBiz, $verifyParams));
+                    set_flash('success', 'A fresh OTP code was sent to your WhatsApp.');
+                    $verifyParams = array_merge(['mode' => 'verify_otp', 'phone' => (string) $otpSession['phone']], $returnParams);
+                    redirect(public_store_signin_url($storeBiz, $verifyParams));
+                }
             }
         }
 
