@@ -3050,9 +3050,36 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
     return $methods;
 }
 
+function storefront_checkout_is_buynow(int $businessId, array $post = []): bool {
+    if (!empty($post['buy_now']) || (string) ($post['checkout_mode'] ?? '') === 'buynow') {
+        return true;
+    }
+    if (!empty($_GET['buynow'])) {
+        $bn = hydrate_storefront_buynow($businessId);
+        if (!empty($bn['lines'])) {
+            return true;
+        }
+    }
+    $raw = get_storefront_buynow($businessId);
+    if (!empty($raw['product_id'])) {
+        $cart = hydrate_storefront_cart($businessId);
+        if (empty($cart['lines'])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function place_online_store_order(int $businessId, array $checkout): array {
-    $isBuyNow = !empty($checkout['buy_now']);
+    $isBuyNow = !empty($checkout['buy_now']) || storefront_checkout_is_buynow($businessId, $checkout);
     $hydrated = $isBuyNow ? hydrate_storefront_buynow($businessId) : hydrate_storefront_cart($businessId);
+    if (empty($hydrated['lines']) && !$isBuyNow) {
+        $bnFallback = hydrate_storefront_buynow($businessId);
+        if (!empty($bnFallback['lines'])) {
+            $isBuyNow = true;
+            $hydrated = $bnFallback;
+        }
+    }
     if (empty($hydrated['lines'])) {
         return ['success' => false, 'errors' => ['cart' => $isBuyNow ? 'This item is no longer available.' : 'Your cart is empty.']];
     }

@@ -316,7 +316,7 @@ if (!$storeBiz) {
         }
 
         if ($action === 'place_order') {
-            $isBuyNowCheckout = (string) ($_POST['checkout_mode'] ?? '') === 'buynow';
+            $isBuyNowCheckout = storefront_checkout_is_buynow($bid, $_POST);
             $shopper = get_storefront_shopper($bid);
             if (!$shopper) {
                 set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
@@ -329,6 +329,7 @@ if (!$storeBiz) {
                 'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
                 'notes' => (string) ($_POST['notes'] ?? ''),
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
+                'checkout_mode' => (string) ($_POST['checkout_mode'] ?? ($isBuyNowCheckout ? 'buynow' : '')),
                 'razorpay_order_id' => (string) ($_POST['razorpay_order_id'] ?? ''),
                 'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
                 'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
@@ -3903,6 +3904,18 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $osTax = (float) ($osSrc['tax'] ?? 0);
     $osTotal = (float) ($osSrc['total'] ?? 0);
     $osSavings = (float) ($osSrc['total_savings'] ?? 0);
+    $hasBuyNowSession = !empty($buyNowCart['lines']);
+    $drawerCheckoutQuery = [];
+    if ($hasBuyNowSession || !empty($_GET['buynow'])) {
+        $drawerCheckoutQuery['buynow'] = '1';
+    }
+    foreach (['category_id', 'q', 'id'] as $pq) {
+        if (!empty($_GET[$pq])) {
+            $drawerCheckoutQuery[$pq] = $_GET[$pq];
+        }
+    }
+    $drawerCheckoutActionUrl = public_store_url($storeBiz, $page, $drawerCheckoutQuery);
+    $drawerCheckoutIsBuyNow = $hasBuyNowSession || !empty($osBuyNow) || !empty($_GET['buynow']);
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
@@ -4033,6 +4046,16 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
         <!-- STEP 2: ORDER SUMMARY (Screenshot 2) -->
         <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:<?= !empty($openOrderSummaryDirect) ? 'flex' : 'none' ?>;flex-direction:column;height:100%;">
+            <?php if (!empty($flashError) || !empty($flashWarning)): ?>
+                <div style="padding:10px 14px 0;flex-shrink:0;">
+                    <?php if (!empty($flashError)): ?>
+                        <div class="ms-alert ms-err" style="margin:0;"><?= e($flashError) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($flashWarning)): ?>
+                        <div class="ms-alert" style="margin:0;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;"><?= e($flashWarning) ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <div class="ms-cd-head">
                 <button type="button" class="ms-cd-btn-circle" onclick="<?= !empty($osBuyNow) ? 'closeBuyNowSummary()' : 'goToCartMainView()' ?>" aria-label="<?= !empty($osBuyNow) ? 'Close' : 'Back to cart' ?>">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -4139,10 +4162,10 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 </div>
             </div>
 
-            <form method="post" id="msDrawerCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
+            <form method="post" id="msDrawerCheckoutForm" action="<?= e($drawerCheckoutActionUrl) ?>" onsubmit="return handleCheckoutSubmit(event, this)">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="place_order">
-                <?php if (!empty($osBuyNow)): ?>
+                <?php if ($drawerCheckoutIsBuyNow): ?>
                     <input type="hidden" name="checkout_mode" value="buynow">
                 <?php endif; ?>
                 <input type="hidden" name="name" value="<?= e($locName) ?>">
@@ -4978,7 +5001,7 @@ var msStoreCheckout = {
     razorpayActive: <?= !empty($storeRazorpayActive) ? 'true' : 'false' ?>,
     orderAmount: <?= json_encode((float) ($osTotal ?? ($drawerCart['total'] ?? 0))) ?>,
     csrfToken: <?= json_encode(csrf_token()) ?>,
-    postUrl: <?= json_encode(public_store_url($storeBiz, $page, $_GET)) ?>
+    postUrl: <?= json_encode($drawerCheckoutActionUrl ?? public_store_url($storeBiz, $page, $_GET)) ?>
 };
 
 function storefrontPaymentNeedsRazorpay(method) {
@@ -5107,7 +5130,7 @@ function openConfirmOrderModal() {
     }
 }
 
-function closeConfirmOrderModal() {
+function closeConfirmOrderModal(clearPending) {
     var modal = document.getElementById('msConfirmOrderModal');
     if (modal) {
         modal.classList.remove('is-open');
@@ -5116,7 +5139,9 @@ function closeConfirmOrderModal() {
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     }
-    msCheckoutFormPending = null;
+    if (clearPending !== false) {
+        msCheckoutFormPending = null;
+    }
 }
 
 function proceedConfirmOrder() {
@@ -5129,25 +5154,29 @@ function proceedConfirmOrder() {
     var paidAlready = document.getElementById(fieldIds.payment);
     if (msStoreCheckout.razorpayActive && storefrontPaymentNeedsRazorpay(method)) {
         if (paidAlready && paidAlready.value) {
-            msCheckoutFormPending.dataset.confirmed = '1';
+            var formPaid = msCheckoutFormPending;
+            formPaid.dataset.confirmed = '1';
             var btnPaid = document.getElementById('msConfirmProceedBtn');
             if (btnPaid) {
                 btnPaid.disabled = true;
                 btnPaid.textContent = 'Placing order...';
             }
-            msCheckoutFormPending.submit();
+            closeConfirmOrderModal(false);
+            formPaid.submit();
             return;
         }
         startStoreRazorpayCheckout(method);
         return;
     }
-    msCheckoutFormPending.dataset.confirmed = '1';
+    var formToSubmit = msCheckoutFormPending;
+    formToSubmit.dataset.confirmed = '1';
     var btn = document.getElementById('msConfirmProceedBtn');
     if (btn) {
         btn.disabled = true;
         btn.textContent = 'Placing order...';
     }
-    msCheckoutFormPending.submit();
+    closeConfirmOrderModal(false);
+    formToSubmit.submit();
 }
 
 var msCancelOrderIdPending = null;
