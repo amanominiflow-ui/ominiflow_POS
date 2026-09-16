@@ -53,6 +53,26 @@ function ensure_orders_invoices_schema(): void {
             }
         } catch (Exception $e) {}
     }
+
+    try {
+        $db->exec("
+            ALTER TABLE `orders`
+            MODIFY COLUMN `order_status`
+            ENUM('completed', 'hold', 'cancelled', 'processing', 'pending')
+            NOT NULL DEFAULT 'completed'
+        ");
+    } catch (Throwable $e) {
+        // Best-effort: older MySQL/MariaDB hosts may already have compatible enum.
+    }
+}
+
+function normalize_order_status_for_db(string $status): string {
+    $status = strtolower(trim($status));
+    $allowed = ['completed', 'hold', 'cancelled', 'processing', 'pending'];
+    if (in_array($status, $allowed, true)) {
+        return $status;
+    }
+    return 'completed';
 }
 
 function generate_unique_reference(string $table, string $column, string $prefix, ?PDO $db = null): string {
@@ -534,6 +554,7 @@ function process_pos_order(
     string $fulfillmentStatus = 'delivered',
     ?string $overridePaymentStatus = null
 ): array {
+    ensure_orders_invoices_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
 
@@ -715,6 +736,7 @@ function process_pos_order(
         $orderStatus = ($salesChannel === 'online_store' && $fulfillmentStatus !== 'delivered')
             ? 'processing'
             : 'completed';
+        $orderStatus = normalize_order_status_for_db($orderStatus);
         $stmtOrder->execute([
             'biz_id' => $bid,
             'order_number' => $orderNumber,

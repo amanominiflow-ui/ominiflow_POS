@@ -3290,16 +3290,21 @@ function get_storefront_order_details(int $businessId, string $orderIdentifier, 
         $order['payment_status_badge'] = 'unpaid';
     }
 
-    // Normalised order status badge
-    $os = strtolower((string)($order['order_status'] ?? 'pending'));
-    $order['order_status_label'] = ucfirst($os ?: 'Pending');
+    // Normalised order status badge (online store: prefer fulfillment state)
+    $fs = strtolower((string) ($order['fulfillment_status'] ?? ''));
+    $os = strtolower((string) ($order['order_status'] ?? 'pending'));
+    if ($fs !== '' && $fs !== 'delivered') {
+        $order['order_status_label'] = ucfirst(str_replace('_', ' ', $fs));
+    } else {
+        $order['order_status_label'] = ucfirst($os ?: 'Pending');
+    }
 
     return $order;
 }
 
 function cancel_storefront_order(int $businessId, int $orderId, ?int $customerId = null): array {
     $db = get_db();
-    $sql = 'SELECT id, order_status FROM orders WHERE id = :id AND business_id = :bid';
+    $sql = 'SELECT id, order_status, fulfillment_status FROM orders WHERE id = :id AND business_id = :bid';
     $params = ['id' => $orderId, 'bid' => $businessId];
     if ($customerId !== null && $customerId > 0) {
         $sql .= ' AND customer_id = :cid';
@@ -3311,12 +3316,22 @@ function cancel_storefront_order(int $businessId, int $orderId, ?int $customerId
     if (!$ord) {
         return ['success' => false, 'message' => 'Order not found.'];
     }
-    $status = strtolower((string)($ord['order_status'] ?? ''));
-    if (!in_array($status, ['pending', 'new', 'placed', 'processing'], true)) {
+    $status = strtolower((string) ($ord['order_status'] ?? ''));
+    $fulfillment = strtolower((string) ($ord['fulfillment_status'] ?? 'delivered'));
+    if ($status === 'cancelled' || $fulfillment === 'cancelled') {
+        return ['success' => false, 'message' => 'This order is already cancelled.'];
+    }
+    $canCancel = in_array($status, ['pending', 'new', 'placed', 'processing', 'hold'], true)
+        || in_array($fulfillment, ['pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped'], true);
+    if (!$canCancel) {
         return ['success' => false, 'message' => 'This order cannot be cancelled anymore.'];
     }
 
-    $update = $db->prepare('UPDATE orders SET order_status = "cancelled", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+    $update = $db->prepare('
+        UPDATE orders
+        SET order_status = "cancelled", fulfillment_status = "cancelled", updated_at = NOW()
+        WHERE id = :id AND business_id = :bid
+    ');
     $update->execute(['id' => $orderId, 'bid' => $businessId]);
     return ['success' => true, 'message' => 'Your order has been cancelled successfully.'];
 }

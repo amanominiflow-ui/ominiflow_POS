@@ -248,7 +248,7 @@ try {
             `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
             `payment_method` VARCHAR(50) NOT NULL DEFAULT 'cash',
             `payment_status` ENUM('paid', 'partially_paid', 'pending', 'cancelled') NOT NULL DEFAULT 'paid',
-            `order_status` ENUM('completed', 'hold', 'cancelled') NOT NULL DEFAULT 'completed',
+            `order_status` ENUM('completed', 'hold', 'cancelled', 'processing', 'pending') NOT NULL DEFAULT 'completed',
             `notes` TEXT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
