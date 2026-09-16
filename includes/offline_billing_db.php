@@ -325,6 +325,7 @@ function save_offline_bill(array $data, ?int $userId = null, ?int $businessId = 
             'invoice_number' => $invoiceNumber,
             'order_number' => $orderNumber,
             'grand_total' => $grandTotal,
+            'customer_phone' => $customerPhone,
         ];
     } catch (Throwable $e) {
         if ($db->inTransaction()) {

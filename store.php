@@ -366,6 +366,7 @@ if (!$storeBiz) {
                 ];
             }
             if (!empty($result['success'])) {
+                $_SESSION['sf_wa_invoice_notice'] = $result['whatsapp_invoice'] ?? null;
                 $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
@@ -3328,8 +3329,31 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing', 'hold'], true);
                     $ordType = (($order['payment_method'] ?? '') === 'pickup') ? 'Store Pickup' : 'Home Delivery';
                     $custName = trim((string)($order['customer_name'] ?? $storeShopper['name'] ?? 'Guest Customer'));
-                    $custPhone = trim((string)($order['customer_phone'] ?? $storeShopper['phone'] ?? ''));
+                    $loginPhone = trim((string) ($storeShopper['phone'] ?? ''));
+                    $custPhone = $loginPhone !== '' ? $loginPhone : trim((string)($order['customer_phone'] ?? ''));
                     $custAddress = trim((string)($order['customer_address'] ?? $storeShopper['address'] ?? ''));
+                    $waInvoiceNotice = $_SESSION['sf_wa_invoice_notice'] ?? null;
+                    unset($_SESSION['sf_wa_invoice_notice']);
+                    if ($isNewOrder) {
+                        try {
+                            require_once __DIR__ . '/includes/invoice_whatsapp.php';
+                            $payStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
+                            if ($payStatus === '') {
+                                $payStatus = 'pending';
+                            }
+                            $waInvoiceNotice = send_order_invoice_whatsapp($bid, $orderId, $custPhone, [
+                                'invoice_id' => (int) ($order['invoice_id'] ?? 0),
+                                'order_number' => $orderNum,
+                                'payment_status' => $payStatus,
+                                'customer_phone' => $custPhone,
+                            ]);
+                        } catch (Throwable $e) {
+                            error_log('Store confirmation invoice WhatsApp: ' . $e->getMessage());
+                            if (!is_array($waInvoiceNotice)) {
+                                $waInvoiceNotice = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
+                            }
+                        }
+                    }
                     ?>
                     <div class="ms-order-view-wrap">
                         <?php if ($isNewOrder): ?>
@@ -3343,6 +3367,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         Thank you for shopping with us.
                                         <?php if (!empty($_GET['invoice']) || !empty($order['invoice_number'])): ?>
                                             Invoice <strong><?= e((string) ($_GET['invoice'] ?? $order['invoice_number'])) ?></strong> has been generated.
+                                        <?php endif; ?>
+                                        <?php if (!empty($waInvoiceNotice['success'])): ?>
+                                            Invoice PDF sent to WhatsApp<?= !empty($waInvoiceNotice['phone']) ? ' ' . e((string) $waInvoiceNotice['phone']) : '' ?>.
+                                        <?php elseif (!empty($waInvoiceNotice['error'])): ?>
+                                            We could not send the invoice PDF on WhatsApp<?= !empty($waInvoiceNotice['error']) ? ': ' . e((string) $waInvoiceNotice['error']) : '' ?>. Use View / Print Invoice below.
                                         <?php endif; ?>
                                     </div>
                                 </div>

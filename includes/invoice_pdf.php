@@ -125,6 +125,74 @@ function ensure_invoice_pdf_file(int $invoiceId, int $businessId): ?string {
     return $path;
 }
 
+function offline_bill_pdf_access_token(int $billId, int $businessId): string {
+    return hash_hmac('sha256', 'ofb:' . $businessId . ':' . $billId, invoice_pdf_signing_secret());
+}
+
+function offline_bill_pdf_verify_token(int $billId, int $businessId, string $token): bool {
+    $token = trim($token);
+    if ($token === '') {
+        return false;
+    }
+    return hash_equals(offline_bill_pdf_access_token($billId, $businessId), $token);
+}
+
+function offline_bill_pdf_public_url(int $billId, int $businessId): string {
+    $token = offline_bill_pdf_access_token($billId, $businessId);
+    $query = http_build_query([
+        'id' => $billId,
+        'b' => $businessId,
+        't' => $token,
+        'ofb' => 1,
+    ]);
+    $path = 'invoice-pdf.php?' . $query;
+    if (function_exists('is_local_app_host') && !is_local_app_host()) {
+        return pos_public_url($path);
+    }
+    return pos_webhook_public_url($path);
+}
+
+function ensure_offline_bill_pdf_file(int $billId, int $businessId): ?string {
+    require_once __DIR__ . '/offline_billing_db.php';
+    $bill = get_offline_bill_by_id($billId, $businessId);
+    if (!$bill) {
+        return null;
+    }
+
+    $storeName = defined('APP_NAME') ? (string) APP_NAME : 'Store';
+    if (function_exists('get_mobile_store_settings')) {
+        $brand = get_mobile_store_settings($businessId);
+        $display = trim((string) ($brand['display_name'] ?? ''));
+        if ($display !== '') {
+            $storeName = $display;
+        }
+    }
+
+    $invoice = [
+        'invoice_number' => (string) ($bill['invoice_number'] ?? ''),
+        'order_number' => (string) ($bill['order_number'] ?? ''),
+        'invoice_date' => (string) ($bill['invoice_date'] ?? ''),
+        'customer_name' => (string) ($bill['customer_name'] ?? 'Customer'),
+        'customer_phone' => (string) ($bill['customer_phone'] ?? ''),
+        'payment_method' => (string) ($bill['payment_mode'] ?? 'COD'),
+        'payment_status' => 'unpaid',
+        'items' => $bill['items'] ?? [],
+        'subtotal' => (float) ($bill['subtotal'] ?? 0),
+        'tax_amount' => 0.0,
+        'total_amount' => (float) ($bill['grand_total'] ?? 0),
+        'store' => ['business_name' => $storeName],
+    ];
+
+    $dir = invoice_pdf_storage_dir($businessId);
+    $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) ($invoice['invoice_number'] ?? ('ofb-' . $billId)));
+    $path = $dir . '/ofb-' . $safeName . '.pdf';
+    $pdf = build_simple_invoice_pdf($invoice);
+    if (@file_put_contents($path, $pdf) === false) {
+        return null;
+    }
+    return $path;
+}
+
 function invoice_pdf_public_url(int $invoiceId, int $businessId): string {
     $token = invoice_pdf_access_token($invoiceId, $businessId);
     $query = http_build_query([

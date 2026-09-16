@@ -107,22 +107,36 @@ function build_invoice_whatsapp_send_attempts(
 }
 
 function resolve_invoice_whatsapp_phone(string $customerPhone, array $orderResult = [], int $businessId = 0): string {
-    $candidates = [
-        trim($customerPhone),
-        trim((string) ($orderResult['customer_phone'] ?? '')),
-    ];
+    $candidates = [];
     if ($businessId > 0 && function_exists('get_storefront_shopper')) {
         $shopper = get_storefront_shopper($businessId);
         if (is_array($shopper)) {
             $candidates[] = trim((string) ($shopper['phone'] ?? ''));
         }
     }
+    $candidates[] = trim($customerPhone);
+    $candidates[] = trim((string) ($orderResult['customer_phone'] ?? ''));
     foreach ($candidates as $phone) {
         if ($phone !== '') {
             return $phone;
         }
     }
     return '';
+}
+
+function invoice_whatsapp_sent_flag_path(int $businessId, int $invoiceId): string {
+    return invoice_pdf_storage_dir($businessId) . '/wa-sent-' . $invoiceId . '.flag';
+}
+
+function invoice_whatsapp_already_sent(int $businessId, int $invoiceId): bool {
+    return $invoiceId > 0 && is_file(invoice_whatsapp_sent_flag_path($businessId, $invoiceId));
+}
+
+function mark_invoice_whatsapp_sent(int $businessId, int $invoiceId): void {
+    if ($invoiceId <= 0) {
+        return;
+    }
+    @file_put_contents(invoice_whatsapp_sent_flag_path($businessId, $invoiceId), date('c'));
 }
 
 /**
@@ -140,7 +154,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
     if ($orderPayStatus === '') {
         $orderPayStatus = 'paid';
     }
-    if (!in_array($orderPayStatus, ['paid', 'pending'], true)) {
+    if (!in_array($orderPayStatus, ['paid', 'pending', 'unpaid', 'partially_paid'], true)) {
         return [
             'success' => false,
             'skipped' => true,
@@ -160,6 +174,17 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
     }
     if ($invoiceId <= 0) {
         return ['success' => false, 'error' => 'Invoice not found for WhatsApp delivery.'];
+    }
+
+    if (invoice_whatsapp_already_sent($businessId, $invoiceId)) {
+        $waPhone = format_storefront_whatsapp_phone($targetPhone);
+        return [
+            'success' => true,
+            'skipped' => true,
+            'already_sent' => true,
+            'phone' => $waPhone,
+            'invoice_id' => $invoiceId,
+        ];
     }
 
     $waPhone = format_storefront_whatsapp_phone($targetPhone);
@@ -219,6 +244,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
+                mark_invoice_whatsapp_sent($businessId, $invoiceId);
                 return [
                     'success' => true,
                     'phone' => $waPhone,
@@ -291,4 +317,140 @@ function attach_pos_invoice_whatsapp(array $orderResult, int $businessId): array
     }
 
     return $orderResult;
+}
+
+function invoice_whatsapp_ofb_flag_path(int $businessId, int $billId): string {
+    return invoice_pdf_storage_dir($businessId) . '/wa-sent-ofb-' . $billId . '.flag';
+}
+
+function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string $customerPhone = '', array $billResult = []): array {
+    $brand = get_mobile_store_settings($businessId);
+    if (empty($brand['wa_auto_send_invoices'])) {
+        return ['success' => false, 'skipped' => true, 'error' => 'Auto-send invoices is disabled.'];
+    }
+
+    $targetPhone = resolve_invoice_whatsapp_phone($customerPhone, $billResult, 0);
+    if ($targetPhone === '') {
+        return ['success' => false, 'skipped' => true, 'error' => 'Customer has no WhatsApp number on file.'];
+    }
+
+    $waPhone = format_storefront_whatsapp_phone($targetPhone);
+    if (strlen($waPhone) < 10) {
+        return ['success' => false, 'error' => 'Customer WhatsApp number is missing or invalid.'];
+    }
+
+    if ($billId > 0 && is_file(invoice_whatsapp_ofb_flag_path($businessId, $billId))) {
+        return [
+            'success' => true,
+            'skipped' => true,
+            'already_sent' => true,
+            'phone' => $waPhone,
+            'bill_id' => $billId,
+        ];
+    }
+
+    $gateway = get_business_whatsapp_gateway($businessId);
+    if (empty($gateway['configured'])) {
+        return ['success' => false, 'error' => (string) ($gateway['error'] ?? 'WhatsApp is not connected for this store.')];
+    }
+
+    $pdfPath = ensure_offline_bill_pdf_file($billId, $businessId);
+    if ($pdfPath === null) {
+        return ['success' => false, 'error' => 'Could not generate invoice PDF.'];
+    }
+
+    $invNum = (string) ($billResult['invoice_number'] ?? ('OFB-' . $billId));
+    $orderNum = (string) ($billResult['order_number'] ?? '');
+    $storeName = (string) ($brand['display_name'] ?? 'Store');
+    $pdfUrl = offline_bill_pdf_public_url($billId, $businessId);
+    $caption = 'Thank you for shopping with us at ' . $storeName . '. Tax invoice ' . $invNum;
+    if ($orderNum !== '') {
+        $caption .= ' (Order ' . $orderNum . ')';
+    }
+    $caption .= '.';
+
+    $metaMediaId = null;
+    if (!empty($gateway['is_meta_graph'])) {
+        $phoneId = trim((string) ($gateway['phone_number_id'] ?? ''));
+        $metaMediaId = upload_whatsapp_meta_document($phoneId, (string) $gateway['token'], $pdfPath);
+    }
+
+    $attempts = build_invoice_whatsapp_send_attempts(
+        $gateway,
+        $waPhone,
+        $caption,
+        $pdfUrl,
+        $invNum,
+        $metaMediaId
+    );
+
+    $token = (string) $gateway['token'];
+    $lastRaw = null;
+    $httpCode = 0;
+    $lastError = 'WhatsApp invoice could not be delivered.';
+
+    foreach ($attempts as $attempt) {
+        $apiUrl = trim((string) ($attempt['url'] ?? ''));
+        $payload = $attempt['payload'] ?? null;
+        if ($apiUrl === '' || !is_array($payload)) {
+            continue;
+        }
+        $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
+        try {
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
+            $lastRaw = $posted['raw'];
+            $httpCode = (int) ($posted['http_code'] ?? 0);
+            if (!empty($posted['success'])) {
+                @file_put_contents(invoice_whatsapp_ofb_flag_path($businessId, $billId), date('c'));
+                return [
+                    'success' => true,
+                    'phone' => $waPhone,
+                    'bill_id' => $billId,
+                    'pdf_url' => $pdfUrl,
+                    'http_code' => $httpCode,
+                ];
+            }
+            $lastError = wa_gateway_error_message($lastRaw, $httpCode);
+        } catch (Throwable $e) {
+            error_log('Offline bill WhatsApp send error: ' . $e->getMessage());
+            $lastError = $e->getMessage();
+        }
+    }
+
+    error_log(sprintf(
+        'Offline bill invoice WhatsApp failed biz=%d bill=%d phone=%s pdf=%s err=%s',
+        $businessId,
+        $billId,
+        $waPhone,
+        $pdfUrl,
+        $lastError
+    ));
+
+    return [
+        'success' => false,
+        'error' => $lastError,
+        'phone' => $waPhone,
+        'pdf_url' => $pdfUrl,
+    ];
+}
+
+function attach_offline_bill_invoice_whatsapp(array $saveResult, int $businessId, string $customerPhone = ''): array {
+    if (empty($saveResult['success'])) {
+        return $saveResult;
+    }
+    try {
+        $saveResult['whatsapp_invoice'] = send_offline_bill_invoice_whatsapp(
+            $businessId,
+            (int) ($saveResult['id'] ?? 0),
+            $customerPhone !== '' ? $customerPhone : (string) ($saveResult['customer_phone'] ?? ''),
+            $saveResult
+        );
+    } catch (Throwable $e) {
+        error_log('Offline bill invoice WhatsApp: ' . $e->getMessage());
+        $saveResult['whatsapp_invoice'] = [
+            'success' => false,
+            'error' => 'Could not send invoice on WhatsApp.',
+        ];
+    }
+    return $saveResult;
 }

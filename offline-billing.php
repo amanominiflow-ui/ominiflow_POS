@@ -13,6 +13,7 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/storefront_db.php';
 require_once __DIR__ . '/includes/barcode_helper.php';
 require_once __DIR__ . '/includes/offline_billing_db.php';
+require_once __DIR__ . '/includes/invoice_whatsapp.php';
 
 require_auth();
 
@@ -83,6 +84,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save
         'items' => is_array($items) ? $items : [],
     ];
     $res = save_offline_bill($payload, $userId, $businessId);
+    if (!empty($res['success'])) {
+        $res = attach_offline_bill_invoice_whatsapp($res, $businessId, (string) ($payload['customer_phone'] ?? ''));
+    }
     echo json_encode($res);
     exit;
 }
@@ -1175,6 +1179,7 @@ if ($currentPayMode !== '' && !in_array($currentPayMode, $paymentModes, true)) {
                     </select>
                 </div>
                 <button type="button" class="inv-btn inv-btn-outline" id="ofbSaveBtn">Save</button>
+                <button type="button" class="inv-btn inv-btn-outline" id="ofbWhatsAppBtn">Send WhatsApp PDF</button>
                 <button type="button" class="inv-btn inv-btn-primary" id="ofbPrintBtn">Print / Save PDF</button>
             </div>
         </div>
@@ -1700,6 +1705,7 @@ function toYmd(dmy) {
 
 function collectPayload() {
     readItemsFromDom();
+    syncCartToInvoice();
     return {
         action: 'save_offline_bill',
         csrf_token: OFB.csrf,
@@ -1746,7 +1752,18 @@ function saveBill() {
         if (data.order_number) setFieldText('fldOrderNo', data.order_number);
         if (status) {
             status.style.color = '#047857';
-            status.textContent = 'Saved · ' + data.invoice_number;
+            var wa = data.whatsapp_invoice || {};
+            var msg = 'Saved · ' + data.invoice_number;
+            if (wa.success) {
+                msg += ' · Invoice PDF sent to WhatsApp' + (wa.phone ? ' ' + wa.phone : '');
+            } else if (wa.skipped && /no WhatsApp number/i.test(String(wa.error || ''))) {
+                status.style.color = '#b45309';
+                msg += ' · Add customer phone to send invoice on WhatsApp';
+            } else if (wa.error && !wa.skipped) {
+                status.style.color = '#b45309';
+                msg += ' · WhatsApp not sent: ' + wa.error;
+            }
+            status.textContent = msg;
         }
         var url = new URL(window.location.href);
         url.searchParams.set('id', String(data.id));
@@ -1921,6 +1938,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var saveBtn = document.getElementById('ofbSaveBtn');
     var printBtn = document.getElementById('ofbPrintBtn');
+    var waBtn = document.getElementById('ofbWhatsAppBtn');
     var disc = document.getElementById('fldDiscount');
     var ship = document.getElementById('fldShipping');
     if (disc) disc.addEventListener('input', recalc);
@@ -1941,6 +1959,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var orderEl = document.getElementById('fldOrderNo');
     if (orderEl) orderEl.addEventListener('input', refreshBarcode);
     if (saveBtn) saveBtn.addEventListener('click', function() { saveBill().catch(function(){}); });
+    if (waBtn) waBtn.addEventListener('click', function() { saveBill().catch(function(){}); });
     if (printBtn) printBtn.addEventListener('click', printInvoice);
 
     <?php if ($autoPrint): ?>

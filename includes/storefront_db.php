@@ -3164,6 +3164,27 @@ function place_online_store_order(int $businessId, array $checkout): array {
         } else {
             save_storefront_cart($businessId, []);
         }
+
+        try {
+            require_once __DIR__ . '/invoice_whatsapp.php';
+            $shopper = function_exists('get_storefront_shopper') ? get_storefront_shopper($businessId) : null;
+            $loginPhone = is_array($shopper) ? trim((string) ($shopper['phone'] ?? '')) : '';
+            $phone = $loginPhone !== ''
+                ? $loginPhone
+                : (string) ($result['customer_phone'] ?? $checkout['phone'] ?? '');
+            $result['whatsapp_invoice'] = send_order_invoice_whatsapp(
+                $businessId,
+                (int) ($result['order_id'] ?? 0),
+                $phone,
+                $result + ['customer_phone' => $phone]
+            );
+        } catch (Throwable $e) {
+            error_log('Store invoice WhatsApp: ' . $e->getMessage());
+            $result['whatsapp_invoice'] = [
+                'success' => false,
+                'error' => 'Could not send invoice on WhatsApp.',
+            ];
+        }
     }
     return $result;
 }

@@ -1022,11 +1022,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             <!-- Quick Import via cURL Box -->
             <div style="padding: 16px 24px 0; background: #f0fdf4; border-bottom: 1px solid #dcfce7;">
+                <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#166534;line-height:1.45;">
+                    <strong>This is not an error.</strong> Paste your WhatsApp API cURL below, click <strong>Parse cURL</strong>, then <strong>Save Configuration</strong>. OTP and invoice PDF both use these credentials.
+                </div>
                 <label style="font-size: 12.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 4px;">
-                    ⚡ Quick Import: Paste your cURL Command (Optional)
+                    Step 1: Paste your WhatsApp cURL command
                 </label>
                 <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                    <textarea id="curlInput" rows="2" class="form-control" style="font-family: monospace; font-size: 11.5px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -H 'Content-Type: application/json' -d '{...}'"></textarea>
+                    <textarea id="curlInput" name="curl_raw" rows="3" class="form-control" style="font-family: monospace; font-size: 11.5px; width: 100%;" placeholder="Paste full cURL here, then click Parse cURL"></textarea>
                     <button type="button" class="btn-secondary" style="background:#15803d;color:#fff;border:0;font-size:12px;font-weight:700;white-space:nowrap;padding:0 14px;" onclick="parseCurlCommand()">
                         Parse cURL
                     </button>
@@ -1039,18 +1042,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px;">
                     <div>
-                        <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">API Endpoint URL</label>
-                        <input type="url" name="wa_api_url" id="field_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="https://graph.facebook.com/v21.0/PHONE_NUMBER_ID/messages" style="width: 100%;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">API Endpoint URL</label>
+                        <input type="text" name="wa_api_url" id="field_wa_api_url" value="<?= htmlspecialchars((string)($brand['wa_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="Filled automatically after Parse cURL" style="width: 100%;">
                     </div>
                     <div>
-                        <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID</label>
-                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="Company ID (WPBox)" style="width: 100%;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">Company ID (WPBox only)</label>
+                        <input type="number" name="wa_company_id" id="field_wa_company_id" value="<?= !empty($brand['wa_company_id']) ? htmlspecialchars((string)$brand['wa_company_id'], ENT_QUOTES, 'UTF-8') : '' ?>" class="form-control" placeholder="Optional" style="width: 100%;">
                     </div>
                 </div>
 
                 <div style="margin-bottom: 12px;">
-                    <label class="form-label required" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
-                    <input type="text" name="wa_token" id="field_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="This store's WhatsApp API token">
+                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600;">WhatsApp API Token</label>
+                    <input type="text" name="wa_token" id="field_wa_token" value="<?= htmlspecialchars((string)($brand['wa_token'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" style="width: 100%; font-family: monospace;" placeholder="Filled automatically after Parse cURL">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
@@ -1184,6 +1187,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (urlMatch && urlMatch[1]) {
                     const u = urlMatch[1].split('?')[0];
                     document.getElementById('field_wa_api_url').value = u;
+                }
+
+                const bearerMatch = raw.match(/Authorization:\s*Bearer\s+([A-Za-z0-9_\-\.]+)/i);
+                if (bearerMatch && bearerMatch[1] && document.getElementById('field_wa_token')) {
+                    document.getElementById('field_wa_token').value = bearerMatch[1];
+                }
+                const phoneIdMatch = raw.match(/graph\.facebook\.com\/v\d+\.\d+\/(\d+)\/messages/i);
+                if (phoneIdMatch && phoneIdMatch[1] && document.getElementById('field_wa_phone_number_id')) {
+                    document.getElementById('field_wa_phone_number_id').value = phoneIdMatch[1];
                 }
 
                 // 2. Extract JSON Body (-d or --data)
