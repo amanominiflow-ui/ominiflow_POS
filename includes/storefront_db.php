@@ -190,6 +190,7 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
 
@@ -679,6 +680,7 @@ function get_mobile_store_settings(int $businessId): array {
         'enable_card' => (int) ($row['enable_card'] ?? 1) === 1,
         'enable_netbanking' => (int) ($row['enable_netbanking'] ?? 1) === 1,
         'enable_store_pickup_payment' => (int) ($row['enable_store_pickup_payment'] ?? 1) === 1,
+        'enable_razorpay' => (int) ($row['enable_razorpay'] ?? 1) === 1,
         'upi_id' => (string) ($row['upi_id'] ?? ''),
         'payment_instructions' => (string) ($row['payment_instructions'] ?? ''),
 
@@ -964,6 +966,7 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             enable_card = :ecard,
             enable_netbanking = :enet,
             enable_store_pickup_payment = :epick,
+            enable_razorpay = :erzp,
             upi_id = :upiid,
             payment_instructions = :pinst,
             footer_bg_color = :fbg,
@@ -1086,6 +1089,7 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'ecard' => array_key_exists('enable_card', $data) ? (!empty($data['enable_card']) ? 1 : 0) : ($current['enable_card'] ? 1 : 0),
         'enet' => array_key_exists('enable_netbanking', $data) ? (!empty($data['enable_netbanking']) ? 1 : 0) : ($current['enable_netbanking'] ? 1 : 0),
         'epick' => array_key_exists('enable_store_pickup_payment', $data) ? (!empty($data['enable_store_pickup_payment']) ? 1 : 0) : ($current['enable_store_pickup_payment'] ? 1 : 0),
+        'erzp' => array_key_exists('enable_razorpay', $data) ? (!empty($data['enable_razorpay']) ? 1 : 0) : ($current['enable_razorpay'] ? 1 : 0),
         'upiid' => array_key_exists('upi_id', $data) ? trim((string)$data['upi_id']) : ($current['upi_id'] ?? null),
         'pinst' => array_key_exists('payment_instructions', $data) ? trim((string)$data['payment_instructions']) : ($current['payment_instructions'] ?? null),
         'fbg' => normalize_hex_color((string)($data['footer_bg_color'] ?? $current['footer_bg_color'] ?? '#ea580c'), '#ea580c'),
@@ -2883,6 +2887,85 @@ function find_or_create_store_customer(int $businessId, array $data): array {
     ], $businessId);
 }
 
+function get_storefront_checkout_payment_methods(int $businessId, array $brandSettings): array {
+    require_once __DIR__ . '/payment_integrations_db.php';
+    require_once __DIR__ . '/razorpay_oauth.php';
+
+    $razorpayGatewayReady = !empty(get_active_store_payment_gateways($businessId)['razorpay'])
+        && razorpay_checkout_key($businessId) !== '';
+    $razorpayOnline = !empty($brandSettings['enable_razorpay']) && $razorpayGatewayReady;
+
+    $methods = [];
+    if (!empty($brandSettings['enable_cod'])) {
+        $methods['cod'] = [
+            'name' => 'Pay on Delivery (COD)',
+            'label' => 'Pay on Delivery',
+            'desc' => 'Pay with cash or UPI upon delivery',
+            'icon' => '💵',
+            'online' => false,
+        ];
+    }
+    if ($razorpayOnline) {
+        $methods['razorpay'] = [
+            'name' => 'Pay Online (Razorpay)',
+            'label' => 'Razorpay',
+            'desc' => 'UPI, cards, netbanking & wallets — secure checkout',
+            'icon' => '⚡',
+            'online' => true,
+        ];
+        if (!empty($brandSettings['enable_upi'])) {
+            $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
+            if (!empty($brandSettings['upi_id'])) {
+                $upiSub .= ' (' . $brandSettings['upi_id'] . ')';
+            }
+            $methods['upi'] = [
+                'name' => 'Pay with UPI',
+                'label' => 'Pay with UPI',
+                'desc' => $upiSub,
+                'icon' => '📱',
+                'online' => true,
+            ];
+        }
+        if (!empty($brandSettings['enable_card'])) {
+            $methods['card'] = [
+                'name' => 'Credit / Debit Card',
+                'label' => 'Card Payment',
+                'desc' => 'Visa, MasterCard, RuPay',
+                'icon' => '💳',
+                'online' => true,
+            ];
+        }
+        if (!empty($brandSettings['enable_netbanking'])) {
+            $methods['netbanking'] = [
+                'name' => 'Net Banking / Direct Bank Transfer',
+                'label' => 'Bank Transfer',
+                'desc' => 'Direct bank transfer / NEFT / IMPS',
+                'icon' => '🏦',
+                'online' => true,
+            ];
+        }
+    }
+    if (!empty($brandSettings['enable_store_pickup_payment'])) {
+        $methods['pickup'] = [
+            'name' => 'Pay at Store / Pickup',
+            'label' => 'Pay at Store',
+            'desc' => 'Collect & pay directly at counter',
+            'icon' => '🏪',
+            'online' => false,
+        ];
+    }
+    if ($methods === []) {
+        $methods['cod'] = [
+            'name' => 'Pay on Delivery (COD)',
+            'label' => 'Pay on Delivery',
+            'desc' => 'Pay with cash or UPI upon delivery',
+            'icon' => '💵',
+            'online' => false,
+        ];
+    }
+    return $methods;
+}
+
 function place_online_store_order(int $businessId, array $checkout): array {
     $isBuyNow = !empty($checkout['buy_now']);
     $hydrated = $isBuyNow ? hydrate_storefront_buynow($businessId) : hydrate_storefront_cart($businessId);
@@ -2896,24 +2979,61 @@ function place_online_store_order(int $businessId, array $checkout): array {
     }
 
     $brandSettings = get_mobile_store_settings($businessId);
-    $allowedMethods = [];
-    if (!empty($brandSettings['enable_cod'])) $allowedMethods[] = 'cod';
-    if (!empty($brandSettings['enable_upi'])) $allowedMethods[] = 'upi';
-    if (!empty($brandSettings['enable_card'])) $allowedMethods[] = 'card';
-    if (!empty($brandSettings['enable_netbanking'])) $allowedMethods[] = 'netbanking';
-    if (!empty($brandSettings['enable_store_pickup_payment'])) $allowedMethods[] = 'pickup';
-
-    if (empty($allowedMethods)) {
-        $allowedMethods = ['cod'];
-    }
+    $methodOptions = get_storefront_checkout_payment_methods($businessId, $brandSettings);
+    $allowedMethods = array_keys($methodOptions);
 
     $rawMethod = (string) ($checkout['payment_method'] ?? '');
     $method = in_array($rawMethod, $allowedMethods, true) ? $rawMethod : $allowedMethods[0];
-    $paymentStatus = in_array($method, ['cod', 'pickup'], true) ? 'pending' : 'paid';
-    $notesParts = [
-        'Online Store order',
-        'Payment: ' . strtoupper($method),
-    ];
+
+    require_once __DIR__ . '/payment_integrations_db.php';
+    require_once __DIR__ . '/razorpay_oauth.php';
+    $storeGateways = get_active_store_payment_gateways($businessId);
+    $razorpayOnline = !empty($brandSettings['enable_razorpay'])
+        && !empty($storeGateways['razorpay'])
+        && razorpay_checkout_key($businessId) !== '';
+    $onlinePrepaidMethods = ['upi', 'card', 'netbanking', 'razorpay'];
+
+    $paymentStatus = 'pending';
+    $orderPaymentMethod = $method;
+
+    if (in_array($method, $onlinePrepaidMethods, true)) {
+        if (!$razorpayOnline) {
+            return [
+                'success' => false,
+                'errors' => ['payment' => 'Online payment is not set up for this store. Choose Cash on Delivery or contact the store.'],
+            ];
+        }
+        $rzpOrderId = trim((string) ($checkout['razorpay_order_id'] ?? ''));
+        $rzpPaymentId = trim((string) ($checkout['razorpay_payment_id'] ?? ''));
+        $rzpSignature = trim((string) ($checkout['razorpay_signature'] ?? ''));
+        $verified = $rzpOrderId !== '' && $rzpPaymentId !== ''
+            && razorpay_verify_checkout($rzpOrderId, $rzpPaymentId, $rzpSignature, $businessId);
+        if (!$verified) {
+            return [
+                'success' => false,
+                'errors' => ['payment' => 'Payment was not completed. Please try again or choose Cash on Delivery.'],
+            ];
+        }
+        $paymentStatus = 'paid';
+        $orderPaymentMethod = 'razorpay';
+        $notesParts = [
+            'Online Store order',
+            'Payment: RAZORPAY (' . strtoupper($rawMethod) . ')',
+            'Razorpay order: ' . $rzpOrderId,
+            'Razorpay payment: ' . $rzpPaymentId,
+        ];
+    } elseif (in_array($method, ['cod', 'pickup'], true)) {
+        $notesParts = [
+            'Online Store order',
+            'Payment: ' . strtoupper($method),
+        ];
+    } else {
+        $notesParts = [
+            'Online Store order',
+            'Payment: ' . strtoupper($method),
+        ];
+    }
+
     if (!empty($checkout['notes'])) {
         $notesParts[] = trim((string) $checkout['notes']);
     }
@@ -2932,7 +3052,7 @@ function place_online_store_order(int $businessId, array $checkout): array {
         null,
         0.00,
         'fixed',
-        $method,
+        $orderPaymentMethod,
         implode(' | ', $notesParts),
         0.00,
         1,
@@ -2949,6 +3069,15 @@ function place_online_store_order(int $businessId, array $checkout): array {
     );
 
     if (!empty($result['success'])) {
+        $orderId = (int) ($result['order_id'] ?? 0);
+        if ($orderId > 0 && empty($result['invoice_id'])) {
+            $invGen = bill_generate_pos($orderId);
+            if (!empty($invGen['invoice']['id'])) {
+                $result['invoice_id'] = (int) $invGen['invoice']['id'];
+                $result['invoice_number'] = (string) ($invGen['invoice']['invoice_number'] ?? '');
+            }
+        }
+
         if ($isBuyNow) {
             clear_storefront_buynow($businessId);
         } else {

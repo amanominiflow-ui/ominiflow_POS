@@ -80,10 +80,20 @@ if (!$storeBiz) {
     $hasDeliveryLoc = false;
     $buyNowCart = ['lines' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
     $storeShopper = null;
+    $storePaymentMethods = [];
+    $storeRazorpayActive = false;
 } else {
     $storeNotFound = false;
     $bid = (int) $storeBiz['id'];
     $brand = get_mobile_store_settings($bid);
+    $storePaymentMethods = get_storefront_checkout_payment_methods($bid, $brand);
+    $storeRazorpayActive = false;
+    foreach ($storePaymentMethods as $pmMeta) {
+        if (!empty($pmMeta['online'])) {
+            $storeRazorpayActive = true;
+            break;
+        }
+    }
     $storeSettings = get_store_settings($bid);
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
@@ -265,6 +275,45 @@ if (!$storeBiz) {
             redirect(public_store_url($storeBiz, $action === 'update_address' ? 'addresses' : 'profile'));
         }
 
+        if ($action === 'create_razorpay_order') {
+            require_once __DIR__ . '/includes/payment_integrations_db.php';
+            require_once __DIR__ . '/includes/razorpay_oauth.php';
+            header('Content-Type: application/json');
+            if (empty($brand['enable_razorpay']) || empty(get_active_store_payment_gateways($bid)['razorpay'])) {
+                echo json_encode(['success' => false, 'error' => 'Razorpay is not enabled for this store.']);
+                exit;
+            }
+            if (razorpay_checkout_key($bid) === '') {
+                echo json_encode(['success' => false, 'error' => 'Razorpay is not configured for this store.']);
+                exit;
+            }
+            $amount = (float) ($_POST['amount'] ?? 0);
+            $amountPaise = (int) round($amount * 100);
+            if ($amountPaise < 100) {
+                echo json_encode(['success' => false, 'error' => 'Amount must be at least ₹1.00']);
+                exit;
+            }
+            $receipt = 'STORE-' . $bid . '-' . time();
+            $created = razorpay_create_order($amountPaise, $receipt, [
+                'source' => 'online_store',
+                'business_id' => (string) $bid,
+            ], $bid);
+            if (empty($created['success'])) {
+                echo json_encode(['success' => false, 'error' => $created['error'] ?? 'Could not start Razorpay']);
+                exit;
+            }
+            $storeName = (string) ($brand['display_name'] ?? 'Online Store');
+            echo json_encode([
+                'success' => true,
+                'key' => razorpay_checkout_key($bid),
+                'order_id' => $created['order']['id'],
+                'amount' => $created['order']['amount'] ?? $amountPaise,
+                'currency' => $created['order']['currency'] ?? 'INR',
+                'name' => $storeName,
+            ]);
+            exit;
+        }
+
         if ($action === 'place_order') {
             $isBuyNowCheckout = (string) ($_POST['checkout_mode'] ?? '') === 'buynow';
             $shopper = get_storefront_shopper($bid);
@@ -279,13 +328,20 @@ if (!$storeBiz) {
                 'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
                 'notes' => (string) ($_POST['notes'] ?? ''),
                 'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
+                'razorpay_order_id' => (string) ($_POST['razorpay_order_id'] ?? ''),
+                'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
+                'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
                 'buy_now' => $isBuyNowCheckout,
             ]);
             if (!empty($result['success'])) {
-                redirect(public_store_url($storeBiz, 'order', [
+                $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
-                ]));
+                ];
+                if (!empty($result['invoice_number'])) {
+                    $orderParams['invoice'] = (string) $result['invoice_number'];
+                }
+                redirect(public_store_url($storeBiz, 'order', $orderParams));
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
@@ -3040,30 +3096,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
 
                                 <!-- Payment Method -->
-                                <?php
-                                $hasAnyOpt = false;
-                                ?>
                                 <label class="ms-label">Payment Method</label>
-                                <select class="ms-select" name="payment_method" style="margin-bottom:18px;">
-                                    <?php if (!empty($brand['enable_cod'])): $hasAnyOpt = true; ?>
-                                        <option value="cod">Cash on Delivery (COD)</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_upi'])): $hasAnyOpt = true; ?>
-                                        <option value="upi">UPI (Google Pay, PhonePe, Paytm, BHIM) <?= !empty($brand['upi_id']) ? ('[' . e($brand['upi_id']) . ']') : '' ?></option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_card'])): $hasAnyOpt = true; ?>
-                                        <option value="card">Credit / Debit Card</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_netbanking'])): $hasAnyOpt = true; ?>
-                                        <option value="netbanking">Net Banking / Direct Bank Transfer</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_store_pickup_payment'])): $hasAnyOpt = true; ?>
-                                        <option value="pickup">Pay at Store / Pickup</option>
-                                    <?php endif; ?>
-                                    <?php if (!$hasAnyOpt): ?>
-                                        <option value="cod">Cash on Delivery (COD)</option>
-                                    <?php endif; ?>
+                                <select class="ms-select" name="payment_method" id="msCheckoutSelectedPaymentMethod" style="margin-bottom:18px;">
+                                    <?php foreach ($storePaymentMethods as $pmKey => $pmInfo): ?>
+                                        <option value="<?= e($pmKey) ?>"><?= e($pmInfo['name']) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
+                                <input type="hidden" name="razorpay_order_id" id="msCheckoutRzpOrderId" value="">
+                                <input type="hidden" name="razorpay_payment_id" id="msCheckoutRzpPaymentId" value="">
+                                <input type="hidden" name="razorpay_signature" id="msCheckoutRzpSignature" value="">
                                 <?php if (!empty($brand['payment_instructions'])): ?>
                                     <div style="font-size:12.5px;color:#64748b;margin-top:-10px;margin-bottom:16px;background:#f8fafc;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;">
                                         ℹ️ <?= e($brand['payment_instructions']) ?>
@@ -3260,7 +3301,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
                                 <div>
                                     <div style="font-weight:800;color:#166534;font-size:15px;">Order Placed Successfully! 🎉</div>
-                                    <div style="font-size:13px;color:#15803d;">Thank you for shopping with us.</div>
+                                    <div style="font-size:13px;color:#15803d;">
+                                        Thank you for shopping with us.
+                                        <?php if (!empty($_GET['invoice']) || !empty($order['invoice_number'])): ?>
+                                            Invoice <strong><?= e((string) ($_GET['invoice'] ?? $order['invoice_number'])) ?></strong> has been generated.
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -4054,61 +4100,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                 <!-- Payment Method Selector Section -->
                 <?php
-                $activeDrawerMethods = [];
-                if (!empty($brand['enable_cod'])) {
-                    $activeDrawerMethods['cod'] = [
-                        'name' => 'Pay on Delivery (COD)',
-                        'label' => 'Pay on Delivery',
-                        'desc' => 'Pay with cash or UPI upon delivery',
-                        'icon' => '💵'
-                    ];
-                }
-                if (!empty($brand['enable_upi'])) {
-                    $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
-                    if (!empty($brand['upi_id'])) {
-                        $upiSub .= ' (' . e($brand['upi_id']) . ')';
-                    }
-                    $activeDrawerMethods['upi'] = [
-                        'name' => 'Pay with UPI',
-                        'label' => 'Pay with UPI',
-                        'desc' => $upiSub,
-                        'icon' => '📱'
-                    ];
-                }
-                if (!empty($brand['enable_card'])) {
-                    $activeDrawerMethods['card'] = [
-                        'name' => 'Credit / Debit Card',
-                        'label' => 'Card Payment',
-                        'desc' => 'Visa, MasterCard, RuPay',
-                        'icon' => '💳'
-                    ];
-                }
-                if (!empty($brand['enable_netbanking'])) {
-                    $activeDrawerMethods['netbanking'] = [
-                        'name' => 'Net Banking / Direct Bank Transfer',
-                        'label' => 'Bank Transfer',
-                        'desc' => 'Direct bank transfer / NEFT / IMPS',
-                        'icon' => '🏦'
-                    ];
-                }
-                if (!empty($brand['enable_store_pickup_payment'])) {
-                    $activeDrawerMethods['pickup'] = [
-                        'name' => 'Pay at Store / Pickup',
-                        'label' => 'Pay at Store',
-                        'desc' => 'Collect & pay directly at counter',
-                        'icon' => '🏪'
-                    ];
-                }
-
-                if (empty($activeDrawerMethods)) {
-                    $activeDrawerMethods['cod'] = [
-                        'name' => 'Pay on Delivery (COD)',
-                        'label' => 'Pay on Delivery',
-                        'desc' => 'Pay with cash or UPI upon delivery',
-                        'icon' => '💵'
-                    ];
-                }
-
+                $activeDrawerMethods = $storePaymentMethods;
                 $firstKey = array_key_first($activeDrawerMethods);
                 $firstOpt = $activeDrawerMethods[$firstKey];
                 ?>
@@ -4151,6 +4143,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
                 <input type="hidden" name="address" value="<?= e($locAddress) ?>">
                 <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="<?= e($firstKey) ?>">
+                <input type="hidden" name="razorpay_order_id" id="msDrawerRzpOrderId" value="">
+                <input type="hidden" name="razorpay_payment_id" id="msDrawerRzpPaymentId" value="">
+                <input type="hidden" name="razorpay_signature" id="msDrawerRzpSignature" value="">
 
                 <div class="ms-cd-foot">
                     <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
@@ -4972,12 +4967,124 @@ function goToCartMainView() {
 }
 
 var msCheckoutFormPending = null;
+var msStoreCheckout = {
+    razorpayActive: <?= !empty($storeRazorpayActive) ? 'true' : 'false' ?>,
+    orderAmount: <?= json_encode((float) ($osTotal ?? ($drawerCart['total'] ?? 0))) ?>,
+    csrfToken: <?= json_encode(csrf_token()) ?>,
+    postUrl: <?= json_encode(public_store_url($storeBiz, $page, $_GET)) ?>
+};
+
+function storefrontPaymentNeedsRazorpay(method) {
+    return ['upi', 'card', 'netbanking', 'razorpay'].indexOf(method) >= 0;
+}
+
+function storefrontRzpFieldIds(form) {
+    if (form && form.id === 'msCheckoutForm') {
+        return { order: 'msCheckoutRzpOrderId', payment: 'msCheckoutRzpPaymentId', signature: 'msCheckoutRzpSignature' };
+    }
+    return { order: 'msDrawerRzpOrderId', payment: 'msDrawerRzpPaymentId', signature: 'msDrawerRzpSignature' };
+}
+
+function storefrontRzpMethodConfig(methodKey) {
+    if (methodKey === 'upi') return { upi: true, card: false, netbanking: false, wallet: false };
+    if (methodKey === 'card') return { upi: false, card: true, netbanking: false, wallet: false };
+    if (methodKey === 'netbanking') return { upi: false, card: false, netbanking: true, wallet: false };
+    return { upi: true, card: true, netbanking: true, wallet: true };
+}
+
+function startStoreRazorpayCheckout(methodKey) {
+    if (!msCheckoutFormPending || !msStoreCheckout.razorpayActive) {
+        return;
+    }
+    var btn = document.getElementById('msConfirmProceedBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Opening payment...';
+    }
+    var amount = msStoreCheckout.orderAmount;
+    if (!amount || amount < 1) {
+        alert('Order total must be at least ₹1 to pay online.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Place Order'; }
+        return;
+    }
+    var rzpForm = new FormData();
+    rzpForm.append('csrf_token', msStoreCheckout.csrfToken);
+    rzpForm.append('action', 'create_razorpay_order');
+    rzpForm.append('amount', String(Number(amount).toFixed(2)));
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: rzpForm })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Place Order';
+            }
+            if (!data.success) {
+                alert(data.error || 'Could not start Razorpay checkout.');
+                return;
+            }
+            if (typeof Razorpay === 'undefined') {
+                alert('Payment gateway failed to load. Please refresh and try again.');
+                return;
+            }
+            var fieldIds = storefrontRzpFieldIds(msCheckoutFormPending);
+            var prefill = {};
+            var phoneInput = msCheckoutFormPending.querySelector('input[name="phone"]');
+            var emailInput = msCheckoutFormPending.querySelector('input[name="email"]');
+            var nameInput = msCheckoutFormPending.querySelector('input[name="name"]');
+            if (nameInput && nameInput.value) prefill.name = nameInput.value;
+            if (emailInput && emailInput.value) prefill.email = emailInput.value;
+            if (phoneInput && phoneInput.value) prefill.contact = phoneInput.value.replace(/\D/g, '').slice(-10);
+            var rzp = new Razorpay({
+                key: data.key,
+                amount: data.amount,
+                currency: data.currency || 'INR',
+                name: data.name || 'Online Store',
+                description: 'Store order payment',
+                order_id: data.order_id,
+                prefill: prefill,
+                method: storefrontRzpMethodConfig(methodKey),
+                handler: function (resp) {
+                    var o = document.getElementById(fieldIds.order);
+                    var p = document.getElementById(fieldIds.payment);
+                    var s = document.getElementById(fieldIds.signature);
+                    if (o) o.value = resp.razorpay_order_id || data.order_id;
+                    if (p) p.value = resp.razorpay_payment_id || '';
+                    if (s) s.value = resp.razorpay_signature || '';
+                    msCheckoutFormPending.dataset.confirmed = '1';
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Placing order...';
+                    }
+                    msCheckoutFormPending.submit();
+                },
+                modal: {
+                    ondismiss: function () {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.textContent = 'Confirm & Place Order';
+                        }
+                    }
+                }
+            });
+            rzp.open();
+        })
+        .catch(function (err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Place Order';
+            }
+            alert('Payment error: ' + err);
+        });
+}
+
 function handleCheckoutSubmit(e, form) {
     if (form.dataset.confirmed === '1') {
         return true;
     }
     if (e) e.preventDefault();
     msCheckoutFormPending = form;
+    var pmEl = form.querySelector('[name="payment_method"]');
+    msStoreCheckout.orderAmount = msStoreCheckout.orderAmount || 0;
     openConfirmOrderModal();
     return false;
 }
@@ -5006,15 +5113,34 @@ function closeConfirmOrderModal() {
 }
 
 function proceedConfirmOrder() {
-    if (msCheckoutFormPending) {
-        msCheckoutFormPending.dataset.confirmed = '1';
-        var btn = document.getElementById('msConfirmProceedBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Placing order...';
-        }
-        msCheckoutFormPending.submit();
+    if (!msCheckoutFormPending) {
+        return;
     }
+    var pmEl = msCheckoutFormPending.querySelector('[name="payment_method"]');
+    var method = pmEl ? pmEl.value : 'cod';
+    var fieldIds = storefrontRzpFieldIds(msCheckoutFormPending);
+    var paidAlready = document.getElementById(fieldIds.payment);
+    if (msStoreCheckout.razorpayActive && storefrontPaymentNeedsRazorpay(method)) {
+        if (paidAlready && paidAlready.value) {
+            msCheckoutFormPending.dataset.confirmed = '1';
+            var btnPaid = document.getElementById('msConfirmProceedBtn');
+            if (btnPaid) {
+                btnPaid.disabled = true;
+                btnPaid.textContent = 'Placing order...';
+            }
+            msCheckoutFormPending.submit();
+            return;
+        }
+        startStoreRazorpayCheckout(method);
+        return;
+    }
+    msCheckoutFormPending.dataset.confirmed = '1';
+    var btn = document.getElementById('msConfirmProceedBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Placing order...';
+    }
+    msCheckoutFormPending.submit();
 }
 
 var msCancelOrderIdPending = null;
@@ -5263,5 +5389,8 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 <?php endif; ?>
 </script>
+<?php if (!empty($storeRazorpayActive)): ?>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<?php endif; ?>
 </body>
 </html>

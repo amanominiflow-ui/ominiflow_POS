@@ -156,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $saveData['enable_card'] = !empty($_POST['enable_card']);
             $saveData['enable_netbanking'] = !empty($_POST['enable_netbanking']);
             $saveData['enable_store_pickup_payment'] = !empty($_POST['enable_store_pickup_payment']);
+            $saveData['enable_razorpay'] = !empty($_POST['enable_razorpay']);
             $saveData['upi_id'] = trim($_POST['upi_id'] ?? '');
             $saveData['payment_instructions'] = trim($_POST['payment_instructions'] ?? '');
         }
@@ -270,6 +271,10 @@ $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
 $business = get_business_store($bid);
 $brand = get_mobile_store_settings($bid);
+require_once __DIR__ . '/includes/payment_integrations_db.php';
+require_once __DIR__ . '/includes/razorpay_oauth.php';
+$storeRazorpayConfigured = !empty(get_active_store_payment_gateways($bid)['razorpay'])
+    && razorpay_checkout_key($bid) !== '';
 $domains = get_store_custom_domains($bid);
 $localUrl = $business ? public_store_local_url($business) : app_absolute_url('store.php');
 $slug = (string) ($business['store_slug'] ?? '');
@@ -1792,13 +1797,33 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                     </label>
                                 </div>
 
+                                <!-- Razorpay -->
+                                <div class="pref-pay-card">
+                                    <div class="pref-pay-left">
+                                        <div class="pref-pay-icon" style="font-weight:800;font-size:13px;color:#0f172a;min-width:36px;text-align:center;">RZP</div>
+                                        <div>
+                                            <div class="pref-pay-name">Razorpay (Online Checkout)</div>
+                                            <div class="pref-pay-desc">
+                                                Secure UPI, cards &amp; netbanking via Razorpay on your storefront.
+                                                <?php if (!$storeRazorpayConfigured): ?>
+                                                    <span style="display:block;color:#b45309;margin-top:4px;">Connect Razorpay in <a href="<?= e(APP_URL . '/payment-integrations.php') ?>" style="color:#2563eb;font-weight:600;">Payment Integrations</a> first (Online Store enabled).</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <label class="pref-switch">
+                                        <input type="checkbox" name="enable_razorpay" value="1" <?= !empty($brand['enable_razorpay']) ? 'checked' : '' ?>>
+                                        <span class="pref-slider"></span>
+                                    </label>
+                                </div>
+
                                 <!-- UPI -->
                                 <div class="pref-pay-card">
                                     <div class="pref-pay-left">
                                         <div class="pref-pay-icon">📱</div>
                                         <div>
                                             <div class="pref-pay-name">UPI Payments</div>
-                                            <div class="pref-pay-desc">Google Pay, PhonePe, Paytm, BHIM & UPI QR checkout</div>
+                                            <div class="pref-pay-desc">Google Pay, PhonePe, Paytm, BHIM (via Razorpay when enabled above)</div>
                                         </div>
                                     </div>
                                     <label class="pref-switch">

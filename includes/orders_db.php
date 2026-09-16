@@ -709,6 +709,12 @@ function process_pos_order(
         ');
         $allowedFulfillment = ['pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled', 'returned'];
         $fulfillmentStatus = in_array($fulfillmentStatus, $allowedFulfillment, true) ? $fulfillmentStatus : 'delivered';
+        $resolvedPaymentStatus = in_array($overridePaymentStatus, ['paid', 'pending', 'partially_paid', 'cancelled'], true)
+            ? $overridePaymentStatus
+            : 'paid';
+        $orderStatus = ($salesChannel === 'online_store' && $fulfillmentStatus !== 'delivered')
+            ? 'processing'
+            : 'completed';
         $stmtOrder->execute([
             'biz_id' => $bid,
             'order_number' => $orderNumber,
@@ -726,8 +732,8 @@ function process_pos_order(
             'tax_amount' => $totalTax,
             'total_amount' => $grandTotal,
             'payment_method' => $paymentMethod ?: 'cash',
-            'payment_status' => $overridePaymentStatus ?: 'paid',
-            'order_status' => 'completed',
+            'payment_status' => $resolvedPaymentStatus,
+            'order_status' => $orderStatus,
             'fulfillment_status' => $fulfillmentStatus,
             'client_order_uuid' => $clientOrderUuid ?: null,
             'notes' => $notes ?: null,
@@ -839,6 +845,8 @@ function process_pos_order(
 
         // Generate sequential invoice number for this business
         $invoiceNumber = generate_next_invoice_number($bid, $db);
+        $invoicePaymentStatus = ($resolvedPaymentStatus === 'paid') ? 'paid' : 'unpaid';
+        $invoiceAmountPaid = ($resolvedPaymentStatus === 'paid') ? $grandTotal : 0.00;
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
@@ -868,52 +876,57 @@ function process_pos_order(
             'igst_amount' => $igstAmount,
             'tax_amount' => $totalTax,
             'total_amount' => $grandTotal,
-            'amount_paid' => $tendered,
-            'change_amount' => $changeAmount,
+            'amount_paid' => $invoiceAmountPaid,
+            'change_amount' => ($resolvedPaymentStatus === 'paid') ? $changeAmount : 0.00,
             'payment_method' => $paymentMethod ?: 'cash',
-            'payment_status' => 'paid',
+            'payment_status' => $invoicePaymentStatus,
             'invoice_status' => 'paid',
             'notes' => $notes ?: null,
         ]);
         $invoiceId = (int) $db->lastInsertId();
 
-        // 8. Record in Centralized Payments table
-        $paymentNumber = generate_next_payment_number($bid, $db);
+        // 8. Record in Centralized Payments table (collected payments only)
+        if ($resolvedPaymentStatus === 'paid') {
+            $paymentNumber = generate_next_payment_number($bid, $db);
 
-        // Check for active open register session
-        $activeSessionId = null;
-        if ($validUserId !== null) {
-            $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
-            $stmtSession->execute(['uid' => $validUserId, 'bid' => $bid]);
-            $activeSessionId = $stmtSession->fetchColumn() ?: null;
-        }
+            // Check for active open register session
+            $activeSessionId = null;
+            if ($validUserId !== null) {
+                $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
+                $stmtSession->execute(['uid' => $validUserId, 'bid' => $bid]);
+                $activeSessionId = $stmtSession->fetchColumn() ?: null;
+            }
 
-        $stmtPay = $db->prepare('
-            INSERT INTO payments (
-                business_id, payment_number, order_id, invoice_id, customer_id, user_id, session_id,
-                payment_type, payment_method, amount, status, created_at
-            ) VALUES (
-                :biz_id, :pay_num, :order_id, :inv_id, :cust_id, :user_id, :session_id,
-                "sale", :method, :amount, "paid", NOW()
-            )
-        ');
-        $stmtPay->execute([
-            'biz_id' => $bid,
-            'pay_num' => $paymentNumber,
-            'order_id' => $orderId,
-            'inv_id' => $invoiceId,
-            'cust_id' => $customerId ?: 1,
-            'user_id' => $validUserId,
-            'session_id' => $activeSessionId,
-            'method' => $paymentMethod ?: 'cash',
-            'amount' => $grandTotal,
-        ]);
+            $stmtPay = $db->prepare('
+                INSERT INTO payments (
+                    business_id, payment_number, order_id, invoice_id, customer_id, user_id, session_id,
+                    payment_type, payment_method, amount, status, created_at
+                ) VALUES (
+                    :biz_id, :pay_num, :order_id, :inv_id, :cust_id, :user_id, :session_id,
+                    "sale", :method, :amount, "paid", NOW()
+                )
+            ');
+            $stmtPay->execute([
+                'biz_id' => $bid,
+                'pay_num' => $paymentNumber,
+                'order_id' => $orderId,
+                'inv_id' => $invoiceId,
+                'cust_id' => $customerId ?: 1,
+                'user_id' => $validUserId,
+                'session_id' => $activeSessionId,
+                'method' => $paymentMethod ?: 'cash',
+                'amount' => $grandTotal,
+            ]);
 
-        if ($activeSessionId) {
-            $col = 'total_cash_sales';
-            if ($paymentMethod === 'card') $col = 'total_card_sales';
-            elseif ($paymentMethod === 'upi') $col = 'total_upi_sales';
-            $db->exec("UPDATE register_sessions SET {$col} = {$col} + {$grandTotal} WHERE id = {$activeSessionId}");
+            if ($activeSessionId) {
+                $col = 'total_cash_sales';
+                if ($paymentMethod === 'card') {
+                    $col = 'total_card_sales';
+                } elseif ($paymentMethod === 'upi' || $paymentMethod === 'razorpay') {
+                    $col = 'total_upi_sales';
+                }
+                $db->exec("UPDATE register_sessions SET {$col} = {$col} + {$grandTotal} WHERE id = {$activeSessionId}");
+            }
         }
 
         // Customer details
@@ -954,7 +967,7 @@ function process_pos_order(
             'customer_phone' => $customerPhone,
             'cashier_name' => $cashierName,
             'payment_method' => $paymentMethod,
-            'payment_status' => 'paid',
+            'payment_status' => $resolvedPaymentStatus,
             'invoice_status' => 'paid',
             'created_at' => date('Y-m-d H:i:s'),
         ];
@@ -974,6 +987,16 @@ function process_pos_order(
  * Generates or retrieves complete formatted invoice data for POS orders.
  * Reusable for display, printing, PDF export, and external billing endpoints.
  */
+function generate_invoice_data_for_order(int $orderId, ?int $businessId = null): array {
+    if ($businessId !== null && $businessId > 0) {
+        $order = get_order_by_id($orderId, $businessId);
+        if (!$order) {
+            return ['success' => false, 'error' => 'Order not found for this business.'];
+        }
+    }
+    return bill_generate_pos($orderId);
+}
+
 function bill_generate_pos(int $orderId, array $options = []): array {
     $db = get_db();
     $order = get_order_by_id($orderId);
@@ -1016,6 +1039,8 @@ function bill_generate_pos(int $orderId, array $options = []): array {
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
+        $orderPayStatus = (string) ($order['payment_status'] ?? 'paid');
+        $invoicePayStatus = ($orderPayStatus === 'paid') ? 'paid' : 'unpaid';
         $stmtInsert->execute([
             'biz_id' => $invoiceBizId,
             'invoice_number' => $invoiceNumber,
@@ -1031,10 +1056,10 @@ function bill_generate_pos(int $orderId, array $options = []): array {
             'igst_amount' => $igstAmount,
             'tax_amount' => $taxAmount,
             'total_amount' => $totalAmount,
-            'amount_paid' => $totalAmount,
+            'amount_paid' => ($orderPayStatus === 'paid') ? $totalAmount : 0.00,
             'change_amount' => 0.00,
             'payment_method' => $order['payment_method'] ?? 'cash',
-            'payment_status' => $order['payment_status'] ?? 'paid',
+            'payment_status' => $invoicePayStatus,
             'invoice_status' => ($order['order_status'] === 'cancelled') ? 'cancelled' : 'paid',
             'notes' => $order['notes'] ?? null,
         ]);

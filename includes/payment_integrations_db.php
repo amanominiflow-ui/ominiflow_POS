@@ -362,3 +362,17 @@ function get_active_pos_payment_gateways(?int $businessId = null): array {
     }
     return $active;
 }
+
+/**
+ * Payment gateways enabled for public online store checkout.
+ */
+function get_active_store_payment_gateways(?int $businessId = null): array {
+    $integrations = get_payment_integrations($businessId);
+    $active = [];
+    foreach ($integrations as $code => $g) {
+        if ($g['is_configured'] && !empty($g['enable_in_store'])) {
+            $active[$code] = $g;
+        }
+    }
+    return $active;
+}
