@@ -112,3 +112,30 @@ $injectOk = $injected['phone'] === '919876543210'
     && $injected['template']['components'][0]['parameters'][0]['document']['link'] === 'https://pos.ominiflow.com/invoice-pdf.php?id=1'
     && $injected['template']['components'][1]['parameters'][0]['text'] === 'INV-20260916-0018';
 echo 'inject_invoice_into_wa_payload: ' . ($injectOk ? 'PASS' : 'FAIL') . "\n";
+
+$wpbox = inject_invoice_into_wa_payload(
+    [
+        'phone' => '000',
+        'template_name' => 'invoice_pdf',
+        'file' => 'https://example.com/old.pdf',
+        'params' => 'INV-0000,Customer',
+        'header_params' => 'https://example.com/old.pdf',
+    ],
+    '919876543210',
+    'https://pos.ominiflow.com/invoice-pdf.php?id=9',
+    'INV-9',
+    'INV-9.pdf',
+    'Thanks'
+);
+$wpboxOk = $wpbox['phone'] === '919876543210'
+    && $wpbox['file'] === 'https://pos.ominiflow.com/invoice-pdf.php?id=9'
+    && $wpbox['header_params'] === 'https://pos.ominiflow.com/invoice-pdf.php?id=9'
+    && str_starts_with($wpbox['params'], 'INV-9');
+echo 'inject wpbox file/params: ' . ($wpboxOk ? 'PASS' : 'FAIL') . "\n";
+
+$parsedCurl = parse_whatsapp_curl_command(
+    "curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' -d '{\"phone\":\"000\",\"document_url\":\"https://pos.ominiflow.com/invoice-pdf.php?id=1\"}'"
+);
+$parseUrlOk = ($parsedCurl['wa_api_url'] ?? '') === 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage'
+    && is_array($parsedCurl['payload'] ?? null);
+echo 'parse prefers sendtemplatemessage URL: ' . ($parseUrlOk ? 'PASS' : 'FAIL') . "\n";

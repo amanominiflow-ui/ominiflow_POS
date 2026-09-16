@@ -187,12 +187,39 @@ function send_invoice_whatsapp_via_saved_curl(
 
     $filename = preg_replace('/[^A-Za-z0-9._-]+/', '_', $invNum) . '.pdf';
     $payload = inject_invoice_into_wa_payload($parsed, $waPhone, $pdfUrl, $invNum, $filename, $caption);
+
+    $invoiceTmpl = trim((string) ($brand['wa_invoice_template_name'] ?? ''));
+    $invoiceLang = trim((string) ($brand['wa_invoice_template_lang'] ?? ''));
+    if ($invoiceTmpl !== '') {
+        $payload['template_name'] = $invoiceTmpl;
+        if (isset($payload['template']) && is_array($payload['template'])) {
+            $payload['template']['name'] = $invoiceTmpl;
+        }
+    }
+    if ($invoiceLang !== '') {
+        $payload['template_language'] = $invoiceLang;
+        if (isset($payload['template']) && is_array($payload['template'])) {
+            if (isset($payload['template']['language']) && is_array($payload['template']['language'])) {
+                $payload['template']['language']['code'] = $invoiceLang;
+            } else {
+                $payload['template']['language'] = $invoiceLang;
+            }
+        }
+    }
+
     if ($token !== '' && empty($payload['token'])) {
         $payload['token'] = $token;
     }
     $companyId = (int) ($brand['wa_company_id'] ?? 0);
-    if ($companyId > 0 && empty($payload['company_id'])) {
+    if ($companyId > 0 && empty($payload['company_id']) && empty($payload['messaging_product'])) {
         $payload['company_id'] = $companyId;
+    }
+
+    $looksLikeTemplate = !empty($payload['template_name'])
+        || isset($payload['template'])
+        || $invoiceTmpl !== '';
+    if ($looksLikeTemplate && preg_match('#/api/wpbox/(sendmessage|sendmedia)(/|$)#i', $apiUrl)) {
+        $apiUrl = whatsapp_template_api_url($apiUrl);
     }
 
     $posted = post_whatsapp_json($apiUrl, $token, $payload, 12);

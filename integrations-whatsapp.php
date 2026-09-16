@@ -27,15 +27,6 @@ $brand = get_mobile_store_settings($bizId);
 $waGateway = get_business_whatsapp_gateway($bizId);
 $waConnected = !empty($waGateway['configured']);
 $invoiceCurlReady = trim((string) ($brand['wa_invoice_curl_raw'] ?? '')) !== '';
-if (!is_store_own_whatsapp_token((string) ($brand['wa_token'] ?? ''))) {
-    $brand['wa_token'] = '';
-    if (stripos((string) ($brand['wa_api_url'] ?? ''), 'whatsapp.ominiflow.com') !== false) {
-        $brand['wa_api_url'] = '';
-    }
-    if ((int) ($brand['wa_company_id'] ?? 0) === 162) {
-        $brand['wa_company_id'] = null;
-    }
-}
 
 // Handle WhatsApp Integration Save
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -129,14 +120,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         save_business_whatsapp_settings($bizId, [
-            'wa_api_url' => (string) ($brand['wa_api_url'] ?? ''),
-            'wa_token' => (string) ($brand['wa_token'] ?? ''),
-            'wa_company_id' => (int) ($brand['wa_company_id'] ?? 0),
-            'wa_template_name' => (string) ($brand['wa_template_name'] ?? ''),
-            'wa_template_lang' => (string) ($brand['wa_template_lang'] ?? ''),
-            'wa_phone_number_id' => (string) ($brand['wa_phone_number_id'] ?? ''),
-            'wa_waba_id' => (string) ($brand['wa_waba_id'] ?? ''),
-            'wa_enable_storefront_otp' => !empty($brand['wa_enable_storefront_otp']) ? 1 : 0,
             'wa_auto_send_invoices' => isset($_POST['wa_auto_send_invoices']) ? 1 : 0,
             'wa_invoice_curl_raw' => $invoiceCurl,
             'wa_invoice_curl_payload' => $invoicePayloadJson,
@@ -202,25 +185,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } else {
             require_once __DIR__ . '/includes/invoice_whatsapp.php';
             $waPhone = format_storefront_whatsapp_phone($testPhone);
-            $pdfUrl = function_exists('pos_public_url')
-                ? pos_public_url('invoice-pdf.php')
-                : 'https://pos.ominiflow.com/invoice-pdf.php';
+            $latestInv = $db->prepare('SELECT id, invoice_number FROM invoices WHERE business_id = :bid ORDER BY id DESC LIMIT 1');
+            $latestInv->execute(['bid' => $bizId]);
+            $latest = $latestInv->fetch(PDO::FETCH_ASSOC);
+            if (!$latest) {
+                set_flash('error', 'No invoice found to attach. Place one POS or online order first, then send Test Invoice.');
+                redirect('integrations-whatsapp.php?tab=invoice');
+            }
+            $invoiceId = (int) ($latest['id'] ?? 0);
+            ensure_invoice_pdf_file($invoiceId, $bizId);
+            $pdfUrl = invoice_pdf_public_url($invoiceId, $bizId);
+            $invNum = trim((string) ($latest['invoice_number'] ?? ''));
+            if ($invNum === '') {
+                $invNum = 'INV-' . $invoiceId;
+            }
             $res = send_invoice_whatsapp_via_saved_curl(
                 $bizId,
                 $waPhone,
                 $pdfUrl,
-                'INV-TEST',
+                $invNum,
                 'Test invoice from ' . (string) ($brand['display_name'] ?? 'Store')
             );
             $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : json_encode($res['response'] ?? []);
             if (!empty($res['success'])) {
-                set_flash('success', 'Test invoice cURL sent to +' . $waPhone . '. Check WhatsApp.');
+                set_flash('success', 'Test invoice cURL sent to +' . $waPhone . ' with PDF ' . $invNum . '. Check WhatsApp.');
             } else {
                 $err = trim((string) ($res['error'] ?? 'Invoice cURL send failed.'));
                 set_flash('error', $err . ($rawMsg && $rawMsg !== 'null' ? ' Response: ' . $rawMsg : ''));
             }
         }
         redirect('integrations-whatsapp.php?tab=invoice');
+    }
+}
+
+if (!is_store_own_whatsapp_token((string) ($brand['wa_token'] ?? ''))) {
+    $brand['wa_token'] = '';
+    if (stripos((string) ($brand['wa_api_url'] ?? ''), 'whatsapp.ominiflow.com') !== false) {
+        $brand['wa_api_url'] = '';
+    }
+    if ((int) ($brand['wa_company_id'] ?? 0) === 162) {
+        $brand['wa_company_id'] = null;
     }
 }
 ?>
@@ -388,9 +392,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 return;
             }
             let foundCount = 0;
-            const urlMatch = raw.match(/https?:\/\/[^\s'"\\]+/i);
-            if (urlMatch && urlMatch[0] && document.getElementById('page_wa_invoice_api_url')) {
-                document.getElementById('page_wa_invoice_api_url').value = urlMatch[0].replace(/['"\\,]+$/, '');
+            const urlMatches = raw.match(/https?:\/\/[^\s'"\\]+/gi) || [];
+            let apiUrl = '';
+            urlMatches.forEach(function (u) {
+                const clean = String(u).replace(/['"\\,]+$/, '');
+                if (/invoice-pdf\.php|\.pdf(\?|$)/i.test(clean)) {
+                    return;
+                }
+                if (!apiUrl && /sendtemplatemessage|graph\.facebook\.com/i.test(clean)) {
+                    apiUrl = clean;
+                }
+            });
+            if (!apiUrl) {
+                urlMatches.forEach(function (u) {
+                    const clean = String(u).replace(/['"\\,]+$/, '');
+                    if (!apiUrl && /\/api\/wpbox/i.test(clean)) {
+                        apiUrl = clean;
+                    }
+                });
+            }
+            if (!apiUrl && urlMatches[0]) {
+                apiUrl = String(urlMatches[0]).replace(/['"\\,]+$/, '');
+            }
+            if (apiUrl && document.getElementById('page_wa_invoice_api_url')) {
+                document.getElementById('page_wa_invoice_api_url').value = apiUrl;
                 highlightField('page_wa_invoice_api_url');
                 foundCount++;
             }

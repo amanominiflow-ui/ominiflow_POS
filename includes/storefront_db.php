@@ -1958,8 +1958,31 @@ function parse_whatsapp_curl_command(string $raw): array {
         return $out;
     }
 
-    if (preg_match('/https?:\/\/[^\s\'"\\\\]+/i', $raw, $m)) {
-        $out['wa_api_url'] = rtrim($m[0], '\'",\\');
+    if (preg_match_all('/https?:\/\/[^\s\'"\\\\]+/i', $raw, $urlMatches)) {
+        $candidates = [];
+        foreach ($urlMatches[0] as $url) {
+            $clean = rtrim((string) $url, '\'",\\');
+            if ($clean === '' || preg_match('/invoice-pdf\.php|\.pdf($|\?)/i', $clean)) {
+                continue;
+            }
+            $candidates[] = $clean;
+        }
+        $preferred = '';
+        foreach ($candidates as $url) {
+            if (stripos($url, 'sendtemplatemessage') !== false || stripos($url, 'graph.facebook.com') !== false) {
+                $preferred = $url;
+                break;
+            }
+        }
+        if ($preferred === '') {
+            foreach ($candidates as $url) {
+                if (stripos($url, '/api/wpbox') !== false) {
+                    $preferred = $url;
+                    break;
+                }
+            }
+        }
+        $out['wa_api_url'] = $preferred !== '' ? $preferred : (string) ($candidates[0] ?? rtrim((string) ($urlMatches[0][0] ?? ''), '\'",\\'));
     }
 
     if (
@@ -2136,9 +2159,23 @@ function inject_invoice_into_wa_payload(
         $payload['to'] = $phone;
     }
 
-    foreach (['document_url', 'media_url'] as $urlKey) {
+    $replaceIfUrl = static function (&$value) use ($pdfUrl): void {
+        if (!is_string($value)) {
+            return;
+        }
+        $val = trim($value);
+        if ($val === '' || preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+            $value = $pdfUrl;
+        }
+    };
+    foreach (['document_url', 'media_url', 'document_link', 'file', 'file_url', 'header_params'] as $urlKey) {
         if (array_key_exists($urlKey, $payload)) {
-            $payload[$urlKey] = $pdfUrl;
+            $replaceIfUrl($payload[$urlKey]);
+        }
+    }
+    foreach (['link', 'url'] as $urlKey) {
+        if (array_key_exists($urlKey, $payload) && is_string($payload[$urlKey])) {
+            $replaceIfUrl($payload[$urlKey]);
         }
     }
     if (isset($payload['filename'])) {
@@ -2146,6 +2183,30 @@ function inject_invoice_into_wa_payload(
     }
     if (isset($payload['caption']) && is_string($payload['caption'])) {
         $payload['caption'] = $caption;
+    }
+    if (isset($payload['params']) && is_string($payload['params'])) {
+        $parts = array_map('trim', explode(',', $payload['params']));
+        if ($parts !== []) {
+            $parts[0] = $invNum;
+            foreach ($parts as $i => $part) {
+                if (preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf')) {
+                    $parts[$i] = $pdfUrl;
+                }
+            }
+            $payload['params'] = implode(',', $parts);
+        }
+    }
+    if (isset($payload['body_params']) && is_array($payload['body_params'])) {
+        foreach ($payload['body_params'] as $i => $part) {
+            if (!is_string($part)) {
+                continue;
+            }
+            if ($i === 0 || preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf')) {
+                $payload['body_params'][$i] = (preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf'))
+                    ? $pdfUrl
+                    : $invNum;
+            }
+        }
     }
 
     $bodyIndex = 0;
@@ -2179,6 +2240,12 @@ function inject_invoice_into_wa_payload(
         }
         if (array_key_exists('media_url', $node)) {
             $node['media_url'] = $pdfUrl;
+        }
+        if (array_key_exists('file', $node) && is_string($node['file'])) {
+            $val = trim($node['file']);
+            if ($val === '' || preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+                $node['file'] = $pdfUrl;
+            }
         }
 
         if (array_key_exists('text', $node) && is_string($node['text'])) {
@@ -2774,58 +2841,60 @@ function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $
 function save_business_whatsapp_settings(int $businessId, array $data): bool {
     ensure_online_store_schema();
     $db = get_db();
-    
-    // Ensure mobile_store_settings row exists
-    $currentWa = get_mobile_store_settings($businessId);
+    get_mobile_store_settings($businessId);
 
+    $setOtpCreds = array_key_exists('wa_api_url', $data)
+        || array_key_exists('wa_token', $data)
+        || array_key_exists('wa_company_id', $data)
+        || array_key_exists('wa_template_name', $data)
+        || array_key_exists('wa_template_lang', $data)
+        || array_key_exists('wa_phone_number_id', $data)
+        || array_key_exists('wa_waba_id', $data);
+    $setOtpEnable = array_key_exists('wa_enable_storefront_otp', $data);
+    $setAutoInv = array_key_exists('wa_auto_send_invoices', $data);
     $setCurl = array_key_exists('wa_curl_raw', $data);
     $setInvCurl = array_key_exists('wa_invoice_curl_raw', $data);
-    $sql = '
-        UPDATE mobile_store_settings
-        SET wa_api_url = :wa_url,
-            wa_token = :wa_token,
-            wa_company_id = :wa_company_id,
-            wa_template_name = :wa_template_name,
-            wa_template_lang = :wa_template_lang,
-            wa_phone_number_id = :wa_phone_number_id,
-            wa_waba_id = :wa_waba_id,
-            wa_enable_storefront_otp = :wa_otp,
-            wa_auto_send_invoices = :wa_auto_inv' .
-            ($setCurl ? ',
-            wa_curl_raw = :wa_curl_raw' : '') .
-            ($setInvCurl ? ',
-            wa_invoice_curl_raw = :wa_inv_curl,
-            wa_invoice_curl_payload = :wa_inv_payload,
-            wa_invoice_api_url = :wa_inv_url,
-            wa_invoice_template_name = :wa_inv_tmpl,
-            wa_invoice_template_lang = :wa_inv_lang' : '') . ',
-            updated_at = NOW()
-        WHERE business_id = :bid
-    ';
-    $stmt = $db->prepare($sql);
-    
-    $companyId = isset($data['wa_company_id']) && $data['wa_company_id'] !== '' && (int)$data['wa_company_id'] > 0 
-        ? (int)$data['wa_company_id'] 
-        : null;
 
-    $params = [
-        'wa_url' => isset($data['wa_api_url']) && trim((string)$data['wa_api_url']) !== '' ? trim((string)$data['wa_api_url']) : null,
-        'wa_token' => isset($data['wa_token']) && trim((string)$data['wa_token']) !== '' ? trim((string)$data['wa_token']) : null,
-        'wa_company_id' => $companyId,
-        'wa_template_name' => isset($data['wa_template_name']) && trim((string)$data['wa_template_name']) !== '' ? trim((string)$data['wa_template_name']) : null,
-        'wa_template_lang' => isset($data['wa_template_lang']) && trim((string)$data['wa_template_lang']) !== '' ? trim((string)$data['wa_template_lang']) : null,
-        'wa_phone_number_id' => isset($data['wa_phone_number_id']) && trim((string)$data['wa_phone_number_id']) !== '' ? trim((string)$data['wa_phone_number_id']) : null,
-        'wa_waba_id' => isset($data['wa_waba_id']) && trim((string)$data['wa_waba_id']) !== '' ? trim((string)$data['wa_waba_id']) : null,
-        'wa_otp' => !empty($data['wa_enable_storefront_otp']) ? 1 : 0,
-        'wa_auto_inv' => array_key_exists('wa_auto_send_invoices', $data)
-            ? (!empty($data['wa_auto_send_invoices']) ? 1 : 0)
-            : (!empty($currentWa['wa_auto_send_invoices']) ? 1 : 0),
-        'bid' => $businessId,
-    ];
+    $setParts = ['updated_at = NOW()'];
+    $params = ['bid' => $businessId];
+
+    if ($setOtpCreds) {
+        $companyId = isset($data['wa_company_id']) && $data['wa_company_id'] !== '' && (int) $data['wa_company_id'] > 0
+            ? (int) $data['wa_company_id']
+            : null;
+        $setParts[] = 'wa_api_url = :wa_url';
+        $setParts[] = 'wa_token = :wa_token';
+        $setParts[] = 'wa_company_id = :wa_company_id';
+        $setParts[] = 'wa_template_name = :wa_template_name';
+        $setParts[] = 'wa_template_lang = :wa_template_lang';
+        $setParts[] = 'wa_phone_number_id = :wa_phone_number_id';
+        $setParts[] = 'wa_waba_id = :wa_waba_id';
+        $params['wa_url'] = isset($data['wa_api_url']) && trim((string) $data['wa_api_url']) !== '' ? trim((string) $data['wa_api_url']) : null;
+        $params['wa_token'] = isset($data['wa_token']) && trim((string) $data['wa_token']) !== '' ? trim((string) $data['wa_token']) : null;
+        $params['wa_company_id'] = $companyId;
+        $params['wa_template_name'] = isset($data['wa_template_name']) && trim((string) $data['wa_template_name']) !== '' ? trim((string) $data['wa_template_name']) : null;
+        $params['wa_template_lang'] = isset($data['wa_template_lang']) && trim((string) $data['wa_template_lang']) !== '' ? trim((string) $data['wa_template_lang']) : null;
+        $params['wa_phone_number_id'] = isset($data['wa_phone_number_id']) && trim((string) $data['wa_phone_number_id']) !== '' ? trim((string) $data['wa_phone_number_id']) : null;
+        $params['wa_waba_id'] = isset($data['wa_waba_id']) && trim((string) $data['wa_waba_id']) !== '' ? trim((string) $data['wa_waba_id']) : null;
+    }
+    if ($setOtpEnable) {
+        $setParts[] = 'wa_enable_storefront_otp = :wa_otp';
+        $params['wa_otp'] = !empty($data['wa_enable_storefront_otp']) ? 1 : 0;
+    }
+    if ($setAutoInv) {
+        $setParts[] = 'wa_auto_send_invoices = :wa_auto_inv';
+        $params['wa_auto_inv'] = !empty($data['wa_auto_send_invoices']) ? 1 : 0;
+    }
     if ($setCurl) {
+        $setParts[] = 'wa_curl_raw = :wa_curl_raw';
         $params['wa_curl_raw'] = trim((string) $data['wa_curl_raw']) !== '' ? trim((string) $data['wa_curl_raw']) : null;
     }
     if ($setInvCurl) {
+        $setParts[] = 'wa_invoice_curl_raw = :wa_inv_curl';
+        $setParts[] = 'wa_invoice_curl_payload = :wa_inv_payload';
+        $setParts[] = 'wa_invoice_api_url = :wa_inv_url';
+        $setParts[] = 'wa_invoice_template_name = :wa_inv_tmpl';
+        $setParts[] = 'wa_invoice_template_lang = :wa_inv_lang';
         $params['wa_inv_curl'] = trim((string) $data['wa_invoice_curl_raw']) !== '' ? trim((string) $data['wa_invoice_curl_raw']) : null;
         $payloadRaw = trim((string) ($data['wa_invoice_curl_payload'] ?? ''));
         $params['wa_inv_payload'] = $payloadRaw !== '' ? $payloadRaw : null;
@@ -2840,6 +2909,12 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
             : null;
     }
 
+    $sql = '
+        UPDATE mobile_store_settings
+        SET ' . implode(",\n            ", $setParts) . '
+        WHERE business_id = :bid
+    ';
+    $stmt = $db->prepare($sql);
     return $stmt->execute($params);
 }
 

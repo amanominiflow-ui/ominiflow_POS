@@ -62,6 +62,10 @@ if ($businessId <= 0) {
 $brand = get_mobile_store_settings($businessId);
 echo "Store: " . ($brand['display_name'] ?? 'n/a') . "\n";
 echo "wa_auto_send_invoices: " . (!empty($brand['wa_auto_send_invoices']) ? 'ON' : 'OFF') . "\n";
+$invCurl = trim((string) ($brand['wa_invoice_curl_raw'] ?? ''));
+echo 'wa_invoice_curl_raw: ' . ($invCurl !== '' ? (strlen($invCurl) . ' chars') : 'MISSING — paste in Invoice PDF tab') . "\n";
+echo 'wa_invoice_api_url: ' . (trim((string) ($brand['wa_invoice_api_url'] ?? '')) ?: '(empty)') . "\n";
+echo 'wa_invoice_template_name: ' . (trim((string) ($brand['wa_invoice_template_name'] ?? '')) ?: '(empty)') . "\n";
 echo "wa_company_id: " . (string) ($brand['wa_company_id'] ?? '') . "\n";
 echo "wa_phone_number_id: " . (string) ($brand['wa_phone_number_id'] ?? '') . "\n";
 $token = trim((string) ($brand['wa_token'] ?? ''));

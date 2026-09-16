@@ -36,6 +36,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(APP_URL . '/pos.php');
     }
 
+    if ($action === 'send_order_invoice_whatsapp') {
+        header('Content-Type: application/json; charset=utf-8');
+        ignore_user_abort(true);
+        @set_time_limit(60);
+        $orderId = (int) ($_POST['order_id'] ?? 0);
+        if ($orderId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Order not found.']);
+            exit;
+        }
+        $phone = trim((string) ($_POST['customer_phone'] ?? ''));
+        $payStatus = strtolower(trim((string) ($_POST['payment_status'] ?? 'paid')));
+        if ($payStatus === '') {
+            $payStatus = 'paid';
+        }
+        try {
+            $res = send_order_invoice_whatsapp(current_business_id(), $orderId, $phone, [
+                'invoice_id' => (int) ($_POST['invoice_id'] ?? 0),
+                'order_number' => (string) ($_POST['order_number'] ?? ''),
+                'payment_status' => $payStatus,
+                'customer_phone' => $phone,
+            ]);
+        } catch (Throwable $e) {
+            error_log('POS async invoice WhatsApp: ' . $e->getMessage());
+            $res = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
+        }
+        echo json_encode($res);
+        exit;
+    }
+
     if ($action === 'checkout') {
         $cartJson = $_POST['cart_json'] ?? '[]';
         $cartItems = json_decode($cartJson, true) ?: [];
@@ -78,7 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
 
         if (!empty($result['success'])) {
-            $result = attach_pos_invoice_whatsapp($result, current_business_id());
+            if (!empty($_POST['is_ajax'])) {
+                $result['whatsapp_invoice'] = ['pending' => true];
+            } else {
+                $result = attach_pos_invoice_whatsapp($result, current_business_id());
+            }
         }
 
         if (!empty($_POST['is_ajax'])) {
@@ -1309,9 +1342,17 @@ $flashError = get_flash('error');
                 }
 
                 const waStatus = document.getElementById('receiptWhatsAppStatus');
-                if (waStatus) {
-                    const wa = data.whatsapp_invoice || {};
-                    const phoneLabel = wa.phone || data.customer_phone || '';
+                const applyWhatsAppInvoiceStatus = function (wa, phoneLabel) {
+                    if (!waStatus) return;
+                    wa = wa || {};
+                    if (wa.pending) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#eff6ff';
+                        waStatus.style.color = '#1d4ed8';
+                        waStatus.style.border = '1px solid #bfdbfe';
+                        waStatus.textContent = 'Sending invoice PDF to WhatsApp…';
+                        return;
+                    }
                     if (wa.success) {
                         waStatus.style.display = 'block';
                         waStatus.style.background = '#ecfdf5';
@@ -1343,6 +1384,32 @@ $flashError = get_flash('error');
                         waStatus.style.display = 'none';
                         waStatus.textContent = '';
                     }
+                };
+
+                const wa = data.whatsapp_invoice || {};
+                const phoneLabel = wa.phone || data.customer_phone || '';
+                applyWhatsAppInvoiceStatus(wa, phoneLabel);
+                if (wa.pending && data.order_id) {
+                    const waForm = new FormData();
+                    waForm.append('action', 'send_order_invoice_whatsapp');
+                    waForm.append('is_ajax', '1');
+                    waForm.append('csrf_token', csrfToken);
+                    waForm.append('order_id', String(data.order_id));
+                    waForm.append('invoice_id', String(data.invoice_id || ''));
+                    waForm.append('order_number', String(data.order_number || ''));
+                    waForm.append('payment_status', String(data.payment_status || 'paid'));
+                    waForm.append('customer_phone', String(data.customer_phone || ''));
+                    fetch('<?= asset('pos.php') ?>', { method: 'POST', body: waForm })
+                        .then(function (r) { return r.json(); })
+                        .then(function (waRes) {
+                            applyWhatsAppInvoiceStatus(waRes || {}, (waRes && waRes.phone) || phoneLabel);
+                        })
+                        .catch(function () {
+                            applyWhatsAppInvoiceStatus(
+                                { success: false, error: 'WhatsApp send may still be in progress — check the chat shortly.' },
+                                phoneLabel
+                            );
+                        });
                 }
 
                 saleCompletedModal.classList.add('open');
