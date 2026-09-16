@@ -302,6 +302,7 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
             'invoice_id' => $invoiceId,
         ];
     }
+    mark_invoice_whatsapp_sent($businessId, $invoiceId);
 
     $waPhone = format_storefront_whatsapp_phone($targetPhone);
     if (strlen($waPhone) < 10) {
@@ -328,8 +329,8 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
     }
 
     $viaCurl = send_invoice_whatsapp_via_saved_curl($businessId, $waPhone, $pdfUrl, $invNum, $caption);
-    if (!empty($viaCurl['success'])) {
-        mark_invoice_whatsapp_sent($businessId, $invoiceId);
+    if (empty($viaCurl['success'])) {
+        @unlink(invoice_whatsapp_sent_flag_path($businessId, $invoiceId));
     }
     $viaCurl['invoice_id'] = $invoiceId;
     $viaCurl['phone'] = $viaCurl['phone'] ?? $waPhone;

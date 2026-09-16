@@ -118,6 +118,20 @@ $injectOk = $injected['phone'] === '919876543210'
     && $injected['template']['components'][1]['parameters'][0]['text'] === 'INV-20260916-0018';
 echo 'inject_invoice_into_wa_payload: ' . ($injectOk ? 'PASS' : 'FAIL') . "\n";
 
+$bodyOnly = inject_invoice_into_wa_payload(
+    ['phone' => '000', 'template_name' => 'invoice_pdf', 'params' => 'INV-0000'],
+    '919876543210',
+    'https://pos.ominiflow.com/wa-invoices/1-1-abc.pdf',
+    'INV-99',
+    'INV-99.pdf',
+    'Thanks'
+);
+$headerForced = ($bodyOnly['header_params'] ?? '') === 'https://pos.ominiflow.com/wa-invoices/1-1-abc.pdf'
+    && ($bodyOnly['file'] ?? '') === 'https://pos.ominiflow.com/wa-invoices/1-1-abc.pdf'
+    && ($bodyOnly['components'][0]['type'] ?? '') === 'header'
+    && ($bodyOnly['components'][0]['parameters'][0]['document']['link'] ?? '') === 'https://pos.ominiflow.com/wa-invoices/1-1-abc.pdf';
+echo 'inject always adds document header: ' . ($headerForced ? 'PASS' : 'FAIL') . "\n";
+
 $wpbox = inject_invoice_into_wa_payload(
     [
         'phone' => '000',

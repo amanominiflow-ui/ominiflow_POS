@@ -2276,6 +2276,56 @@ function inject_invoice_into_wa_payload(
     };
     $walk($payload);
 
+    $payload['header_params'] = $pdfUrl;
+    $payload['document_url'] = $pdfUrl;
+    $payload['file'] = $pdfUrl;
+    $payload['file_url'] = $pdfUrl;
+    $payload['media_url'] = $pdfUrl;
+    $payload['filename'] = $filename;
+    $payload['header_type'] = 'document';
+
+    $headerComponent = [
+        'type' => 'header',
+        'parameters' => [[
+            'type' => 'document',
+            'document' => [
+                'link' => $pdfUrl,
+                'filename' => $filename,
+            ],
+        ]],
+    ];
+    $bodyComponent = [
+        'type' => 'body',
+        'parameters' => [['type' => 'text', 'text' => $invNum]],
+    ];
+    $mergeHeader = static function (array $components) use ($headerComponent): array {
+        $hasHeader = false;
+        foreach ($components as $i => $comp) {
+            if (!is_array($comp)) {
+                continue;
+            }
+            if (strtolower((string) ($comp['type'] ?? '')) === 'header') {
+                $components[$i] = $headerComponent;
+                $hasHeader = true;
+            }
+        }
+        if (!$hasHeader) {
+            array_unshift($components, $headerComponent);
+        }
+        return $components;
+    };
+    if (isset($payload['template']['components']) && is_array($payload['template']['components'])) {
+        $payload['template']['components'] = $mergeHeader($payload['template']['components']);
+    }
+    if (isset($payload['components']) && is_array($payload['components'])) {
+        $payload['components'] = $mergeHeader($payload['components']);
+    } elseif (!isset($payload['template']['components'])) {
+        $payload['components'] = [$headerComponent, $bodyComponent];
+    }
+    if (empty($payload['params']) || !is_string($payload['params'])) {
+        $payload['params'] = $invNum;
+    }
+
     return $payload;
 }
 
