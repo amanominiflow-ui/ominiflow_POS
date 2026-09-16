@@ -110,6 +110,11 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_raw', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_curl_raw', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_curl_payload', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_api_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_template_name', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_template_lang', "VARCHAR(20) NULL");
 
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
@@ -707,6 +712,11 @@ function get_mobile_store_settings(int $businessId): array {
         'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
         'wa_auto_send_invoices' => (int) ($row['wa_auto_send_invoices'] ?? 1) === 1,
         'wa_curl_raw' => (string) ($row['wa_curl_raw'] ?? ''),
+        'wa_invoice_curl_raw' => (string) ($row['wa_invoice_curl_raw'] ?? ''),
+        'wa_invoice_curl_payload' => (string) ($row['wa_invoice_curl_payload'] ?? ''),
+        'wa_invoice_api_url' => (string) ($row['wa_invoice_api_url'] ?? ''),
+        'wa_invoice_template_name' => (string) ($row['wa_invoice_template_name'] ?? ''),
+        'wa_invoice_template_lang' => (string) ($row['wa_invoice_template_lang'] ?? ''),
     ];
 }
 
@@ -2113,6 +2123,97 @@ function inject_otp_into_wa_payload(array $payload, string $phone, string $otp):
     return $payload;
 }
 
+function inject_invoice_into_wa_payload(
+    array $payload,
+    string $phone,
+    string $pdfUrl,
+    string $invNum,
+    string $filename,
+    string $caption
+): array {
+    $payload['phone'] = $phone;
+    if (isset($payload['to']) || isset($payload['messaging_product'])) {
+        $payload['to'] = $phone;
+    }
+
+    foreach (['document_url', 'media_url'] as $urlKey) {
+        if (array_key_exists($urlKey, $payload)) {
+            $payload[$urlKey] = $pdfUrl;
+        }
+    }
+    if (isset($payload['filename'])) {
+        $payload['filename'] = $filename;
+    }
+    if (isset($payload['caption']) && is_string($payload['caption'])) {
+        $payload['caption'] = $caption;
+    }
+
+    $bodyIndex = 0;
+    $walk = static function (&$node) use (&$walk, &$bodyIndex, $pdfUrl, $invNum, $filename, $caption): void {
+        if (!is_array($node)) {
+            return;
+        }
+
+        if (isset($node['document']) && is_array($node['document'])) {
+            $node['document']['link'] = $pdfUrl;
+            if (array_key_exists('url', $node['document'])) {
+                $node['document']['url'] = $pdfUrl;
+            }
+            $node['document']['filename'] = $filename;
+        }
+
+        $type = strtolower((string) ($node['type'] ?? ''));
+        if ($type === 'document') {
+            if (array_key_exists('link', $node)) {
+                $node['link'] = $pdfUrl;
+            }
+            if (array_key_exists('url', $node)) {
+                $node['url'] = $pdfUrl;
+            }
+            if (array_key_exists('filename', $node)) {
+                $node['filename'] = $filename;
+            }
+        }
+        if (array_key_exists('document_url', $node)) {
+            $node['document_url'] = $pdfUrl;
+        }
+        if (array_key_exists('media_url', $node)) {
+            $node['media_url'] = $pdfUrl;
+        }
+
+        if (array_key_exists('text', $node) && is_string($node['text'])) {
+            $val = trim($node['text']);
+            $isPlaceholder = $val === ''
+                || preg_match('/\{\{/', $val)
+                || preg_match('#^https?://#i', $val)
+                || preg_match('/INV[-_0-9]/i', $val)
+                || str_ends_with(strtolower($val), '.pdf')
+                || in_array(strtolower($val), ['invoice', 'invoice_number', 'order', 'pdf', 'document', 'filename'], true);
+            if ($isPlaceholder) {
+                if (preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+                    $node['text'] = $pdfUrl;
+                } elseif ($bodyIndex === 0) {
+                    $node['text'] = $invNum;
+                    $bodyIndex++;
+                } else {
+                    $node['text'] = substr($caption, 0, 60);
+                    $bodyIndex++;
+                }
+            }
+        }
+
+        foreach ($node as &$child) {
+            if (is_array($child)) {
+                $walk($child);
+            }
+        }
+        unset($child);
+    };
+    $walk($payload);
+
+    return $payload;
+}
+
 function wa_gateway_response_is_success($raw, int $httpCode): bool {
     if ($httpCode > 0 && ($httpCode < 200 || $httpCode >= 300)) {
         return false;
@@ -2177,12 +2278,16 @@ function wa_error_is_timeout(string $error): bool {
         || str_contains($error, '0 bytes received');
 }
 
-/**
- * WPBox routes are case-sensitive. Invoice PDFs use sendmessage + sendmedia,
- * never SendMessage / sendtemplatemessage.
- *
- * @return list<string>
- */
+function whatsapp_template_api_url(string $apiUrl): string {
+    $apiUrl = trim($apiUrl);
+    if ($apiUrl !== '' && stripos($apiUrl, 'sendtemplatemessage') !== false) {
+        return $apiUrl;
+    }
+    if (preg_match('#^(https?://[^/]+/api/wpbox)#i', $apiUrl, $m)) {
+        return $m[1] . '/sendtemplatemessage';
+    }
+    return 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
+}
 function whatsapp_outbound_api_urls(string $apiUrl): array {
     $apiUrl = trim($apiUrl);
     if ($apiUrl === '') {
@@ -2674,6 +2779,7 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
     $currentWa = get_mobile_store_settings($businessId);
 
     $setCurl = array_key_exists('wa_curl_raw', $data);
+    $setInvCurl = array_key_exists('wa_invoice_curl_raw', $data);
     $sql = '
         UPDATE mobile_store_settings
         SET wa_api_url = :wa_url,
@@ -2686,7 +2792,13 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
             wa_enable_storefront_otp = :wa_otp,
             wa_auto_send_invoices = :wa_auto_inv' .
             ($setCurl ? ',
-            wa_curl_raw = :wa_curl_raw' : '') . ',
+            wa_curl_raw = :wa_curl_raw' : '') .
+            ($setInvCurl ? ',
+            wa_invoice_curl_raw = :wa_inv_curl,
+            wa_invoice_curl_payload = :wa_inv_payload,
+            wa_invoice_api_url = :wa_inv_url,
+            wa_invoice_template_name = :wa_inv_tmpl,
+            wa_invoice_template_lang = :wa_inv_lang' : '') . ',
             updated_at = NOW()
         WHERE business_id = :bid
     ';
@@ -2712,6 +2824,20 @@ function save_business_whatsapp_settings(int $businessId, array $data): bool {
     ];
     if ($setCurl) {
         $params['wa_curl_raw'] = trim((string) $data['wa_curl_raw']) !== '' ? trim((string) $data['wa_curl_raw']) : null;
+    }
+    if ($setInvCurl) {
+        $params['wa_inv_curl'] = trim((string) $data['wa_invoice_curl_raw']) !== '' ? trim((string) $data['wa_invoice_curl_raw']) : null;
+        $payloadRaw = trim((string) ($data['wa_invoice_curl_payload'] ?? ''));
+        $params['wa_inv_payload'] = $payloadRaw !== '' ? $payloadRaw : null;
+        $params['wa_inv_url'] = isset($data['wa_invoice_api_url']) && trim((string) $data['wa_invoice_api_url']) !== ''
+            ? trim((string) $data['wa_invoice_api_url'])
+            : null;
+        $params['wa_inv_tmpl'] = isset($data['wa_invoice_template_name']) && trim((string) $data['wa_invoice_template_name']) !== ''
+            ? trim((string) $data['wa_invoice_template_name'])
+            : null;
+        $params['wa_inv_lang'] = isset($data['wa_invoice_template_lang']) && trim((string) $data['wa_invoice_template_lang']) !== ''
+            ? trim((string) $data['wa_invoice_template_lang'])
+            : null;
     }
 
     return $stmt->execute($params);

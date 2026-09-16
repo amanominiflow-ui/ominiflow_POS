@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+define('OMINIFLOW_SKIP_SESSION', true);
+
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/includes/invoice_pdf.php';
 

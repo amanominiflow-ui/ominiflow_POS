@@ -77,3 +77,38 @@ $emptyPhone = resolve_invoice_whatsapp_phone('', []);
 echo 'resolve phone from arg: ' . ($fromArg === '9876543210' ? 'PASS' : 'FAIL') . "\n";
 echo 'resolve phone from order: ' . ($fromOrder === '+91 90000 11111' ? 'PASS' : 'FAIL') . "\n";
 echo 'resolve phone empty: ' . ($emptyPhone === '' ? 'PASS' : 'FAIL') . "\n";
+
+$injected = inject_invoice_into_wa_payload(
+    [
+        'phone' => '0000000000',
+        'template_name' => 'invoice',
+        'document_url' => 'https://example.com/sample.pdf',
+        'filename' => 'sample.pdf',
+        'template' => [
+            'name' => 'invoice',
+            'components' => [
+                [
+                    'type' => 'header',
+                    'parameters' => [[
+                        'type' => 'document',
+                        'document' => ['link' => 'https://example.com/old.pdf', 'filename' => 'old.pdf'],
+                    ]],
+                ],
+                [
+                    'type' => 'body',
+                    'parameters' => [['type' => 'text', 'text' => 'INV-0000']],
+                ],
+            ],
+        ],
+    ],
+    '919876543210',
+    'https://pos.ominiflow.com/invoice-pdf.php?id=1',
+    'INV-20260916-0018',
+    'INV-20260916-0018.pdf',
+    'Thank you invoice'
+);
+$injectOk = $injected['phone'] === '919876543210'
+    && $injected['document_url'] === 'https://pos.ominiflow.com/invoice-pdf.php?id=1'
+    && $injected['template']['components'][0]['parameters'][0]['document']['link'] === 'https://pos.ominiflow.com/invoice-pdf.php?id=1'
+    && $injected['template']['components'][1]['parameters'][0]['text'] === 'INV-20260916-0018';
+echo 'inject_invoice_into_wa_payload: ' . ($injectOk ? 'PASS' : 'FAIL') . "\n";

@@ -26,6 +26,7 @@ ensure_online_store_schema();
 $brand = get_mobile_store_settings($bizId);
 $waGateway = get_business_whatsapp_gateway($bizId);
 $waConnected = !empty($waGateway['configured']);
+$invoiceCurlReady = trim((string) ($brand['wa_invoice_curl_raw'] ?? '')) !== '';
 if (!is_store_own_whatsapp_token((string) ($brand['wa_token'] ?? ''))) {
     $brand['wa_token'] = '';
     if (stripos((string) ($brand['wa_api_url'] ?? ''), 'whatsapp.ominiflow.com') !== false) {
@@ -91,7 +92,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_phone_number_id' => $waPhoneId,
             'wa_waba_id' => $waWabaId,
             'wa_enable_storefront_otp' => isset($_POST['wa_enable_storefront_otp']) ? 1 : 0,
-            'wa_auto_send_invoices' => isset($_POST['wa_auto_send_invoices']) ? 1 : 0,
         ];
         if ($rawCurl !== '') {
             $saveData['wa_curl_raw'] = $rawCurl;
@@ -99,8 +99,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         save_business_whatsapp_settings($bizId, $saveData);
 
-        set_flash('success', 'WhatsApp settings saved for this store. Storefront OTP will use only these credentials.');
+        set_flash('success', 'WhatsApp OTP settings saved for this store.');
         redirect('integrations-whatsapp.php');
+    }
+
+    if ($action === 'save_whatsapp_invoice_config') {
+        $invoiceCurl = trim((string) ($_POST['page_invoice_curl_raw'] ?? ''));
+        $invoiceParsed = $invoiceCurl !== '' ? parse_whatsapp_curl_command($invoiceCurl) : [
+            'wa_api_url' => '',
+            'wa_template_name' => '',
+            'wa_template_lang' => '',
+            'payload' => null,
+        ];
+        $invoiceTmpl = trim((string) ($_POST['wa_invoice_template_name'] ?? ''));
+        $invoiceLang = trim((string) ($_POST['wa_invoice_template_lang'] ?? ''));
+        if ($invoiceTmpl === '' && !empty($invoiceParsed['wa_template_name'])) {
+            $invoiceTmpl = (string) $invoiceParsed['wa_template_name'];
+        }
+        if ($invoiceLang === '' && !empty($invoiceParsed['wa_template_lang'])) {
+            $invoiceLang = (string) $invoiceParsed['wa_template_lang'];
+        }
+        $invoiceUrl = trim((string) ($_POST['wa_invoice_api_url'] ?? ''));
+        if ($invoiceUrl === '' && !empty($invoiceParsed['wa_api_url'])) {
+            $invoiceUrl = (string) $invoiceParsed['wa_api_url'];
+        }
+        $invoicePayloadJson = '';
+        if (is_array($invoiceParsed['payload'] ?? null)) {
+            $invoicePayloadJson = (string) json_encode($invoiceParsed['payload'], JSON_UNESCAPED_SLASHES);
+        }
+
+        save_business_whatsapp_settings($bizId, [
+            'wa_api_url' => (string) ($brand['wa_api_url'] ?? ''),
+            'wa_token' => (string) ($brand['wa_token'] ?? ''),
+            'wa_company_id' => (int) ($brand['wa_company_id'] ?? 0),
+            'wa_template_name' => (string) ($brand['wa_template_name'] ?? ''),
+            'wa_template_lang' => (string) ($brand['wa_template_lang'] ?? ''),
+            'wa_phone_number_id' => (string) ($brand['wa_phone_number_id'] ?? ''),
+            'wa_waba_id' => (string) ($brand['wa_waba_id'] ?? ''),
+            'wa_enable_storefront_otp' => !empty($brand['wa_enable_storefront_otp']) ? 1 : 0,
+            'wa_auto_send_invoices' => isset($_POST['wa_auto_send_invoices']) ? 1 : 0,
+            'wa_invoice_curl_raw' => $invoiceCurl,
+            'wa_invoice_curl_payload' => $invoicePayloadJson,
+            'wa_invoice_api_url' => $invoiceUrl,
+            'wa_invoice_template_name' => $invoiceTmpl,
+            'wa_invoice_template_lang' => $invoiceLang,
+        ]);
+
+        set_flash('success', 'Invoice PDF WhatsApp cURL saved. Orders will use this cURL dynamically, like OTP.');
+        redirect('integrations-whatsapp.php?tab=invoice');
     }
 
     if ($action === 'disconnect_whatsapp') {
@@ -115,6 +161,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             'wa_enable_storefront_otp' => 1,
             'wa_auto_send_invoices' => 1,
             'wa_curl_raw' => '',
+            'wa_invoice_curl_raw' => '',
+            'wa_invoice_curl_payload' => '',
+            'wa_invoice_api_url' => '',
+            'wa_invoice_template_name' => '',
+            'wa_invoice_template_lang' => '',
         ]);
 
         set_flash('success', 'WhatsApp disconnected! All credentials cleared. You can now paste your new cURL command.');
@@ -142,6 +193,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
         redirect('integrations-whatsapp.php');
+    }
+
+    if ($action === 'test_whatsapp_invoice') {
+        $testPhone = trim((string) ($_POST['test_invoice_phone'] ?? $_POST['test_phone'] ?? ''));
+        if ($testPhone === '') {
+            set_flash('error', 'Please enter a test mobile number with country code.');
+        } else {
+            require_once __DIR__ . '/includes/invoice_whatsapp.php';
+            $waPhone = format_storefront_whatsapp_phone($testPhone);
+            $pdfUrl = function_exists('pos_public_url')
+                ? pos_public_url('invoice-pdf.php')
+                : 'https://pos.ominiflow.com/invoice-pdf.php';
+            $res = send_invoice_whatsapp_via_saved_curl(
+                $bizId,
+                $waPhone,
+                $pdfUrl,
+                'INV-TEST',
+                'Test invoice from ' . (string) ($brand['display_name'] ?? 'Store')
+            );
+            $rawMsg = is_string($res['response'] ?? null) ? $res['response'] : json_encode($res['response'] ?? []);
+            if (!empty($res['success'])) {
+                set_flash('success', 'Test invoice cURL sent to +' . $waPhone . '. Check WhatsApp.');
+            } else {
+                $err = trim((string) ($res['error'] ?? 'Invoice cURL send failed.'));
+                set_flash('error', $err . ($rawMsg && $rawMsg !== 'null' ? ' Response: ' . $rawMsg : ''));
+            }
+        }
+        redirect('integrations-whatsapp.php?tab=invoice');
     }
 }
 ?>
@@ -301,7 +380,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
 
+        function parseInvoiceCurlCommand() {
+            const rawEl = document.getElementById('pageInvoiceCurlInput');
+            if (!rawEl) return;
+            const raw = rawEl.value.trim();
+            if (!raw) {
+                return;
+            }
+            let foundCount = 0;
+            const urlMatch = raw.match(/https?:\/\/[^\s'"\\]+/i);
+            if (urlMatch && urlMatch[0] && document.getElementById('page_wa_invoice_api_url')) {
+                document.getElementById('page_wa_invoice_api_url').value = urlMatch[0].replace(/['"\\,]+$/, '');
+                highlightField('page_wa_invoice_api_url');
+                foundCount++;
+            }
+            const tmplMatch = raw.match(/"template_name"\s*:\s*["']?([^"',}\s]+)["']?/i) ||
+                              raw.match(/"name"\s*:\s*["']?([a-zA-Z0-9_-]+)["']?/i);
+            if (tmplMatch && tmplMatch[1] && document.getElementById('page_wa_invoice_template_name')) {
+                document.getElementById('page_wa_invoice_template_name').value = tmplMatch[1].trim();
+                highlightField('page_wa_invoice_template_name');
+                foundCount++;
+            }
+            const langMatch = raw.match(/"template_language"\s*:\s*["']?([^"',}\s]+)["']?/i) ||
+                              raw.match(/"code"\s*:\s*["']?([a-zA-Z0-9_-]+)["']?/i);
+            if (langMatch && langMatch[1] && document.getElementById('page_wa_invoice_template_lang')) {
+                document.getElementById('page_wa_invoice_template_lang').value = langMatch[1].trim();
+                highlightField('page_wa_invoice_template_lang');
+                foundCount++;
+            }
+            if (foundCount > 0) {
+                showInvoiceParseStatus('Invoice cURL parsed (' + foundCount + ' fields). Click Save Invoice PDF Settings.');
+            }
+        }
+
+        function showInvoiceParseStatus(msg) {
+            let statusEl = document.getElementById('invoiceCurlParseFeedback');
+            const wrap = document.getElementById('pageInvoiceCurlInput')
+                ? document.getElementById('pageInvoiceCurlInput').parentNode.parentNode
+                : null;
+            if (!wrap) return;
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.id = 'invoiceCurlParseFeedback';
+                statusEl.style.marginTop = '8px';
+                statusEl.style.padding = '8px 12px';
+                statusEl.style.borderRadius = '6px';
+                statusEl.style.fontSize = '12.5px';
+                statusEl.style.fontWeight = '600';
+                wrap.appendChild(statusEl);
+            }
+            statusEl.style.display = 'block';
+            statusEl.style.background = '#dbeafe';
+            statusEl.style.color = '#1d4ed8';
+            statusEl.style.border = '1px solid #93c5fd';
+            statusEl.innerHTML = '✅ ' + msg;
+            setTimeout(function () { if (statusEl) statusEl.style.display = 'none'; }, 8000);
+        }
+
         window.parsePageCurlCommand = parsePageCurlCommand;
+        window.parseInvoiceCurlCommand = parseInvoiceCurlCommand;
     </script>
     <style>
         .wa-page-container {
@@ -761,9 +898,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 <!-- Tabs Navigation -->
                 <div class="wa-nav-tabs">
-                    <button type="button" class="wa-tab-link active" onclick="switchWaTab('settings')">⚙️ WhatsApp API & OTP Settings</button>
-                    <button type="button" class="wa-tab-link" onclick="switchWaTab('why')">Why WhatsApp Business?</button>
-                    <button type="button" class="wa-tab-link" onclick="switchWaTab('how')">How It Works</button>
+                    <button type="button" class="wa-tab-link active" data-tab="settings" onclick="switchWaTab('settings')">⚙️ WhatsApp API & OTP Settings</button>
+                    <button type="button" class="wa-tab-link" data-tab="invoice" onclick="switchWaTab('invoice')">📄 Invoice PDF</button>
+                    <button type="button" class="wa-tab-link" data-tab="why" onclick="switchWaTab('why')">Why WhatsApp Business?</button>
+                    <button type="button" class="wa-tab-link" data-tab="how" onclick="switchWaTab('how')">How It Works</button>
                 </div>
 
                 <!-- TAB 1: WhatsApp API & OTP Settings (Directly on page) -->
@@ -809,14 +947,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
 
                         <!-- Settings Form -->
-                        <form method="POST" action="integrations-whatsapp.php" onsubmit="parsePageCurlCommand()" style="padding: 20px;">
+                        <form method="POST" action="integrations-whatsapp.php" onsubmit="parsePageCurlCommand();" style="padding: 20px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="save_whatsapp_config">
 
                             <!-- Quick Import via cURL Box (Optional) -->
                             <div style="margin-bottom: 18px; padding: 12px 16px; background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 8px;">
                                 <label style="font-size: 12.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
-                                    ⚡ Paste this store's WhatsApp API cURL
+                                    ⚡ Paste this store's WhatsApp OTP cURL
                                 </label>
                                 <div style="display: flex; gap: 8px;">
                                     <textarea id="pageCurlInput" name="page_curl_raw" rows="4" class="form-control" oninput="parsePageCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://graph.facebook.com/v21.0/PHONE_NUMBER_ID/messages' -H 'Authorization: Bearer EAAG...'"><?= htmlspecialchars((string)($brand['wa_curl_raw'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
@@ -869,10 +1007,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     <input type="checkbox" name="wa_enable_storefront_otp" value="1" <?= !empty($brand['wa_enable_storefront_otp']) ? 'checked' : 'checked' ?> style="width: 16px; height: 16px;">
                                     <span>Enable WhatsApp Number & OTP on Online Storefront</span>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
-                                    <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
-                                    <span>Auto-send invoice PDF after POS and online orders to the customer WhatsApp number</span>
-                                </label>
                             </div>
 
                             <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
@@ -881,6 +1015,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 </button>
                                 <button type="submit" class="btn-primary" style="background:#25d366;border-color:#25d366;font-size:14px;font-weight:700;padding:10px 24px;border-radius:6px;cursor:pointer;">
                                     💾 Save WhatsApp Settings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- TAB: Invoice PDF (same layout as OTP settings) -->
+                <div class="wa-tab-pane" id="tab-invoice">
+                    <div style="background: linear-gradient(135deg, <?= $invoiceCurlReady ? '#eff6ff 0%, #dbeafe 100%' : '#fff7ed 0%, #ffedd5 100%' ?>); border: 1px solid <?= $invoiceCurlReady ? '#93c5fd' : '#fdba74' ?>; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 2px 6px rgba(29, 78, 216, 0.06);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; background: <?= $invoiceCurlReady ? '#2563eb' : '#f97316' ?>; display: flex; align-items: center; justify-content: center;">
+                                    <svg width="24" height="24" fill="none" stroke="#ffffff" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                </div>
+                                <div>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <h3 style="font-size: 16px; font-weight: 800; color: <?= $invoiceCurlReady ? '#1e3a8a' : '#9a3412' ?>; margin: 0;"><?= $invoiceCurlReady ? 'Invoice PDF cURL is saved' : 'Add invoice PDF cURL' ?></h3>
+                                        <span style="background: <?= $invoiceCurlReady ? '#2563eb' : '#f97316' ?>; color: #fff; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9999px; text-transform: uppercase;"><?= $invoiceCurlReady ? 'Ready' : 'Not set' ?></span>
+                                    </div>
+                                    <p style="font-size: 13px; color: <?= $invoiceCurlReady ? '#1d4ed8' : '#9a3412' ?>; margin: 4px 0 0;">Paste a separate invoice/utility template cURL here. OTP cURL stays in the OTP tab. On each order we inject phone, invoice number and PDF link.</p>
+                                </div>
+                            </div>
+                            <form method="POST" action="integrations-whatsapp.php" style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="test_whatsapp_invoice">
+                                <input type="text" name="test_invoice_phone" placeholder="Enter test number e.g. 919876543210" required class="form-control" style="font-size: 13px; padding: 9px 14px; width: 250px; background: #fff; border-color: #93c5fd;">
+                                <button type="submit" class="btn-primary" style="background:#1d4ed8;border-color:#1d4ed8;font-size:13px;font-weight:700;white-space:nowrap;padding:9px 18px;border-radius:6px;cursor:pointer;">
+                                    📄 Send Test Invoice
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); margin-bottom: 24px;">
+                        <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin: 0;">📄 Invoice PDF WhatsApp cURL</h4>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">Same as OTP: paste cURL → Parse & Fill → Save. Do not paste the OTP template here.</div>
+                        </div>
+                        <form method="POST" action="integrations-whatsapp.php" onsubmit="parseInvoiceCurlCommand();" style="padding: 20px;">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="save_whatsapp_invoice_config">
+
+                            <div style="margin-bottom: 18px; padding: 12px 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
+                                <label style="font-size: 12.5px; font-weight: 700; color: #1d4ed8; display: block; margin-bottom: 6px;">
+                                    ⚡ Paste invoice / utility template cURL
+                                </label>
+                                <div style="display: flex; gap: 8px;">
+                                    <textarea id="pageInvoiceCurlInput" name="page_invoice_curl_raw" rows="5" class="form-control" oninput="parseInvoiceCurlCommand()" style="font-family: monospace; font-size: 12px; width: 100%;" placeholder="curl -X POST 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage' ..."><?= htmlspecialchars((string)($brand['wa_invoice_curl_raw'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                                    <button type="button" class="btn-secondary" style="background:#1d4ed8;color:#fff;border:0;font-size:12px;font-weight:700;white-space:nowrap;padding:0 16px;border-radius:6px;cursor:pointer;" onclick="parseInvoiceCurlCommand()">
+                                        Parse & Fill
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                <div>
+                                    <label class="form-label" style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;">Invoice template name</label>
+                                    <input type="text" name="wa_invoice_template_name" id="page_wa_invoice_template_name" value="<?= htmlspecialchars((string)($brand['wa_invoice_template_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="invoice" style="width:100%;">
+                                </div>
+                                <div>
+                                    <label class="form-label" style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;">Template language</label>
+                                    <input type="text" name="wa_invoice_template_lang" id="page_wa_invoice_template_lang" value="<?= htmlspecialchars((string)($brand['wa_invoice_template_lang'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="en_US" style="width:100%;">
+                                </div>
+                                <div>
+                                    <label class="form-label" style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;">Invoice API URL</label>
+                                    <input type="text" name="wa_invoice_api_url" id="page_wa_invoice_api_url" value="<?= htmlspecialchars((string)($brand['wa_invoice_api_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="sendtemplatemessage URL" style="width:100%;font-size:12px;">
+                                </div>
+                            </div>
+
+                            <div style="background: #f8fafc; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #0f172a; margin: 0;">
+                                    <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
+                                    <span>Auto-send invoice PDF after POS and online orders to the customer WhatsApp number</span>
+                                </label>
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end;">
+                                <button type="submit" class="btn-primary" style="background:#2563eb;border-color:#2563eb;font-size:14px;font-weight:700;padding:10px 24px;border-radius:6px;cursor:pointer;">
+                                    💾 Save Invoice PDF Settings
                                 </button>
                             </div>
                         </form>
@@ -1079,14 +1292,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 </div>
 
                 <div style="background: #f8fafc; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a; margin-bottom: 8px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a; margin: 0;">
                         <input type="checkbox" name="wa_enable_storefront_otp" value="1" <?= !empty($brand['wa_enable_storefront_otp']) ? 'checked' : 'checked' ?> style="width: 16px; height: 16px;">
                         <span>Enable WhatsApp Number & OTP on Online Storefront</span>
                     </label>
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: #0f172a;">
-                        <input type="checkbox" name="wa_auto_send_invoices" value="1" <?= !empty($brand['wa_auto_send_invoices']) ? 'checked' : '' ?> style="width: 16px; height: 16px;">
-                        <span>Auto-send invoice PDF after POS and online orders to the customer WhatsApp number</span>
-                    </label>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #64748b;">Invoice PDF cURL and auto-send are in the <strong>Invoice PDF</strong> tab, not here.</p>
                 </div>
 
                 <div style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -1112,20 +1322,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     <script>
         function switchWaTab(tab) {
-            document.querySelectorAll('.wa-nav-tabs .wa-tab-link').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.wa-tab-pane').forEach(pane => pane.classList.remove('active'));
-
-            if (tab === 'settings') {
-                document.querySelectorAll('.wa-nav-tabs .wa-tab-link')[0].classList.add('active');
-                document.getElementById('tab-settings').classList.add('active');
-            } else if (tab === 'why') {
-                document.querySelectorAll('.wa-nav-tabs .wa-tab-link')[1].classList.add('active');
-                document.getElementById('tab-why').classList.add('active');
-            } else {
-                document.querySelectorAll('.wa-nav-tabs .wa-tab-link')[2].classList.add('active');
-                document.getElementById('tab-how').classList.add('active');
+            document.querySelectorAll('.wa-nav-tabs .wa-tab-link').forEach(function (btn) {
+                btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+            });
+            document.querySelectorAll('.wa-tab-pane').forEach(function (pane) {
+                pane.classList.remove('active');
+            });
+            var pane = document.getElementById('tab-' + tab);
+            if (pane) {
+                pane.classList.add('active');
             }
         }
+        document.addEventListener('DOMContentLoaded', function () {
+            var params = new URLSearchParams(window.location.search);
+            if (params.get('tab') === 'invoice') {
+                switchWaTab('invoice');
+            }
+        });
 
         const featureData = {
             'credit-notes': {
