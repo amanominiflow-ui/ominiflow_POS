@@ -26,13 +26,14 @@ function build_invoice_whatsapp_send_attempts(
         // until PHP times out ("WhatsApp gateway did not respond").
         $attempts[] = [
             'url' => (string) $gateway['api_url'],
+            'timeout' => 8,
             'payload' => [
                 'messaging_product' => 'whatsapp',
                 'recipient_type' => 'individual',
                 'to' => $waPhone,
                 'type' => 'text',
                 'text' => [
-                    'preview_url' => true,
+                    'preview_url' => false,
                     'body' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
                 ],
             ],
@@ -77,13 +78,11 @@ function build_wpbox_invoice_send_attempts(
     string $apiUrl
 ): array {
     $sendMessageUrl = 'https://whatsapp.ominiflow.com/api/wpbox/sendmessage';
-    $sendMediaUrl = 'https://whatsapp.ominiflow.com/api/wpbox/sendmedia';
     foreach (whatsapp_outbound_api_urls($apiUrl) as $url) {
         $leaf = strtolower((string) basename((string) (parse_url($url, PHP_URL_PATH) ?? '')));
-        if ($leaf === 'sendmedia') {
-            $sendMediaUrl = $url;
-        } elseif ($leaf === 'sendmessage') {
+        if ($leaf === 'sendmessage') {
             $sendMessageUrl = $url;
+            break;
         }
     }
 
@@ -92,26 +91,14 @@ function build_wpbox_invoice_send_attempts(
         'phone' => $waPhone,
         'message' => $caption . "\n\nDownload invoice PDF:\n" . $pdfUrl,
     ];
-    $mediaPayload = [
-        'token' => $token,
-        'phone' => $waPhone,
-        'media_type' => 'document',
-        'type' => 'document',
-        'media_url' => $pdfUrl,
-        'url' => $pdfUrl,
-        'document_url' => $pdfUrl,
-        'filename' => $invNum . '.pdf',
-        'caption' => $caption,
-        'message' => $caption,
-    ];
     if ($companyId > 0) {
         $textPayload['company_id'] = $companyId;
-        $mediaPayload['company_id'] = $companyId;
     }
 
+    // Text + link only. sendmedia makes WPBox fetch invoice-pdf.php while this
+    // PHP request is still waiting, which deadlocks until curl times out.
     return [
-        ['url' => $sendMediaUrl, 'payload' => $mediaPayload],
-        ['url' => $sendMessageUrl, 'payload' => $textPayload],
+        ['url' => $sendMessageUrl, 'payload' => $textPayload, 'timeout' => 8],
     ];
 }
 
@@ -243,8 +230,9 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
             continue;
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
+        $timeout = max(3, (int) ($attempt['timeout'] ?? 8));
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 15);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, $timeout);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
@@ -258,7 +246,12 @@ function send_order_invoice_whatsapp(int $businessId, int $orderId, string $cust
                 ];
             }
             $attemptError = wa_gateway_error_message($lastRaw, $httpCode);
-            if ($lastError === 'WhatsApp invoice could not be delivered.' || !wa_error_is_missing_route($attemptError)) {
+            if (wa_error_is_timeout($attemptError)) {
+                $attemptError = 'WhatsApp timed out while sending. The invoice PDF is ready — use View / Print Invoice.';
+            }
+            if ($lastError === 'WhatsApp invoice could not be delivered.'
+                || (!wa_error_is_missing_route($attemptError) && !wa_error_is_timeout($attemptError))
+            ) {
                 $lastError = $attemptError;
             }
         } catch (Throwable $e) {
@@ -398,8 +391,9 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
             continue;
         }
         $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
+        $timeout = max(3, (int) ($attempt['timeout'] ?? 8));
         try {
-            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, 15);
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload, $timeout);
             $lastRaw = $posted['raw'];
             $httpCode = (int) ($posted['http_code'] ?? 0);
             if (!empty($posted['success'])) {
@@ -413,7 +407,12 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
                 ];
             }
             $attemptError = wa_gateway_error_message($lastRaw, $httpCode);
-            if ($lastError === 'WhatsApp invoice could not be delivered.' || !wa_error_is_missing_route($attemptError)) {
+            if (wa_error_is_timeout($attemptError)) {
+                $attemptError = 'WhatsApp timed out while sending. The invoice PDF is ready — use View / Print Invoice.';
+            }
+            if ($lastError === 'WhatsApp invoice could not be delivered.'
+                || (!wa_error_is_missing_route($attemptError) && !wa_error_is_timeout($attemptError))
+            ) {
                 $lastError = $attemptError;
             }
         } catch (Throwable $e) {

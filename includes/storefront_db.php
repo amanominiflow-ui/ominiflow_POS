@@ -2170,6 +2170,13 @@ function wa_error_is_missing_route(string $error): bool {
         || (str_contains($error, 'route') && str_contains($error, 'not found'));
 }
 
+function wa_error_is_timeout(string $error): bool {
+    $error = strtolower($error);
+    return str_contains($error, 'timed out')
+        || str_contains($error, 'timeout')
+        || str_contains($error, '0 bytes received');
+}
+
 /**
  * WPBox routes are case-sensitive. Invoice PDFs use sendmessage + sendmedia,
  * never SendMessage / sendtemplatemessage.

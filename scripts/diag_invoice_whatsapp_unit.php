@@ -67,7 +67,7 @@ foreach ($attempts as $a) {
     }
 }
 echo 'build_invoice_whatsapp_send_attempts includes sendmessage: ' . ($hasSendMessage ? 'PASS' : 'FAIL') . "\n";
-echo 'build_invoice_whatsapp_send_attempts includes sendmedia: ' . ($hasSendMedia ? 'PASS' : 'FAIL') . "\n";
+echo 'build_invoice_whatsapp_send_attempts skips sendmedia: ' . (!$hasSendMedia ? 'PASS' : 'FAIL') . "\n";
 echo 'attempts avoid SendMessage: ' . (!$hasBadCase ? 'PASS' : 'FAIL') . "\n";
 echo 'attempt count: ' . count($attempts) . "\n";
 
