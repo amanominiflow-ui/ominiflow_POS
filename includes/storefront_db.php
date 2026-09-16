@@ -2449,6 +2449,14 @@ function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeN
         }
         if ($curlError !== '') {
             $error .= ' ' . $curlError;
+        } elseif (is_string($responseRaw) && $responseRaw !== '') {
+            $decodedErr = json_decode($responseRaw, true);
+            if (is_array($decodedErr)) {
+                $msg = $decodedErr['error']['message'] ?? $decodedErr['message'] ?? $decodedErr['error'] ?? null;
+                if (is_string($msg) && $msg !== '') {
+                    $error .= ' ' . $msg;
+                }
+            }
         }
     }
 
