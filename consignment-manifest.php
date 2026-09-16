@@ -314,6 +314,28 @@ $pageTitle = 'Consignment & COD Label Manifest';
         .manifest-top-stats {
             display: flex;
             gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .ofb-ribbon-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #0d5c52;
+            color: #ffffff !important;
+            font-weight: 800;
+            font-size: 13px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            text-decoration: none !important;
+            white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 2px 8px rgba(13, 92, 82, 0.35);
+        }
+        .ofb-ribbon-btn:hover {
+            background: #0a4a42;
+            color: #ffffff !important;
         }
 
         .stat-badge-box {
@@ -984,6 +1006,10 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                 <div class="stat-badge-val" id="topCodCount">₹<?= number_format((float)$todayStats['total_cod'], 0) ?></div>
                                 <div class="stat-badge-lbl">COD TODAY</div>
                             </div>
+                            <a href="<?= asset('offline-billing.php') ?>" class="ofb-ribbon-btn" title="Create an offline COD invoice">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                Offline Billing
+                            </a>
                         </div>
                     </div>
 

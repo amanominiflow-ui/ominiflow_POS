@@ -78,7 +78,7 @@ if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', '
 
 // Active sub-groups mapping for Business tab (Single Active Group at a time)
 $inventoryPages = ['products.php', 'product-create.php', 'product-edit.php', 'categories.php', 'stock-count.php', 'inventory.php', 'outlets.php', 'transfers.php', 'barcode-print.php'];
-$salesPages = ['orders.php', 'invoices.php', 'invoice-view.php', 'invoice-create.php', 'fulfillment.php', 'returns.php', 'consignment-manifest.php'];
+$salesPages = ['orders.php', 'invoices.php', 'invoice-view.php', 'invoice-create.php', 'fulfillment.php', 'returns.php', 'consignment-manifest.php', 'offline-billing.php'];
 $purchasesPages = ['vendors.php', 'purchases.php', 'purchase-receives.php', 'bills.php', 'payments-made.php', 'purchase-returns.php'];
 $customersPages = ['customers.php', 'promotions.php'];
 $documentsPages = ['import-export.php', 'settings.php'];
@@ -465,6 +465,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('fulfillment.php') ?>" class="submenu-link <?= $currentPage === 'fulfillment.php' ? 'active' : '' ?>">Shipments</a>
                         <a href="<?= asset('returns.php') ?>" class="submenu-link <?= $currentPage === 'returns.php' ? 'active' : '' ?>">Returns</a>
                         <a href="<?= asset('consignment-manifest.php') ?>" class="submenu-link <?= $currentPage === 'consignment-manifest.php' ? 'active' : '' ?>">Consignment &amp; COD Label Manifest</a>
+                        <a href="<?= asset('offline-billing.php') ?>" class="submenu-link <?= $currentPage === 'offline-billing.php' ? 'active' : '' ?>">Offline Billing</a>
                     </div>
                 </div>
 
