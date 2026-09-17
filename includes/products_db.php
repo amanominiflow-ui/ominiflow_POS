@@ -1452,3 +1452,84 @@ function get_inventory_stats(?int $businessId = null): array {
         'out_of_stock_count' => (int) ($stats['out_of_stock_count'] ?? 0),
     ];
 }
+
+/**
+ * Fetch products with low or depleted stock for POS Daily Alerts.
+ */
+function get_pos_low_stock_alerts(?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $stmt = $db->prepare('
+        SELECT 
+            p.id,
+            p.name,
+            p.sku,
+            p.barcode,
+            p.stock_quantity,
+            p.low_stock_threshold,
+            p.selling_price,
+            p.image_path,
+            c.name AS category_name
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_cat
+        WHERE p.business_id = :biz_id 
+          AND p.status = "active"
+          AND p.stock_quantity <= p.low_stock_threshold
+        ORDER BY p.stock_quantity ASC, p.name ASC
+    ');
+    $stmt->execute(['biz_id' => $bid, 'biz_cat' => $bid]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Fetch active products with stock on hand that have NOT been bought in the past $days days.
+ */
+function get_pos_unsold_products_alerts(int $days = 7, ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $days = max(1, $days);
+
+    $stmt = $db->prepare("
+        SELECT 
+            p.id,
+            p.name,
+            p.sku,
+            p.barcode,
+            p.stock_quantity,
+            p.low_stock_threshold,
+            p.selling_price,
+            p.image_path,
+            p.created_at AS product_created_at,
+            c.name AS category_name,
+            MAX(o.created_at) AS last_sold_at,
+            DATEDIFF(NOW(), COALESCE(MAX(o.created_at), p.created_at)) AS days_inactive,
+            (SELECT COALESCE(SUM(oi2.quantity), 0)
+             FROM order_items oi2
+             JOIN orders o2 ON o2.id = oi2.order_id
+             WHERE oi2.product_id = p.id
+               AND o2.business_id = :bid_sub
+               AND o2.order_status != 'cancelled'
+               AND o2.created_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
+            ) AS sold_in_period
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_cat
+        LEFT JOIN order_items oi ON oi.product_id = p.id
+        LEFT JOIN orders o ON o.id = oi.order_id AND o.business_id = :biz_order AND o.order_status != 'cancelled'
+        WHERE p.business_id = :biz_id
+          AND p.status = 'active'
+          AND p.stock_quantity > 0
+        GROUP BY p.id
+        HAVING sold_in_period = 0
+        ORDER BY days_inactive DESC, p.stock_quantity DESC
+        LIMIT 50
+    ");
+    $stmt->execute([
+        'biz_id' => $bid,
+        'biz_cat' => $bid,
+        'biz_order' => $bid,
+        'bid_sub' => $bid,
+    ]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+

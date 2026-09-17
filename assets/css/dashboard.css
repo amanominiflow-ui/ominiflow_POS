@@ -313,7 +313,6 @@ body {
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
 }
 
-.app-sidebar:not(.sidebar-pinned):hover .sidebar-drawer,
 .app-sidebar.sidebar-hover-open .sidebar-drawer {
     transform: translateX(0);
     opacity: 1;
@@ -1717,7 +1716,7 @@ body {
 
 .pos-search-barcode-row {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: 1.4fr 1fr auto;
     gap: 12px;
 }
 
@@ -3052,6 +3051,152 @@ body {
     display: flex;
     gap: 6px;
 }
+
+/* =========================================================================
+   POS DAILY INVENTORY & UNSOLD SALES ALERTS
+   ========================================================================= */
+
+.pos-alerts-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 14px;
+    height: 42px;
+    background: #ffffff;
+    border: 1px solid var(--saas-border);
+    border-radius: var(--saas-radius);
+    color: var(--saas-slate-700);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.pos-alerts-trigger-btn:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: var(--saas-navy-950);
+}
+
+.pos-alerts-trigger-btn.has-alerts {
+    border-color: #fdba74;
+    background: #fffaf0;
+    color: #c2410c;
+}
+
+.pos-alerts-trigger-btn.has-alerts:hover {
+    background: #fff7ed;
+    border-color: #fb923c;
+}
+
+.pos-alert-count-badge {
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    line-height: 1;
+}
+
+.pos-alert-count-badge.badge-warn {
+    background: #f59e0b;
+}
+
+.pos-alert-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--saas-border-light);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.pos-alert-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--saas-slate-600);
+    background: #f1f5f9;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pos-alert-tab-btn:hover {
+    background: #e2e8f0;
+    color: var(--saas-slate-800);
+}
+
+.pos-alert-tab-btn.active {
+    background: #ffffff;
+    color: var(--saas-primary);
+    border-color: var(--saas-border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.pos-alert-item-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--saas-border-light);
+    background: #ffffff;
+    margin-bottom: 9px;
+    transition: all 0.15s ease;
+}
+
+.pos-alert-item-card:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.pos-alert-item-card.is-out-of-stock {
+    border-left: 4px solid #ef4444;
+    background: #fffdfd;
+}
+
+.pos-alert-item-card.is-low-stock {
+    border-left: 4px solid #f59e0b;
+    background: #fffefb;
+}
+
+.pos-alert-item-card.is-unsold {
+    border-left: 4px solid #6366f1;
+    background: #fafaff;
+}
+
+.pos-alert-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.pos-alert-banner.info {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+}
+
+.pos-alert-banner.warn {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
 
 
 

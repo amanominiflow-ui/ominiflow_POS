@@ -227,6 +227,11 @@ $heldSales = get_held_sales();
 $paymentOptions = get_payment_options('active');
 $activeGateways = get_active_pos_payment_gateways();
 
+// Daily Alerts: Low Stock & Unsold for a Week (7+ Days)
+$lowStockAlerts = get_pos_low_stock_alerts();
+$unsoldAlerts = get_pos_unsold_products_alerts(7);
+$totalPosAlerts = count($lowStockAlerts) + count($unsoldAlerts);
+
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
 ?>
@@ -309,6 +314,21 @@ $flashError = get_flash('error');
                                     autofocus
                                 >
                             </div>
+
+                            <button
+                                type="button"
+                                class="pos-alerts-trigger-btn <?= $totalPosAlerts > 0 ? 'has-alerts' : '' ?>"
+                                id="openPosAlertsModalBtn"
+                                title="Daily Stock & Unsold Product Notices"
+                            >
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                <span>Alerts</span>
+                                <?php if ($totalPosAlerts > 0): ?>
+                                    <span class="pos-alert-count-badge"><?= $totalPosAlerts ?></span>
+                                <?php endif; ?>
+                            </button>
                         </div>
 
                         <!-- Category Filter Pills -->
@@ -782,6 +802,9 @@ $flashError = get_flash('error');
             </form>
         </div>
     </div>
+
+    <!-- 5. POS & HOME DAILY ALERTS MODAL (LOW STOCK & 7-DAY UNSOLD PRODUCTS) -->
+    <?php require_once __DIR__ . '/includes/daily_alerts_modal.php'; ?>
 
     <!-- CSRF Token helper for JS -->
     <input type="hidden" id="pageCsrfToken" value="<?= csrf_token() ?>">

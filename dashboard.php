@@ -25,6 +25,11 @@ $inventoryStats = get_inventory_stats();
 $salesStats = get_sales_stats();
 $recentMovements = get_inventory_movements(null, 5);
 
+// Daily Alerts: Low Stock & Unsold for a Week (7+ Days)
+$lowStockAlerts = get_pos_low_stock_alerts();
+$unsoldAlerts = get_pos_unsold_products_alerts(7);
+$totalHomeAlerts = count($lowStockAlerts) + count($unsoldAlerts);
+
 $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'dashboard';
 ?>
 <!DOCTYPE html>
@@ -466,6 +471,35 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                             </a>
                         </div>
                     </section>
+
+                    <!-- Daily Inventory & Sales Alerts Banner -->
+                    <?php if ($totalHomeAlerts > 0): ?>
+                    <section class="pos-home-alert-banner-v2" aria-label="Daily Inventory Alerts">
+                        <div class="phab-left">
+                            <div class="phab-icon">&#x1F514;</div>
+                            <div>
+                                <div class="phab-text-title">Daily Inventory &amp; Sales Notices</div>
+                                <div class="phab-text-desc">
+                                    <?php if (count($lowStockAlerts) > 0 && count($unsoldAlerts) > 0): ?>
+                                        <strong><?= count($lowStockAlerts) ?> product(s)</strong> low on stock &mdash; <strong><?= count($unsoldAlerts) ?> product(s)</strong> not sold in 7 days.
+                                    <?php elseif (count($lowStockAlerts) > 0): ?>
+                                        <strong><?= count($lowStockAlerts) ?> product(s)</strong> are at or below their reorder threshold.
+                                    <?php else: ?>
+                                        <strong><?= count($unsoldAlerts) ?> product(s)</strong> have had zero sales in the past week.
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="phab-right">
+                            <button type="button" class="phab-btn" id="openHomeAlertsBannerBtn">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                View Alerts
+                            </button>
+                        </div>
+                    </section>
+                    <?php endif; ?>
 
                     <!-- Metric / KPI Cards Grid (Sales, Orders, Products, Customers) -->
                     <section class="kpi-grid" aria-label="POS KPI Overview">
@@ -961,5 +995,6 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
             }
         }
     </script>
+    <?php require_once __DIR__ . '/includes/daily_alerts_modal.php'; ?>
 </body>
 </html>
