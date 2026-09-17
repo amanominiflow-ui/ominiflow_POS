@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/orders_db.php';
+require_once __DIR__ . '/invoice_branded.php';
 
 function invoice_pdf_signing_secret(): string {
     if (defined('OMINIFLOW_WA_TOKEN') && trim((string) OMINIFLOW_WA_TOKEN) !== '') {
@@ -59,8 +60,12 @@ function invoice_pdf_storage_dir(int $businessId): string {
 }
 
 function invoice_pdf_escape(string $text): string {
-    $text = preg_replace('/[^\x09\x0A\x0D\x20-\x7E]/', '?', $text) ?? '';
-    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+    $text = preg_replace('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{200D}]/u', '', $text) ?? $text;
+    $converted = @iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $text);
+    if (!is_string($converted) || $converted === '') {
+        $converted = preg_replace('/[^\x09\x0A\x0D\x20-\x7E]/', '', $text) ?? $text;
+    }
+    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $converted);
 }
 
 function build_simple_invoice_pdf(array $invoice): string {
@@ -143,7 +148,10 @@ function ensure_invoice_pdf_file(int $invoiceId, int $businessId): ?string {
     $dir = invoice_pdf_storage_dir($businessId);
     $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) ($invoice['invoice_number'] ?? ('inv-' . $invoiceId)));
     $path = $dir . '/' . $safeName . '.pdf';
-    $pdf = build_simple_invoice_pdf($invoice);
+    $pdf = build_branded_invoice_pdf($invoice, $businessId, 'order');
+    if ($pdf === null) {
+        $pdf = build_simple_invoice_pdf($invoice);
+    }
     if (@file_put_contents($path, $pdf) === false) {
         return null;
     }
@@ -197,24 +205,37 @@ function ensure_offline_bill_pdf_file(int $billId, int $businessId): ?string {
     }
 
     $invoice = [
+        'id' => $billId,
+        'business_id' => $businessId,
         'invoice_number' => (string) ($bill['invoice_number'] ?? ''),
         'order_number' => (string) ($bill['order_number'] ?? ''),
         'invoice_date' => (string) ($bill['invoice_date'] ?? ''),
         'customer_name' => (string) ($bill['customer_name'] ?? 'Customer'),
         'customer_phone' => (string) ($bill['customer_phone'] ?? ''),
+        'customer_address' => (string) ($bill['customer_address'] ?? ''),
+        'customer_pincode' => (string) ($bill['customer_pincode'] ?? ''),
         'payment_method' => (string) ($bill['payment_mode'] ?? 'COD'),
         'payment_status' => 'unpaid',
         'items' => $bill['items'] ?? [],
         'subtotal' => (float) ($bill['subtotal'] ?? 0),
+        'discount_amount' => (float) ($bill['discount_amount'] ?? 0),
+        'shipping_fee' => (float) ($bill['shipping_fee'] ?? 0),
         'tax_amount' => 0.0,
         'total_amount' => (float) ($bill['grand_total'] ?? 0),
-        'store' => ['business_name' => $storeName],
+        'store' => function_exists('get_store_settings') ? get_store_settings($businessId) : ['business_name' => $storeName],
     ];
+    if (empty($invoice['store']['store_name']) && empty($invoice['store']['business_name'])) {
+        $invoice['store']['business_name'] = $storeName;
+        $invoice['store']['store_name'] = $storeName;
+    }
 
     $dir = invoice_pdf_storage_dir($businessId);
     $safeName = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) ($invoice['invoice_number'] ?? ('ofb-' . $billId)));
     $path = $dir . '/ofb-' . $safeName . '.pdf';
-    $pdf = build_simple_invoice_pdf($invoice);
+    $pdf = build_branded_invoice_pdf($invoice, $businessId, 'offline');
+    if ($pdf === null) {
+        $pdf = build_simple_invoice_pdf($invoice);
+    }
     if (@file_put_contents($path, $pdf) === false) {
         return null;
     }
