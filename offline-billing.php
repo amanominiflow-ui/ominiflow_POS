@@ -84,11 +84,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'save
         'items' => is_array($items) ? $items : [],
     ];
     $res = save_offline_bill($payload, $userId, $businessId);
-    if (!empty($res['success'])) {
-        $sendWa = !empty($_POST['send_whatsapp']) || trim((string) ($payload['customer_phone'] ?? '')) !== '';
-        $res = attach_offline_bill_invoice_whatsapp($res, $businessId, (string) ($payload['customer_phone'] ?? ''), $sendWa);
+    if (!empty($res['success']) && !empty($_POST['send_whatsapp'])) {
+        $res = attach_offline_bill_invoice_whatsapp($res, $businessId, (string) ($payload['customer_phone'] ?? ''), true);
     }
     echo json_encode($res);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'send_offline_whatsapp')) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'error' => 'Security session expired. Please refresh.']);
+        exit;
+    }
+    $billId = (int) ($_POST['bill_id'] ?? 0);
+    $phone = trim((string) ($_POST['customer_phone'] ?? ''));
+    if ($billId <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Invalid bill ID.']);
+        exit;
+    }
+    $bill = get_offline_bill_by_id($billId, $businessId);
+    if (!$bill) {
+        echo json_encode(['success' => false, 'error' => 'Bill not found.']);
+        exit;
+    }
+    if ($phone === '') {
+        $phone = (string) ($bill['customer_phone'] ?? '');
+    }
+    $waRes = send_offline_bill_invoice_whatsapp($businessId, $billId, $phone, $bill, true);
+    echo json_encode([
+        'success' => !empty($waRes['success']),
+        'whatsapp_invoice' => $waRes,
+        'invoice_number' => (string) ($bill['invoice_number'] ?? ''),
+        'id' => $billId,
+    ]);
     exit;
 }
 
@@ -1733,7 +1762,7 @@ function collectPayload(opts) {
         discount_amount: (document.getElementById('fldDiscount') ? document.getElementById('fldDiscount').value : '0') || '0',
         shipping_fee: (document.getElementById('fldShipping') ? document.getElementById('fldShipping').value : '0') || '0',
         print_size: getPrintSize(),
-        send_whatsapp: (opts.sendWhatsApp || dynamicPhone !== '') ? '1' : '',
+        send_whatsapp: opts.sendWhatsApp ? '1' : '',
         items_json: JSON.stringify(OFB.items.map(function(it) {
             return {
                 product_id: it.product_id || 0,
@@ -1747,6 +1776,72 @@ function collectPayload(opts) {
     };
 }
 
+function sendWhatsAppAsync(billId, phone) {
+    phone = phone || fieldText('cartCustPhone') || fieldText('fldCustPhone');
+    billId = billId || OFB.billId;
+    if (!billId || !phone) return Promise.resolve(null);
+
+    var status = document.getElementById('ofbStatus');
+    var cartStatus = document.getElementById('ofbCartStatus');
+
+    if (cartStatus) {
+        cartStatus.style.display = 'block';
+        cartStatus.style.background = '#f1f5f9';
+        cartStatus.style.color = '#475569';
+        cartStatus.innerHTML = 'Sending invoice PDF to WhatsApp (' + escapeHtml(phone) + ')…';
+    }
+    if (status) {
+        status.textContent = 'Sending invoice to WhatsApp…';
+        status.style.color = '#475569';
+    }
+
+    return fetch(OFB.pageUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+        body: new URLSearchParams({
+            action: 'send_offline_whatsapp',
+            csrf_token: OFB.csrf,
+            bill_id: String(billId),
+            customer_phone: phone
+        }),
+        keepalive: true
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        var wa = data.whatsapp_invoice || {};
+        var invNo = data.invoice_number || fieldText('fldInvoiceNo') || ('OFB-' + billId);
+        var msg = 'Saved · ' + invNo;
+
+        if (wa.success) {
+            var sentPhone = wa.phone ? (' ' + wa.phone) : (' ' + phone);
+            msg += ' · Invoice PDF sent to WhatsApp' + sentPhone;
+            if (status) {
+                status.style.color = '#047857';
+                status.textContent = msg;
+            }
+            if (cartStatus) {
+                cartStatus.style.display = 'block';
+                cartStatus.style.background = '#ecfdf5';
+                cartStatus.style.color = '#047857';
+                cartStatus.innerHTML = '✅ Invoice PDF sent to WhatsApp <strong>' + escapeHtml(sentPhone) + '</strong>';
+            }
+        } else if (wa.error) {
+            if (status) {
+                status.style.color = '#b45309';
+                status.textContent = msg + ' · WhatsApp: ' + wa.error;
+            }
+            if (cartStatus) {
+                cartStatus.style.display = 'block';
+                cartStatus.style.background = '#fef3c7';
+                cartStatus.style.color = '#b45309';
+                var fallbackLink = wa.wa_link ? ' <a href="' + escapeHtml(wa.wa_link) + '" target="_blank" style="color:#047857;text-decoration:underline;margin-left:4px;font-weight:800;">Send via WhatsApp Web →</a>' : '';
+                cartStatus.innerHTML = '⚠️ WhatsApp: ' + escapeHtml(wa.error) + fallbackLink;
+            }
+        }
+        return data;
+    }).catch(function(err) {
+        console.error('WhatsApp send error:', err);
+    });
+}
+
 function saveBill(opts) {
     opts = opts || {};
     var status = document.getElementById('ofbStatus');
@@ -1755,15 +1850,11 @@ function saveBill(opts) {
     var origBtnText = printCartBtn ? printCartBtn.textContent : 'Print Invoice';
 
     if (status) status.textContent = opts.sendWhatsApp ? 'Saving & sending WhatsApp…' : 'Saving…';
-    if (cartStatus) {
+    if (cartStatus && opts.sendWhatsApp) {
         cartStatus.style.display = 'block';
         cartStatus.style.background = '#f1f5f9';
         cartStatus.style.color = '#475569';
-        cartStatus.innerHTML = opts.sendWhatsApp ? 'Saving bill &amp; sending invoice PDF to WhatsApp…' : 'Saving bill…';
-    }
-    if (printCartBtn && opts.sendWhatsApp) {
-        printCartBtn.disabled = true;
-        printCartBtn.textContent = 'Sending WhatsApp…';
+        cartStatus.innerHTML = 'Saving bill &amp; sending invoice PDF to WhatsApp…';
     }
 
     return fetch(OFB.pageUrl, {
@@ -1771,10 +1862,6 @@ function saveBill(opts) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
         body: new URLSearchParams(collectPayload(opts))
     }).then(function(r) { return r.json(); }).then(function(data) {
-        if (printCartBtn) {
-            printCartBtn.disabled = false;
-            printCartBtn.textContent = origBtnText;
-        }
         if (!data.success) {
             if (status) {
                 status.textContent = data.error || 'Save failed';
@@ -1810,12 +1897,6 @@ function saveBill(opts) {
                 status.style.color = '#b45309';
                 status.textContent = msg + ' · Add customer phone to send on WhatsApp';
             }
-            if (cartStatus) {
-                cartStatus.style.display = 'block';
-                cartStatus.style.background = '#fef3c7';
-                cartStatus.style.color = '#b45309';
-                cartStatus.innerHTML = 'ℹ️ Saved bill. Enter phone number to send on WhatsApp.';
-            }
         } else if (wa.error && !wa.skipped) {
             if (status) {
                 status.style.color = '#b45309';
@@ -1833,7 +1914,7 @@ function saveBill(opts) {
                 status.style.color = '#047857';
                 status.textContent = msg;
             }
-            if (cartStatus) {
+            if (cartStatus && !cartStatus.textContent.includes('Invoice PDF sent')) {
                 cartStatus.style.display = 'block';
                 cartStatus.style.background = '#ecfdf5';
                 cartStatus.style.color = '#047857';
@@ -1855,12 +1936,6 @@ function saveBill(opts) {
         refreshBarcode();
         renderQrCode(document.body.classList.contains('size-4x3') ? 48 : 68);
         return data;
-    }).catch(function(err) {
-        if (printCartBtn) {
-            printCartBtn.disabled = false;
-            printCartBtn.textContent = origBtnText;
-        }
-        throw err;
     });
 }
 
@@ -1918,6 +1993,7 @@ function switchInvoiceSize(size) {
 
 function printInvoice(opts) {
     var size = getPrintSize();
+    var dynamicPhone = fieldText('cartCustPhone') || fieldText('fldCustPhone');
     var go = function() {
         if (size === '4x3' && <?= $isStandalone ? 'false' : 'true' ?>) {
             var url = new URL(window.location.href);
@@ -1931,7 +2007,19 @@ function printInvoice(opts) {
         }
         window.print();
     };
-    saveBill(Object.assign({ sendWhatsApp: true, force: true }, opts || {})).then(go).catch(function() { window.print(); });
+
+    // 1. Save to DB fast (~20ms, without waiting for WhatsApp cURL)
+    saveBill({ sendWhatsApp: false }).then(function(data) {
+        // 2. FIRST: Trigger print invoice immediately!
+        go();
+
+        // 3. AFTER: Send invoice to WhatsApp asynchronously in the background
+        if (dynamicPhone) {
+            sendWhatsAppAsync(data.id, dynamicPhone);
+        }
+    }).catch(function() {
+        window.print();
+    });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -2062,9 +2150,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     var orderEl = document.getElementById('fldOrderNo');
     if (orderEl) orderEl.addEventListener('input', refreshBarcode);
-    if (saveBtn) saveBtn.addEventListener('click', function() { saveBill().catch(function(){}); });
-    if (waBtn) waBtn.addEventListener('click', function() { saveBill({ sendWhatsApp: true, force: true }).catch(function(){}); });
-    if (printBtn) printBtn.addEventListener('click', function() { printInvoice({ sendWhatsApp: true, force: true }); });
+    if (waBtn) waBtn.addEventListener('click', function() {
+        saveBill({ sendWhatsApp: false }).then(function(data) {
+            sendWhatsAppAsync(data.id, fieldText('fldCustPhone') || fieldText('cartCustPhone'));
+        }).catch(function(){});
+    });
+    if (printBtn) printBtn.addEventListener('click', function() { printInvoice(); });
 
     <?php if ($autoPrint): ?>
         setTimeout(function() { window.print(); }, <?= $requestedSize === '4x3' ? 500 : 350 ?>);
