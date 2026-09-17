@@ -59,8 +59,10 @@ $modalBizId = current_business_id();
 /* Only Out of Stock keeps the red left border from screenshot */
 #posDailyAlertsModal .dam-card.card-danger{border-left:4px solid #ef4444;background:#fff;}
 #posDailyAlertsModal .dam-card.card-warning{background:#fff;}
-#posDailyAlertsModal .dam-card.card-indigo{background:#fff;}
 #posDailyAlertsModal .dam-card-icon{display:none;}
+#posDailyAlertsModal .dam-card-thumb{width:46px;height:46px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
+#posDailyAlertsModal .dam-product-img{width:100%;height:100%;object-fit:cover;display:block;}
+#posDailyAlertsModal .dam-img-fallback{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#94a3b8;}
 #posDailyAlertsModal .dam-card-info{flex:1;min-width:0;}
 #posDailyAlertsModal .dam-card-name{font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #posDailyAlertsModal .dam-card-meta{font-size:12px;color:#64748b;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;}
@@ -181,6 +183,18 @@ $modalBizId = current_business_id();
                         $isDepleted = ((int)$item['stock_quantity'] <= 0);
                     ?>
                         <div class="dam-card <?= $isDepleted ? 'card-danger' : '' ?>">
+                            <div class="dam-card-thumb">
+                                <?php if (!empty($item['image_path'])): ?>
+                                    <img src="<?= asset($item['image_path']) ?>" alt="<?= e($item['name']) ?>" class="dam-product-img" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                                    <div class="dam-img-fallback" style="display:none;">
+                                        <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="dam-img-fallback">
+                                        <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                             <div class="dam-card-info">
                                 <div class="dam-card-name"><?= e($item['name']) ?></div>
                                 <div class="dam-card-meta">
@@ -211,6 +225,18 @@ $modalBizId = current_business_id();
                         $daysInactive = (int)($item['days_inactive'] ?? 0);
                     ?>
                         <div class="dam-card">
+                            <div class="dam-card-thumb">
+                                <?php if (!empty($item['image_path'])): ?>
+                                    <img src="<?= asset($item['image_path']) ?>" alt="<?= e($item['name']) ?>" class="dam-product-img" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                                    <div class="dam-img-fallback" style="display:none;">
+                                        <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="dam-img-fallback">
+                                        <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                             <div class="dam-card-info">
                                 <div class="dam-card-name"><?= e($item['name']) ?></div>
                                 <div class="dam-card-meta">
@@ -240,6 +266,18 @@ $modalBizId = current_business_id();
                             $isDepleted = ((int)$item['stock_quantity'] <= 0);
                         ?>
                             <div class="dam-card <?= $isDepleted ? 'card-danger' : '' ?>">
+                                <div class="dam-card-thumb">
+                                    <?php if (!empty($item['image_path'])): ?>
+                                        <img src="<?= asset($item['image_path']) ?>" alt="<?= e($item['name']) ?>" class="dam-product-img" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                                        <div class="dam-img-fallback" style="display:none;">
+                                            <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="dam-img-fallback">
+                                            <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="dam-card-info">
                                     <div class="dam-card-name"><?= e($item['name']) ?></div>
                                     <div class="dam-card-meta">
@@ -258,6 +296,18 @@ $modalBizId = current_business_id();
                         <div class="dam-section-label" style="margin-top:14px;">Not Sold in 7 Days (<?= count($unsoldAlerts) ?>)</div>
                         <?php foreach ($unsoldAlerts as $item): ?>
                             <div class="dam-card">
+                                <div class="dam-card-thumb">
+                                    <?php if (!empty($item['image_path'])): ?>
+                                        <img src="<?= asset($item['image_path']) ?>" alt="<?= e($item['name']) ?>" class="dam-product-img" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                                        <div class="dam-img-fallback" style="display:none;">
+                                            <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="dam-img-fallback">
+                                            <svg width="20" height="20" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V11M4 7v10l8 4"/></svg>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="dam-card-info">
                                     <div class="dam-card-name"><?= e($item['name']) ?></div>
                                     <div class="dam-card-meta">

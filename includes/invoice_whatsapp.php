@@ -384,9 +384,15 @@ function invoice_whatsapp_ofb_flag_path(int $businessId, int $billId): string {
     return invoice_pdf_storage_dir($businessId) . '/wa-sent-ofb-' . $billId . '.flag';
 }
 
-function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string $customerPhone = '', array $billResult = []): array {
+function send_offline_bill_invoice_whatsapp(
+    int $businessId,
+    int $billId,
+    string $customerPhone = '',
+    array $billResult = [],
+    bool $force = false
+): array {
     $brand = get_mobile_store_settings($businessId);
-    if (empty($brand['wa_auto_send_invoices'])) {
+    if (!$force && empty($brand['wa_auto_send_invoices'])) {
         return ['success' => false, 'skipped' => true, 'error' => 'Auto-send invoices is disabled.'];
     }
 
@@ -400,7 +406,7 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
         return ['success' => false, 'error' => 'Customer WhatsApp number is missing or invalid.'];
     }
 
-    if ($billId > 0 && is_file(invoice_whatsapp_ofb_flag_path($businessId, $billId))) {
+    if (!$force && $billId > 0 && is_file(invoice_whatsapp_ofb_flag_path($businessId, $billId))) {
         return [
             'success' => true,
             'skipped' => true,
@@ -425,21 +431,61 @@ function send_offline_bill_invoice_whatsapp(int $businessId, int $billId, string
     }
     $caption .= '.';
 
+    $waLink = 'https://wa.me/' . $waPhone . '?text=' . rawurlencode($caption . "\n\nDownload invoice PDF:\n" . $pdfUrl);
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
 
+    // 1. Try sending via saved custom cURL template (if configured in Settings -> WhatsApp -> Invoice PDF tab)
     $viaCurl = send_invoice_whatsapp_via_saved_curl($businessId, $waPhone, $pdfUrl, $invNum, $caption);
+
+    // 2. Fallback: if custom cURL is not configured or failed, use connected WhatsApp gateway (WPBox / Meta Cloud API)
+    if (empty($viaCurl['success'])) {
+        $gateway = get_business_whatsapp_gateway($businessId);
+        if (!empty($gateway['configured'])) {
+            $attempts = build_invoice_whatsapp_send_attempts($gateway, $waPhone, $caption, $pdfUrl, $invNum);
+            foreach ($attempts as $attempt) {
+                try {
+                    $token = (string) ($attempt['payload']['token'] ?? $gateway['token'] ?? '');
+                    $posted = post_whatsapp_json(
+                        (string) $attempt['url'],
+                        $token,
+                        $attempt['payload'],
+                        (int) ($attempt['timeout'] ?? 15)
+                    );
+                    if (!empty($posted['success'])) {
+                        $viaCurl = [
+                            'success' => true,
+                            'phone' => $waPhone,
+                            'pdf_url' => $pdfUrl,
+                            'gateway' => 'standard',
+                        ];
+                        break;
+                    }
+                } catch (Throwable $e) {
+                    error_log('Offline bill WhatsApp gateway attempt error: ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
     if (!empty($viaCurl['success'])) {
         @file_put_contents(invoice_whatsapp_ofb_flag_path($businessId, $billId), date('c'));
     }
     $viaCurl['bill_id'] = $billId;
     $viaCurl['phone'] = $viaCurl['phone'] ?? $waPhone;
     $viaCurl['pdf_url'] = $viaCurl['pdf_url'] ?? $pdfUrl;
+    $viaCurl['wa_link'] = $waLink;
     return $viaCurl;
 }
 
-function attach_offline_bill_invoice_whatsapp(array $saveResult, int $businessId, string $customerPhone = ''): array {
+function attach_offline_bill_invoice_whatsapp(
+    array $saveResult,
+    int $businessId,
+    string $customerPhone = '',
+    bool $force = false
+): array {
     if (empty($saveResult['success'])) {
         return $saveResult;
     }
@@ -448,13 +494,14 @@ function attach_offline_bill_invoice_whatsapp(array $saveResult, int $businessId
             $businessId,
             (int) ($saveResult['id'] ?? 0),
             $customerPhone !== '' ? $customerPhone : (string) ($saveResult['customer_phone'] ?? ''),
-            $saveResult
+            $saveResult,
+            $force
         );
     } catch (Throwable $e) {
         error_log('Offline bill invoice WhatsApp: ' . $e->getMessage());
         $saveResult['whatsapp_invoice'] = [
             'success' => false,
-            'error' => 'Could not send invoice on WhatsApp.',
+            'error' => 'Could not send invoice on WhatsApp: ' . $e->getMessage(),
         ];
     }
     return $saveResult;
