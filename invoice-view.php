@@ -515,6 +515,8 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             justify-content: center;
             text-align: center;
             padding-right: 12px;
+            min-width: 0;
+            overflow: hidden;
         }
         .inv-brand-img {
             max-height: 98px;
@@ -532,10 +534,14 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             font-size: 16.5px;
             font-weight: 900;
             color: var(--inv-theme);
-            letter-spacing: 0.14em;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             line-height: 1.25;
             text-align: center;
+            width: 100%;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         /* Middle Column: Invoice Title & Meta */
@@ -896,8 +902,8 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             border-radius: 14px;
         }
         body.size-4x3 .inv-top-grid {
-            grid-template-columns: 125px 1fr 1.05fr;
-            gap: 12px;
+            grid-template-columns: minmax(0, 108px) minmax(0, 1.15fr) minmax(0, 1.25fr);
+            gap: 10px;
             margin-bottom: 12px;
         }
         body.size-4x3 .inv-brand-peacock-icon {
@@ -906,13 +912,26 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 4px;
         }
         body.size-4x3 .inv-brand-img {
-            max-height: 56px;
-            max-width: 115px;
+            max-height: 52px;
+            max-width: 96px;
             margin-bottom: 4px;
         }
+        body.size-4x3 .inv-brand-col {
+            min-width: 0;
+            max-width: 108px;
+            overflow: hidden;
+            padding-right: 6px;
+        }
         body.size-4x3 .inv-brand-title {
-            font-size: 11px;
-            font-weight: 900;
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1.15;
+            width: 100%;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            hyphens: auto;
         }
         body.size-4x3 .inv-meta-col {
             padding-left: 0;
@@ -998,7 +1017,12 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 1px;
         }
         body.size-4x3 .inv-love-brand {
-            font-size: 8.5px;
+            font-size: 7px;
+            letter-spacing: 0.04em;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            line-height: 1.15;
         }
         body.size-4x3 .inv-footer-help {
             gap: 8px;
@@ -1148,13 +1172,14 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 grid-template-columns: none !important;
             }
             body.size-4x3 .inv-brand-col {
-                flex: 0 0 22% !important;
-                width: 22% !important;
+                flex: 0 0 20% !important;
+                width: 20% !important;
                 min-width: 0 !important;
-                max-width: 24% !important;
+                max-width: 22% !important;
                 padding-right: 4px !important;
                 justify-content: flex-start !important;
                 align-self: flex-start !important;
+                overflow: hidden !important;
             }
             body.size-4x3 .inv-meta-col {
                 flex: 1 1 38% !important;
@@ -1227,8 +1252,17 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 letter-spacing: 0.02em !important;
             }
             body.size-4x3 .inv-brand-peacock-icon { width: 36px !important; height: 36px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-brand-img { max-height: 36px !important; max-width: 80px !important; }
-            body.size-4x3 .inv-brand-title { font-size: 8px !important; }
+            body.size-4x3 .inv-brand-img { max-height: 36px !important; max-width: 72px !important; }
+            body.size-4x3 .inv-brand-title {
+                font-size: 6.5px !important;
+                font-weight: 800 !important;
+                letter-spacing: 0.01em !important;
+                line-height: 1.15 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-wrap: anywhere !important;
+                word-break: break-word !important;
+            }
             body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 7.5px !important; gap: 1px !important; }
             body.size-4x3 .inv-cust-heading { font-size: 9.5px !important; margin-bottom: 3px !important; }
             body.size-4x3 .inv-table-wrap { margin-bottom: 5px !important; border-width: 1px !important; overflow: hidden !important; }
@@ -1263,7 +1297,13 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             body.size-4x3 .inv-barcode-svg-wrap svg { height: 22px !important; }
             body.size-4x3 .inv-love-script { font-size: 12px !important; }
             body.size-4x3 .inv-love-heart { font-size: 7px !important; margin-bottom: 1px !important; }
-            body.size-4x3 .inv-love-brand { font-size: 7px !important; }
+            body.size-4x3 .inv-love-brand {
+                font-size: 6.5px !important;
+                letter-spacing: 0.02em !important;
+                max-width: 100% !important;
+                overflow-wrap: anywhere !important;
+                word-break: break-word !important;
+            }
             body.size-4x3 .inv-qr-box { width: 36px !important; height: 36px !important; }
             body.size-4x3 .inv-qr-box canvas, body.size-4x3 .inv-qr-box img { width: 36px !important; height: 36px !important; }
             body.size-4x3 .inv-help-text { font-size: 7px !important; line-height: 1.15 !important; }

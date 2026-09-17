@@ -689,7 +689,7 @@ if ($currentPayMode !== '' && !in_array($currentPayMode, $paymentModes, true)) {
         }
         body.size-4x3 .inv-top-grid {
             display: grid;
-            grid-template-columns: 86px minmax(0, 1.4fr) minmax(0, 1.25fr);
+            grid-template-columns: minmax(0, 86px) minmax(0, 1.4fr) minmax(0, 1.25fr);
             gap: 10px;
             margin-bottom: 10px;
             align-items: start;
@@ -711,9 +711,10 @@ if ($currentPayMode !== '' && !in_array($currentPayMode, $paymentModes, true)) {
         body.size-4x3 .inv-brand-img { max-height: 52px; max-width: 78px; margin-bottom: 4px; }
         body.size-4x3 .inv-brand-col svg { width: 52px; height: 52px; margin-bottom: 4px !important; }
         body.size-4x3 .inv-brand-title {
-            font-size: clamp(7.5px, 1.6vw, 10px);
-            font-weight: 900;
-            letter-spacing: 0.03em;
+            font-size: clamp(7px, 1.5vw, 9px);
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1.15;
             overflow-wrap: anywhere;
             word-break: break-word;
             max-width: 100%;
