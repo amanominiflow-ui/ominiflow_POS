@@ -205,6 +205,7 @@ function prepare_branded_invoice_view(array $invoice, int $businessId, string $k
 function build_branded_invoice_pdf(array $invoice, int $businessId, string $kind = 'order'): ?string {
     try {
         $view = prepare_branded_invoice_view($invoice, $businessId, $kind);
+        $view['page_size'] = 'a4';
         $fromGd = invoice_branded_pdf_via_gd($view);
         if (is_string($fromGd) && strlen($fromGd) > 2000 && str_starts_with($fromGd, '%PDF')) {
             return $fromGd;
@@ -465,10 +466,10 @@ function invoice_branded_build_html(array $view): string {
 
     return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Invoice</title>
 <style>
-@page { size: A4; margin: 10mm; }
+@page { size: A4 portrait; margin: 10mm; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { background: #ffffff; color: #1e293b; font-family: "Segoe UI", "Plus Jakarta Sans", Arial, sans-serif; }
-.inv-card { border: 2.5px solid ' . $theme . '; border-radius: 18px; padding: 28px 32px; }
+html, body { width: 210mm; min-height: 277mm; background: #ffffff; color: #1e293b; font-family: "Segoe UI", "Plus Jakarta Sans", Arial, sans-serif; }
+.inv-card { border: 2.5px solid ' . $theme . '; border-radius: 18px; padding: 28px 32px; min-height: 265mm; }
 .inv-top { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
 .inv-top td { vertical-align: top; }
 .brand { width: 200px; text-align: center; }
@@ -795,7 +796,6 @@ function invoice_branded_pdf_via_gd(array $view): ?string {
         return null;
     }
     $W = 1240;
-    $pad = 72;
     $nameColW = 384;
     $nameFont = invoice_branded_ttf('bold');
     if ($nameFont === '') {
@@ -816,8 +816,9 @@ function invoice_branded_pdf_via_gd(array $view): ?string {
         $itemLayouts[] = ['item' => $it, 'nameLines' => $nameLines, 'h' => $h];
         $tableBodyH += $h;
     }
-    $H = 72 + 270 + 42 + $tableBodyH + 168 + 118;
-    $H = max(820, min(2200, $H));
+    // WhatsApp / download PDFs are always ISO A4 (210mm x 297mm at 150 DPI).
+    $H = 1754;
+    $pad = 72;
 
     $im = imagecreatetruecolor($W, $H);
     if ($im === false) {
@@ -1059,16 +1060,12 @@ function invoice_branded_pdf_via_gd(array $view): ?string {
 }
 
 function invoice_jpeg_to_pdf(string $jpeg, int $imgW, int $imgH): string {
-    $pageW = 595.0;
-    $pageH = 842.0;
-    $margin = 10.0;
-    $maxW = $pageW - (2 * $margin);
-    $maxH = $pageH - (2 * $margin);
-    $scale = min($maxW / max(1, $imgW), $maxH / max(1, $imgH));
-    $drawW = $imgW * $scale;
-    $drawH = $imgH * $scale;
-    $x = ($pageW - $drawW) / 2;
-    $y = ($pageH - $drawH) / 2;
+    $pageW = 595.28;
+    $pageH = 841.89;
+    $drawW = $pageW;
+    $drawH = $pageH;
+    $x = 0.0;
+    $y = 0.0;
     $len = strlen($jpeg);
     $content = sprintf("q %.2f 0 0 %.2f %.2f %.2f cm /Im0 Do Q\n", $drawW, $drawH, $x, $y);
     $contentLen = strlen($content);
