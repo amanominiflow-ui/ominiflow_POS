@@ -1019,12 +1019,22 @@ $pageTitle = 'Consignment & COD Label Manifest';
                         <!-- Left Column: Form Controls -->
                         <div class="manifest-column-left">
 
+                            <!-- Quick Collapse / Expand Accordion Bar -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px;">
+                                <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Label Sections (Accordion Dropdowns)</span>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" onclick="expandAllCards()" style="font-size: 11px; background: none; border: none; color: #2563eb; cursor: pointer; font-weight: 700; text-decoration: underline;">📂 Expand All</button>
+                                    <span style="color: #cbd5e1;">|</span>
+                                    <button type="button" onclick="collapseAllCards()" style="font-size: 11px; background: none; border: none; color: #64748b; cursor: pointer; font-weight: 700; text-decoration: underline;">📁 Collapse All</button>
+                                </div>
+                            </div>
+
                             <!-- Card 1: SENDER / SENDER DETAILS -->
                             <div class="m-card">
                                 <div class="m-card-header" onclick="toggleCard('businessDetailsBody')">
                                     <div class="m-card-title">
                                         <span class="m-badge-dot"></span>
-                                        <span>SENDER &amp; BOOKING OFFICE DETAILS</span>
+                                        <span>1. SENDER &amp; BUSINESS DETAILS</span>
                                     </div>
                                     <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                 </div>
@@ -1066,44 +1076,223 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                         </div>
                                     </div>
 
-                                    <div class="m-form-group">
-                                        <label class="m-form-label">BOOKING OFFICE</label>
-                                        <input type="text" id="bookingOffice" class="m-form-input" value="LAKHANI S.O (385581)" placeholder="LAKHANI S.O (385581)">
-                                    </div>
-
-                                    <div class="m-form-row m-form-group">
-                                        <div>
-                                            <label class="m-form-label">GST NO.</label>
-                                            <input type="text" id="bookingGst" class="m-form-input" value="24AAALH0747F1ZI" placeholder="24AAALH0747F1ZI">
-                                        </div>
-                                        <div>
-                                            <label class="m-form-label">CONTRACT CUSTOMER ID</label>
-                                            <input type="text" id="bookingCustomerId" class="m-form-input" value="1000060678" placeholder="1000060678">
-                                        </div>
-                                    </div>
-
                                     <button type="button" onclick="saveBusinessDefaults()" style="font-size: 11px; background: none; border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 12px; color: #475569; cursor: pointer; font-weight: 600;">
                                         💾 Remember My Sender Details
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Card 2: NEW LABEL / PARCEL & RECEIVER -->
+                            <!-- Card 2: TOP / BARCODE & SERVICE DETAILS -->
                             <div class="m-card">
-                                <div class="m-card-header" onclick="toggleCard('newLabelBody')">
+                                <div class="m-card-header" onclick="toggleCard('serviceDetailsBody')">
                                     <div class="m-card-title">
-                                        <svg width="16" height="16" fill="none" stroke="#d97706" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                        <span>PARCEL &amp; RECEIVER (DYNAMIC FOR ANY CUSTOMER)</span>
+                                        <svg width="16" height="16" fill="none" stroke="#d97706" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                                        <span>2. SERVICE, TRACKING &amp; COD</span>
                                     </div>
                                     <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                 </div>
-                                <div class="m-card-body" id="newLabelBody">
+                                <div class="m-card-body" id="serviceDetailsBody">
+                                    <div class="m-form-group">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                            <label class="m-form-label" style="margin-bottom: 0;">SPEED POST TRACKING NO.</label>
+                                            <button type="button" onclick="generateRandomTracking()" style="font-size: 10px; color: #d97706; background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 700;">Generate Sample</button>
+                                        </div>
+                                        <input type="text" id="trackNo" class="m-form-input" value="EY360986535IN" placeholder="e.g. EY360986535IN" style="font-family: monospace; font-weight: 800; letter-spacing: 1px; font-size: 14px;">
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">SERVICE TYPE (DROPDOWN)</label>
+                                            <select id="srvLabelSelect" class="m-form-select" onchange="document.getElementById('srvLabel').value = this.value; updateLiveLabel();" style="margin-bottom: 4px; font-size: 12px; font-weight: 700;">
+                                                <option value="SPEED POST PARCEL DOMESTIC" selected>SPEED POST PARCEL DOMESTIC</option>
+                                                <option value="BUSINESS PARCEL DOMESTIC">BUSINESS PARCEL DOMESTIC</option>
+                                                <option value="EXPRESS PARCEL DOMESTIC">EXPRESS PARCEL DOMESTIC</option>
+                                                <option value="REGISTERED PARCEL DOMESTIC">REGISTERED PARCEL DOMESTIC</option>
+                                                <option value="SPEED POST DOCUMENT">SPEED POST DOCUMENT</option>
+                                            </select>
+                                            <input type="text" id="srvLabel" class="m-form-input" value="SPEED POST PARCEL DOMESTIC" placeholder="SPEED POST PARCEL DOMESTIC">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">PAYMENT TYPE (DROPDOWN)</label>
+                                            <select id="ordType" class="m-form-select" onchange="toggleCodAmount()" style="font-weight: 700;">
+                                                <option value="Cash on Delivery" selected>Cash on Delivery (COD)</option>
+                                                <option value="Prepaid">Prepaid DropOff</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div id="codAmountGroup">
+                                            <label class="m-form-label">COD AMOUNT (₹)</label>
+                                            <input type="number" id="codAmount" class="m-form-input" value="999" placeholder="999" min="0" step="1">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">CHARGED WEIGHT (GMS)</label>
+                                            <input type="text" id="parcelWeight" class="m-form-input" value="500" placeholder="500">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Card 3: CENTER / BOOKING & TARIFF DATA (FULLY EDITABLE WITH DROPDOWNS) -->
+                            <div class="m-card">
+                                <div class="m-card-header" onclick="toggleCard('centerBookingBody')">
+                                    <div class="m-card-title">
+                                        <svg width="16" height="16" fill="none" stroke="#2563eb" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                        <span style="color: #1d4ed8;">3. CENTER BLOCK: BOOKING &amp; TARIFF</span>
+                                    </div>
+                                    <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </div>
+                                <div class="m-card-body" id="centerBookingBody">
+                                    
+                                    <!-- Dynamic Tariff & Weight Slab Dropdown Quick Selector -->
+                                    <div style="background: #eff6ff; border: 1.5px dashed #93c5fd; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                                        <label class="m-form-label" style="color: #1e40af; font-size: 11px; margin-bottom: 4px;">
+                                            ⚡ QUICK PRESET: WEIGHT &amp; TARIFF SLAB (DROPDOWN)
+                                        </label>
+                                        <select id="tariffPresetSelect" class="m-form-select" onchange="applyTariffPreset(this.value)" style="border-color: #3b82f6; font-weight: 700; font-size: 12.5px; background: #ffffff;">
+                                            <option value="">-- Choose Standard India Post Weight &amp; Tariff Slab --</option>
+                                            <option value='{"weight":"500","phy":"500","vol":"280(L:14 B:10 H:10)","paid":"60.00","base":"50.00","tax":"10.00","cgst":"5.00","sgst":"5.00"}' selected>Standard 500g — ₹60.00 (Base: ₹50.00 + Tax: ₹10.00)</option>
+                                            <option value='{"weight":"1000","phy":"1000","vol":"560(L:20 B:14 H:10)","paid":"88.50","base":"75.00","tax":"13.50","cgst":"6.75","sgst":"6.75"}'>Medium 1000g / 1 Kg — ₹88.50 (Base: ₹75.00 + Tax: ₹13.50)</option>
+                                            <option value='{"weight":"2000","phy":"2000","vol":"1120(L:25 B:18 H:12)","paid":"118.00","base":"100.00","tax":"18.00","cgst":"9.00","sgst":"9.00"}'>Heavy 2000g / 2 Kg — ₹118.00 (Base: ₹100.00 + Tax: ₹18.00)</option>
+                                            <option value='{"weight":"3000","phy":"3000","vol":"1680(L:30 B:20 H:14)","paid":"153.40","base":"130.00","tax":"23.40","cgst":"11.70","sgst":"11.70"}'>Bulk 3000g / 3 Kg — ₹153.40 (Base: ₹130.00 + Tax: ₹23.40)</option>
+                                            <option value='{"weight":"250","phy":"250","vol":"140(L:10 B:8 H:5)","paid":"41.30","base":"35.00","tax":"6.30","cgst":"3.15","sgst":"3.15"}'>Small Document / Packet 250g — ₹41.30 (Base: ₹35.00 + Tax: ₹6.30)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">BOOKING OFFICE (DROPDOWN + CUSTOM)</label>
+                                        <select id="bookingOfficeSelect" class="m-form-select" onchange="applyBookingOfficePreset(this.value)" style="margin-bottom: 4px; font-weight: 600; font-size: 12px;">
+                                            <option value="">-- Choose Booking Post Office (or type below) --</option>
+                                            <option value="LAKHANI S.O (385581)" selected>LAKHANI S.O (385581)</option>
+                                            <option value="DEESA H.O (385535)">DEESA H.O (385535)</option>
+                                            <option value="PALANPUR H.O (385001)">PALANPUR H.O (385001)</option>
+                                            <option value="AHMEDABAD G.P.O (380001)">AHMEDABAD G.P.O (380001)</option>
+                                            <option value="JUHAPURA S.O (380055)">JUHAPURA S.O (380055)</option>
+                                            <option value="SURAT H.O (395003)">SURAT H.O (395003)</option>
+                                            <option value="VADODARA H.O (390001)">VADODARA H.O (390001)</option>
+                                            <option value="RAJKOT H.O (360001)">RAJKOT H.O (360001)</option>
+                                            <option value="NEW DELHI G.P.O (110001)">NEW DELHI G.P.O (110001)</option>
+                                            <option value="MUMBAI G.P.O (400001)">MUMBAI G.P.O (400001)</option>
+                                            <option value="JAIPUR G.P.O (302001)">JAIPUR G.P.O (302001)</option>
+                                        </select>
+                                        <input type="text" id="bookingOffice" class="m-form-input" value="LAKHANI S.O (385581)" placeholder="LAKHANI S.O (385581)">
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">COUNTER NO. (DROPDOWN)</label>
+                                            <select id="bookingCounterNoSelect" class="m-form-select" onchange="document.getElementById('bookingCounterNo').value = this.value; updateLiveLabel();" style="margin-bottom: 4px; font-weight: 700;">
+                                                <option value="0" selected>Counter 0</option>
+                                                <option value="1">Counter 1</option>
+                                                <option value="2">Counter 2</option>
+                                                <option value="3">Counter 3</option>
+                                                <option value="4">Counter 4</option>
+                                                <option value="5">Counter 5</option>
+                                            </select>
+                                            <input type="text" id="bookingCounterNo" class="m-form-input" value="0" placeholder="0">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">GST NO.</label>
+                                            <input type="text" id="bookingGst" class="m-form-input" value="24AAALH0747F1ZI" placeholder="24AAALH0747F1ZI" style="margin-top: 24px;">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                <label class="m-form-label" style="margin-bottom: 0;">BOOKING DATE &amp; TIME</label>
+                                                <button type="button" onclick="setBookingTimeToNow()" style="font-size: 10px; color: #2563eb; background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 700;">🔄 Now</button>
+                                            </div>
+                                            <input type="text" id="bookingDateTime" class="m-form-input" value="<?= date('d-m-Y H:i:s') ?>" placeholder="DD-MM-YYYY HH:MM:SS">
+                                        </div>
+                                        <div>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                <label class="m-form-label" style="margin-bottom: 0;">BKG REF ID</label>
+                                                <button type="button" onclick="generateRandomBkgRef()" style="font-size: 10px; color: #2563eb; background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 700;">🎲 Random</button>
+                                            </div>
+                                            <input type="text" id="bookingBkgRef" class="m-form-input" value="1666012713052605627" placeholder="1666012713052605627">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">CONTRACT CUSTOMER ID</label>
+                                            <input type="text" id="bookingCustomerId" class="m-form-input" value="1000060678" placeholder="1000060678">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">PHYSICAL WT (GMS)</label>
+                                            <input type="text" id="bookingPhyWeight" class="m-form-input" value="500" placeholder="500">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">VOL. WT &amp; DIMS (L:B:H)</label>
+                                        <input type="text" id="bookingVolWeightText" class="m-form-input" value="280(L:14 B:10 H:10)" placeholder="280(L:14 B:10 H:10)">
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">AMOUNT PAID (₹)</label>
+                                            <input type="text" id="bookingAmountPaid" class="m-form-input" value="60.00" placeholder="60.00">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">BASE TARIFF (₹)</label>
+                                            <input type="text" id="bookingBaseTariff" class="m-form-input" value="50.00" placeholder="50.00">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">TOTAL TAX (₹)</label>
+                                            <input type="text" id="bookingTaxAmount" class="m-form-input" value="10.00" placeholder="10.00">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">CGST (₹)</label>
+                                            <input type="text" id="bookingCgst" class="m-form-input" value="5.00" placeholder="5.00">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">SGST (₹)</label>
+                                            <input type="text" id="bookingSgst" class="m-form-input" value="5.00" placeholder="5.00">
+                                        </div>
+                                        <div>
+                                            <label class="m-form-label">PAYMENT MODE (DROPDOWN)</label>
+                                            <select id="bookingPayModeSelect" class="m-form-select" onchange="document.getElementById('bookingPayMode').value = this.value; updateLiveLabel();" style="margin-bottom: 4px; font-weight: 700;">
+                                                <option value="CONTRACT" selected>CONTRACT</option>
+                                                <option value="CASH">CASH</option>
+                                                <option value="PREPAID">PREPAID</option>
+                                                <option value="CREDIT">CREDIT</option>
+                                                <option value="ONLINE">ONLINE / UPI</option>
+                                            </select>
+                                            <input type="text" id="bookingPayMode" class="m-form-input" value="CONTRACT" placeholder="CONTRACT">
+                                        </div>
+                                    </div>
+
+                                    <button type="button" onclick="saveBusinessDefaults()" style="font-size: 11px; background: none; border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 12px; color: #2563eb; cursor: pointer; font-weight: 700;">
+                                        💾 Remember Center Block Defaults
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Card 4: RECEIVER & DESTINATION DETAILS -->
+                            <div class="m-card">
+                                <div class="m-card-header" onclick="toggleCard('receiverDetailsBody')">
+                                    <div class="m-card-title">
+                                        <svg width="16" height="16" fill="none" stroke="#16a34a" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                                        <span>4. RECEIVER &amp; DESTINATION DETAILS</span>
+                                    </div>
+                                    <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </div>
+                                <div class="m-card-body" id="receiverDetailsBody">
                                     
                                     <!-- Dynamic Order / Customer Autofill Quick Bar -->
                                     <div style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
                                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                             <label class="m-form-label" style="margin-bottom: 0; color: #0f172a; font-size: 11px;">
-                                                ⚡ 1-CLICK SELECT CUSTOMER / ORDER
+                                                ⚡ 1-CLICK SELECT CUSTOMER / ORDER (DROPDOWN)
                                             </label>
                                             <div style="display: flex; gap: 8px;">
                                                 <button type="button" onclick="loadSampleCustomer()" style="font-size: 10.5px; color: #475569; background: none; border: none; cursor: pointer; text-decoration: underline;">Sample</button>
@@ -1127,45 +1316,6 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                                 <option value='<?= $jsonData ?>'><?= e($dispName) ?> • <?= e($ro['order_number']) ?> (<?= $dispTotal ?>)</option>
                                             <?php endforeach; ?>
                                         </select>
-                                    </div>
-
-                                    <div class="m-form-group">
-                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                            <label class="m-form-label" style="margin-bottom: 0;">SPEED POST TRACKING NO.</label>
-                                            <button type="button" onclick="generateRandomTracking()" style="font-size: 10px; color: #d97706; background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 700;">Generate Sample</button>
-                                        </div>
-                                        <input type="text" id="trackNo" class="m-form-input" value="EY360986535IN" placeholder="e.g. EY360986535IN" style="font-family: monospace; font-weight: 800; letter-spacing: 1px; font-size: 14px;">
-                                    </div>
-
-                                    <div class="m-form-row m-form-group">
-                                        <div>
-                                            <label class="m-form-label">SERVICE TYPE</label>
-                                            <input type="text" id="srvLabel" class="m-form-input" value="SPEED POST PARCEL DOMESTIC" placeholder="SPEED POST PARCEL DOMESTIC">
-                                        </div>
-                                        <div>
-                                            <label class="m-form-label">PAYMENT TYPE</label>
-                                            <select id="ordType" class="m-form-select" onchange="toggleCodAmount()">
-                                                <option value="Cash on Delivery" selected>Cash on Delivery (COD)</option>
-                                                <option value="Prepaid">Prepaid DropOff</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="m-form-row m-form-group">
-                                        <div id="codAmountGroup">
-                                            <label class="m-form-label">COD AMOUNT (₹)</label>
-                                            <input type="number" id="codAmount" class="m-form-input" value="999" placeholder="999" min="0" step="1">
-                                        </div>
-                                        <div>
-                                            <label class="m-form-label">WEIGHT (GMS)</label>
-                                            <input type="text" id="parcelWeight" class="m-form-input" value="500" placeholder="500">
-                                        </div>
-                                    </div>
-
-                                    <!-- Receiver Customer Details (Fully Dynamic) -->
-                                    <div class="sub-section-title">
-                                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-                                        <span>RECEIVER DETAILS (DYNAMIC FOR EACH PARCEL)</span>
                                     </div>
 
                                     <div class="m-form-group">
@@ -1205,7 +1355,22 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                             <input type="text" id="custCity" class="m-form-input" value="AHMADABAD" placeholder="City / District">
                                         </div>
                                         <div>
-                                            <label class="m-form-label">STATE</label>
+                                            <label class="m-form-label">STATE (DROPDOWN + CUSTOM)</label>
+                                            <select id="custStateSelect" class="m-form-select" onchange="document.getElementById('custState').value = this.value; updateLiveLabel();" style="margin-bottom: 4px; font-weight: 600; font-size: 12px;">
+                                                <option value="Gujarat" selected>Gujarat</option>
+                                                <option value="Maharashtra">Maharashtra</option>
+                                                <option value="Rajasthan">Rajasthan</option>
+                                                <option value="Madhya Pradesh">Madhya Pradesh</option>
+                                                <option value="Delhi">Delhi</option>
+                                                <option value="Uttar Pradesh">Uttar Pradesh</option>
+                                                <option value="Punjab">Punjab</option>
+                                                <option value="Haryana">Haryana</option>
+                                                <option value="Karnataka">Karnataka</option>
+                                                <option value="Tamil Nadu">Tamil Nadu</option>
+                                                <option value="West Bengal">West Bengal</option>
+                                                <option value="Bihar">Bihar</option>
+                                                <option value="Other State">Other State...</option>
+                                            </select>
                                             <input type="text" id="custState" class="m-form-input" value="Gujarat" placeholder="State">
                                         </div>
                                     </div>
@@ -1218,6 +1383,56 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                         </button>
                                     </div>
 
+                                </div>
+                            </div>
+
+                            <!-- Card 5: FOOTER NOTICES & DISCLAIMERS -->
+                            <div class="m-card">
+                                <div class="m-card-header" onclick="toggleCard('footerDetailsBody')">
+                                    <div class="m-card-title">
+                                        <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        <span>5. FOOTER &amp; SYSTEM NOTICES</span>
+                                    </div>
+                                    <svg width="16" height="16" fill="none" stroke="#64748b" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </div>
+                                <div class="m-card-body" id="footerDetailsBody">
+                                    <div class="m-form-row m-form-group">
+                                        <div>
+                                            <label class="m-form-label">IVR NUMBER</label>
+                                            <input type="text" id="footerIvrNo" class="m-form-input" value="6989360986535" placeholder="6989360986535">
+                                        </div>
+                                        <div>
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                <label class="m-form-label" style="margin-bottom: 0;">PRINT TIMESTAMP</label>
+                                                <button type="button" onclick="setFooterPrintTimeToNow()" style="font-size: 10px; color: #2563eb; background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 700;">🔄 Now</button>
+                                            </div>
+                                            <input type="text" id="footerPrintTimestamp" class="m-form-input" value="<?= date('d-m-Y H:i:s') ?>" placeholder="DD-MM-YYYY HH:MM:SS">
+                                        </div>
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">TRACKING &amp; HELPLINE NOTICE</label>
+                                        <input type="text" id="footerTrackText" class="m-form-input" value="Track on www.indiapost.gov.in OR Dial 18002666868 : IVR NO : " placeholder="Track on www.indiapost.gov.in OR Dial 18002666868 : IVR NO : ">
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">COMPLAINT PORTAL URL</label>
+                                        <input type="text" id="footerComplaintText" class="m-form-input" value="In case of any complaint, please visit https://crm.indiapost.gov.in/customer" placeholder="In case of any complaint, please visit https://crm.indiapost.gov.in/customer">
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">GREEN TAGLINE</label>
+                                        <input type="text" id="footerGreenText" class="m-form-input" value="Go Green!!! Opt for eReceipts, ePOD" placeholder="Go Green!!! Opt for eReceipts, ePOD">
+                                    </div>
+
+                                    <div class="m-form-group">
+                                        <label class="m-form-label">SYSTEM DISCLAIMER</label>
+                                        <input type="text" id="footerDisclaimerText" class="m-form-input" value="This is system generated document, no manual signature required" placeholder="This is system generated document, no manual signature required">
+                                    </div>
+
+                                    <button type="button" onclick="saveBusinessDefaults()" style="font-size: 11px; background: none; border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 12px; color: #475569; cursor: pointer; font-weight: 600;">
+                                        💾 Remember All Defaults
+                                    </button>
                                 </div>
                             </div>
 
@@ -1284,11 +1499,11 @@ $pageTitle = 'Consignment & COD Label Manifest';
                                 <!-- Booking Office & Tariff Box (Unbold Regular) -->
                                 <div class="ip-booking-box">
                                     <div>Booking Office: <span id="lblPreviewBookingOffice">LAKHANI S.O (385581)</span></div>
-                                    <div>CounterNo. 0, <span id="lblPreviewTimestamp"><?= date('d-m-Y H:i:s') ?></span></div>
+                                    <div>CounterNo. <span id="lblPreviewCounterNo">0</span>, <span id="lblPreviewTimestamp"><?= date('d-m-Y H:i:s') ?></span></div>
                                     <div>GSTNo.<span id="lblPreviewGst">24AAALH0747F1ZI</span> BkgRefID: <span id="lblPreviewBkgRef">1666012713052605627</span></div>
-                                    <div>ChargedWeight(gms):<span id="lblPreviewWeight">500</span> Phy.Wt(gms):<span id="lblPreviewPhyWeight">500</span> Vol.Wt(gms):280(L:14 B:10 H:10)</div>
-                                    <div>AmountPaid:60.00(Base Tariff:50.00 + Tax:10.00) (CGST:5.00 SGST:5.00)</div>
-                                    <div>ModeofPayment: CONTRACT Customer ID: <span id="lblPreviewCustId">1000060678</span></div>
+                                    <div>ChargedWeight(gms):<span id="lblPreviewWeight">500</span> Phy.Wt(gms):<span id="lblPreviewPhyWeight">500</span> Vol.Wt(gms):<span id="lblPreviewVolWeight">280(L:14 B:10 H:10)</span></div>
+                                    <div>AmountPaid:<span id="lblPreviewAmtPaid">60.00</span>(Base Tariff:<span id="lblPreviewBaseTariff">50.00</span> + Tax:<span id="lblPreviewTax">10.00</span>) (CGST:<span id="lblPreviewCgst">5.00</span> SGST:<span id="lblPreviewSgst">5.00</span>)</div>
+                                    <div>ModeofPayment: <span id="lblPreviewPayMode">CONTRACT</span> Customer ID: <span id="lblPreviewCustId">1000060678</span></div>
                                 </div>
 
                                 <!-- Sender & Receiver Table (Unbold Regular Data) -->
@@ -1325,10 +1540,10 @@ $pageTitle = 'Consignment & COD Label Manifest';
 
                                 <!-- Official Footer Notice -->
                                 <div class="ip-footer-notice">
-                                    <div>Track on <em>www.indiapost.gov.in</em> OR Dial 18002666868 : IVR NO : <span id="lblPreviewIvr">6989360986535</span></div>
-                                    <div>In case of any complaint, please visit <em>https://crm.indiapost.gov.in/customer</em></div>
-                                    <div>Go Green!!! Opt for eReceipts, ePOD</div>
-                                    <div>This is system generated document, no manual signature required</div>
+                                    <div id="lblPreviewTrackLine"><span id="lblPreviewTrackText">Track on <em>www.indiapost.gov.in</em> OR Dial 18002666868 : IVR NO : </span><span id="lblPreviewIvr">6989360986535</span></div>
+                                    <div id="lblPreviewComplaint">In case of any complaint, please visit <em>https://crm.indiapost.gov.in/customer</em></div>
+                                    <div id="lblPreviewGreen">Go Green!!! Opt for eReceipts, ePOD</div>
+                                    <div id="lblPreviewDisclaimer">This is system generated document, no manual signature required</div>
                                     <div id="lblPreviewPrintTime"><?= date('d-m-Y H:i:s') ?></div>
                                 </div>
 
@@ -1499,81 +1714,206 @@ $pageTitle = 'Consignment & COD Label Manifest';
             }
         }
 
+        // Accordion Card Collapse & Expand All
+        function expandAllCards() {
+            ['businessDetailsBody', 'serviceDetailsBody', 'centerBookingBody', 'receiverDetailsBody', 'footerDetailsBody'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'block';
+            });
+        }
+
+        function collapseAllCards() {
+            ['businessDetailsBody', 'serviceDetailsBody', 'centerBookingBody', 'receiverDetailsBody', 'footerDetailsBody'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+        }
+
+        // Apply Tariff Slab Preset from Dropdown
+        function applyTariffPreset(jsonStr) {
+            if (!jsonStr) return;
+            try {
+                const data = JSON.parse(jsonStr);
+                if (data.weight && document.getElementById('parcelWeight')) document.getElementById('parcelWeight').value = data.weight;
+                if (data.phy && document.getElementById('bookingPhyWeight')) document.getElementById('bookingPhyWeight').value = data.phy;
+                if (data.vol && document.getElementById('bookingVolWeightText')) document.getElementById('bookingVolWeightText').value = data.vol;
+                if (data.paid && document.getElementById('bookingAmountPaid')) document.getElementById('bookingAmountPaid').value = data.paid;
+                if (data.base && document.getElementById('bookingBaseTariff')) document.getElementById('bookingBaseTariff').value = data.base;
+                if (data.tax && document.getElementById('bookingTaxAmount')) document.getElementById('bookingTaxAmount').value = data.tax;
+                if (data.cgst && document.getElementById('bookingCgst')) document.getElementById('bookingCgst').value = data.cgst;
+                if (data.sgst && document.getElementById('bookingSgst')) document.getElementById('bookingSgst').value = data.sgst;
+                updateLiveLabel();
+            } catch (e) {
+                console.error('Error applying tariff preset:', e);
+            }
+        }
+
+        // Apply Booking Office Preset from Dropdown
+        function applyBookingOfficePreset(val) {
+            if (!val) return;
+            const bOfficeInput = document.getElementById('bookingOffice');
+            if (bOfficeInput) {
+                bOfficeInput.value = val;
+                updateLiveLabel();
+            }
+        }
+
+        // Format current Date & Time in DD-MM-YYYY HH:mm:ss
+        function getCurrentFormattedDateTime() {
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = now.getFullYear();
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            return `${d}-${m}-${y} ${h}:${min}:${s}`;
+        }
+
+        function setBookingTimeToNow() {
+            const el = document.getElementById('bookingDateTime');
+            if (el) {
+                el.value = getCurrentFormattedDateTime();
+                updateLiveLabel();
+            }
+        }
+
+        function setFooterPrintTimeToNow() {
+            const el = document.getElementById('footerPrintTimestamp');
+            if (el) {
+                el.value = getCurrentFormattedDateTime();
+                updateLiveLabel();
+            }
+        }
+
+        function generateRandomBkgRef() {
+            let ref = '166' + Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString().substring(0, 16);
+            const el = document.getElementById('bookingBkgRef');
+            if (el) {
+                el.value = ref;
+                updateLiveLabel();
+            }
+        }
+
         // Live Real-Time Updating Elements
         function updateLiveLabel() {
             // Sender details
-            const sName = document.getElementById('senderName').value || 'Mr. RAMESHBHAI CHAUDHARI';
-            const bName = document.getElementById('bizName').value || 'R BHEDRU ONLINE SELLING';
-            const sMobile = document.getElementById('bizMobile').value || '9558572952';
-            const sAddr1 = document.getElementById('bizAddr1').value || 'PEPRAI';
-            const sAddr2 = document.getElementById('bizAddr2').value || 'LAKHANI';
-            const sDist = document.getElementById('bizDistrict').value || 'BANAS KANTHA';
-            const sStatePin = document.getElementById('bizStatePin').value || 'Gujarat-385581';
-            const bOffice = document.getElementById('bookingOffice').value || 'LAKHANI S.O (385581)';
-            const bGst = document.getElementById('bookingGst').value || '24AAALH0747F1ZI';
-            const bCustId = document.getElementById('bookingCustomerId').value || '1000060678';
+            const sName = document.getElementById('senderName')?.value || 'Mr. RAMESHBHAI CHAUDHARI';
+            const bName = document.getElementById('bizName')?.value || 'R BHEDRU ONLINE SELLING';
+            const sMobile = document.getElementById('bizMobile')?.value || '9558572952';
+            const sAddr1 = document.getElementById('bizAddr1')?.value || 'PEPRAI';
+            const sAddr2 = document.getElementById('bizAddr2')?.value || 'LAKHANI';
+            const sDist = document.getElementById('bizDistrict')?.value || 'BANAS KANTHA';
+            const sStatePin = document.getElementById('bizStatePin')?.value || 'Gujarat-385581';
 
             // Ribbon header initials
-            document.getElementById('topBrandTitle').textContent = bName;
+            const topBrandTitle = document.getElementById('topBrandTitle');
+            if (topBrandTitle) topBrandTitle.textContent = bName;
             const words = bName.trim().split(' ');
             let init = '';
             for (let w of words) {
                 if (w) { init += w[0].toUpperCase(); if (init.length >= 2) break; }
             }
-            document.getElementById('topAvatar').textContent = init || 'RB';
+            const topAvatar = document.getElementById('topAvatar');
+            if (topAvatar) topAvatar.textContent = init || 'RB';
 
             // Sync Sender on Label
-            document.getElementById('lblPreviewSenderName').textContent = sName;
-            document.getElementById('lblPreviewSenderMob').textContent = 'Mobile No.' + sMobile;
-            document.getElementById('lblPreviewSenderA1').textContent = sAddr1;
-            document.getElementById('lblPreviewSenderA2').textContent = sAddr2;
-            document.getElementById('lblPreviewSenderTaluka').textContent = sAddr2;
-            document.getElementById('lblPreviewSenderDist').textContent = sDist;
-            document.getElementById('lblPreviewSenderStatePin').textContent = sStatePin;
-            document.getElementById('lblPreviewBookingOffice').textContent = bOffice;
-            document.getElementById('lblPreviewGst').textContent = bGst;
-            document.getElementById('lblPreviewCustId').textContent = bCustId;
+            if (document.getElementById('lblPreviewSenderName')) document.getElementById('lblPreviewSenderName').textContent = sName;
+            if (document.getElementById('lblPreviewSenderMob')) document.getElementById('lblPreviewSenderMob').textContent = 'Mobile No.' + sMobile;
+            if (document.getElementById('lblPreviewSenderA1')) document.getElementById('lblPreviewSenderA1').textContent = sAddr1;
+            if (document.getElementById('lblPreviewSenderA2')) document.getElementById('lblPreviewSenderA2').textContent = sAddr2;
+            if (document.getElementById('lblPreviewSenderTaluka')) document.getElementById('lblPreviewSenderTaluka').textContent = sAddr2;
+            if (document.getElementById('lblPreviewSenderDist')) document.getElementById('lblPreviewSenderDist').textContent = sDist;
+            if (document.getElementById('lblPreviewSenderStatePin')) document.getElementById('lblPreviewSenderStatePin').textContent = sStatePin;
 
             // Tracking & Shipment
-            const trackNo = (document.getElementById('trackNo').value || 'EY360986535IN').trim().toUpperCase();
-            const srvLabel = (document.getElementById('srvLabel').value || 'SPEED POST PARCEL DOMESTIC').toUpperCase();
-            const ordType = document.getElementById('ordType').value;
-            const codAmount = document.getElementById('codAmount').value || '999';
-            const weight = document.getElementById('parcelWeight').value || '500';
+            const trackNo = (document.getElementById('trackNo')?.value || 'EY360986535IN').trim().toUpperCase();
+            const srvLabel = (document.getElementById('srvLabel')?.value || 'SPEED POST PARCEL DOMESTIC').toUpperCase();
+            const ordType = document.getElementById('ordType')?.value || 'Cash on Delivery';
+            const codAmount = document.getElementById('codAmount')?.value || '999';
+            const chargedWeight = document.getElementById('parcelWeight')?.value || '500';
 
-            document.getElementById('lblPreviewService').textContent = srvLabel;
-            if (ordType === 'Cash on Delivery') {
-                document.getElementById('lblPreviewCod').textContent = `COD:${codAmount} DropOff`;
-            } else {
-                document.getElementById('lblPreviewCod').textContent = `PREPAID DropOff`;
+            if (document.getElementById('lblPreviewService')) document.getElementById('lblPreviewService').textContent = srvLabel;
+            if (document.getElementById('lblPreviewCod')) {
+                if (ordType === 'Cash on Delivery') {
+                    document.getElementById('lblPreviewCod').textContent = `COD:${codAmount} DropOff`;
+                } else {
+                    document.getElementById('lblPreviewCod').textContent = `PREPAID DropOff`;
+                }
             }
-            document.getElementById('lblPreviewWeight').textContent = weight;
-            document.getElementById('lblPreviewPhyWeight').textContent = weight;
+
+            // Center Block Data
+            const bOffice = document.getElementById('bookingOffice')?.value || 'LAKHANI S.O (385581)';
+            const bCounter = document.getElementById('bookingCounterNo')?.value || '0';
+            const bDateTime = document.getElementById('bookingDateTime')?.value || getCurrentFormattedDateTime();
+            const bGst = document.getElementById('bookingGst')?.value || '24AAALH0747F1ZI';
+            const bBkgRef = document.getElementById('bookingBkgRef')?.value || '1666012713052605627';
+            const bCustId = document.getElementById('bookingCustomerId')?.value || '1000060678';
+            const bPhyWeight = document.getElementById('bookingPhyWeight')?.value || chargedWeight;
+            const bVolWeightText = document.getElementById('bookingVolWeightText')?.value || '280(L:14 B:10 H:10)';
+            const bAmtPaid = document.getElementById('bookingAmountPaid')?.value || '60.00';
+            const bBaseTariff = document.getElementById('bookingBaseTariff')?.value || '50.00';
+            const bTaxAmount = document.getElementById('bookingTaxAmount')?.value || '10.00';
+            const bCgst = document.getElementById('bookingCgst')?.value || '5.00';
+            const bSgst = document.getElementById('bookingSgst')?.value || '5.00';
+            const bPayMode = document.getElementById('bookingPayMode')?.value || 'CONTRACT';
+
+            if (document.getElementById('lblPreviewBookingOffice')) document.getElementById('lblPreviewBookingOffice').textContent = bOffice;
+            if (document.getElementById('lblPreviewCounterNo')) document.getElementById('lblPreviewCounterNo').textContent = bCounter;
+            if (document.getElementById('lblPreviewTimestamp')) document.getElementById('lblPreviewTimestamp').textContent = bDateTime;
+            if (document.getElementById('lblPreviewGst')) document.getElementById('lblPreviewGst').textContent = bGst;
+            if (document.getElementById('lblPreviewBkgRef')) document.getElementById('lblPreviewBkgRef').textContent = bBkgRef;
+            if (document.getElementById('lblPreviewWeight')) document.getElementById('lblPreviewWeight').textContent = chargedWeight;
+            if (document.getElementById('lblPreviewPhyWeight')) document.getElementById('lblPreviewPhyWeight').textContent = bPhyWeight;
+            if (document.getElementById('lblPreviewVolWeight')) document.getElementById('lblPreviewVolWeight').textContent = bVolWeightText;
+            if (document.getElementById('lblPreviewAmtPaid')) document.getElementById('lblPreviewAmtPaid').textContent = bAmtPaid;
+            if (document.getElementById('lblPreviewBaseTariff')) document.getElementById('lblPreviewBaseTariff').textContent = bBaseTariff;
+            if (document.getElementById('lblPreviewTax')) document.getElementById('lblPreviewTax').textContent = bTaxAmount;
+            if (document.getElementById('lblPreviewCgst')) document.getElementById('lblPreviewCgst').textContent = bCgst;
+            if (document.getElementById('lblPreviewSgst')) document.getElementById('lblPreviewSgst').textContent = bSgst;
+            if (document.getElementById('lblPreviewPayMode')) document.getElementById('lblPreviewPayMode').textContent = bPayMode;
+            if (document.getElementById('lblPreviewCustId')) document.getElementById('lblPreviewCustId').textContent = bCustId;
 
             // Receiver details
-            const rName = document.getElementById('custName').value || 'Mr. MOHAMAD HEDARBHAI';
-            const rMobile = document.getElementById('custMobile').value || '7567122001';
-            const rAddr1 = document.getElementById('custAddr1').value || 'AMENA KHATU HOSPITAL';
-            const rAddr2 = document.getElementById('custAddr2').value || 'NI BAJU MA, JUHAPURA';
-            const rDelySO = document.getElementById('custDelySO').value || 'Juhapura SO';
-            const rCity = document.getElementById('custCity').value || 'AHMADABAD';
-            const rPin = document.getElementById('custPin').value || '380055';
-            const rState = document.getElementById('custState').value || 'Gujarat';
+            const rName = document.getElementById('custName')?.value || 'Mr. MOHAMAD HEDARBHAI';
+            const rMobile = document.getElementById('custMobile')?.value || '7567122001';
+            const rAddr1 = document.getElementById('custAddr1')?.value || 'AMENA KHATU HOSPITAL';
+            const rAddr2 = document.getElementById('custAddr2')?.value || 'NI BAJU MA, JUHAPURA';
+            const rDelySO = document.getElementById('custDelySO')?.value || 'Juhapura SO';
+            const rCity = document.getElementById('custCity')?.value || 'AHMADABAD';
+            const rPin = document.getElementById('custPin')?.value || '380055';
+            const rState = document.getElementById('custState')?.value || 'Gujarat';
 
-            document.getElementById('lblPreviewDelyOffice').textContent = `Dely Office & Pincode:${rDelySO}(${rPin})`;
-            document.getElementById('lblPreviewRecName').textContent = rName;
-            document.getElementById('lblPreviewRecMob').textContent = 'Mobile No.' + rMobile;
-            document.getElementById('lblPreviewRecA1').textContent = rAddr1;
-            document.getElementById('lblPreviewRecA2').textContent = rAddr2;
-            document.getElementById('lblPreviewRecCity').textContent = rCity;
-            document.getElementById('lblPreviewRecStatePin').textContent = `${rState}-${rPin}`;
+            if (document.getElementById('lblPreviewDelyOffice')) document.getElementById('lblPreviewDelyOffice').textContent = `Dely Office & Pincode:${rDelySO}(${rPin})`;
+            if (document.getElementById('lblPreviewRecName')) document.getElementById('lblPreviewRecName').textContent = rName;
+            if (document.getElementById('lblPreviewRecMob')) document.getElementById('lblPreviewRecMob').textContent = 'Mobile No.' + rMobile;
+            if (document.getElementById('lblPreviewRecA1')) document.getElementById('lblPreviewRecA1').textContent = rAddr1;
+            if (document.getElementById('lblPreviewRecA2')) document.getElementById('lblPreviewRecA2').textContent = rAddr2;
+            if (document.getElementById('lblPreviewRecCity')) document.getElementById('lblPreviewRecCity').textContent = rCity;
+            if (document.getElementById('lblPreviewRecStatePin')) document.getElementById('lblPreviewRecStatePin').textContent = `${rState}-${rPin}`;
 
-            // IVR number from tracking
-            const numOnly = trackNo.replace(/\D/g, '');
-            document.getElementById('lblPreviewIvr').textContent = '6989' + (numOnly || '360986535');
+            // Footer Details
+            const footerIvr = document.getElementById('footerIvrNo')?.value;
+            const autoIvr = '6989' + (trackNo.replace(/\D/g, '') || '360986535');
+            const finalIvr = footerIvr ? footerIvr : autoIvr;
+            if (document.getElementById('lblPreviewIvr')) document.getElementById('lblPreviewIvr').textContent = finalIvr;
+
+            const fTrack = document.getElementById('footerTrackText')?.value || 'Track on www.indiapost.gov.in OR Dial 18002666868 : IVR NO : ';
+            const fComplaint = document.getElementById('footerComplaintText')?.value || 'In case of any complaint, please visit https://crm.indiapost.gov.in/customer';
+            const fGreen = document.getElementById('footerGreenText')?.value || 'Go Green!!! Opt for eReceipts, ePOD';
+            const fDisclaimer = document.getElementById('footerDisclaimerText')?.value || 'This is system generated document, no manual signature required';
+            const fPrintTime = document.getElementById('footerPrintTimestamp')?.value || bDateTime;
+
+            if (document.getElementById('lblPreviewTrackText')) document.getElementById('lblPreviewTrackText').textContent = fTrack;
+            if (document.getElementById('lblPreviewComplaint')) document.getElementById('lblPreviewComplaint').textContent = fComplaint;
+            if (document.getElementById('lblPreviewGreen')) document.getElementById('lblPreviewGreen').textContent = fGreen;
+            if (document.getElementById('lblPreviewDisclaimer')) document.getElementById('lblPreviewDisclaimer').textContent = fDisclaimer;
+            if (document.getElementById('lblPreviewPrintTime')) document.getElementById('lblPreviewPrintTime').textContent = fPrintTime;
 
             // Draw Barcode & QR Code
-            document.getElementById('barcodeContainer').innerHTML = generateCode128Svg(trackNo);
+            if (document.getElementById('barcodeContainer')) {
+                document.getElementById('barcodeContainer').innerHTML = generateCode128Svg(trackNo);
+            }
             updateQrCode(trackNo);
         }
 
@@ -1595,6 +1935,11 @@ $pageTitle = 'Consignment & COD Label Manifest';
         function generateRandomTracking() {
             const random9 = Math.floor(100000000 + Math.random() * 900000000);
             document.getElementById('trackNo').value = `EY${random9}IN`;
+            // Auto update IVR to match tracking
+            const ivrInput = document.getElementById('footerIvrNo');
+            if (ivrInput) {
+                ivrInput.value = '6989' + random9;
+            }
             updateLiveLabel();
         }
 
@@ -1616,22 +1961,37 @@ $pageTitle = 'Consignment & COD Label Manifest';
             el.style.display = (el.style.display === 'none') ? 'block' : 'none';
         }
 
-        // Remember manual sender details in localStorage
+        // Remember manual sender & center block details in localStorage
         function saveBusinessDefaults() {
             const bizData = {
-                senderName: document.getElementById('senderName').value,
-                bizName: document.getElementById('bizName').value,
-                mobile: document.getElementById('bizMobile').value,
-                addr1: document.getElementById('bizAddr1').value,
-                addr2: document.getElementById('bizAddr2').value,
-                district: document.getElementById('bizDistrict').value,
-                statePin: document.getElementById('bizStatePin').value,
-                bookingOffice: document.getElementById('bookingOffice').value,
-                bookingGst: document.getElementById('bookingGst').value,
-                bookingCustomerId: document.getElementById('bookingCustomerId').value
+                senderName: document.getElementById('senderName')?.value,
+                bizName: document.getElementById('bizName')?.value,
+                mobile: document.getElementById('bizMobile')?.value,
+                addr1: document.getElementById('bizAddr1')?.value,
+                addr2: document.getElementById('bizAddr2')?.value,
+                district: document.getElementById('bizDistrict')?.value,
+                statePin: document.getElementById('bizStatePin')?.value,
+                bookingOffice: document.getElementById('bookingOffice')?.value,
+                bookingCounterNo: document.getElementById('bookingCounterNo')?.value,
+                bookingGst: document.getElementById('bookingGst')?.value,
+                bookingBkgRef: document.getElementById('bookingBkgRef')?.value,
+                bookingCustomerId: document.getElementById('bookingCustomerId')?.value,
+                bookingPhyWeight: document.getElementById('bookingPhyWeight')?.value,
+                bookingVolWeightText: document.getElementById('bookingVolWeightText')?.value,
+                bookingAmountPaid: document.getElementById('bookingAmountPaid')?.value,
+                bookingBaseTariff: document.getElementById('bookingBaseTariff')?.value,
+                bookingTaxAmount: document.getElementById('bookingTaxAmount')?.value,
+                bookingCgst: document.getElementById('bookingCgst')?.value,
+                bookingSgst: document.getElementById('bookingSgst')?.value,
+                bookingPayMode: document.getElementById('bookingPayMode')?.value,
+                footerIvrNo: document.getElementById('footerIvrNo')?.value,
+                footerTrackText: document.getElementById('footerTrackText')?.value,
+                footerComplaintText: document.getElementById('footerComplaintText')?.value,
+                footerGreenText: document.getElementById('footerGreenText')?.value,
+                footerDisclaimerText: document.getElementById('footerDisclaimerText')?.value
             };
             localStorage.setItem('rbhedru_indiapost_sender', JSON.stringify(bizData));
-            alert('Sender details remembered successfully! They will load automatically for all future sessions.');
+            alert('Details remembered successfully! They will load automatically for all future sessions.');
         }
 
         function loadSavedBusinessDefaults() {
@@ -1639,16 +1999,31 @@ $pageTitle = 'Consignment & COD Label Manifest';
             if (saved) {
                 try {
                     const data = JSON.parse(saved);
-                    if (data.senderName) document.getElementById('senderName').value = data.senderName;
-                    if (data.bizName) document.getElementById('bizName').value = data.bizName;
-                    if (data.mobile) document.getElementById('bizMobile').value = data.mobile;
-                    if (data.addr1) document.getElementById('bizAddr1').value = data.addr1;
-                    if (data.addr2) document.getElementById('bizAddr2').value = data.addr2;
-                    if (data.district) document.getElementById('bizDistrict').value = data.district;
-                    if (data.statePin) document.getElementById('bizStatePin').value = data.statePin;
-                    if (data.bookingOffice) document.getElementById('bookingOffice').value = data.bookingOffice;
-                    if (data.bookingGst) document.getElementById('bookingGst').value = data.bookingGst;
-                    if (data.bookingCustomerId) document.getElementById('bookingCustomerId').value = data.bookingCustomerId;
+                    if (data.senderName && document.getElementById('senderName')) document.getElementById('senderName').value = data.senderName;
+                    if (data.bizName && document.getElementById('bizName')) document.getElementById('bizName').value = data.bizName;
+                    if (data.mobile && document.getElementById('bizMobile')) document.getElementById('bizMobile').value = data.mobile;
+                    if (data.addr1 && document.getElementById('bizAddr1')) document.getElementById('bizAddr1').value = data.addr1;
+                    if (data.addr2 && document.getElementById('bizAddr2')) document.getElementById('bizAddr2').value = data.addr2;
+                    if (data.district && document.getElementById('bizDistrict')) document.getElementById('bizDistrict').value = data.district;
+                    if (data.statePin && document.getElementById('bizStatePin')) document.getElementById('bizStatePin').value = data.statePin;
+                    if (data.bookingOffice && document.getElementById('bookingOffice')) document.getElementById('bookingOffice').value = data.bookingOffice;
+                    if (data.bookingCounterNo && document.getElementById('bookingCounterNo')) document.getElementById('bookingCounterNo').value = data.bookingCounterNo;
+                    if (data.bookingGst && document.getElementById('bookingGst')) document.getElementById('bookingGst').value = data.bookingGst;
+                    if (data.bookingBkgRef && document.getElementById('bookingBkgRef')) document.getElementById('bookingBkgRef').value = data.bookingBkgRef;
+                    if (data.bookingCustomerId && document.getElementById('bookingCustomerId')) document.getElementById('bookingCustomerId').value = data.bookingCustomerId;
+                    if (data.bookingPhyWeight && document.getElementById('bookingPhyWeight')) document.getElementById('bookingPhyWeight').value = data.bookingPhyWeight;
+                    if (data.bookingVolWeightText && document.getElementById('bookingVolWeightText')) document.getElementById('bookingVolWeightText').value = data.bookingVolWeightText;
+                    if (data.bookingAmountPaid && document.getElementById('bookingAmountPaid')) document.getElementById('bookingAmountPaid').value = data.bookingAmountPaid;
+                    if (data.bookingBaseTariff && document.getElementById('bookingBaseTariff')) document.getElementById('bookingBaseTariff').value = data.bookingBaseTariff;
+                    if (data.bookingTaxAmount && document.getElementById('bookingTaxAmount')) document.getElementById('bookingTaxAmount').value = data.bookingTaxAmount;
+                    if (data.bookingCgst && document.getElementById('bookingCgst')) document.getElementById('bookingCgst').value = data.bookingCgst;
+                    if (data.bookingSgst && document.getElementById('bookingSgst')) document.getElementById('bookingSgst').value = data.bookingSgst;
+                    if (data.bookingPayMode && document.getElementById('bookingPayMode')) document.getElementById('bookingPayMode').value = data.bookingPayMode;
+                    if (data.footerIvrNo && document.getElementById('footerIvrNo')) document.getElementById('footerIvrNo').value = data.footerIvrNo;
+                    if (data.footerTrackText && document.getElementById('footerTrackText')) document.getElementById('footerTrackText').value = data.footerTrackText;
+                    if (data.footerComplaintText && document.getElementById('footerComplaintText')) document.getElementById('footerComplaintText').value = data.footerComplaintText;
+                    if (data.footerGreenText && document.getElementById('footerGreenText')) document.getElementById('footerGreenText').value = data.footerGreenText;
+                    if (data.footerDisclaimerText && document.getElementById('footerDisclaimerText')) document.getElementById('footerDisclaimerText').value = data.footerDisclaimerText;
                 } catch (e) {}
             }
         }
