@@ -216,6 +216,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', implode(' ', $result['errors']));
         }
         redirect(APP_URL . '/pos.php');
+    } elseif ($action === 'add_product') {
+        $respondAddProduct = static function (array $payload): void {
+            if (!empty($_POST['is_ajax'])) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            if (!empty($payload['success'])) {
+                set_flash('success', 'Product added successfully!');
+            } else {
+                $errs = $payload['errors'] ?? ['Could not add product.'];
+                set_flash('error', is_array($errs) ? implode(' ', array_values($errs)) : (string) $errs);
+            }
+            redirect(APP_URL . '/pos.php');
+        };
+
+        $file = null;
+        $wantedImage = false;
+        if (!empty($_FILES['product_image']) && ($_FILES['product_image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $wantedImage = true;
+            $imgErr = (int) ($_FILES['product_image']['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($imgErr === UPLOAD_ERR_OK) {
+                if ((int) ($_FILES['product_image']['size'] ?? 0) > 5 * 1024 * 1024) {
+                    $respondAddProduct(['success' => false, 'errors' => ['image' => 'Image must be 5MB or smaller.']]);
+                }
+                $file = $_FILES['product_image'];
+            } elseif (in_array($imgErr, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                $respondAddProduct(['success' => false, 'errors' => ['image' => 'Image is too large. Use a file under 5MB.']]);
+            } else {
+                $respondAddProduct(['success' => false, 'errors' => ['image' => 'Could not read the image. Try another JPG or PNG.']]);
+            }
+        }
+
+        $prodData = [
+            'name' => mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 191),
+            'sku' => mb_substr(trim((string) ($_POST['sku'] ?? '')), 0, 100),
+            'selling_price' => max(0, (float) ($_POST['selling_price'] ?? 0)),
+            'tax_percent' => 0,
+            'status' => 'active',
+            'initial_stock' => max(0, (int) ($_POST['initial_stock'] ?? 1)),
+            'item_kind' => 'goods',
+            'product_type' => 'simple',
+            'track_inventory' => 1,
+        ];
+
+        if ($prodData['name'] === '') {
+            $respondAddProduct(['success' => false, 'errors' => ['name' => 'Product name is required.']]);
+        }
+        if ($prodData['sku'] === '') {
+            $respondAddProduct(['success' => false, 'errors' => ['sku' => 'SKU is required.']]);
+        }
+
+        $result = ['success' => false, 'errors' => ['general' => 'Could not add product.']];
+        try {
+            $result = save_product($prodData, $file, null, $userId);
+        } catch (Throwable $e) {
+            error_log('POS add_product: ' . $e->getMessage());
+            if ($file) {
+                try {
+                    $result = save_product($prodData, null, null, $userId);
+                    if (!empty($result['success'])) {
+                        $result['image_warning'] = 'Product saved without image.';
+                    }
+                } catch (Throwable $e2) {
+                    error_log('POS add_product retry: ' . $e2->getMessage());
+                    $respondAddProduct(['success' => false, 'errors' => ['general' => 'Could not save product. Please try again.']]);
+                }
+            } else {
+                $respondAddProduct(['success' => false, 'errors' => ['general' => 'Could not save product. Please try again.']]);
+            }
+        }
+
+        if (!empty($result['success']) && !empty($result['product_id'])) {
+            $saved = get_product_by_id((int) $result['product_id']);
+            if ($saved) {
+                $result['product'] = [
+                    'id' => (int) $saved['id'],
+                    'name' => (string) $saved['name'],
+                    'sku' => (string) $saved['sku'],
+                    'barcode' => (string) ($saved['barcode'] ?? ''),
+                    'selling_price' => (float) $saved['selling_price'],
+                    'tax_percent' => (float) $saved['tax_percent'],
+                    'stock_quantity' => (int) $saved['stock_quantity'],
+                    'low_stock_threshold' => (int) $saved['low_stock_threshold'],
+                    'category_id' => $saved['category_id'] ?: 'none',
+                    'image_url' => !empty($saved['image_path']) ? asset((string) $saved['image_path']) : '',
+                ];
+                if ($wantedImage && empty($saved['image_path']) && empty($result['image_warning'])) {
+                    $result['image_warning'] = 'Product saved, but the image could not be uploaded. Check file type (JPG/PNG/WEBP) and folder permissions.';
+                }
+            }
+        }
+
+        $respondAddProduct($result ?? ['success' => false, 'errors' => ['general' => 'Could not add product.']]);
     }
 }
 
@@ -247,9 +341,9 @@ $flashError = get_flash('error');
     <link rel="icon" type="image/png" sizes="16x16" href="<?= asset('assets/images/favicon-16x16.png') ?>">
     <link rel="shortcut icon" href="<?= asset('assets/images/favicon.ico') ?>">
 
-    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>?v=<?= (int) @filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
 </head>
-<body>
+<body class="pos-page">
     <div class="app-layout">
         <!-- Sidebar Component -->
         <?php require_once __DIR__ . '/includes/sidebar.php'; ?>
@@ -333,7 +427,7 @@ $flashError = get_flash('error');
 
                         <!-- Category Filter Pills -->
                         <div class="pos-category-pills" id="categoryPillRow">
-                            <button type="button" class="pos-cat-pill active" data-category="all">All Products (<?= count($products) ?>)</button>
+                            <button type="button" class="pos-cat-pill active" data-category="all" id="allProductsPill">All Products (<?= count($products) ?>)</button>
                             <?php foreach ($categories as $cat): ?>
                                 <button type="button" class="pos-cat-pill" data-category="<?= $cat['id'] ?>">
                                     <?= e($cat['name']) ?>
@@ -410,6 +504,13 @@ $flashError = get_flash('error');
                                 <span>New</span>
                             </button>
                         </div>
+
+                        <button type="button" class="pos-btn-add-product" id="openAddProductBtn" title="Add a product to the catalog">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span>Add Product</span>
+                        </button>
 
                         <!-- Active Cart Items List -->
                         <div class="pos-cart-items-container" id="posCartItemsList">
@@ -803,7 +904,57 @@ $flashError = get_flash('error');
         </div>
     </div>
 
-    <!-- 5. POS & HOME DAILY ALERTS MODAL (LOW STOCK & 7-DAY UNSOLD PRODUCTS) -->
+    <!-- 5. ADD PRODUCT MODAL -->
+    <div class="modal-overlay" id="addProductModal">
+        <div class="modal-box" style="max-width: 460px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Add Product</h3>
+                <button type="button" class="modal-close-btn" id="closeAddProductModal">&times;</button>
+            </div>
+            <form id="addProductForm" enctype="multipart/form-data">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="add_product">
+                <input type="hidden" name="is_ajax" value="1">
+
+                <div class="modal-body">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdNameInput" class="form-label">Product Name <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="posProdNameInput" name="name" required maxlength="191" placeholder="e.g. WEST34" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdSkuInput" class="form-label">SKU <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="posProdSkuInput" name="sku" required maxlength="100" placeholder="e.g. WEST34" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdPriceInput" class="form-label">Selling Price (₹)</label>
+                        <input type="number" id="posProdPriceInput" name="selling_price" min="0" step="0.01" value="0" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdStockInput" class="form-label">Opening Stock</label>
+                        <input type="number" id="posProdStockInput" name="initial_stock" min="0" step="1" value="1" class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="posProdImageInput" class="form-label">Product Image</label>
+                        <input type="file" id="posProdImageInput" name="product_image" accept="image/jpeg,image/png,image/webp,image/jpg" class="form-control">
+                        <div id="posProdImagePreviewWrap" class="pos-add-prod-preview" hidden>
+                            <img id="posProdImagePreview" alt="Preview">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelAddProductModal">Cancel</button>
+                    <button type="submit" class="header-btn" id="submitAddProductBtn" style="border: 0;">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 6. POS & HOME DAILY ALERTS MODAL (LOW STOCK & 7-DAY UNSOLD PRODUCTS) -->
     <?php require_once __DIR__ . '/includes/daily_alerts_modal.php'; ?>
 
     <!-- CSRF Token helper for JS -->
@@ -1455,10 +1606,55 @@ $flashError = get_flash('error');
                 });
             }
 
-            // Print Receipt Button
+            // Print only the thermal receipt (not the POS screen)
+            function printThermalReceipt() {
+                const area = document.getElementById('printableReceiptArea');
+                if (!area) return;
+
+                const prev = document.getElementById('posThermalPrintFrame');
+                if (prev) prev.remove();
+
+                const iframe = document.createElement('iframe');
+                iframe.id = 'posThermalPrintFrame';
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+                document.body.appendChild(iframe);
+
+                const doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title><style>' +
+                    '@page { size: 80mm auto; margin: 3mm; }' +
+                    'html,body{margin:0;padding:0;background:#fff;color:#000;font-family:\'Courier New\',Courier,monospace;font-size:12px;}' +
+                    '.wrap{width:72mm;max-width:72mm;margin:0 auto;}' +
+                    'table{width:100%;border-collapse:collapse;}' +
+                    '</style></head><body><div class="wrap">' + area.innerHTML + '</div></body></html>');
+                doc.close();
+
+                const runPrint = function () {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch (err) {
+                        document.body.classList.add('pos-printing');
+                        window.print();
+                        document.body.classList.remove('pos-printing');
+                    }
+                    setTimeout(function () {
+                        if (iframe.parentNode) iframe.remove();
+                    }, 1500);
+                };
+
+                if (iframe.contentWindow.document.readyState === 'complete') {
+                    setTimeout(runPrint, 50);
+                } else {
+                    iframe.onload = function () { setTimeout(runPrint, 50); };
+                }
+            }
+
             if (printReceiptBtn) {
-                printReceiptBtn.addEventListener('click', function () {
-                    window.print();
+                printReceiptBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    printThermalReceipt();
                 });
             }
 
@@ -1597,6 +1793,167 @@ $flashError = get_flash('error');
                         }
                     })
                     .catch(err => alert('Network error: ' + err));
+                });
+            }
+
+            // 14. Add Product Modal (catalog only — does not change cart)
+            const addProdModal = document.getElementById('addProductModal');
+            const openAddProdBtn = document.getElementById('openAddProductBtn');
+            const closeAddProdBtn = document.getElementById('closeAddProductModal');
+            const cancelAddProdBtn = document.getElementById('cancelAddProductModal');
+            const addProdForm = document.getElementById('addProductForm');
+            const addProdImageInput = document.getElementById('posProdImageInput');
+            const addProdPreviewWrap = document.getElementById('posProdImagePreviewWrap');
+            const addProdPreview = document.getElementById('posProdImagePreview');
+            const submitAddProdBtn = document.getElementById('submitAddProductBtn');
+            const allProductsPill = document.getElementById('allProductsPill');
+
+            function resetAddProductForm() {
+                if (addProdForm) addProdForm.reset();
+                if (addProdPreview) addProdPreview.removeAttribute('src');
+                if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+            }
+
+            function prependPosProductCard(p) {
+                if (!productGrid || !p) return;
+                const stock = parseInt(p.stock_quantity, 10) || 0;
+                const threshold = parseInt(p.low_stock_threshold, 10) || 5;
+                const isOut = stock <= 0;
+                let stockClass = 'badge-in-stock';
+                let stockText = stock + ' in stock';
+                if (isOut) {
+                    stockClass = 'badge-out-of-stock';
+                    stockText = 'Out of Stock';
+                } else if (stock <= threshold) {
+                    stockClass = 'badge-low-stock';
+                    stockText = 'Low: ' + stock;
+                }
+
+                const price = parseFloat(p.selling_price) || 0;
+                const tax = parseFloat(p.tax_percent) || 0;
+                const card = document.createElement('div');
+                card.className = 'pos-card' + (isOut ? ' out-of-stock' : '');
+                card.setAttribute('data-id', String(p.id));
+                card.setAttribute('data-name', p.name || '');
+                card.setAttribute('data-sku', p.sku || '');
+                card.setAttribute('data-barcode', p.barcode || '');
+                card.setAttribute('data-price', String(price));
+                card.setAttribute('data-tax', String(tax));
+                card.setAttribute('data-stock', String(stock));
+                card.setAttribute('data-category', String(p.category_id || 'none'));
+
+                const thumb = p.image_url
+                    ? '<img src="' + escapeHtml(p.image_url) + '" alt="' + escapeHtml(p.name || '') + '" class="pos-card-thumb">'
+                    : '<div class="pos-card-thumb">📦</div>';
+
+                card.innerHTML = thumb +
+                    '<div class="pos-card-title">' + escapeHtml(p.name || '') + '</div>' +
+                    '<div class="pos-card-meta">' +
+                        '<span>' + escapeHtml(p.sku || '') + '</span>' +
+                        '<span class="badge ' + stockClass + ' pos-card-stock">' + escapeHtml(stockText) + '</span>' +
+                    '</div>' +
+                    '<div class="pos-card-price-row">' +
+                        '<span class="pos-card-price">₹' + price.toFixed(2) + '</span>' +
+                        '<span style="font-size: 11px; color: var(--saas-slate-400);">+' + tax + '% Tax</span>' +
+                    '</div>';
+
+                productGrid.insertBefore(card, productGrid.firstChild);
+
+                if (allProductsPill) {
+                    const n = productGrid.querySelectorAll('.pos-card').length;
+                    allProductsPill.textContent = 'All Products (' + n + ')';
+                }
+            }
+
+            function closeAddProductModal() {
+                if (addProdModal) addProdModal.classList.remove('open');
+            }
+
+            if (openAddProdBtn && addProdModal) {
+                openAddProdBtn.addEventListener('click', () => addProdModal.classList.add('open'));
+            }
+            if (closeAddProdBtn) closeAddProdBtn.addEventListener('click', closeAddProductModal);
+            if (cancelAddProdBtn) cancelAddProdBtn.addEventListener('click', closeAddProductModal);
+
+            if (addProdImageInput) {
+                addProdImageInput.addEventListener('change', function () {
+                    const file = this.files && this.files[0];
+                    if (!file) {
+                        if (addProdPreview) addProdPreview.removeAttribute('src');
+                        if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+                        return;
+                    }
+                    if (file.size > 5 * 1024 * 1024) {
+                        alert('Image must be 5MB or smaller.');
+                        this.value = '';
+                        if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+                        return;
+                    }
+                    if (addProdPreview && addProdPreviewWrap) {
+                        addProdPreview.src = URL.createObjectURL(file);
+                        addProdPreviewWrap.hidden = false;
+                    }
+                });
+            }
+
+            if (addProdForm) {
+                addProdForm.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    const imgFile = addProdImageInput && addProdImageInput.files && addProdImageInput.files[0];
+                    if (imgFile && imgFile.size > 5 * 1024 * 1024) {
+                        alert('Image must be 5MB or smaller.');
+                        return;
+                    }
+                    const formData = new FormData(this);
+                    if (submitAddProdBtn) {
+                        submitAddProdBtn.disabled = true;
+                        submitAddProdBtn.textContent = 'Saving...';
+                    }
+
+                    fetch('<?= asset('pos.php') ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.text().then(text => {
+                        let data;
+                        try {
+                            data = JSON.parse(text);
+                        } catch (err) {
+                            throw new Error('Session expired or server error. Please reload the page.');
+                        }
+                        return data;
+                    }))
+                    .then(data => {
+                        if (submitAddProdBtn) {
+                            submitAddProdBtn.disabled = false;
+                            submitAddProdBtn.textContent = 'Save Product';
+                        }
+                        if (data.success) {
+                            if (searchInput) searchInput.value = '';
+                            if (data.product) {
+                                prependPosProductCard(data.product);
+                            }
+                            if (allProductsPill) {
+                                allProductsPill.click();
+                            } else if (searchInput) {
+                                searchInput.dispatchEvent(new Event('input'));
+                            }
+                            closeAddProductModal();
+                            resetAddProductForm();
+                            if (data.image_warning) {
+                                alert(data.image_warning);
+                            }
+                        } else {
+                            alert('Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not add product')));
+                        }
+                    })
+                    .catch(err => {
+                        if (submitAddProdBtn) {
+                            submitAddProdBtn.disabled = false;
+                            submitAddProdBtn.textContent = 'Save Product';
+                        }
+                        alert(err && err.message ? err.message : ('Network error: ' + err));
+                    });
                 });
             }
         });

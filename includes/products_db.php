@@ -368,11 +368,19 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
         return $oldPath;
     }
 
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
+    $mime = '';
+    if (function_exists('finfo_open')) {
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $mime = (string) @finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+        }
+    }
+    if ($mime === '' && function_exists('mime_content_type')) {
+        $mime = (string) @mime_content_type($file['tmp_name']);
+    }
 
-    if (!in_array($mime, $allowedMimes, true)) {
+    if ($mime === '' || !in_array($mime, $allowedMimes, true)) {
         return $oldPath;
     }
 
@@ -383,7 +391,10 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
 
     $uploadDir = __DIR__ . '/../assets/uploads/products/';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+        @mkdir($uploadDir, 0755, true);
+    }
+    if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        return $oldPath;
     }
 
     $newFileName = 'prod_' . bin2hex(random_bytes(8)) . '_' . time() . '.' . $ext;
