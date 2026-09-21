@@ -218,21 +218,39 @@ $logoExists = ($storeLogo !== '');
 $storeDisplayName = !empty($store['store_name']) ? $store['store_name'] : (!empty($brand['display_name']) ? $brand['display_name'] : 'ASH COLLECTIVE');
 
 // 8. Calculations
-$subtotal = (float)$invoice['subtotal'];
+$subtotal = (float)($invoice['subtotal'] ?? 0);
 $discountAmount = (float)($invoice['discount_amount'] ?? 0);
 $taxAmount = (float)($invoice['tax_amount'] ?? 0);
 $shippingFee = (float)($invoice['shipping_fee'] ?? 0);
-$grandTotal = (float)$invoice['total_amount'];
+$grandTotal = (float)($invoice['total_amount'] ?? 0);
 
-// If subtotal is zero (e.g. legacy invoice), sum from items
-if ($subtotal <= 0 && !empty($items)) {
+// If subtotal is zero or empty (e.g. legacy invoice), sum from items
+$itemsSum = 0.0;
+if (!empty($items)) {
     foreach ($items as $it) {
-        $subtotal += (float)$it['line_total'];
+        $itemsSum += (float)($it['line_total'] ?? 0);
     }
 }
-if ($grandTotal <= 0) {
-    $grandTotal = $subtotal - $discountAmount + $shippingFee;
+if ($subtotal <= 0 && $itemsSum > 0) {
+    $subtotal = $itemsSum;
 }
+
+// Check if shipping fee is in order notes or notes
+if ($shippingFee <= 0) {
+    $notes = (string)($invoice['order_notes'] ?? $invoice['notes'] ?? '');
+    if (preg_match('/(?:shipping|delivery)(?:\s*(?:fee|charge|amount))?\s*[:=]\s*₹?\s*(\d+(?:\.\d+)?)/i', $notes, $mShip)) {
+        $shippingFee = (float)$mShip[1];
+    }
+}
+
+// Reconcile shipping fee if grand total exceeds subtotal - discount + tax
+$expectedBase = round($subtotal - $discountAmount + $taxAmount, 2);
+if ($shippingFee <= 0 && $grandTotal > $expectedBase) {
+    $shippingFee = round($grandTotal - $expectedBase, 2);
+}
+
+// Ensure Grand Total is mathematically exact: Total Amount - Discount + Tax + Shipping
+$grandTotal = max(0.00, round($subtotal - $discountAmount + $taxAmount + $shippingFee, 2));
 
 // 9. Variant Extraction Helper (Size & Colour)
 if (!function_exists('extract_item_attributes')) {
@@ -1585,6 +1603,13 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                         <span class="s-sep">:</span>
                         <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
                     </div>
+                    <?php if ($taxAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Tax / GST</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($taxAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
                     <div class="inv-summary-row">
                         <span class="s-label">Shipping</span>
                         <span class="s-sep">:</span>

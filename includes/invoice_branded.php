@@ -133,16 +133,33 @@ function prepare_branded_invoice_view(array $invoice, int $businessId, string $k
 
     $subtotal = (float) ($invoice['subtotal'] ?? 0);
     $discountAmount = (float) ($invoice['discount_amount'] ?? 0);
+    $taxAmount = (float) ($invoice['tax_amount'] ?? 0);
     $shippingFee = (float) ($invoice['shipping_fee'] ?? 0);
     $grandTotal = (float) ($invoice['total_amount'] ?? $invoice['grand_total'] ?? 0);
-    if ($subtotal <= 0 && $items !== []) {
+
+    $itemsTotalSum = 0.0;
+    if ($items !== []) {
         foreach ($items as $it) {
-            $subtotal += (float) $it['total'];
+            $itemsTotalSum += (float) ($it['total'] ?? 0);
         }
     }
-    if ($grandTotal <= 0) {
-        $grandTotal = $subtotal - $discountAmount + $shippingFee;
+    if ($subtotal <= 0 && $itemsTotalSum > 0) {
+        $subtotal = $itemsTotalSum;
     }
+
+    if ($shippingFee <= 0) {
+        $notes = (string)($invoice['order_notes'] ?? $invoice['notes'] ?? '');
+        if (preg_match('/(?:shipping|delivery)(?:\s*(?:fee|charge|amount))?\s*[:=]\s*₹?\s*(\d+(?:\.\d+)?)/i', $notes, $mShip)) {
+            $shippingFee = (float)$mShip[1];
+        }
+    }
+
+    $expectedBase = round($subtotal - $discountAmount + $taxAmount, 2);
+    if ($shippingFee <= 0 && $grandTotal > $expectedBase) {
+        $shippingFee = round($grandTotal - $expectedBase, 2);
+    }
+
+    $grandTotal = max(0.00, round($subtotal - $discountAmount + $taxAmount + $shippingFee, 2));
 
     $carePhone = trim((string) ($brand['customer_care_phone'] ?? ''));
     $waPhone = trim((string) ($brand['contact_whatsapp'] ?? ''));
@@ -193,6 +210,7 @@ function prepare_branded_invoice_view(array $invoice, int $businessId, string $k
         'items' => $items,
         'subtotal' => $subtotal,
         'discount' => $discountAmount,
+        'tax' => $taxAmount,
         'shipping' => $shippingFee,
         'grand_total' => $grandTotal,
         'help_phone' => $helpPhone,
@@ -531,7 +549,8 @@ table.products td.col-price, table.products td.col-total { text-align: right; pa
 </table>
 <div class="summary-wrap"><div class="summary">
   <div class="srow">Total Amount<span class="val">₹ ' . $e(invoice_branded_money((float) $view['subtotal'])) . '</span></div>
-  <div class="srow">Discount<span class="val">₹ ' . $e(invoice_branded_money((float) $view['discount'])) . '</span></div>
+  <div class="srow">Discount<span class="val">₹ ' . $e(invoice_branded_money((float) $view['discount'])) . '</span></div>' .
+  (((float)($view['tax'] ?? 0) > 0) ? '  <div class="srow">Tax / GST<span class="val">₹ ' . $e(invoice_branded_money((float) $view['tax'])) . '</span></div>' : '') . '
   <div class="srow">Shipping<span class="val">₹ ' . $e(invoice_branded_money((float) $view['shipping'])) . '</span></div>
   <div class="srow grand">Grand Total<span class="val">₹ ' . $e(invoice_branded_money((float) $view['grand_total'])) . '</span></div>
 </div></div>
@@ -988,14 +1007,17 @@ function invoice_branded_pdf_via_gd(array $view): ?string {
     $sumX1 = $tableX2 - 340;
     $sumY1 = $ry + 22;
     $sumX2 = $tableX2;
-    $sumY2 = $sumY1 + 128;
-    invoice_gd_round_fill($im, $sumX1, $sumY1, $sumX2, $sumY2, 12, $tint);
     $sumRows = [
         ['Total Amount', '₹ ' . invoice_branded_money((float) $view['subtotal']), false],
         ['Discount', '₹ ' . invoice_branded_money((float) $view['discount']), false],
-        ['Shipping', '₹ ' . invoice_branded_money((float) $view['shipping']), false],
-        ['Grand Total', '₹ ' . invoice_branded_money((float) $view['grand_total']), true],
     ];
+    if ((float)($view['tax'] ?? 0) > 0) {
+        $sumRows[] = ['Tax / GST', '₹ ' . invoice_branded_money((float) $view['tax']), false];
+    }
+    $sumRows[] = ['Shipping', '₹ ' . invoice_branded_money((float) $view['shipping']), false];
+    $sumRows[] = ['Grand Total', '₹ ' . invoice_branded_money((float) $view['grand_total']), true];
+    $sumY2 = $sumY1 + (count($sumRows) * 26) + 24;
+    invoice_gd_round_fill($im, $sumX1, $sumY1, $sumX2, $sumY2, 12, $tint);
     $sy = $sumY1 + 28;
     foreach ($sumRows as $sr) {
         $colr = $sr[2] ? $theme : $text;
