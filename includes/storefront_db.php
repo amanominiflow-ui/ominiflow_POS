@@ -1969,8 +1969,40 @@ function get_storefront_customer_invoices(int $businessId, int $customerId): arr
     }
 }
 
+function storefront_store_auth_key(int $businessId): string {
+    return 'storefront_store_authenticated_' . $businessId;
+}
+
+function storefront_mark_store_authenticated(int $businessId): void {
+    $_SESSION[storefront_store_auth_key($businessId)] = 1;
+}
+
+function storefront_clear_store_authenticated(int $businessId): void {
+    unset($_SESSION[storefront_store_auth_key($businessId)]);
+}
+
+function storefront_is_store_authenticated(int $businessId): bool {
+    if (!empty($_SESSION[storefront_store_auth_key($businessId)])) {
+        return true;
+    }
+    $shopper = get_storefront_shopper($businessId);
+    if (!$shopper || empty($shopper['id'])) {
+        return false;
+    }
+    if (!function_exists('get_customer_by_id')) {
+        return false;
+    }
+    $cust = get_customer_by_id((int) $shopper['id'], $businessId);
+    if ($cust && !empty($cust['password'])) {
+        storefront_mark_store_authenticated($businessId);
+        return true;
+    }
+    return false;
+}
+
 function clear_storefront_shopper(int $businessId): void {
     unset($_SESSION[storefront_shopper_key($businessId)]);
+    storefront_clear_store_authenticated($businessId);
 }
 
 function clean_customer_phone(string $phone): string {
@@ -2042,6 +2074,7 @@ function login_storefront_shopper(int $businessId, string $identifier, string $p
         return ['success' => false, 'error' => 'Incorrect password. Try again or reset password.'];
     }
     set_storefront_shopper($businessId, $cust);
+    storefront_mark_store_authenticated($businessId);
     return ['success' => true];
 }
 
@@ -2992,6 +3025,7 @@ function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $
         $cust['name'] = $fullName ?: $cust['name'];
         $cust['phone'] = $cleanPhone ?: $cust['phone'];
         set_storefront_shopper($businessId, $cust);
+        storefront_mark_store_authenticated($businessId);
         return ['success' => true, 'customer' => $cust, 'is_new' => false];
     }
 
@@ -3016,6 +3050,7 @@ function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $
         'email' => $email,
     ];
     set_storefront_shopper($businessId, $newCust);
+    storefront_mark_store_authenticated($businessId);
     return ['success' => true, 'customer' => $newCust, 'is_new' => true];
 }
 
@@ -3240,6 +3275,7 @@ function register_storefront_shopper(int $businessId, array $data): array {
         $existing['email'] = $email;
         if ($phone !== '') $existing['phone'] = $phone;
         set_storefront_shopper($businessId, $existing);
+        storefront_mark_store_authenticated($businessId);
         return ['success' => true];
     }
 
@@ -3266,6 +3302,7 @@ function register_storefront_shopper(int $businessId, array $data): array {
         'phone' => $phone,
         'email' => $email,
     ]);
+    storefront_mark_store_authenticated($businessId);
     return ['success' => true];
 }
 
@@ -3466,6 +3503,35 @@ function storefront_checkout_is_buynow(int $businessId, array $post = []): bool 
         }
     }
     return false;
+}
+
+function storefront_ensure_guest_shopper(int $businessId, array $checkoutFields): array {
+    $phone = trim((string) ($checkoutFields['phone'] ?? ''));
+    $name = trim((string) ($checkoutFields['name'] ?? ''));
+    if ($name === '') {
+        $name = 'Guest Customer';
+    }
+    if ($phone === '') {
+        return ['success' => false, 'errors' => ['phone' => 'Add your mobile number in the delivery address to continue as guest.']];
+    }
+    $cRes = find_or_create_store_customer($businessId, [
+        'name' => $name,
+        'phone' => $phone,
+        'email' => (string) ($checkoutFields['email'] ?? ''),
+        'address' => (string) ($checkoutFields['address'] ?? ''),
+    ]);
+    if (empty($cRes['success'])) {
+        return ['success' => false, 'errors' => $cRes['errors'] ?? ['general' => 'Could not save guest details.']];
+    }
+    $shopper = [
+        'id' => (int) $cRes['customer_id'],
+        'name' => $name,
+        'phone' => $phone,
+        'email' => (string) ($checkoutFields['email'] ?? ''),
+        'address' => (string) ($checkoutFields['address'] ?? ''),
+        'is_guest' => true,
+    ];
+    return ['success' => true, 'shopper' => $shopper];
 }
 
 function storefront_applied_coupon_session_key(int $businessId): string {

@@ -49,7 +49,7 @@ $sfSigninDest = static function (array $storeBiz, string $returnTarget): string 
     return public_store_url($storeBiz, 'home', ['account' => '1']);
 };
 
-if (get_storefront_shopper($bid)) {
+if (storefront_is_store_authenticated($bid)) {
     $redirectUrl = $sfSigninDest($storeBiz, $returnTarget);
     unset($_SESSION[$returnKey]);
     redirect($redirectUrl);

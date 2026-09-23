@@ -93,6 +93,7 @@ $requestedSize = trim((string)($_GET['size'] ?? 'default'));
 if (!in_array($requestedSize, ['default', '4x3'], true)) {
     $requestedSize = 'default';
 }
+$invPageSizeLabel = $requestedSize === '4x3' ? '4×3 in' : 'A4';
 $pageTitle = 'Invoice #' . $invoice['invoice_number'];
 
 // 1. Dynamic Store Theme Colors
@@ -570,6 +571,23 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             overflow-wrap: anywhere;
             word-break: break-word;
         }
+        .inv-page-size-label {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            z-index: 12;
+            margin: 0;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #0f172a;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            line-height: 1.2;
+        }
 
         /* Middle Column: Invoice Title & Meta */
         .inv-meta-col {
@@ -959,6 +977,12 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             overflow-wrap: anywhere;
             word-break: break-word;
             hyphens: auto;
+        }
+        body.size-4x3 .inv-page-size-label {
+            top: 8px;
+            left: 10px;
+            font-size: 7px;
+            padding: 2px 5px;
         }
         body.size-4x3 .inv-meta-col {
             padding-left: 0;
@@ -1421,6 +1445,9 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         $isLastPage = ($pageIdx === $totalPages - 1);
     ?>
     <div class="inv-card <?= !$isFirstPage ? 'inv-card-continue' : '' ?>">
+        <?php if ($isFirstPage): ?>
+            <div class="inv-page-size-label" id="invPageSizeLabel" aria-live="polite"><?= e($invPageSizeLabel) ?></div>
+        <?php endif; ?>
         <?php if ($isCancelled): ?>
             <div class="inv-watermark">CANCELLED</div>
         <?php endif; ?>
@@ -1747,6 +1774,17 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         window.print();
     }
 
+    function invPageSizeDisplayLabel(size) {
+        return size === '4x3' ? '4×3 in' : 'A4';
+    }
+
+    function updateInvoicePageSizeLabel(size) {
+        const el = document.getElementById('invPageSizeLabel');
+        if (el) {
+            el.textContent = invPageSizeDisplayLabel(size);
+        }
+    }
+
     function switchInvoiceSize(size) {
         document.body.classList.remove('size-4x3');
         if (size === '4x3') {
@@ -1754,6 +1792,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         }
         const select = document.getElementById('invPageSizeSelect');
         if (select) select.value = size;
+        updateInvoicePageSizeLabel(size);
 
         // Update URL query parameter without full reload
         const url = new URL(window.location.href);
@@ -1782,6 +1821,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 
     document.addEventListener('DOMContentLoaded', function () {
         const initialSize = '<?= $requestedSize ?>';
+        updateInvoicePageSizeLabel(initialSize);
         renderQrCode(initialSize === '4x3' ? 44 : 68);
 
         <?php if ($autoPrint): ?>

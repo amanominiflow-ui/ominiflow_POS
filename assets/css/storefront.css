@@ -1887,6 +1887,167 @@ body.ms-cart-lock {
     color: #065f46;
 }
 
+.ms-cd-signin-required {
+    margin: 14px 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+}
+
+.ms-cd-signin-required-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #1e40af;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+
+.ms-cd-signin-required-text strong {
+    font-size: 13px;
+    color: #1d4ed8;
+}
+
+.ms-cd-signin-required-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ms-cd-signin-required-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff !important;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+
+.ms-cd-signin-required-btn--outline {
+    background: #ffffff;
+    color: #1d4ed8 !important;
+    border-color: #93c5fd;
+}
+
+.ms-cd-signin-required--sticky {
+    flex-shrink: 0;
+    margin: 0;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 1px solid #bfdbfe;
+}
+
+.ms-cd-signin-required-link {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+a.ms-cd-checkout-btn-signin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    text-align: center;
+}
+
+.ms-cd-guest-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0f172a !important;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ms-cd-foot-auth {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-end;
+}
+
+.ms-cd-foot-auth .ms-cd-checkout-btn {
+    min-width: 0;
+    flex: 1 1 calc(50% - 3px);
+    padding: 10px 10px;
+    font-size: 12.5px;
+}
+
+.ms-cd-foot-auth .ms-cd-checkout-btn:last-child {
+    flex: 1 1 100%;
+}
+
+.ms-cd-place-order-wide {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+}
+
+.ms-cd-foot--checkout-auth {
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.ms-cd-foot--checkout-auth .ms-cd-foot-left {
+    flex: 1 1 100%;
+    margin-bottom: 4px;
+}
+
+.ms-cd-foot-guest-active {
+    flex: 1;
+}
+
+.ms-cd-checkout-btn-outline {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ms-cd-guest-active-hint {
+    font-size: 12px;
+    color: #047857;
+    font-weight: 600;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.ms-cd-guest-cancel {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
 /* Order Summary Deliver To section inside Drawer (Screenshot 2) */
 .ms-cd-deliver-section {
     padding: 14px 0 16px;
@@ -2695,6 +2856,53 @@ body.sf-auth-body {
     align-items: center;
     gap: 10px;
 }
+.ms-checkout-auth-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ms-checkout-auth-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-decoration: none;
+    text-align: center;
+    cursor: pointer;
+    box-sizing: border-box;
+    border: none;
+    font-family: inherit;
+}
+
+.ms-checkout-auth-btn-primary {
+    background: var(--ms-header, #083d30);
+    color: #ffffff !important;
+}
+
+.ms-checkout-auth-btn-outline {
+    background: #ffffff;
+    color: var(--ms-header, #083d30) !important;
+    border: 1px solid #cbd5e1;
+}
+
+.ms-checkout-auth-btn-guest {
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe;
+}
+
+.ms-checkout-auth-btn-cancel {
+    background: transparent;
+    color: #64748b !important;
+    font-weight: 600;
+    padding: 8px;
+}
+
 .ms-confirm-btn-cancel {
     background: #ffffff;
     border: 1px solid #cbd5e1;

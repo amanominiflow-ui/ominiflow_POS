@@ -412,30 +412,27 @@ if (!$storeBiz) {
         if ($action === 'place_order') {
             $isBuyNowCheckout = storefront_checkout_is_buynow($bid, $_POST);
             $shopper = get_storefront_shopper($bid);
-            if (!$shopper && !empty($_POST['phone'])) {
-                $postPhone = trim((string) $_POST['phone']);
-                $postName = trim((string) ($_POST['name'] ?? 'Customer'));
-                if ($postPhone !== '') {
-                    $cRes = find_or_create_store_customer($bid, [
-                        'name' => $postName,
-                        'phone' => $postPhone,
-                        'email' => (string) ($_POST['email'] ?? ''),
-                        'address' => (string) ($_POST['address'] ?? ''),
-                    ]);
-                    if (!empty($cRes['success'])) {
-                        $shopper = [
-                            'id' => (int) $cRes['customer_id'],
-                            'name' => $postName,
-                            'phone' => $postPhone,
-                            'email' => (string) ($_POST['email'] ?? ''),
-                            'address' => (string) ($_POST['address'] ?? ''),
-                        ];
-                        set_storefront_shopper($bid, $shopper);
-                    }
+            $checkoutAsGuest = !empty($_POST['checkout_as_guest']);
+            if (!$shopper && $checkoutAsGuest) {
+                $guestRes = storefront_ensure_guest_shopper($bid, [
+                    'name' => (string) ($_POST['name'] ?? ''),
+                    'phone' => (string) ($_POST['phone'] ?? ''),
+                    'email' => (string) ($_POST['email'] ?? ''),
+                    'address' => (string) ($_POST['address'] ?? ''),
+                ]);
+                if (!empty($guestRes['success'])) {
+                    $shopper = $guestRes['shopper'];
+                } else {
+                    $guestErr = is_array($guestRes['errors'] ?? null)
+                        ? implode(' ', $guestRes['errors'])
+                        : 'Could not continue as guest.';
+                    set_flash('error', $guestErr);
+                    $redirectParams = $isBuyNowCheckout ? ['buynow' => '1'] : ['checkout' => '1'];
+                    redirect(public_store_url($storeBiz, 'home', $redirectParams));
                 }
             }
             if (!$shopper) {
-                set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
+                set_flash('warning', 'Sign in to your account or choose Continue as Guest to place the order.');
                 redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
             }
             try {
@@ -537,9 +534,12 @@ if (!$storeBiz) {
     $openBuyNowSummary = $openBuyNowFlow && $hasSavedDeliveryLoc;
     $openOrderSummaryDirect = !empty($_GET['checkout']) || $openBuyNowSummary;
     $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $openOrderSummaryDirect || $page === 'cart');
-    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
-        $ret = $page === 'checkout' ? 'checkout' : 'account';
-        redirect(public_store_signin_url($storeBiz, ['return' => $ret]));
+    $storeCustomerLoggedIn = storefront_is_store_authenticated($bid);
+    $checkoutReturnDefault = (!empty($_GET['buynow']) || !empty($buyNowCart['lines'])) ? 'buynow' : 'checkout';
+    $storeCheckoutSigninUrl = public_store_signin_url($storeBiz, ['return' => $checkoutReturnDefault]);
+    $storeCheckoutSignupUrl = public_store_signin_url($storeBiz, ['mode' => 'signup', 'return' => $checkoutReturnDefault]);
+    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile'], true) && !$storeShopper) {
+        redirect(public_store_signin_url($storeBiz, ['return' => 'account']));
     }
 }
 
@@ -3267,6 +3267,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <?php endif; ?>
 
                                 <div class="ms-total"><span>Total</span><span><?= sf_money($currency, $hydrated['total']) ?></span></div>
+                                <input type="hidden" name="checkout_as_guest" id="msPageCheckoutAsGuest" value="0">
                                 <button class="ms-btn" type="submit" style="margin-top:14px;">Place Order</button>
                             </form>
                         </div>
@@ -4071,6 +4072,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     }
     $drawerCheckoutActionUrl = public_store_url($storeBiz, $page, $drawerCheckoutQuery);
     $drawerCheckoutIsBuyNow = $hasBuyNowSession || !empty($osBuyNow) || !empty($_GET['buynow']);
+    $drawerSigninReturn = $drawerCheckoutIsBuyNow ? 'buynow' : 'checkout';
+    $drawerSigninUrl = public_store_signin_url($storeBiz, ['return' => $drawerSigninReturn]);
+    $drawerSignupUrl = public_store_signin_url($storeBiz, ['mode' => 'signup', 'return' => $drawerSigninReturn]);
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
@@ -4384,13 +4388,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <input type="hidden" name="razorpay_signature" id="msDrawerRzpSignature" value="">
                 <input type="hidden" name="coupon_id" id="msDrawerCouponId" value="<?= $osAppliedCouponId ?>">
                 <input type="hidden" name="coupon_code" id="msDrawerCouponCode" value="<?= e($osAppliedCouponCode) ?>">
+                <input type="hidden" name="checkout_as_guest" id="msDrawerCheckoutAsGuest" value="0">
 
                 <div class="ms-cd-foot">
                     <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
                         <div class="ms-cd-pay-title" id="msDrawerPayTitle"><?= e($firstOpt['label']) ?></div>
                         <div class="ms-cd-pay-sub" style="color:#2563eb;font-weight:600;">Change Method ⌵</div>
                     </div>
-                    <button type="submit" class="ms-cd-checkout-btn">Place Order</button>
+                    <button type="submit" class="ms-cd-checkout-btn" id="msDrawerPlaceOrderBtn">Place Order</button>
                 </div>
             </form>
         </div>
@@ -4603,6 +4608,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     </aside>
 </div>
 <?php endif; ?>
+
+<!-- Checkout: Sign in / Create account / Guest (shown when Place Order clicked while not signed in) -->
+<div class="ms-confirm-modal-overlay" id="msCheckoutAuthModal" hidden aria-hidden="true">
+    <div class="ms-confirm-dialog ms-checkout-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="msCheckoutAuthTitle">
+        <h3 class="ms-confirm-title" id="msCheckoutAuthTitle">Continue checkout</h3>
+        <p class="ms-confirm-msg">Sign in or create an account to save your orders. You can also continue as guest with your delivery details.</p>
+        <div class="ms-checkout-auth-actions">
+            <a href="<?= e(!empty($storeCheckoutSigninUrl) ? $storeCheckoutSigninUrl : public_store_signin_url($storeBiz ?? null, ['return' => !empty($_GET['buynow']) ? 'buynow' : 'checkout'])) ?>" class="ms-checkout-auth-btn ms-checkout-auth-btn-primary" id="msCheckoutAuthSigninBtn" data-checkout-auth="signin">Sign In</a>
+            <a href="<?= e(!empty($storeCheckoutSignupUrl) ? $storeCheckoutSignupUrl : public_store_signin_url($storeBiz ?? null, ['mode' => 'signup', 'return' => !empty($_GET['buynow']) ? 'buynow' : 'checkout'])) ?>" class="ms-checkout-auth-btn ms-checkout-auth-btn-primary ms-checkout-auth-btn-outline" id="msCheckoutAuthSignupBtn" data-checkout-auth="signup">Create account</a>
+            <button type="button" class="ms-checkout-auth-btn ms-checkout-auth-btn-guest" onclick="continueGuestCheckoutFromAuthModal()">Continue as Guest</button>
+            <button type="button" class="ms-checkout-auth-btn ms-checkout-auth-btn-cancel" onclick="closeCheckoutAuthModal(true)">Cancel</button>
+        </div>
+    </div>
+</div>
 
 <!-- Place Order Confirmation Modal (Reference Confirm Dialog) -->
 <div class="ms-confirm-modal-overlay" id="msConfirmOrderModal" hidden aria-hidden="true">
@@ -5447,8 +5466,115 @@ var msStoreCheckout = {
     csrfToken: <?= json_encode(csrf_token()) ?>,
     postUrl: <?= json_encode(isset($drawerCheckoutActionUrl) ? $drawerCheckoutActionUrl : public_store_url($storeBiz ?? null, $page ?? 'home', $_GET ?? [])) ?>,
     currency: <?= json_encode($currency ?? '₹') ?>,
-    checkoutBuyNow: <?= !empty($osBuyNow) ? 'true' : 'false' ?>
+    checkoutBuyNow: <?= !empty($osBuyNow) ? 'true' : 'false' ?>,
+    customerLoggedIn: <?= !empty($storeCustomerLoggedIn) ? 'true' : 'false' ?>,
+    signinUrl: <?= json_encode($drawerSigninUrl ?? ($storeCheckoutSigninUrl ?? '')) ?>,
+    signupUrl: <?= json_encode($drawerSignupUrl ?? ($storeCheckoutSignupUrl ?? '')) ?>,
+    guestMode: false
 };
+
+function storeCheckoutGuestField(scope) {
+    if (scope === 'page') return document.getElementById('msPageCheckoutAsGuest');
+    return document.getElementById('msDrawerCheckoutAsGuest');
+}
+
+function isGuestCheckoutForm(form) {
+    var h = form ? form.querySelector('[name="checkout_as_guest"]') : null;
+    return !!(h && String(h.value) === '1');
+}
+
+function checkoutFormScope(form) {
+    if (!form) return 'drawer';
+    return form.id === 'msCheckoutForm' ? 'page' : 'drawer';
+}
+
+function storeCheckoutPhoneForScope(scope) {
+    var embedded = <?= json_encode($locPhone ?? '') ?>;
+    if (embedded && String(embedded).trim() !== '') {
+        return String(embedded).trim();
+    }
+    var form = scope === 'page' ? document.getElementById('msCheckoutForm') : document.getElementById('msDrawerCheckoutForm');
+    var ph = form ? form.querySelector('[name="phone"]') : null;
+    return ph ? String(ph.value || '').trim() : '';
+}
+
+function enableStoreGuestCheckout(scope) {
+    var phone = storeCheckoutPhoneForScope(scope);
+    if (!phone) {
+        alert('Please add your delivery address with mobile number first, then continue as guest.');
+        closeCheckoutAuthModal(false);
+        if (scope === 'drawer' || scope === 'page') {
+            openLocationDrawerFromCheckout(scope === 'drawer' && msStoreCheckout.checkoutBuyNow ? 'buynow' : 'cart');
+        }
+        return false;
+    }
+    msStoreCheckout.guestMode = true;
+    var hid = storeCheckoutGuestField(scope);
+    if (hid) hid.value = '1';
+    return true;
+}
+
+function navigateCheckoutAuthUrl(url) {
+    if (!url || String(url).trim() === '' || String(url).trim() === '#') {
+        return;
+    }
+    window.location.assign(url);
+}
+
+function openCheckoutAuthModal() {
+    var modal = document.getElementById('msCheckoutAuthModal');
+    if (!modal) return;
+    var signinBtn = document.getElementById('msCheckoutAuthSigninBtn');
+    var signupBtn = document.getElementById('msCheckoutAuthSignupBtn');
+    var signinUrl = msStoreCheckout.signinUrl || (signinBtn ? signinBtn.getAttribute('href') : '');
+    var signupUrl = msStoreCheckout.signupUrl || (signupBtn ? signupBtn.getAttribute('href') : '');
+    if (signinBtn && signinUrl) {
+        signinBtn.setAttribute('href', signinUrl);
+        signinBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateCheckoutAuthUrl(signinUrl);
+        };
+    }
+    if (signupBtn && signupUrl) {
+        signupBtn.setAttribute('href', signupUrl);
+        signupBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateCheckoutAuthUrl(signupUrl);
+        };
+    }
+    modal.classList.add('is-open');
+    modal.hidden = false;
+    modal.removeAttribute('hidden');
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeCheckoutAuthModal(clearPending) {
+    var modal = document.getElementById('msCheckoutAuthModal');
+    if (modal) {
+        modal.classList.remove('is-open');
+        modal.hidden = true;
+        modal.setAttribute('hidden', '');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    if (clearPending) {
+        msCheckoutFormPending = null;
+    }
+}
+
+function continueGuestCheckoutFromAuthModal() {
+    var form = msCheckoutFormPending;
+    if (!form) return;
+    var scope = checkoutFormScope(form);
+    if (!enableStoreGuestCheckout(scope)) {
+        return;
+    }
+    closeCheckoutAuthModal(false);
+    openConfirmOrderModal();
+}
 
 function sfFormatMoney(amount) {
     var sym = msStoreCheckout.currency || '₹';
@@ -5668,7 +5794,13 @@ function handleCheckoutSubmit(e, form) {
     }
     if (e) e.preventDefault();
     msCheckoutFormPending = form;
-    var pmEl = form.querySelector('[name="payment_method"]');
+    if (!msStoreCheckout.customerLoggedIn && !isGuestCheckoutForm(form)) {
+        msStoreCheckout.guestMode = false;
+        var guestField = form.querySelector('[name="checkout_as_guest"]');
+        if (guestField) guestField.value = '0';
+        openCheckoutAuthModal();
+        return false;
+    }
     msStoreCheckout.orderAmount = msStoreCheckout.orderAmount || 0;
     openConfirmOrderModal();
     return false;
@@ -5701,6 +5833,10 @@ function closeConfirmOrderModal(clearPending) {
 
 function proceedConfirmOrder() {
     if (!msCheckoutFormPending) {
+        return;
+    }
+    if (!msStoreCheckout.customerLoggedIn && !isGuestCheckoutForm(msCheckoutFormPending)) {
+        openCheckoutAuthModal();
         return;
     }
     var pmEl = msCheckoutFormPending.querySelector('[name="payment_method"]');
