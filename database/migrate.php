@@ -1249,6 +1249,8 @@ try {
     add_column_if_not_exists($pdo, 'orders', 'client_order_uuid', "VARCHAR(100) NULL UNIQUE AFTER `notes`");
 
     add_column_if_not_exists($pdo, 'order_items', 'variant_id', "INT UNSIGNED NULL AFTER `product_id`");
+    add_column_if_not_exists($pdo, 'order_items', 'size', "VARCHAR(80) NULL AFTER `variant_id`");
+    add_column_if_not_exists($pdo, 'order_items', 'colour', "VARCHAR(80) NULL AFTER `size`");
     add_column_if_not_exists($pdo, 'order_items', 'hsn_code', "VARCHAR(50) NULL AFTER `product_sku`");
 
     add_column_if_not_exists($pdo, 'product_variants', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");

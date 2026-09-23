@@ -10,11 +10,62 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/products_db.php';
 
+function parse_variant_size_colour(array $variant): array {
+    $size = '';
+    $colour = '';
+    $av = json_decode((string) ($variant['attribute_values'] ?? ''), true);
+    $parsedAttrs = is_array($av) && $av !== [];
+    if ($parsedAttrs) {
+        foreach ($av as $k => $v) {
+            $kLow = strtolower(trim((string) $k));
+            $val = trim((string) $v);
+            if ($val === '') {
+                continue;
+            }
+            if (in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
+                $size = $val;
+            }
+            if (in_array($kLow, ['color', 'colour', 'shade'], true)) {
+                $colour = $val;
+            }
+        }
+    }
+    $vn = trim((string) ($variant['variant_name'] ?? ''));
+    if (!$parsedAttrs && ($size === '' || $colour === '') && $vn !== '' && str_contains($vn, '/')) {
+        $parts = array_map('trim', explode('/', $vn, 2));
+        if ($size === '' && isset($parts[0])) {
+            $size = $parts[0];
+        }
+        if ($colour === '' && isset($parts[1])) {
+            $colour = $parts[1];
+        }
+    }
+    return ['size' => $size, 'colour' => $colour];
+}
+
 function ensure_orders_invoices_schema(): void {
     static $done = false;
     if ($done) return;
     $done = true;
     $db = get_db();
+
+    foreach ([
+        'size' => "VARCHAR(80) NULL",
+        'colour' => "VARCHAR(80) NULL",
+    ] as $col => $def) {
+        try {
+            $stmt = $db->prepare("
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'order_items' AND COLUMN_NAME = :col
+            ");
+            $stmt->execute(['db' => DB_NAME, 'col' => $col]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `order_items` ADD `{$col}` {$def}");
+            }
+        } catch (Throwable $e) {
+            // Column may already exist, or the table is not ready yet.
+        }
+    }
 
     $tablesAndCols = [
         'invoices' => ['invoice_number', 'uk_business_invoice_number'],
@@ -547,6 +598,8 @@ function process_pos_order(
     ?string $overridePaymentStatus = null
 ): array {
     ensure_orders_invoices_schema();
+    require_once __DIR__ . '/promotions_db.php';
+    ensure_promotions_coupons_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
 
@@ -590,6 +643,8 @@ function process_pos_order(
         foreach ($cartItems as $item) {
             $productId = (int) ($item['product_id'] ?? 0);
             $variantId = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
+            $requestedSize = trim((string) ($item['size'] ?? ''));
+            $requestedColour = trim((string) ($item['colour'] ?? $item['color'] ?? ''));
             $qty = max(1, (int) ($item['quantity'] ?? 1));
 
             if ($productId <= 0) {
@@ -613,24 +668,84 @@ function process_pos_order(
                 throw new Exception('Product "' . $product['name'] . '" is inactive and cannot be sold.');
             }
 
-            $currentStock = (int) $product['stock_quantity'];
-            $isComposite = ($product['product_type'] === 'composite');
+            $stmtVars = $db->prepare('
+                SELECT * FROM product_variants
+                WHERE product_id = :pid AND business_id = :bid AND status = "active"
+                ORDER BY id ASC
+                FOR UPDATE
+            ');
+            $stmtVars->execute(['pid' => $productId, 'bid' => $bid]);
+            $productVariants = $stmtVars->fetchAll();
 
-            // If simple or variable product, validate stock
+            $chosenVariant = null;
+            if ($variantId) {
+                foreach ($productVariants as $variantRow) {
+                    if ((int) $variantRow['id'] === $variantId) {
+                        $chosenVariant = $variantRow;
+                        break;
+                    }
+                }
+                if (!$chosenVariant) {
+                    throw new Exception('The selected size or colour for "' . $product['name'] . '" is no longer available.');
+                }
+            } elseif ($productVariants) {
+                if ($requestedSize !== '' || $requestedColour !== '') {
+                    foreach ($productVariants as $variantRow) {
+                        $attrs = parse_variant_size_colour($variantRow);
+                        $sizeOk = $requestedSize === '' || strcasecmp($attrs['size'], $requestedSize) === 0;
+                        $colourOk = $requestedColour === '' || strcasecmp($attrs['colour'], $requestedColour) === 0;
+                        if ($sizeOk && $colourOk) {
+                            $chosenVariant = $variantRow;
+                            break;
+                        }
+                    }
+                }
+                if (!$chosenVariant) {
+                    throw new Exception('Choose a size and colour for "' . $product['name'] . '" before completing the sale.');
+                }
+            }
+
+            $lineSize = '';
+            $lineColour = '';
+            $lineSku = (string) $product['sku'];
+            $lineBarcode = (string) ($product['barcode'] ?? '');
+            $parentStock = (int) $product['stock_quantity'];
+            $isComposite = ($product['product_type'] === 'composite');
+            $currentStock = $parentStock;
+            $unitPrice = (float) $product['selling_price'];
+
+            if ($chosenVariant) {
+                $attrs = parse_variant_size_colour($chosenVariant);
+                $variantId = (int) $chosenVariant['id'];
+                $lineSize = $attrs['size'];
+                $lineColour = $attrs['colour'];
+                if (trim((string) $chosenVariant['sku']) !== '') {
+                    $lineSku = (string) $chosenVariant['sku'];
+                }
+                if (trim((string) ($chosenVariant['barcode'] ?? '')) !== '') {
+                    $lineBarcode = (string) $chosenVariant['barcode'];
+                }
+                $currentStock = (int) $chosenVariant['stock_quantity'];
+                if ((float) $chosenVariant['selling_price'] > 0) {
+                    $unitPrice = (float) $chosenVariant['selling_price'];
+                }
+            } elseif (!empty($item['price']) && (float) $item['price'] > 0) {
+                $unitPrice = (float) $item['price'];
+            }
+
+            $stockLabel = $product['name'];
+            if ($lineSize !== '' || $lineColour !== '') {
+                $stockLabel .= ' (' . trim($lineSize . ' / ' . $lineColour, ' /') . ')';
+            }
+
             if (!$isComposite && $currentStock < $qty) {
                 throw new Exception(sprintf(
                     'Insufficient stock for "%s" (SKU: %s). Available: %d units, Requested: %d units.',
-                    $product['name'],
-                    $product['sku'],
+                    $stockLabel,
+                    $lineSku,
                     $currentStock,
                     $qty
                 ));
-            }
-
-            // Price list check
-            $unitPrice = (float) $product['selling_price'];
-            if (!empty($item['price']) && (float)$item['price'] > 0) {
-                $unitPrice = (float)$item['price'];
             }
 
             $taxPercent = (float) $product['tax_percent'];
@@ -644,9 +759,11 @@ function process_pos_order(
             $processedItems[] = [
                 'product_id' => $product['id'],
                 'variant_id' => $variantId,
+                'size' => $lineSize !== '' ? $lineSize : null,
+                'colour' => $lineColour !== '' ? $lineColour : null,
                 'product_name' => $product['name'],
-                'product_sku' => $product['sku'],
-                'product_barcode' => $product['barcode'] ?? '',
+                'product_sku' => $lineSku,
+                'product_barcode' => $lineBarcode,
                 'hsn_code' => $product['hsn_code'] ?? '',
                 'product_type' => $product['product_type'],
                 'unit_price' => $unitPrice,
@@ -657,21 +774,56 @@ function process_pos_order(
                 'line_total' => $itemTotal,
                 'stock_before' => $currentStock,
                 'stock_after' => max(0, $currentStock - $qty),
+                'parent_stock_before' => $parentStock,
             ];
         }
 
         // 2. Calculate Discounts & Final Total
         $discountAmount = 0.00;
+
+        $promoLines = [];
+        foreach ($processedItems as $row) {
+            $promoLines[] = [
+                'price' => (float) ($row['unit_price'] ?? 0),
+                'quantity' => max(1, (int) ($row['quantity'] ?? 1)),
+            ];
+        }
+        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, $bid);
+        $autoPromoDiscount = (float) ($promoResult['total_discount'] ?? 0);
+        if ($autoPromoDiscount > 0) {
+            $discountAmount += min($subtotal - $discountAmount, $autoPromoDiscount);
+        }
+
+        $manualDiscount = 0.00;
         if ($discountType === 'percent') {
             $percent = max(0.0, min(100.0, $discountVal));
-            $discountAmount = $subtotal * ($percent / 100.0);
-        } else {
-            $discountAmount = max(0.0, min($subtotal, $discountVal));
+            $manualDiscount = $subtotal * ($percent / 100.0);
+        } elseif ($discountVal > 0) {
+            $manualDiscount = max(0.0, min($subtotal, $discountVal));
+        }
+        if ($manualDiscount > 0) {
+            $discountAmount += min($subtotal - $discountAmount, $manualDiscount);
         }
 
         // Apply loyalty discount if any
         if ($loyaltyDiscountAmount > 0) {
             $discountAmount += min($subtotal - $discountAmount, $loyaltyDiscountAmount);
+        }
+
+        // Apply coupon (re-validated server-side; stacks after promo / manual / loyalty discounts)
+        if ($couponCode !== null && trim($couponCode) !== '') {
+            $couponRes = validate_and_apply_coupon(trim($couponCode), $subtotal, $bid);
+            if (empty($couponRes['valid'])) {
+                throw new Exception($couponRes['error'] ?? 'Invalid coupon code.');
+            }
+            if ($couponId !== null && (int) $couponRes['coupon_id'] !== (int) $couponId) {
+                throw new Exception('Coupon mismatch. Please remove and apply the coupon again.');
+            }
+            $couponId = (int) $couponRes['coupon_id'];
+            $couponCode = (string) $couponRes['code'];
+            $couponDiscount = (float) ($couponRes['discount_amount'] ?? 0);
+            $remaining = max(0.0, $subtotal - $discountAmount);
+            $discountAmount += min($remaining, $couponDiscount);
         }
 
         $taxableAmount = max(0.00, $subtotal - $discountAmount);
@@ -767,18 +919,24 @@ function process_pos_order(
         // 6. Insert Order Items & Deduct Stock Atomically
         $stmtItem = $db->prepare('
             INSERT INTO order_items (
-                order_id, product_id, variant_id, product_name, product_sku, hsn_code, unit_price,
+                order_id, product_id, variant_id, size, colour, product_name, product_sku, hsn_code, unit_price,
                 quantity, tax_percent, tax_amount, discount_amount, line_total, created_at
             ) VALUES (
-                :order_id, :product_id, :variant_id, :product_name, :product_sku, :hsn_code, :unit_price,
+                :order_id, :product_id, :variant_id, :size, :colour, :product_name, :product_sku, :hsn_code, :unit_price,
                 :quantity, :tax_percent, :tax_amount, :discount_amount, :line_total, NOW()
             )
         ');
 
         $stmtStockDec = $db->prepare('
             UPDATE products
-            SET stock_quantity = stock_quantity - :qty, updated_at = NOW()
+            SET stock_quantity = GREATEST(0, stock_quantity - :qty), updated_at = NOW()
             WHERE id = :id AND business_id = :biz_id
+        ');
+
+        $stmtVariantDec = $db->prepare('
+            UPDATE product_variants
+            SET stock_quantity = stock_quantity - :qty, updated_at = NOW()
+            WHERE id = :id AND business_id = :biz_id AND product_id = :pid
         ');
 
         $stmtMoveLog = $db->prepare('
@@ -795,6 +953,8 @@ function process_pos_order(
                 'order_id' => $orderId,
                 'product_id' => $pItem['product_id'],
                 'variant_id' => $pItem['variant_id'] ?: null,
+                'size' => $pItem['size'] ?? null,
+                'colour' => $pItem['colour'] ?? null,
                 'product_name' => $pItem['product_name'],
                 'product_sku' => $pItem['product_sku'],
                 'hsn_code' => $pItem['hsn_code'] ?: null,
@@ -832,12 +992,27 @@ function process_pos_order(
                     ]);
                 }
             } else {
+                if (!empty($pItem['variant_id'])) {
+                    $stmtVariantDec->execute([
+                        'qty' => $pItem['quantity'],
+                        'id' => $pItem['variant_id'],
+                        'biz_id' => $bid,
+                        'pid' => $pItem['product_id'],
+                    ]);
+                }
+
                 // Deduct simple or variable product stock
                 $stmtStockDec->execute([
                     'qty' => $pItem['quantity'],
                     'id' => $pItem['product_id'],
                     'biz_id' => $bid,
                 ]);
+
+                $parentBefore = (int) ($pItem['parent_stock_before'] ?? $pItem['stock_before']);
+                $variantNote = '';
+                if (!empty($pItem['size']) || !empty($pItem['colour'])) {
+                    $variantNote = ' [' . trim((string) ($pItem['size'] ?? '') . ' / ' . (string) ($pItem['colour'] ?? ''), ' /') . ']';
+                }
 
                 // Log inventory movement
                 $stmtMoveLog->execute([
@@ -846,9 +1021,9 @@ function process_pos_order(
                     'user_id' => $validUserId,
                     'movement_type' => 'out',
                     'quantity_change' => -$pItem['quantity'],
-                    'quantity_before' => $pItem['stock_before'],
-                    'quantity_after' => $pItem['stock_after'],
-                    'reason' => 'POS Sale Order #' . $orderNumber,
+                    'quantity_before' => $parentBefore,
+                    'quantity_after' => max(0, $parentBefore - $pItem['quantity']),
+                    'reason' => 'POS Sale Order #' . $orderNumber . $variantNote,
                 ]);
             }
         }
@@ -958,6 +1133,10 @@ function process_pos_order(
         $cashierName = $userData ? $userData['name'] : 'Cashier';
 
         $db->commit();
+
+        if ($couponId) {
+            increment_coupon_usage($couponId, $bid);
+        }
 
         return [
             'success' => true,
@@ -1294,6 +1473,20 @@ function cancel_invoice(int $invoiceId, ?int $userId, string $reason = '', ?int 
 
                 // Increment stock
                 $stmtStockInc->execute(['qty' => $qty, 'id' => $prodId, 'bid' => $bid]);
+
+                $cancelVariantId = (int) ($item['variant_id'] ?? 0);
+                if ($cancelVariantId > 0) {
+                    $db->prepare('
+                        UPDATE product_variants
+                        SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
+                        WHERE id = :id AND product_id = :pid AND business_id = :bid
+                    ')->execute([
+                        'qty' => $qty,
+                        'id' => $cancelVariantId,
+                        'pid' => $prodId,
+                        'bid' => $bid,
+                    ]);
+                }
 
                 // Record inventory movement reversal
                 $stmtMoveLog->execute([
@@ -1634,6 +1827,7 @@ function process_pos_return(
             $processedReturns[] = [
                 'order_item_id' => $orderItemId,
                 'product_id' => (int) $orderItem['product_id'],
+                'variant_id' => (int) ($orderItem['variant_id'] ?? 0),
                 'product_name' => $orderItem['product_name'],
                 'product_sku' => $orderItem['product_sku'],
                 'unit_price' => (float) $orderItem['unit_price'],
@@ -1727,6 +1921,19 @@ function process_pos_return(
                     'id' => $pRet['product_id'],
                     'bid' => $bid,
                 ]);
+
+                if (!empty($pRet['variant_id'])) {
+                    $db->prepare('
+                        UPDATE product_variants
+                        SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
+                        WHERE id = :id AND product_id = :pid AND business_id = :bid
+                    ')->execute([
+                        'qty' => $pRet['quantity'],
+                        'id' => (int) $pRet['variant_id'],
+                        'pid' => $pRet['product_id'],
+                        'bid' => $bid,
+                    ]);
+                }
 
                 // Record inventory movement
                 $stmtMoveLog->execute([

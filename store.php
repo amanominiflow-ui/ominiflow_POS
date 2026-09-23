@@ -169,7 +169,8 @@ if (!$storeBiz) {
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
-            $res = add_to_storefront_cart($bid, $pid, $qty);
+            $vid = (int) ($_POST['variant_id'] ?? 0);
+            $res = add_to_storefront_cart($bid, $pid, $qty, $vid);
 
             $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
             if ($isAjax) {
@@ -237,7 +238,7 @@ if (!$storeBiz) {
         }
 
         if ($action === 'update_cart') {
-            $res = update_storefront_cart_qty($bid, (int) ($_POST['product_id'] ?? 0), (int) ($_POST['qty'] ?? 0));
+            $res = update_storefront_cart_qty($bid, (int) ($_POST['product_id'] ?? 0), (int) ($_POST['qty'] ?? 0), (int) ($_POST['variant_id'] ?? 0));
             if (empty($res['success']) && !empty($res['error'])) {
                 set_flash('error', $res['error']);
             }
@@ -326,6 +327,49 @@ if (!$storeBiz) {
             redirect(public_store_url($storeBiz, $action === 'update_address' ? 'addresses' : 'profile'));
         }
 
+        if ($action === 'validate_store_coupon') {
+            require_once __DIR__ . '/includes/promotions_db.php';
+            $isBuyNowCoupon = storefront_checkout_is_buynow($bid, $_POST);
+            $hydratedCoupon = $isBuyNowCoupon ? hydrate_storefront_buynow($bid) : hydrate_storefront_cart($bid);
+            $code = strtoupper(trim((string) ($_POST['coupon_code'] ?? '')));
+            if ($code === '') {
+                clear_storefront_applied_coupon($bid);
+                $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+                header('Content-Type: application/json');
+                echo json_encode(['valid' => true, 'removed' => true, 'totals' => storefront_checkout_totals_payload($enriched)]);
+                exit;
+            }
+            $subtotal = (float) ($hydratedCoupon['subtotal'] ?? 0);
+            $check = validate_and_apply_coupon($code, $subtotal, $bid);
+            if (empty($check['valid'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['valid' => false, 'error' => $check['error'] ?? 'Invalid coupon.']);
+                exit;
+            }
+            set_storefront_applied_coupon($bid, [
+                'coupon_id' => (int) $check['coupon_id'],
+                'code' => (string) $check['code'],
+            ]);
+            $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'valid' => true,
+                'code' => $check['code'],
+                'totals' => storefront_checkout_totals_payload($enriched),
+            ]);
+            exit;
+        }
+
+        if ($action === 'remove_store_coupon') {
+            clear_storefront_applied_coupon($bid);
+            $isBuyNowCoupon = storefront_checkout_is_buynow($bid, $_POST);
+            $hydratedCoupon = $isBuyNowCoupon ? hydrate_storefront_buynow($bid) : hydrate_storefront_cart($bid);
+            $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'totals' => storefront_checkout_totals_payload($enriched)]);
+            exit;
+        }
+
         if ($action === 'create_razorpay_order') {
             require_once __DIR__ . '/includes/payment_integrations_db.php';
             require_once __DIR__ . '/includes/razorpay_oauth.php';
@@ -407,6 +451,8 @@ if (!$storeBiz) {
                     'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
                     'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
                     'buy_now' => $isBuyNowCheckout,
+                    'coupon_id' => (int) ($_POST['coupon_id'] ?? 0),
+                    'coupon_code' => (string) ($_POST['coupon_code'] ?? ''),
                 ]);
             } catch (Throwable $placeEx) {
                 error_log('Store place_order failed: ' . $placeEx->getMessage());
@@ -479,11 +525,11 @@ if (!$storeBiz) {
     $homeUrl = public_store_url($storeBiz, 'home');
     $cartUrl = public_store_url($storeBiz, 'cart');
     $checkoutUrl = public_store_url($storeBiz, 'checkout');
-    $drawerCart = hydrate_storefront_cart($bid);
+    $drawerCart = storefront_apply_checkout_discounts($bid, hydrate_storefront_cart($bid));
     $cartCount = (int) ($drawerCart['count'] ?? $cartCount);
     $storeShopper = refresh_storefront_shopper($bid);
     restore_storefront_delivery_location($bid, $storeShopper);
-    $buyNowCart = hydrate_storefront_buynow($bid);
+    $buyNowCart = storefront_apply_checkout_discounts($bid, hydrate_storefront_buynow($bid));
     $hasSavedDeliveryLoc = storefront_has_delivery_location($bid, $storeShopper);
     $openAccountDrawer = !empty($_GET['account']);
     $openBuyNowFlow = !empty($_GET['buynow']) && !empty($buyNowCart['lines']);
@@ -919,6 +965,27 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             background: <?= e($brand['header_color'] ?: '#ea580c') ?>;
             color: #ffffff;
         }
+        .sf-variant-row { margin-bottom: 12px; }
+        .sf-variant-label { display: block; font-size: 12px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+        .sf-variant-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .sf-variant-chip {
+            border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 7px 12px;
+            font-size: 13px; font-weight: 700; cursor: pointer; color: #0f172a;
+        }
+        .sf-variant-chip.on { background: <?= e($brand['header_color'] ?: '#0f4c3a') ?>; border-color: <?= e($brand['header_color'] ?: '#0f4c3a') ?>; color: #fff; }
+        .sf-variant-chip:disabled, .sf-variant-chip.off { opacity: 0.45; cursor: not-allowed; }
+        .sf-variant-meta { font-size: 12.5px; font-weight: 700; color: #475569; min-height: 18px; }
+        .sf-variant-modal {
+            position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 12000;
+            display: none; align-items: center; justify-content: center; padding: 16px;
+        }
+        .sf-variant-modal.open { display: flex; }
+        .sf-variant-modal-box {
+            width: 100%; max-width: 420px; background: #fff; border-radius: 14px; padding: 18px 16px 16px;
+            box-shadow: 0 20px 50px rgba(15,23,42,0.18);
+        }
+        .sf-variant-modal-title { font-size: 17px; font-weight: 800; color: #0f172a; margin: 0 0 14px; }
+        .sf-variant-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
         .ms-footer-col-title {
             font-size: 13.5px;
             font-weight: 800;
@@ -2626,10 +2693,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?php foreach ($trendingProducts as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
-                                $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
                                 $varCount = $pInfo['variant_count'];
+                                $cardVariantJson = $varCount > 0 ? htmlspecialchars(json_encode($pInfo['variant_ui'] ?? storefront_variant_ui_rows($pInfo['variants'])), ENT_QUOTES, 'UTF-8') : '';
                                 $sellingPrice = $pInfo['selling_price'];
                                 $mrp = $pInfo['mrp'];
                                 $discountPct = $pInfo['discount_percent'];
@@ -2700,16 +2768,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
-                                            <?php elseif ($varCount > 0): ?>
-                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
-                                                    <span>View Options</span>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                                                </a>
                                             <?php else: ?>
-                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
+                                                <form method="post" class="ms-card-add-form sf-store-cart-form" style="margin:0;" <?= $varCount > 0 ? 'data-variants="' . $cardVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="add_to_cart">
                                                     <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="variant_id" value="">
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
@@ -2737,10 +2801,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?php foreach ($products as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
-                                $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
                                 $varCount = $pInfo['variant_count'];
+                                $cardVariantJson = $varCount > 0 ? htmlspecialchars(json_encode($pInfo['variant_ui'] ?? storefront_variant_ui_rows($pInfo['variants'])), ENT_QUOTES, 'UTF-8') : '';
                                 $sellingPrice = $pInfo['selling_price'];
                                 $mrp = $pInfo['mrp'];
                                 $discountPct = $pInfo['discount_percent'];
@@ -2811,16 +2876,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
-                                            <?php elseif ($varCount > 0): ?>
-                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
-                                                    <span>View Options</span>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                                                </a>
                                             <?php else: ?>
-                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
+                                                <form method="post" class="ms-card-add-form sf-store-cart-form" style="margin:0;" <?= $varCount > 0 ? 'data-variants="' . $cardVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="add_to_cart">
                                                     <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="variant_id" value="">
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
@@ -2866,9 +2927,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         }
                     }
 
+                    $variantUi = storefront_variant_ui_rows($variants);
                     $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
-                    $inStock = $activeVariant ? ((int)$activeVariant['stock_quantity'] > 0) : ((int)$product['stock_quantity'] > 0);
+                    if ($activeVariant && (float)$activeVariant['selling_price'] <= 0) {
+                        $currentPrice = (float)$product['selling_price'];
+                    }
+                    $inStock = storefront_product_is_in_stock($product, $variants);
                     $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
+                    $pdpVariantJson = $variants ? htmlspecialchars(json_encode($variantUi), ENT_QUOTES, 'UTF-8') : '';
                     $pdpMedia = storefront_get_product_media($product, $bid);
                     $firstImgUrl = '';
                     foreach ($pdpMedia as $m) {
@@ -2931,27 +2997,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <?php endif; ?>
 
                                 <?php if (!empty($variants)): ?>
-                                    <div class="ms-pdp-opt-title">Options / Variants</div>
-                                    <div class="ms-pdp-variants-wrap">
-                                        <?php foreach ($variants as $v):
-                                            $isActiveVar = ((int)$v['id'] === $selectedVariantId);
-                                            $varUrl = public_store_url($storeBiz, 'product', ['id' => (int)$product['id'], 'variant_id' => (int)$v['id']]);
-                                            ?>
-                                            <a href="<?= e($varUrl) ?>" class="ms-pdp-var-btn<?= $isActiveVar ? ' is-active' : '' ?>">
-                                                <span class="ms-pdp-var-name"><?= e((string)$v['variant_name']) ?></span>
-                                                <span class="ms-pdp-var-price"><?= sf_money($currency, (float)$v['selling_price']) ?></span>
-                                            </a>
-                                        <?php endforeach; ?>
+                                    <div class="ms-pdp-opt-title">Choose size and colour</div>
+                                    <div class="sf-pdp-variant-pick" id="sfPdpVariantPick">
+                                        <div class="sf-variant-row" id="sfPdpSizeRow" style="display:none;">
+                                            <span class="sf-variant-label">Size</span>
+                                            <div class="sf-variant-chips" id="sfPdpSizes"></div>
+                                        </div>
+                                        <div class="sf-variant-row" id="sfPdpColourRow" style="display:none;">
+                                            <span class="sf-variant-label">Colour</span>
+                                            <div class="sf-variant-chips" id="sfPdpColours"></div>
+                                        </div>
+                                        <div class="sf-variant-meta" id="sfPdpVariantMeta"></div>
                                     </div>
                                 <?php endif; ?>
 
-                                <form method="post" style="margin-top:auto;" onsubmit="handleAjaxAddToCart(event, this);">
+                                <form method="post" class="sf-store-cart-form" style="margin-top:auto;" <?= $variants ? 'data-variants="' . $pdpVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="add_to_cart">
                                     <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                                    <?php if ($selectedVariantId): ?>
-                                        <input type="hidden" name="variant_id" value="<?= (int) $selectedVariantId ?>">
-                                    <?php endif; ?>
+                                    <input type="hidden" name="variant_id" id="sfPdpVariantId" value="<?= $selectedVariantId ? (int) $selectedVariantId : '' ?>">
                                     <input type="hidden" name="redirect_page" value="product">
                                     <input type="hidden" name="return_id" value="<?= (int) $product['id'] ?>">
 
@@ -3061,6 +3125,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     qtyInput.value = val + 1;
                                 }
                             });
+                        }
+                        if (typeof sfInitStorePdpVariants === 'function') {
+                            sfInitStorePdpVariants(<?= !empty($variantUi) ? json_encode($variantUi) : '[]' ?>);
                         }
                     });
                     </script>
@@ -3987,6 +4054,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $osTax = (float) ($osSrc['tax'] ?? 0);
     $osTotal = (float) ($osSrc['total'] ?? 0);
     $osSavings = (float) ($osSrc['total_savings'] ?? 0);
+    $osPromoDiscount = (float) ($osSrc['promo_discount'] ?? 0);
+    $osCouponDiscount = (float) ($osSrc['coupon_discount'] ?? 0);
+    $osCheckoutSave = $osPromoDiscount + $osCouponDiscount;
+    $osAppliedCouponCode = (string) ($osSrc['applied_coupon_code'] ?? '');
+    $osAppliedCouponId = (int) ($osSrc['applied_coupon_id'] ?? 0);
     $hasBuyNowSession = !empty($buyNowCart['lines']);
     $drawerCheckoutQuery = [];
     if ($hasBuyNowSession || !empty($_GET['buynow'])) {
@@ -4029,11 +4101,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php foreach ($cdLines as $line):
                         $p = $line['product'];
                         $pid = (int) $p['id'];
+                        $lineVid = (int) ($line['variant_id'] ?? 0);
                         $qty = (int) $line['qty'];
-                        $stock = (int) ($p['stock_quantity'] ?? 0);
+                        $stock = (int) ($line['stock'] ?? ($p['stock_quantity'] ?? 0));
                         $img = sf_product_image($p['image_path'] ?? null);
-                        $dispInfo = storefront_parse_product_display_info($p, $bid);
-                        $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        $lineSize = trim((string) ($line['size'] ?? ''));
+                        $lineColour = trim((string) ($line['colour'] ?? ''));
+                        $pAttr = '';
+                        if ($lineSize !== '' || $lineColour !== '') {
+                            $pAttr = ($lineSize !== '' ? 'Size: ' . $lineSize : '') . ($lineSize !== '' && $lineColour !== '' ? ' · ' : '') . ($lineColour !== '' ? 'Colour: ' . $lineColour : '');
+                        }
+                        if ($pAttr === '') {
+                            $dispInfo = storefront_parse_product_display_info($p, $bid);
+                            $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        }
                         $unitPrice = (float) $line['unit_price'];
                         $lineMrp = (float) ($line['mrp'] ?? $p['mrp'] ?? 0);
                         $lineSaving = ($lineMrp > $unitPrice) ? ($lineMrp - $unitPrice) : 0;
@@ -4062,6 +4143,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="0">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -4075,6 +4157,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -4087,6 +4170,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -4190,6 +4274,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
                                 <div style="flex:1;min-width:0;">
                                     <div style="font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e((string)$p['name']) ?></div>
+                                    <?php
+                                        $osSize = trim((string)($line['size'] ?? ''));
+                                        $osColour = trim((string)($line['colour'] ?? ''));
+                                    ?>
+                                    <?php if ($osSize !== '' || $osColour !== ''): ?>
+                                        <div style="font-size:11px;color:#475569;font-weight:600;">
+                                            <?= $osSize !== '' ? 'Size: ' . e($osSize) : '' ?><?= ($osSize !== '' && $osColour !== '') ? ' · ' : '' ?><?= $osColour !== '' ? 'Colour: ' . e($osColour) : '' ?>
+                                        </div>
+                                    <?php endif; ?>
                                     <div style="font-size:12px;color:#64748b;"><?= sf_money($currency, $uPrice) ?> × <?= $lQty ?></div>
                                 </div>
                                 <div style="font-size:13px;font-weight:800;color:#0f172a;white-space:nowrap;"><?= sf_money($currency, $lTotal) ?></div>
@@ -4198,17 +4291,47 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     </div>
                 <?php endif; ?>
 
+                <!-- Coupon code -->
+                <div class="ms-cd-coupon-box" id="msStoreCouponBox">
+                    <label class="ms-cd-coupon-label" for="msStoreCouponCode">Have a coupon code?</label>
+                    <div class="ms-cd-coupon-row">
+                        <input type="text" id="msStoreCouponCode" class="ms-cd-coupon-input" placeholder="Enter code" value="<?= e($osAppliedCouponCode) ?>" autocomplete="off" spellcheck="false">
+                        <button type="button" class="ms-cd-coupon-apply" id="msStoreCouponApplyBtn" onclick="applyStoreCouponCode()">Apply</button>
+                    </div>
+                    <div id="msStoreCouponApplied" class="ms-cd-coupon-applied" style="<?= $osAppliedCouponCode !== '' ? '' : 'display:none;' ?>">
+                        <span>Applied: <strong id="msStoreCouponAppliedCode"><?= e($osAppliedCouponCode) ?></strong></span>
+                        <button type="button" class="ms-cd-coupon-remove" onclick="removeStoreCouponCode()">Remove</button>
+                    </div>
+                    <div id="msStoreCouponError" class="ms-cd-coupon-error" style="display:none;"></div>
+                </div>
+
                 <!-- Summary -->
                 <div class="ms-cd-summary" style="padding-top:14px;">
                     <div class="ms-cd-summary-title">Summary</div>
-                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $osSub) ?></span></div>
+                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span id="msOsSubtotalText"><?= sf_money($currency, $osSub) ?></span></div>
+                    <div class="ms-cd-row" id="msOsPromoRow" style="<?= $osPromoDiscount > 0 ? '' : 'display:none;' ?>">
+                        <span>Promotion savings</span>
+                        <span id="msOsPromoText" style="color:#047857;font-weight:700;">− <?= sf_money($currency, $osPromoDiscount) ?></span>
+                    </div>
+                    <div class="ms-cd-row" id="msOsCouponRow" style="<?= $osCouponDiscount > 0 ? '' : 'display:none;' ?>">
+                        <span>Coupon savings</span>
+                        <span id="msOsCouponText" style="color:#047857;font-weight:700;">− <?= sf_money($currency, $osCouponDiscount) ?></span>
+                    </div>
                     <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
-                    <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $osTax) ?></span></div>
-                    <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $osTotal) ?></span></div>
+                    <div class="ms-cd-row"><span>Tax</span><span id="msOsTaxText"><?= sf_money($currency, $osTax) ?></span></div>
+                    <div class="ms-cd-row ms-cd-pay">
+                        <span>To be Paid</span>
+                        <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+                            <span id="msOsCheckoutSaveBadge" class="ms-cd-checkout-save-badge" style="<?= $osCheckoutSave > 0 ? '' : 'display:none;' ?>">
+                                You saved <strong id="msOsCheckoutSaveAmount"><?= sf_money($currency, $osCheckoutSave) ?></strong>
+                            </span>
+                            <span id="msOsTotalText"><?= sf_money($currency, $osTotal) ?></span>
+                        </span>
+                    </div>
                 </div>
 
                 <?php if ($osSavings > 0): ?>
-                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $osSavings) ?></div>
+                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $osSavings) ?> on MRP</div>
                 <?php endif; ?>
 
                 <!-- Payment Method Selector Section -->
@@ -4259,6 +4382,8 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <input type="hidden" name="razorpay_order_id" id="msDrawerRzpOrderId" value="">
                 <input type="hidden" name="razorpay_payment_id" id="msDrawerRzpPaymentId" value="">
                 <input type="hidden" name="razorpay_signature" id="msDrawerRzpSignature" value="">
+                <input type="hidden" name="coupon_id" id="msDrawerCouponId" value="<?= $osAppliedCouponId ?>">
+                <input type="hidden" name="coupon_code" id="msDrawerCouponCode" value="<?= e($osAppliedCouponCode) ?>">
 
                 <div class="ms-cd-foot">
                     <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
@@ -4509,6 +4634,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     <input type="hidden" name="order_id" value="">
     <input type="hidden" name="order_number" value="">
 </form>
+
+<div class="sf-variant-modal" id="sfVariantModal" aria-hidden="true">
+    <div class="sf-variant-modal-box" role="dialog" aria-modal="true" aria-labelledby="sfVariantModalTitle">
+        <div class="sf-variant-modal-title" id="sfVariantModalTitle">Choose size and colour</div>
+        <div class="sf-variant-row" id="sfModalSizeRow" style="display:none;">
+            <span class="sf-variant-label">Size</span>
+            <div class="sf-variant-chips" id="sfModalSizes"></div>
+        </div>
+        <div class="sf-variant-row" id="sfModalColourRow" style="display:none;">
+            <span class="sf-variant-label">Colour</span>
+            <div class="sf-variant-chips" id="sfModalColours"></div>
+        </div>
+        <div class="sf-variant-meta" id="sfModalVariantMeta">Select a size and colour.</div>
+        <div class="sf-variant-modal-actions">
+            <button type="button" class="ms-card-add-btn" style="width:auto;padding:0 14px;" onclick="sfCloseVariantModal()">Cancel</button>
+            <button type="button" class="ms-card-buy-btn" id="sfModalConfirmBtn" style="width:auto;margin-top:0;padding:0 16px;" onclick="sfConfirmVariantModal()">Continue</button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -4877,7 +5021,7 @@ function sfCardSlide(btn, dir) {
     }
 }
 
-var pdpMedia = <?= !empty($pdpMedia) ? json_encode($pdpMedia) : '[]' ?>;
+var pdpMedia = <?= !empty($pdpMedia ?? null) ? json_encode($pdpMedia) : '[]' ?>;
 var pdpCurrentIdx = 0;
 
 function sfPdpSlide(dir) {
@@ -4923,12 +5067,225 @@ function sfPdpSetImage(idx) {
     sfPdpSetMedia(idx);
 }
 
+var sfPendingVariantForm = null;
+var sfPendingVariantCallback = null;
+var sfPendingVariantList = [];
+
+function sfGetFormVariants(form) {
+    if (!form) return [];
+    var raw = form.getAttribute('data-variants');
+    if (!raw) return [];
+    try { return JSON.parse(raw) || []; } catch (e) { return []; }
+}
+
+function sfFormNeedsVariantPick(form) {
+    var list = sfGetFormVariants(form);
+    if (!list.length) return false;
+    var inp = form.querySelector('[name="variant_id"]');
+    var vid = inp ? parseInt(inp.value || '0', 10) : 0;
+    return !vid;
+}
+
+function sfUniqueVariantValues(list, key) {
+    var out = [];
+    list.forEach(function (row) {
+        var val = String(row[key] || '').trim();
+        if (val && out.indexOf(val) === -1) out.push(val);
+    });
+    return out;
+}
+
+function sfFindVariantMatch(list, size, colour) {
+    var sizes = sfUniqueVariantValues(list, 'size');
+    var colours = sfUniqueVariantValues(list, 'colour');
+    if (sizes.length && !size) return null;
+    if (colours.length && !colour) return null;
+    return list.find(function (row) {
+        var sizeOk = !sizes.length || row.size === size;
+        var colourOk = !colours.length || row.colour === colour;
+        return sizeOk && colourOk;
+    }) || null;
+}
+
+function sfPaintVariantChips(container, values, attrName) {
+    if (!container) return;
+    container.innerHTML = '';
+    values.forEach(function (value) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sf-variant-chip';
+        btn.setAttribute(attrName, value);
+        btn.textContent = value;
+        container.appendChild(btn);
+    });
+}
+
+function sfRefreshVariantModal() {
+    var sizes = sfUniqueVariantValues(sfPendingVariantList, 'size');
+    var colours = sfUniqueVariantValues(sfPendingVariantList, 'colour');
+    var sizeChip = document.querySelector('#sfModalSizes .sf-variant-chip.on');
+    var colourChip = document.querySelector('#sfModalColours .sf-variant-chip.on');
+    var selectedSize = sizeChip ? sizeChip.getAttribute('data-size') : '';
+    var selectedColour = colourChip ? colourChip.getAttribute('data-colour') : '';
+    document.querySelectorAll('#sfModalSizes .sf-variant-chip').forEach(function (chip) {
+        var size = chip.getAttribute('data-size');
+        var ok = sfPendingVariantList.some(function (row) { return row.size === size && row.stock > 0; });
+        chip.disabled = !ok;
+        chip.classList.toggle('off', !ok);
+        if (!ok) chip.classList.remove('on');
+    });
+    document.querySelectorAll('#sfModalColours .sf-variant-chip').forEach(function (chip) {
+        var colour = chip.getAttribute('data-colour');
+        var ok = sfPendingVariantList.some(function (row) {
+            return (!sizes.length || row.size === selectedSize) && row.colour === colour && row.stock > 0;
+        });
+        chip.disabled = !ok;
+        chip.classList.toggle('off', !ok);
+        if (!ok) chip.classList.remove('on');
+    });
+    var chosen = sfFindVariantMatch(sfPendingVariantList, selectedSize, selectedColour);
+    var meta = document.getElementById('sfModalVariantMeta');
+    var confirmBtn = document.getElementById('sfModalConfirmBtn');
+    if (!chosen) {
+        if (meta) meta.textContent = 'Select a size and colour.';
+        if (confirmBtn) confirmBtn.disabled = true;
+        return null;
+    }
+    if (meta) meta.textContent = '₹' + (parseFloat(chosen.price) || 0).toFixed(2) + ' · ' + chosen.stock + ' in stock';
+    if (confirmBtn) confirmBtn.disabled = chosen.stock <= 0;
+    return chosen;
+}
+
+function sfOpenVariantModal(form, onDone) {
+    sfPendingVariantForm = form;
+    sfPendingVariantCallback = onDone;
+    sfPendingVariantList = sfGetFormVariants(form);
+    var sizes = sfUniqueVariantValues(sfPendingVariantList, 'size');
+    var colours = sfUniqueVariantValues(sfPendingVariantList, 'colour');
+    document.getElementById('sfModalSizeRow').style.display = sizes.length ? 'block' : 'none';
+    document.getElementById('sfModalColourRow').style.display = colours.length ? 'block' : 'none';
+    sfPaintVariantChips(document.getElementById('sfModalSizes'), sizes, 'data-size');
+    sfPaintVariantChips(document.getElementById('sfModalColours'), colours, 'data-colour');
+    var first = sfPendingVariantList.find(function (row) { return row.stock > 0; });
+    if (first && first.size) {
+        var sc = document.querySelector('#sfModalSizes [data-size="' + CSS.escape(first.size) + '"]');
+        if (sc) sc.classList.add('on');
+    }
+    sfRefreshVariantModal();
+    if (first && first.colour) {
+        var cc = document.querySelector('#sfModalColours [data-colour="' + CSS.escape(first.colour) + '"]');
+        if (cc && !cc.disabled) cc.classList.add('on');
+    }
+    sfRefreshVariantModal();
+    document.getElementById('sfVariantModal').classList.add('open');
+}
+
+function sfCloseVariantModal() {
+    var modal = document.getElementById('sfVariantModal');
+    if (modal) modal.classList.remove('open');
+    sfPendingVariantForm = null;
+    sfPendingVariantCallback = null;
+    sfPendingVariantList = [];
+}
+
+function sfConfirmVariantModal() {
+    var chosen = sfRefreshVariantModal();
+    if (!sfPendingVariantForm || !chosen) {
+        alert('Choose a size and colour before continuing.');
+        return;
+    }
+    var inp = sfPendingVariantForm.querySelector('[name="variant_id"]');
+    if (inp) inp.value = String(chosen.id);
+    var cb = sfPendingVariantCallback;
+    var form = sfPendingVariantForm;
+    sfCloseVariantModal();
+    if (typeof cb === 'function') cb(form);
+}
+
+['sfModalSizes', 'sfModalColours'].forEach(function (id) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    box.addEventListener('click', function (e) {
+        var chip = e.target.closest('.sf-variant-chip');
+        if (!chip || chip.disabled) return;
+        box.querySelectorAll('.sf-variant-chip').forEach(function (el) { el.classList.remove('on'); });
+        chip.classList.add('on');
+        sfRefreshVariantModal();
+    });
+});
+
+function sfInitStorePdpVariants(variantList) {
+    if (!variantList || !variantList.length) return;
+    var sizesBox = document.getElementById('sfPdpSizes');
+    var coloursBox = document.getElementById('sfPdpColours');
+    var form = document.querySelector('.sf-store-cart-form[data-variants]');
+    if (!sizesBox || !coloursBox || !form) return;
+    var sizes = sfUniqueVariantValues(variantList, 'size');
+    var colours = sfUniqueVariantValues(variantList, 'colour');
+    document.getElementById('sfPdpSizeRow').style.display = sizes.length ? 'block' : 'none';
+    document.getElementById('sfPdpColourRow').style.display = colours.length ? 'block' : 'none';
+    sfPaintVariantChips(sizesBox, sizes, 'data-size');
+    sfPaintVariantChips(coloursBox, colours, 'data-colour');
+
+    function refreshPdpVariant() {
+        var sizeChip = sizesBox.querySelector('.sf-variant-chip.on');
+        var colourChip = coloursBox.querySelector('.sf-variant-chip.on');
+        var selectedSize = sizeChip ? sizeChip.getAttribute('data-size') : '';
+        var selectedColour = colourChip ? colourChip.getAttribute('data-colour') : '';
+        var chosen = sfFindVariantMatch(variantList, selectedSize, selectedColour);
+        var meta = document.getElementById('sfPdpVariantMeta');
+        var vidInput = document.getElementById('sfPdpVariantId');
+        var qtyInput = document.getElementById('pdpQty');
+        var priceEl = document.querySelector('.ms-pdp-price');
+        if (!chosen) {
+            if (meta) meta.textContent = 'Select a size and colour.';
+            if (vidInput) vidInput.value = '';
+            return;
+        }
+        if (vidInput) vidInput.value = String(chosen.id);
+        if (meta) meta.textContent = (chosen.stock > 0 ? (chosen.stock + ' in stock') : 'Out of stock for this size and colour');
+        if (priceEl && parseFloat(chosen.price) > 0) {
+            priceEl.textContent = '₹' + parseFloat(chosen.price).toFixed(2);
+        }
+        if (qtyInput) {
+            qtyInput.setAttribute('max', String(Math.max(1, chosen.stock || 1)));
+            if (chosen.stock <= 0) qtyInput.setAttribute('disabled', 'disabled');
+            else qtyInput.removeAttribute('disabled');
+        }
+    }
+
+    [sizesBox, coloursBox].forEach(function (box) {
+        box.addEventListener('click', function (e) {
+            var chip = e.target.closest('.sf-variant-chip');
+            if (!chip) return;
+            box.querySelectorAll('.sf-variant-chip').forEach(function (el) { el.classList.remove('on'); });
+            chip.classList.add('on');
+            refreshPdpVariant();
+        });
+    });
+
+    var first = variantList.find(function (row) { return row.stock > 0; }) || variantList[0];
+    if (first && first.size) {
+        var sc = sizesBox.querySelector('[data-size="' + CSS.escape(first.size) + '"]');
+        if (sc) sc.classList.add('on');
+    }
+    if (first && first.colour) {
+        var cc = coloursBox.querySelector('[data-colour="' + CSS.escape(first.colour) + '"]');
+        if (cc) cc.classList.add('on');
+    }
+    refreshPdpVariant();
+}
+
 function handleAjaxAddToCart(ev, form, isBuyNow) {
     if (isBuyNow) {
         handleBuyNow(ev, form);
         return;
     }
     if (ev) ev.preventDefault();
+    if (sfFormNeedsVariantPick(form)) {
+        sfOpenVariantModal(form, function (readyForm) { handleAjaxAddToCart(null, readyForm, false); });
+        return;
+    }
     var btn = form.querySelector('.ms-card-add-btn, .ms-pdp-add-btn');
     if (!btn) btn = form.querySelector('button[type="submit"]');
     var origHtml = btn ? btn.innerHTML : '';
@@ -4983,6 +5340,10 @@ function handleAjaxAddToCart(ev, form, isBuyNow) {
 
 function handleBuyNow(ev, form) {
     if (ev) ev.preventDefault();
+    if (sfFormNeedsVariantPick(form)) {
+        sfOpenVariantModal(form, function (readyForm) { handleBuyNow(null, readyForm); });
+        return;
+    }
     var btn = form.querySelector('.ms-card-buy-btn, .ms-pdp-buy-btn');
     if (!btn) btn = form.querySelector('button[type="button"]');
     var origHtml = btn ? btn.innerHTML : '';
@@ -5084,8 +5445,119 @@ var msStoreCheckout = {
     razorpayActive: <?= !empty($storeRazorpayActive) ? 'true' : 'false' ?>,
     orderAmount: <?= json_encode((float) ($osTotal ?? ($drawerCart['total'] ?? 0))) ?>,
     csrfToken: <?= json_encode(csrf_token()) ?>,
-    postUrl: <?= json_encode(isset($drawerCheckoutActionUrl) ? $drawerCheckoutActionUrl : public_store_url($storeBiz ?? null, $page ?? 'home', $_GET ?? [])) ?>
+    postUrl: <?= json_encode(isset($drawerCheckoutActionUrl) ? $drawerCheckoutActionUrl : public_store_url($storeBiz ?? null, $page ?? 'home', $_GET ?? [])) ?>,
+    currency: <?= json_encode($currency ?? '₹') ?>,
+    checkoutBuyNow: <?= !empty($osBuyNow) ? 'true' : 'false' ?>
 };
+
+function sfFormatMoney(amount) {
+    var sym = msStoreCheckout.currency || '₹';
+    return sym + Number(amount || 0).toFixed(2);
+}
+
+function sfApplyStoreTotalsToUi(totals) {
+    if (!totals) return;
+    var sub = document.getElementById('msOsSubtotalText');
+    var tax = document.getElementById('msOsTaxText');
+    var total = document.getElementById('msOsTotalText');
+    if (sub) sub.textContent = sfFormatMoney(totals.subtotal);
+    if (tax) tax.textContent = sfFormatMoney(totals.tax);
+    if (total) total.textContent = sfFormatMoney(totals.total);
+    msStoreCheckout.orderAmount = Number(totals.total) || 0;
+
+    var promoRow = document.getElementById('msOsPromoRow');
+    var promoText = document.getElementById('msOsPromoText');
+    if (promoRow && promoText) {
+        if (totals.promo_discount > 0) {
+            promoRow.style.display = '';
+            promoText.textContent = '− ' + sfFormatMoney(totals.promo_discount);
+        } else {
+            promoRow.style.display = 'none';
+        }
+    }
+    var couponRow = document.getElementById('msOsCouponRow');
+    var couponText = document.getElementById('msOsCouponText');
+    if (couponRow && couponText) {
+        if (totals.coupon_discount > 0) {
+            couponRow.style.display = '';
+            couponText.textContent = '− ' + sfFormatMoney(totals.coupon_discount);
+        } else {
+            couponRow.style.display = 'none';
+        }
+    }
+    var hidId = document.getElementById('msDrawerCouponId');
+    var hidCode = document.getElementById('msDrawerCouponCode');
+    if (hidId) hidId.value = totals.applied_coupon_id ? String(totals.applied_coupon_id) : '';
+    if (hidCode) hidCode.value = totals.applied_coupon_code || '';
+
+    var saveBadge = document.getElementById('msOsCheckoutSaveBadge');
+    var saveAmt = document.getElementById('msOsCheckoutSaveAmount');
+    var checkoutSave = (Number(totals.promo_discount) || 0) + (Number(totals.coupon_discount) || 0);
+    if (saveBadge && saveAmt) {
+        if (checkoutSave > 0) {
+            saveBadge.style.display = '';
+            saveAmt.textContent = sfFormatMoney(checkoutSave);
+        } else {
+            saveBadge.style.display = 'none';
+        }
+    }
+}
+
+function applyStoreCouponCode() {
+    var input = document.getElementById('msStoreCouponCode');
+    var err = document.getElementById('msStoreCouponError');
+    var code = input ? input.value.trim() : '';
+    if (!code) {
+        if (err) { err.style.display = 'block'; err.textContent = 'Enter a coupon code.'; }
+        return;
+    }
+    var fd = new FormData();
+    fd.append('action', 'validate_store_coupon');
+    fd.append('csrf_token', msStoreCheckout.csrfToken);
+    fd.append('coupon_code', code);
+    if (msStoreCheckout.checkoutBuyNow) fd.append('checkout_mode', 'buynow');
+    var btn = document.getElementById('msStoreCouponApplyBtn');
+    if (btn) btn.disabled = true;
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) btn.disabled = false;
+            if (!data.valid) {
+                if (err) { err.style.display = 'block'; err.textContent = data.error || 'Invalid coupon.'; }
+                return;
+            }
+            if (err) err.style.display = 'none';
+            sfApplyStoreTotalsToUi(data.totals);
+            var applied = document.getElementById('msStoreCouponApplied');
+            var appliedCode = document.getElementById('msStoreCouponAppliedCode');
+            if (applied && appliedCode && data.code) {
+                applied.style.display = '';
+                appliedCode.textContent = data.code;
+            }
+        })
+        .catch(function () {
+            if (btn) btn.disabled = false;
+            if (err) { err.style.display = 'block'; err.textContent = 'Could not apply coupon. Try again.'; }
+        });
+}
+
+function removeStoreCouponCode() {
+    var fd = new FormData();
+    fd.append('action', 'remove_store_coupon');
+    fd.append('csrf_token', msStoreCheckout.csrfToken);
+    if (msStoreCheckout.checkoutBuyNow) fd.append('checkout_mode', 'buynow');
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            sfApplyStoreTotalsToUi(data.totals);
+            var input = document.getElementById('msStoreCouponCode');
+            if (input) input.value = '';
+            var applied = document.getElementById('msStoreCouponApplied');
+            if (applied) applied.style.display = 'none';
+            var err = document.getElementById('msStoreCouponError');
+            if (err) err.style.display = 'none';
+        });
+}
 
 function storefrontPaymentNeedsRazorpay(method) {
     return ['upi', 'card', 'netbanking', 'razorpay'].indexOf(method) >= 0;

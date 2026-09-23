@@ -260,6 +260,15 @@ if (!function_exists('extract_item_attributes')) {
         $pName = trim((string)$it['product_name']);
         $pSku = trim((string)($it['product_sku'] ?? ''));
 
+        $storedSize = trim((string)($it['size'] ?? ''));
+        $storedColour = trim((string)($it['colour'] ?? $it['color'] ?? ''));
+        if ($storedSize !== '' && $storedSize !== '-') {
+            $size = $storedSize;
+        }
+        if ($storedColour !== '' && $storedColour !== '-') {
+            $colour = $storedColour;
+        }
+
         // Check variant_id in database if available
         $variantId = (int)($it['variant_id'] ?? 0);
         if ($variantId > 0) {
@@ -272,10 +281,10 @@ if (!function_exists('extract_item_attributes')) {
                     if (is_array($av)) {
                         foreach ($av as $k => $v) {
                             $kLow = strtolower((string)$k);
-                            if (in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
+                            if ($size === '-' && in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
                                 $size = trim((string)$v);
                             }
-                            if (in_array($kLow, ['color', 'colour', 'shade'], true)) {
+                            if ($colour === '-' && in_array($kLow, ['color', 'colour', 'shade'], true)) {
                                 $colour = trim((string)$v);
                             }
                         }

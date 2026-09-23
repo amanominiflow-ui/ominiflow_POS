@@ -1433,6 +1433,123 @@ function storefront_cart_key(int $businessId): string {
     return 'storefront_cart_' . $businessId;
 }
 
+function storefront_cart_storage_key(int $productId, int $variantId = 0): string {
+    return $variantId > 0 ? ($productId . ':v' . $variantId) : (string) $productId;
+}
+
+function storefront_parse_cart_storage_key(string $key): array {
+    if (preg_match('/^(\d+):v(\d+)$/', $key, $m)) {
+        return ['product_id' => (int) $m[1], 'variant_id' => (int) $m[2]];
+    }
+    return ['product_id' => (int) $key, 'variant_id' => 0];
+}
+
+function storefront_load_product_variants(int $productId, int $businessId): array {
+    if (!function_exists('get_product_variants')) {
+        return [];
+    }
+    $rows = get_product_variants($productId, $businessId);
+    $active = [];
+    foreach ($rows as $row) {
+        if (($row['status'] ?? 'active') !== 'active') {
+            continue;
+        }
+        $active[] = $row;
+    }
+    return $active;
+}
+
+function storefront_variant_ui_rows(array $variants): array {
+    $out = [];
+    foreach ($variants as $v) {
+        $attrs = parse_variant_size_colour($v);
+        $out[] = [
+            'id' => (int) ($v['id'] ?? 0),
+            'name' => (string) ($v['variant_name'] ?? ''),
+            'sku' => (string) ($v['sku'] ?? ''),
+            'price' => (float) ($v['selling_price'] ?? 0),
+            'stock' => (int) ($v['stock_quantity'] ?? 0),
+            'size' => (string) ($attrs['size'] ?? ''),
+            'colour' => (string) ($attrs['colour'] ?? ''),
+        ];
+    }
+    return $out;
+}
+
+function storefront_product_is_in_stock(array $product, array $variants = []): bool {
+    if ($variants) {
+        foreach ($variants as $v) {
+            if ((int) ($v['stock_quantity'] ?? 0) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return (int) ($product['stock_quantity'] ?? 0) > 0;
+}
+
+function storefront_resolve_sale_line(int $businessId, int $productId, int $variantId = 0): array {
+    $product = get_product_by_id($productId, $businessId);
+    if (!$product || ($product['status'] ?? '') !== 'active') {
+        return ['success' => false, 'error' => 'This item is not available.'];
+    }
+
+    $variants = storefront_load_product_variants($productId, $businessId);
+    if ($variants) {
+        if ($variantId <= 0) {
+            return ['success' => false, 'error' => 'Choose a size and colour before continuing.'];
+        }
+        $chosen = null;
+        foreach ($variants as $v) {
+            if ((int) ($v['id'] ?? 0) === $variantId) {
+                $chosen = $v;
+                break;
+            }
+        }
+        if (!$chosen) {
+            return ['success' => false, 'error' => 'The selected size or colour is not available.'];
+        }
+        $stock = (int) ($chosen['stock_quantity'] ?? 0);
+        if ($stock <= 0) {
+            return ['success' => false, 'error' => 'This size and colour is out of stock.'];
+        }
+        $unit = (float) ($chosen['selling_price'] ?? 0);
+        if ($unit <= 0) {
+            $unit = (float) ($product['selling_price'] ?? 0);
+        }
+        $attrs = parse_variant_size_colour($chosen);
+        return [
+            'success' => true,
+            'product' => $product,
+            'variant' => $chosen,
+            'variant_id' => $variantId,
+            'stock' => $stock,
+            'unit_price' => $unit,
+            'mrp' => (float) ($product['mrp'] ?? 0),
+            'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+            'size' => (string) ($attrs['size'] ?? ''),
+            'colour' => (string) ($attrs['colour'] ?? ''),
+        ];
+    }
+
+    $stock = (int) ($product['stock_quantity'] ?? 0);
+    if ($stock <= 0) {
+        return ['success' => false, 'error' => 'This item is out of stock.'];
+    }
+    return [
+        'success' => true,
+        'product' => $product,
+        'variant' => null,
+        'variant_id' => 0,
+        'stock' => $stock,
+        'unit_price' => (float) ($product['selling_price'] ?? 0),
+        'mrp' => (float) ($product['mrp'] ?? 0),
+        'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+        'size' => '',
+        'colour' => '',
+    ];
+}
+
 function get_storefront_cart(int $businessId): array {
     $key = storefront_cart_key($businessId);
     $cart = $_SESSION[$key] ?? [];
@@ -1443,45 +1560,44 @@ function save_storefront_cart(int $businessId, array $cart): void {
     $_SESSION[storefront_cart_key($businessId)] = $cart;
 }
 
-function add_to_storefront_cart(int $businessId, int $productId, int $qty = 1): array {
+function add_to_storefront_cart(int $businessId, int $productId, int $qty = 1, int $variantId = 0): array {
     $qty = max(1, $qty);
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
-        return ['success' => false, 'error' => 'This item is not available.'];
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        return ['success' => false, 'error' => $resolved['error'] ?? 'Could not add item.'];
     }
-    $stock = (int) ($product['stock_quantity'] ?? 0);
+    $stock = (int) ($resolved['stock'] ?? 0);
+    $cartKey = storefront_cart_storage_key($productId, (int) ($resolved['variant_id'] ?? 0));
     $cart = get_storefront_cart($businessId);
-    $current = (int) ($cart[$productId] ?? 0);
+    $current = (int) ($cart[$cartKey] ?? 0);
     $next = $current + $qty;
-    if ($stock <= 0) {
-        return ['success' => false, 'error' => 'This item is out of stock.'];
-    }
     if ($next > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
-    $cart[$productId] = $next;
+    $cart[$cartKey] = $next;
     save_storefront_cart($businessId, $cart);
     return ['success' => true, 'qty' => $next];
 }
 
-function update_storefront_cart_qty(int $businessId, int $productId, int $qty): array {
+function update_storefront_cart_qty(int $businessId, int $productId, int $qty, int $variantId = 0): array {
+    $cartKey = storefront_cart_storage_key($productId, $variantId);
     $cart = get_storefront_cart($businessId);
     if ($qty <= 0) {
-        unset($cart[$productId]);
+        unset($cart[$cartKey]);
         save_storefront_cart($businessId, $cart);
         return ['success' => true];
     }
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product) {
-        unset($cart[$productId]);
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        unset($cart[$cartKey]);
         save_storefront_cart($businessId, $cart);
-        return ['success' => false, 'error' => 'Item removed because it is no longer available.'];
+        return ['success' => false, 'error' => $resolved['error'] ?? 'Item removed because it is no longer available.'];
     }
-    $stock = (int) ($product['stock_quantity'] ?? 0);
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
-    $cart[$productId] = $qty;
+    $cart[$cartKey] = $qty;
     save_storefront_cart($businessId, $cart);
     return ['success' => true];
 }
@@ -1503,25 +1619,33 @@ function hydrate_storefront_cart(int $businessId): array {
     $changed = false;
     $clean = [];
 
-    foreach ($raw as $pid => $qty) {
-        $product = get_product_by_id((int) $pid, $businessId);
+    foreach ($raw as $cartKey => $qty) {
+        $parsed = storefront_parse_cart_storage_key((string) $cartKey);
+        $productId = (int) ($parsed['product_id'] ?? 0);
+        $variantId = (int) ($parsed['variant_id'] ?? 0);
         $qty = (int) $qty;
-        if (!$product || ($product['status'] ?? '') !== 'active' || $qty <= 0) {
+        if ($productId <= 0 || $qty <= 0) {
             $changed = true;
             continue;
         }
-        $stock = (int) ($product['stock_quantity'] ?? 0);
-        if ($stock <= 0) {
+        $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+        if (empty($resolved['success'])) {
             $changed = true;
             continue;
         }
+        $product = $resolved['product'];
+        $stock = (int) ($resolved['stock'] ?? 0);
         if ($qty > $stock) {
             $qty = $stock;
             $changed = true;
         }
-        $unit = (float) $product['selling_price'];
-        $mrp = (float) ($product['mrp'] ?? 0);
-        $taxPct = (float) $product['tax_percent'];
+        if ($qty <= 0) {
+            $changed = true;
+            continue;
+        }
+        $unit = (float) ($resolved['unit_price'] ?? 0);
+        $mrp = (float) ($resolved['mrp'] ?? 0);
+        $taxPct = (float) ($resolved['tax_percent'] ?? 0);
         $line = $unit * $qty;
         $lineTax = round($line * ($taxPct / 100), 2);
         $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
@@ -1529,10 +1653,14 @@ function hydrate_storefront_cart(int $businessId): array {
         $subtotal += $line;
         $tax += $lineTax;
         $totalSavings += $lineSavings;
-        $clean[(int) $product['id']] = $qty;
+        $clean[storefront_cart_storage_key($productId, $variantId)] = $qty;
         $lines[] = [
             'product' => $product,
             'qty' => $qty,
+            'variant_id' => $variantId > 0 ? $variantId : null,
+            'size' => (string) ($resolved['size'] ?? ''),
+            'colour' => (string) ($resolved['colour'] ?? ''),
+            'stock' => $stock,
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
@@ -1571,21 +1699,18 @@ function clear_storefront_buynow(int $businessId): void {
 
 function set_storefront_buynow(int $businessId, int $productId, int $qty = 1, int $variantId = 0): array {
     $qty = max(1, $qty);
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
-        return ['success' => false, 'error' => 'This item is not available.'];
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        return ['success' => false, 'error' => $resolved['error'] ?? 'This item is not available.'];
     }
-    $stock = (int) ($product['stock_quantity'] ?? 0);
-    if ($stock <= 0) {
-        return ['success' => false, 'error' => 'This item is out of stock.'];
-    }
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
     $_SESSION[storefront_buynow_key($businessId)] = [
         'product_id' => $productId,
         'qty' => $qty,
-        'variant_id' => $variantId > 0 ? $variantId : null,
+        'variant_id' => !empty($resolved['variant_id']) ? (int) $resolved['variant_id'] : null,
     ];
     return ['success' => true];
 }
@@ -1605,8 +1730,9 @@ function hydrate_storefront_buynow(int $businessId): array {
         ];
     }
 
-    $product = get_product_by_id($pid, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
+    $variantId = (int) ($bn['variant_id'] ?? 0);
+    $resolved = storefront_resolve_sale_line($businessId, $pid, $variantId);
+    if (empty($resolved['success'])) {
         clear_storefront_buynow($businessId);
         return [
             'lines' => [],
@@ -1617,26 +1743,26 @@ function hydrate_storefront_buynow(int $businessId): array {
             'count' => 0,
         ];
     }
-
-    $stock = (int) ($product['stock_quantity'] ?? 0);
-    if ($stock <= 0) {
-        clear_storefront_buynow($businessId);
-        return [
-            'lines' => [],
-            'subtotal' => 0.0,
-            'tax' => 0.0,
-            'total' => 0.0,
-            'total_savings' => 0.0,
-            'count' => 0,
-        ];
-    }
+    $product = $resolved['product'];
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
         $qty = $stock;
     }
+    if ($qty <= 0) {
+        clear_storefront_buynow($businessId);
+        return [
+            'lines' => [],
+            'subtotal' => 0.0,
+            'tax' => 0.0,
+            'total' => 0.0,
+            'total_savings' => 0.0,
+            'count' => 0,
+        ];
+    }
 
-    $unit = (float) $product['selling_price'];
-    $mrp = (float) ($product['mrp'] ?? 0);
-    $taxPct = (float) ($product['tax_percent'] ?? 0);
+    $unit = (float) ($resolved['unit_price'] ?? 0);
+    $mrp = (float) ($resolved['mrp'] ?? 0);
+    $taxPct = (float) ($resolved['tax_percent'] ?? 0);
     $line = $unit * $qty;
     $lineTax = round($line * ($taxPct / 100), 2);
     $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
@@ -1645,6 +1771,10 @@ function hydrate_storefront_buynow(int $businessId): array {
         'lines' => [[
             'product' => $product,
             'qty' => $qty,
+            'variant_id' => $variantId > 0 ? $variantId : null,
+            'size' => (string) ($resolved['size'] ?? ''),
+            'colour' => (string) ($resolved['colour'] ?? ''),
+            'stock' => $stock,
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
@@ -3338,6 +3468,92 @@ function storefront_checkout_is_buynow(int $businessId, array $post = []): bool 
     return false;
 }
 
+function storefront_applied_coupon_session_key(int $businessId): string {
+    return 'sf_applied_coupon_' . $businessId;
+}
+
+function get_storefront_applied_coupon(int $businessId): ?array {
+    $row = $_SESSION[storefront_applied_coupon_session_key($businessId)] ?? null;
+    return is_array($row) ? $row : null;
+}
+
+function set_storefront_applied_coupon(int $businessId, array $coupon): void {
+    $_SESSION[storefront_applied_coupon_session_key($businessId)] = [
+        'coupon_id' => (int) ($coupon['coupon_id'] ?? 0),
+        'code' => strtoupper(trim((string) ($coupon['code'] ?? ''))),
+    ];
+}
+
+function clear_storefront_applied_coupon(int $businessId): void {
+    unset($_SESSION[storefront_applied_coupon_session_key($businessId)]);
+}
+
+/**
+ * Apply active store promotions + session coupon to hydrated cart/buynow totals.
+ */
+function storefront_apply_checkout_discounts(int $businessId, array $hydrated): array {
+    if (empty($hydrated['lines'])) {
+        return $hydrated;
+    }
+
+    require_once __DIR__ . '/promotions_db.php';
+    ensure_promotions_coupons_schema();
+
+    $subtotal = (float) ($hydrated['subtotal'] ?? 0);
+    $tax = (float) ($hydrated['tax'] ?? 0);
+    $promoLines = [];
+    foreach ($hydrated['lines'] as $line) {
+        $promoLines[] = [
+            'price' => (float) ($line['unit_price'] ?? 0),
+            'quantity' => max(1, (int) ($line['qty'] ?? 1)),
+        ];
+    }
+
+    $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, $businessId);
+    $promoDiscount = (float) ($promoResult['total_discount'] ?? 0);
+
+    $couponDiscount = 0.0;
+    $couponId = null;
+    $couponCode = null;
+    $applied = get_storefront_applied_coupon($businessId);
+    if ($applied && !empty($applied['code'])) {
+        $couponRes = validate_and_apply_coupon((string) $applied['code'], $subtotal, $businessId);
+        if (!empty($couponRes['valid'])) {
+            $couponId = (int) $couponRes['coupon_id'];
+            $couponCode = (string) $couponRes['code'];
+            $remaining = max(0.0, $subtotal - $promoDiscount);
+            $couponDiscount = min($remaining, (float) ($couponRes['discount_amount'] ?? 0));
+        } else {
+            clear_storefront_applied_coupon($businessId);
+        }
+    }
+
+    $checkoutDiscount = min($subtotal, $promoDiscount + $couponDiscount);
+    $total = max(0.0, round($subtotal - $checkoutDiscount + $tax, 2));
+
+    $hydrated['promo_discount'] = round($promoDiscount, 2);
+    $hydrated['coupon_discount'] = round($couponDiscount, 2);
+    $hydrated['checkout_discount'] = round($checkoutDiscount, 2);
+    $hydrated['applied_coupon_id'] = $couponId;
+    $hydrated['applied_coupon_code'] = $couponCode;
+    $hydrated['applied_promotions'] = $promoResult['applied_promotions'] ?? [];
+    $hydrated['total'] = $total;
+
+    return $hydrated;
+}
+
+function storefront_checkout_totals_payload(array $enriched): array {
+    return [
+        'subtotal' => (float) ($enriched['subtotal'] ?? 0),
+        'tax' => (float) ($enriched['tax'] ?? 0),
+        'total' => (float) ($enriched['total'] ?? 0),
+        'promo_discount' => (float) ($enriched['promo_discount'] ?? 0),
+        'coupon_discount' => (float) ($enriched['coupon_discount'] ?? 0),
+        'applied_coupon_id' => (int) ($enriched['applied_coupon_id'] ?? 0),
+        'applied_coupon_code' => (string) ($enriched['applied_coupon_code'] ?? ''),
+    ];
+}
+
 function place_online_store_order(int $businessId, array $checkout): array {
     $isBuyNow = !empty($checkout['buy_now']) || storefront_checkout_is_buynow($businessId, $checkout);
     $hydrated = $isBuyNow ? hydrate_storefront_buynow($businessId) : hydrate_storefront_cart($businessId);
@@ -3421,8 +3637,22 @@ function place_online_store_order(int $businessId, array $checkout): array {
     foreach ($hydrated['lines'] as $line) {
         $cartItems[] = [
             'product_id' => (int) $line['product']['id'],
+            'variant_id' => !empty($line['variant_id']) ? (int) $line['variant_id'] : null,
+            'size' => (string) ($line['size'] ?? ''),
+            'colour' => (string) ($line['colour'] ?? ''),
+            'price' => (float) ($line['unit_price'] ?? 0),
             'quantity' => (int) $line['qty'],
         ];
+    }
+
+    $couponId = !empty($checkout['coupon_id']) ? (int) $checkout['coupon_id'] : null;
+    $couponCode = !empty($checkout['coupon_code']) ? trim((string) $checkout['coupon_code']) : null;
+    if ($couponCode === null || $couponCode === '') {
+        $sessionCoupon = get_storefront_applied_coupon($businessId);
+        if ($sessionCoupon && !empty($sessionCoupon['code'])) {
+            $couponId = (int) ($sessionCoupon['coupon_id'] ?? 0) ?: null;
+            $couponCode = (string) $sessionCoupon['code'];
+        }
     }
 
     $result = process_pos_order(
@@ -3436,8 +3666,8 @@ function place_online_store_order(int $businessId, array $checkout): array {
         0.00,
         1,
         null,
-        null,
-        null,
+        $couponId,
+        $couponCode,
         0,
         0.00,
         null,
@@ -3448,6 +3678,7 @@ function place_online_store_order(int $businessId, array $checkout): array {
     );
 
     if (!empty($result['success'])) {
+        clear_storefront_applied_coupon($businessId);
         $orderId = (int) ($result['order_id'] ?? 0);
         if ($orderId > 0 && empty($result['invoice_id'])) {
             $invGen = bill_generate_pos($orderId);
@@ -3649,9 +3880,9 @@ if (!function_exists('storefront_get_all_product_images')) {
 
 if (!function_exists('storefront_parse_product_display_info')) {
     function storefront_parse_product_display_info(array $p, int $businessId): array {
-        $isVariable = (($p['product_type'] ?? '') === 'variable');
-        $variants = ($isVariable && function_exists('get_product_variants')) ? get_product_variants((int) $p['id'], $businessId) : [];
+        $variants = storefront_load_product_variants((int) ($p['id'] ?? 0), $businessId);
         $varCount = count($variants);
+        $isVariable = $varCount > 0 || (($p['product_type'] ?? '') === 'variable');
         
         $attrText = '';
         $mrp = (float) ($p['mrp'] ?? 0);
@@ -3705,6 +3936,7 @@ if (!function_exists('storefront_parse_product_display_info')) {
 
         return [
             'variants' => $variants,
+            'variant_ui' => storefront_variant_ui_rows($variants),
             'variant_count' => $varCount,
             'variantCount' => $varCount,
             'attr_text' => $attrText,
@@ -3712,6 +3944,7 @@ if (!function_exists('storefront_parse_product_display_info')) {
             'selling_price' => $sellingPrice,
             'mrp' => $mrp,
             'discount_percent' => $discountPercent,
+            'in_stock' => storefront_product_is_in_stock($p, $variants),
         ];
     }
 }

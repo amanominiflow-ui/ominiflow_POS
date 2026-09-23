@@ -1753,6 +1753,87 @@ body.ms-cart-lock {
     margin-bottom: 12px;
 }
 
+.ms-cd-coupon-box {
+    margin: 12px 0 4px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+
+.ms-cd-coupon-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.ms-cd-coupon-row {
+    display: flex;
+    gap: 8px;
+}
+
+.ms-cd-coupon-input {
+    flex: 1;
+    min-width: 0;
+    height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.ms-cd-coupon-apply {
+    height: 38px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ms-cd-coupon-applied {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    font-size: 12px;
+    color: #047857;
+    font-weight: 600;
+}
+
+.ms-cd-coupon-applied strong {
+    color: #065f46;
+}
+
+.ms-cd-coupon-remove {
+    border: 0;
+    background: transparent;
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ms-cd-coupon-error {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #dc2626;
+    font-weight: 600;
+}
+
 .ms-cd-row {
     display: flex;
     justify-content: space-between;
@@ -1784,6 +1865,26 @@ body.ms-cart-lock {
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.ms-cd-checkout-save-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ms-cd-checkout-save-badge strong {
+    font-size: 12px;
+    font-weight: 800;
+    color: #065f46;
 }
 
 /* Order Summary Deliver To section inside Drawer (Screenshot 2) */

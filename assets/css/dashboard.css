@@ -1987,6 +1987,64 @@ body {
     font-family: monospace;
 }
 
+.pos-cart-item-variant {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--saas-navy-900);
+    margin-top: 2px;
+}
+
+.pos-card-variant-hint {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--saas-primary);
+    margin-top: -4px;
+}
+
+.pos-variant-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--saas-navy-950);
+    margin-bottom: 8px;
+}
+
+.pos-variant-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pos-variant-chip {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #0f172a;
+}
+
+.pos-variant-chip.on {
+    background: var(--saas-primary);
+    border-color: var(--saas-primary);
+    color: #fff;
+}
+
+.pos-variant-chip.off,
+.pos-variant-chip:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pos-variant-meta {
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #334155;
+}
+
 .pos-btn-remove-item {
     background: transparent;
     border: 0;
@@ -2127,6 +2185,117 @@ body {
     border-radius: 4px;
     background: #ffffff;
     font-weight: 600;
+}
+
+.pos-coupon-row {
+    align-items: flex-start;
+}
+
+.pos-coupon-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.pos-coupon-input {
+    flex: 1;
+    min-width: 0;
+    max-width: 120px;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.pos-coupon-apply-btn {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid var(--saas-primary-light);
+    border-radius: 4px;
+    background: var(--saas-primary-soft);
+    color: var(--saas-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pos-coupon-apply-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.pos-coupon-applied {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+    flex: 1;
+}
+
+.pos-coupon-applied-code {
+    font-size: 12px;
+    font-weight: 700;
+    color: #065f46;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    padding: 3px 8px;
+}
+
+.pos-coupon-remove-btn {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--saas-slate-600);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.pos-coupon-discount-row strong {
+    color: #047857;
+}
+
+.pos-promo-discount-row strong {
+    color: #047857;
+}
+
+.pos-promo-discount-label {
+    display: block;
+    font-weight: 500;
+    font-size: 11px;
+    color: var(--saas-slate-500);
+    margin-top: 2px;
+}
+
+.pos-checkout-saved-strip {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: 6px 0 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pos-checkout-saved-strip strong {
+    font-size: 14px;
+    font-weight: 800;
+    color: #065f46;
 }
 
 /* POS Action Buttons Row */

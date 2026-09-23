@@ -418,6 +418,17 @@ if (!empty($_GET['fetch_receipt']) && !empty($_GET['id'])) {
                     <tr style="border-bottom: 1px dotted #e2e8f0;">
                         <td style="padding: 6px 0;">
                             <div style="font-weight: 600;"><?= e($it['product_name']) ?></div>
+                            <?php
+                                $lineSize = trim((string)($it['size'] ?? ''));
+                                $lineColour = trim((string)($it['colour'] ?? ''));
+                            ?>
+                            <?php if ($lineSize !== '' || $lineColour !== ''): ?>
+                                <div style="font-size: 10px; color: #475569;">
+                                    <?= $lineSize !== '' ? 'Size: ' . e($lineSize) : '' ?>
+                                    <?= ($lineSize !== '' && $lineColour !== '') ? ' · ' : '' ?>
+                                    <?= $lineColour !== '' ? 'Colour: ' . e($lineColour) : '' ?>
+                                </div>
+                            <?php endif; ?>
                             <div style="font-size: 10px; color: #64748b;">SKU: <?= e($it['product_sku']) ?></div>
                         </td>
                         <td style="padding: 6px 0; text-align: center;"><?= (int)$it['quantity'] ?></td>
