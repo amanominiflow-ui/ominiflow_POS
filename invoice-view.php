@@ -86,6 +86,74 @@ $businessId = (int)($invoice['business_id'] ?? 1);
 $store = get_store_settings($businessId);
 $brand = function_exists('get_mobile_store_settings') ? get_mobile_store_settings($businessId) : [];
 $items = $invoice['items'] ?? [];
+if (!function_exists('invoice_view_enrich_items_gst')) {
+    /**
+     * Backfill HSN / tax % / line tax for older invoices (read-only; does not update DB).
+     */
+    function invoice_view_enrich_items_gst(array $items, PDO $db, int $businessId): array {
+        if ($items === []) {
+            return $items;
+        }
+        $productIds = [];
+        foreach ($items as $it) {
+            $pid = (int) ($it['product_id'] ?? 0);
+            if ($pid > 0) {
+                $productIds[$pid] = $pid;
+            }
+        }
+        $productMeta = [];
+        if ($productIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+            $params = array_merge([$businessId], array_values($productIds));
+            try {
+                $st = $db->prepare("SELECT id, hsn_code, tax_percent FROM products WHERE business_id = ? AND id IN ({$placeholders})");
+                $st->execute($params);
+                while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+                    $productMeta[(int) $row['id']] = $row;
+                }
+            } catch (Throwable $e) {
+                $productMeta = [];
+            }
+        }
+        foreach ($items as $idx => $it) {
+            $pid = (int) ($it['product_id'] ?? 0);
+            if ($pid > 0 && isset($productMeta[$pid])) {
+                $pm = $productMeta[$pid];
+                if (trim((string) ($it['hsn_code'] ?? '')) === '' && trim((string) ($pm['hsn_code'] ?? '')) !== '') {
+                    $items[$idx]['hsn_code'] = $pm['hsn_code'];
+                }
+                if ((float) ($it['tax_percent'] ?? 0) <= 0 && (float) ($pm['tax_percent'] ?? 0) > 0) {
+                    $items[$idx]['tax_percent'] = (float) $pm['tax_percent'];
+                }
+            }
+            $qty = max(1, (int) ($it['quantity'] ?? 1));
+            $unit = (float) ($it['unit_price'] ?? 0);
+            $lineTotal = (float) ($it['line_total'] ?? 0);
+            $lineTax = (float) ($it['tax_amount'] ?? 0);
+            $rate = (float) ($items[$idx]['tax_percent'] ?? 0);
+            $base = round($unit * $qty, 2);
+            if ($lineTax <= 0 && $rate > 0 && $base > 0) {
+                if ($lineTotal > $base + 0.009) {
+                    $lineTax = round($lineTotal - $base, 2);
+                } else {
+                    $lineTax = round($base * ($rate / 100), 2);
+                    if ($lineTotal <= 0) {
+                        $items[$idx]['line_total'] = round($base + $lineTax, 2);
+                    }
+                }
+                $items[$idx]['tax_amount'] = $lineTax;
+            } elseif ($lineTax <= 0 && $lineTotal > $base + 0.009 && $base > 0) {
+                $items[$idx]['tax_amount'] = round($lineTotal - $base, 2);
+                if ($rate <= 0) {
+                    $items[$idx]['tax_percent'] = round((($lineTotal - $base) / $base) * 100, 2);
+                }
+            }
+        }
+        return $items;
+    }
+}
+$items = invoice_view_enrich_items_gst($items, $db, $businessId);
+$invoice['items'] = $items;
 $isCancelled = ($invoice['invoice_status'] === 'cancelled');
 $autoPrint = isset($_GET['print']) || isset($_GET['download']);
 $isPublicView = !$isAdmin || isset($_GET['standalone']);
@@ -232,8 +300,61 @@ if (!empty($items)) {
         $itemsSum += (float)($it['line_total'] ?? 0);
     }
 }
+$lineTaxSum = 0.0;
+$lineExTaxSum = 0.0;
+foreach ($items as $it) {
+    $lt = (float) ($it['line_total'] ?? 0);
+    $tx = (float) ($it['tax_amount'] ?? 0);
+    $qty = max(1, (int) ($it['quantity'] ?? 1));
+    $unit = (float) ($it['unit_price'] ?? 0);
+    $lineTaxSum += $tx;
+    if ($tx > 0 && $lt >= $tx) {
+        $lineExTaxSum += round($lt - $tx, 2);
+    } elseif ($unit > 0) {
+        $lineExTaxSum += round($unit * $qty, 2);
+    } elseif ($lt > 0) {
+        $lineExTaxSum += $lt;
+    }
+}
+$lineTaxSum = round($lineTaxSum, 2);
+$lineExTaxSum = round($lineExTaxSum, 2);
+
 if ($subtotal <= 0 && $itemsSum > 0) {
     $subtotal = $itemsSum;
+}
+
+// Legacy: invoice header tax missing but lines or linked order have tax
+if ($taxAmount <= 0 && $lineTaxSum > 0) {
+    $taxAmount = $lineTaxSum;
+} elseif ($taxAmount <= 0 && !empty($invoice['order_id'])) {
+    try {
+        $stOrdTax = $db->prepare('SELECT tax_amount, subtotal, discount_amount FROM orders WHERE id = :oid AND business_id = :bid LIMIT 1');
+        $stOrdTax->execute(['oid' => (int) $invoice['order_id'], 'bid' => $businessId]);
+        $ordTaxRow = $stOrdTax->fetch(PDO::FETCH_ASSOC);
+        if ($ordTaxRow && (float) ($ordTaxRow['tax_amount'] ?? 0) > 0) {
+            $taxAmount = (float) $ordTaxRow['tax_amount'];
+            if ($subtotal <= 0 && (float) ($ordTaxRow['subtotal'] ?? 0) > 0) {
+                $subtotal = (float) $ordTaxRow['subtotal'];
+            }
+        }
+    } catch (Throwable $e) {
+        // ignore
+    }
+}
+if ($taxAmount <= 0 && $grandTotal > 0) {
+    $impliedTax = round($grandTotal - $shippingFee - ($subtotal - $discountAmount), 2);
+    if ($impliedTax > 0.009) {
+        $taxAmount = $impliedTax;
+    }
+}
+
+// When subtotal on old rows included GST, show pre-tax subtotal in "Total Amount"
+if ($lineExTaxSum > 0 && $lineTaxSum > 0) {
+    if (abs($subtotal - ($lineExTaxSum + $lineTaxSum)) < 0.06 || $subtotal > $lineExTaxSum + 0.009) {
+        $subtotal = $lineExTaxSum;
+    }
+} elseif ($lineExTaxSum > 0 && $subtotal <= 0) {
+    $subtotal = $lineExTaxSum;
 }
 
 // Check if shipping fee is in order notes or notes
@@ -252,6 +373,58 @@ if ($shippingFee <= 0 && $grandTotal > $expectedBase) {
 
 // Ensure Grand Total is mathematically exact: Total Amount - Discount + Tax + Shipping
 $grandTotal = max(0.00, round($subtotal - $discountAmount + $taxAmount + $shippingFee, 2));
+
+// 8b. GST breakup (CGST / SGST / IGST) — use invoice columns, fallback split for legacy rows
+$taxableAmount = (float)($invoice['taxable_amount'] ?? 0);
+$cgstAmount = (float)($invoice['cgst_amount'] ?? 0);
+$sgstAmount = (float)($invoice['sgst_amount'] ?? 0);
+$igstAmount = (float)($invoice['igst_amount'] ?? 0);
+if ($taxableAmount <= 0) {
+    if ($lineExTaxSum > 0) {
+        $taxableAmount = max(0.00, round($lineExTaxSum - $discountAmount, 2));
+    } else {
+        $taxableAmount = max(0.00, round($subtotal - $discountAmount, 2));
+    }
+}
+if ($taxAmount > 0 && ($cgstAmount + $sgstAmount + $igstAmount) <= 0) {
+    if ($igstAmount > 0) {
+        // keep IGST-only if ever set without CGST/SGST
+    } else {
+        $cgstAmount = round($taxAmount / 2, 2);
+        $sgstAmount = round($taxAmount - $cgstAmount, 2);
+    }
+}
+$showGstBreakup = ($taxAmount > 0 || $cgstAmount > 0 || $sgstAmount > 0 || $igstAmount > 0 || $lineTaxSum > 0);
+
+$gstSettings = null;
+try {
+    $stGst = $db->prepare('SELECT * FROM gst_settings WHERE business_id = :bid LIMIT 1');
+    $stGst->execute(['bid' => $businessId]);
+    $gstSettings = $stGst->fetch() ?: null;
+} catch (Throwable $e) {
+    $gstSettings = null;
+}
+$sellerGstin = trim((string)($gstSettings['gstin'] ?? $store['gstin'] ?? ($brand['footer_gst_no'] ?? '')));
+
+$invoiceTaxRates = [];
+foreach ($items as $taxIt) {
+    $tp = (float)($taxIt['tax_percent'] ?? 0);
+    if ($tp > 0) {
+        $invoiceTaxRates[(string) $tp] = $tp;
+    }
+}
+$cgstRateLabel = '';
+$sgstRateLabel = '';
+$igstRateLabel = '';
+if (count($invoiceTaxRates) === 1) {
+    $fullRate = (float) array_values($invoiceTaxRates)[0];
+    $halfRate = round($fullRate / 2, 2);
+    $cgstRateLabel = '@ ' . rtrim(rtrim(number_format($halfRate, 2, '.', ''), '0'), '.') . '%';
+    $sgstRateLabel = $cgstRateLabel;
+} elseif ($igstAmount > 0 && count($invoiceTaxRates) === 1) {
+    $fullRate = (float) array_values($invoiceTaxRates)[0];
+    $igstRateLabel = '@ ' . rtrim(rtrim(number_format($fullRate, 2, '.', ''), '0'), '.') . '%';
+}
 
 // 9. Variant Extraction Helper (Size & Colour)
 if (!function_exists('extract_item_attributes')) {
@@ -320,6 +493,31 @@ if (!function_exists('extract_item_attributes')) {
         return ['size' => $size, 'colour' => $colour];
     }
 }
+
+if (!function_exists('resolve_item_hsn')) {
+    function resolve_item_hsn(array $it, PDO $db, array &$productHsnCache): string {
+        $hsn = strtoupper(trim((string)($it['hsn_code'] ?? '')));
+        if ($hsn !== '') {
+            return $hsn;
+        }
+        $pid = (int)($it['product_id'] ?? 0);
+        if ($pid <= 0) {
+            return '-';
+        }
+        if (!array_key_exists($pid, $productHsnCache)) {
+            try {
+                $st = $db->prepare('SELECT hsn_code FROM products WHERE id = :id LIMIT 1');
+                $st->execute(['id' => $pid]);
+                $productHsnCache[$pid] = strtoupper(trim((string)($st->fetchColumn() ?: '')));
+            } catch (Throwable $e) {
+                $productHsnCache[$pid] = '';
+            }
+        }
+        return $productHsnCache[$pid] !== '' ? $productHsnCache[$pid] : '-';
+    }
+}
+
+$productHsnCache = [];
 
 // 10. Barcode SVG Generation
 $barcodeSvg = generate_code128_svg($rawOrderNum, 36, 1.4, $storeThemeColor);
@@ -785,6 +983,20 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             padding-right: 14px;
             font-weight: 600;
         }
+        .inv-products-table tbody td.col-hsn {
+            text-align: center;
+            font-weight: 600;
+            font-size: 10.5px;
+            letter-spacing: 0.02em;
+        }
+        .inv-products-table tbody td.col-gst {
+            text-align: center;
+            font-weight: 600;
+        }
+        .inv-products-table th.col-hsn,
+        .inv-products-table th.col-gst {
+            text-align: center;
+        }
 
         /* SUMMARY CALCULATION BOX (Right Aligned Below Table) */
         .inv-summary-container {
@@ -1026,7 +1238,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 12px;
         }
         body.size-4x3 .inv-summary-box {
-            width: 210px;
+            width: 230px;
             padding: 8px 12px;
             gap: 3px;
         }
@@ -1520,6 +1732,13 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                             <span class="sep">:</span>
                             <span class="val"><?= e($paymentModeStr) ?></span>
                         </div>
+                        <?php if ($sellerGstin !== ''): ?>
+                        <div class="inv-row-kv">
+                            <span class="lbl">GSTIN</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($sellerGstin) ?></span>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -1583,19 +1802,21 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             <table class="inv-products-table">
                 <thead>
                     <tr>
-                        <th style="width: 7%;">No.</th>
-                        <th class="col-name" style="width: 38%;">Product Name</th>
-                        <th style="width: 11%;">Size</th>
-                        <th style="width: 14%;">Colour</th>
-                        <th style="width: 8%;">Qty</th>
-                        <th style="width: 11%; text-align: right; padding-right: 16px;">Price (₹)</th>
+                        <th style="width: 5%;">No.</th>
+                        <th class="col-name" style="width: 24%;">Product Name</th>
+                        <th class="col-hsn" style="width: 9%;">HSN</th>
+                        <th style="width: 8%;">Size</th>
+                        <th style="width: 10%;">Colour</th>
+                        <th style="width: 6%;">Qty</th>
+                        <th style="width: 10%; text-align: right; padding-right: 12px;">Rate (₹)</th>
+                        <th class="col-gst" style="width: 7%;">GST %</th>
                         <th style="width: 11%; text-align: right; padding-right: 16px;">Total (₹)</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($chunkItems)): ?>
                         <tr>
-                            <td colspan="7" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this page.</td>
+                            <td colspan="9" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this page.</td>
                         </tr>
                     <?php else: ?>
                         <?php 
@@ -1604,14 +1825,19 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                             $uPrice = (float)$it['unit_price'];
                             $qty = (int)$it['quantity'];
                             $lTotal = (float)$it['line_total'];
+                            $lineHsn = resolve_item_hsn($it, $db, $productHsnCache);
+                            $lineTaxPct = (float)($it['tax_percent'] ?? 0);
+                            $lineTaxDisplay = $lineTaxPct > 0 ? rtrim(rtrim(number_format($lineTaxPct, 2, '.', ''), '0'), '.') . '%' : '-';
                         ?>
                             <tr>
                                 <td><?= $globalItemIdx++ ?></td>
                                 <td class="col-name"><?= e($it['product_name']) ?></td>
+                                <td class="col-hsn"><?= e($lineHsn) ?></td>
                                 <td><?= e($attrs['size']) ?></td>
                                 <td><?= e($attrs['colour']) ?></td>
                                 <td style="font-weight: 600;"><?= $qty ?></td>
                                 <td class="col-price"><?= format_inv_money($uPrice) ?></td>
+                                <td class="col-gst"><?= e($lineTaxDisplay) ?></td>
                                 <td class="col-total"><?= format_inv_money($lTotal) ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -1639,12 +1865,40 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                         <span class="s-sep">:</span>
                         <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
                     </div>
-                    <?php if ($taxAmount > 0): ?>
+                    <?php if ($showGstBreakup): ?>
                     <div class="inv-summary-row">
-                        <span class="s-label">Tax / GST</span>
+                        <span class="s-label">Taxable Value</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($taxableAmount) ?></span>
+                    </div>
+                    <?php if ($cgstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">CGST <?= e($cgstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($cgstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($sgstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">SGST <?= e($sgstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($sgstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($igstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">IGST <?= e($igstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($igstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($taxAmount > 0 && $cgstAmount <= 0 && $sgstAmount <= 0 && $igstAmount <= 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Total Tax (GST)</span>
                         <span class="s-sep">:</span>
                         <span class="s-val">₹ <?= format_inv_money($taxAmount) ?></span>
                     </div>
+                    <?php endif; ?>
                     <?php endif; ?>
                     <div class="inv-summary-row">
                         <span class="s-label">Shipping</span>
