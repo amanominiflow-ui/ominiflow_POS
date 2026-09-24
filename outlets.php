@@ -35,7 +35,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ], $id);
 
         if ($res['success']) {
-            set_flash('success', 'Outlet saved successfully!');
+            $msg = 'Outlet saved successfully!';
+            if (!empty($res['warehouse_created'])) {
+                $msg .= ' A warehouse was created for this store.';
+            }
+            set_flash('success', $msg);
         } else {
             set_flash('error', $res['error'] ?? 'Failed to save outlet.');
         }
@@ -66,7 +70,7 @@ $pageTitle = 'Multi-Outlet & Warehouses';
                 <div class="page-header-row">
                     <div>
                         <h1 class="page-title">Multi-Outlet & Warehouses</h1>
-                        <p class="page-subtitle">Manage retail branches, regional store outlets, and central inventory warehouses.</p>
+                        <p class="page-subtitle">Add stores (outlets); each new store gets its own warehouse. Central Warehouse is seeded automatically — no Central / Store / Online types.</p>
                     </div>
                     <div>
                         <button type="button" onclick="document.getElementById('outletModal').style.display='flex'" class="header-btn">
@@ -133,7 +137,7 @@ $pageTitle = 'Multi-Outlet & Warehouses';
                                         <tr>
                                             <td><strong><?= e($wh['name']) ?></strong></td>
                                             <td><span style="font-family: monospace;"><?= e($wh['code']) ?></span></td>
-                                            <td><?= e($wh['outlet_name'] ?? 'General') ?></td>
+                                            <td><?= e($wh['outlet_name'] ?? 'Central / unlinked') ?></td>
                                             <td style="color: var(--saas-slate-500);"><?= e($wh['location'] ?: 'Floor 1') ?></td>
                                             <td>
                                                 <span class="badge <?= $wh['status'] === 'active' ? 'badge-success' : 'badge-danger' ?>">

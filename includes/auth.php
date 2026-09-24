@@ -268,6 +268,12 @@ function register_user(string $name, string $email, string $phone, string $passw
             ]);
         } catch (Exception $eWH) {}
 
+        // 5b. Seed Central Warehouse (hub — not tied to a store type)
+        try {
+            require_once __DIR__ . '/outlets_db.php';
+            ensure_business_warehouse_baseline($businessId);
+        } catch (Exception $eCentralWh) {}
+
         // 6. Seed Default Register
         try {
             $stmtReg = $db->prepare('

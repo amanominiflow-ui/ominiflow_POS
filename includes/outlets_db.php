@@ -7,12 +7,172 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/products_db.php';
 
 /* =========================================================================
    1. OUTLET OPERATIONS
    ========================================================================= */
 
+function ensure_business_warehouse_baseline(?int $businessId = null): void {
+    static $done = [];
+    $bid = $businessId ?: current_business_id();
+    if (isset($done[$bid])) {
+        return;
+    }
+    $done[$bid] = true;
+    $db = get_db();
+
+    $stmt = $db->prepare('
+        SELECT id FROM warehouses
+        WHERE business_id = :bid AND code = :code
+        LIMIT 1
+    ');
+    $stmt->execute(['bid' => $bid, 'code' => 'WH-CENTRAL']);
+    if (!$stmt->fetch()) {
+        try {
+            $db->prepare('
+                INSERT INTO warehouses (business_id, outlet_id, name, code, location, status, created_at, updated_at)
+                VALUES (:bid, NULL, :name, :code, :loc, "active", NOW(), NOW())
+            ')->execute([
+                'bid' => $bid,
+                'name' => 'Central Warehouse',
+                'code' => 'WH-CENTRAL',
+                'loc' => 'Main distribution hub',
+            ]);
+        } catch (PDOException $e) {
+            // Ignore duplicate or schema mismatch on older DBs.
+        }
+    }
+}
+
+function resolve_pos_outlet_id(?int $outletId, ?int $businessId = null): int {
+    $bid = $businessId ?: current_business_id();
+    if ($outletId !== null && $outletId > 0) {
+        $outlet = get_outlet_by_id($outletId, $bid);
+        if ($outlet && ($outlet['status'] ?? '') === 'active') {
+            return $outletId;
+        }
+    }
+    $active = get_outlets('active', $bid);
+    return !empty($active[0]['id']) ? (int) $active[0]['id'] : 1;
+}
+
+function get_warehouse_id_for_outlet(int $outletId, ?int $businessId = null): ?int {
+    ensure_business_warehouse_baseline($businessId);
+    if ($outletId <= 0) {
+        return null;
+    }
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('
+        SELECT id FROM warehouses
+        WHERE business_id = :bid AND outlet_id = :oid AND status = "active"
+        ORDER BY id ASC
+        LIMIT 1
+    ');
+    $stmt->execute(['bid' => $bid, 'oid' => $outletId]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int) $id : null;
+}
+
+function warehouse_has_product_stock_row(int $productId, int $warehouseId): bool {
+    $db = get_db();
+    $stmt = $db->prepare('
+        SELECT 1 FROM warehouse_stock
+        WHERE product_id = :pid AND warehouse_id = :wid
+        LIMIT 1
+    ');
+    $stmt->execute(['pid' => $productId, 'wid' => $warehouseId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+function get_outlet_product_stock(int $productId, int $warehouseId, ?int $businessId = null): int {
+    if ($warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId)) {
+        return get_product_warehouse_stock($productId, $warehouseId);
+    }
+    $product = get_product_by_id($productId, $businessId);
+    return $product ? (int) $product['stock_quantity'] : 0;
+}
+
+/**
+ * Deduct sellable stock for POS from the outlet warehouse when allocated; otherwise product stock.
+ *
+ * @return array{quantity_before:int, quantity_after:int, used_warehouse:bool}
+ */
+function pos_deduct_inventory_for_sale(
+    PDO $db,
+    int $businessId,
+    int $productId,
+    int $quantity,
+    int $warehouseId,
+    ?int $userId,
+    string $reason
+): array {
+    if ($quantity <= 0) {
+        throw new Exception('Invalid sale quantity.');
+    }
+
+    if ($warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId)) {
+        $before = get_product_warehouse_stock($productId, $warehouseId);
+        if ($before < $quantity) {
+            throw new Exception('Insufficient stock at this store warehouse.');
+        }
+        $after = $before - $quantity;
+        set_product_warehouse_stock($productId, $warehouseId, $after);
+        sync_product_stock_from_warehouses($productId, $businessId);
+
+        $stmtMov = $db->prepare('
+            INSERT INTO inventory_movements (
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+            ) VALUES (
+                :biz_id, :product_id, :user_id, "out", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+            )
+        ');
+        $stmtMov->execute([
+            'biz_id' => $businessId,
+            'product_id' => $productId,
+            'user_id' => $userId,
+            'quantity_change' => -$quantity,
+            'quantity_before' => $before,
+            'quantity_after' => $after,
+            'reason' => $reason,
+        ]);
+
+        return ['quantity_before' => $before, 'quantity_after' => $after, 'used_warehouse' => true];
+    }
+
+    $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+    $stmtCur->execute(['id' => $productId, 'bid' => $businessId]);
+    $before = (int) $stmtCur->fetchColumn();
+    if ($before < $quantity) {
+        throw new Exception('Insufficient stock for this product.');
+    }
+    $after = max(0, $before - $quantity);
+    $db->prepare('UPDATE products SET stock_quantity = :qty, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+        ->execute(['qty' => $after, 'id' => $productId, 'bid' => $businessId]);
+
+    $stmtMov = $db->prepare('
+        INSERT INTO inventory_movements (
+            business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+        ) VALUES (
+            :biz_id, :product_id, :user_id, "out", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+        )
+    ');
+    $stmtMov->execute([
+        'biz_id' => $businessId,
+        'product_id' => $productId,
+        'user_id' => $userId,
+        'quantity_change' => -$quantity,
+        'quantity_before' => $before,
+        'quantity_after' => $after,
+        'reason' => $reason,
+    ]);
+
+    return ['quantity_before' => $before, 'quantity_after' => $after, 'used_warehouse' => false];
+}
+
 function get_outlets(string $status = '', ?int $businessId = null): array {
+    ensure_business_warehouse_baseline($businessId);
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = 'SELECT * FROM outlets WHERE business_id = :biz_id';
@@ -90,7 +250,7 @@ function save_outlet(array $data, ?int $id = null, ?int $businessId = null): arr
                 'loc' => $address ?: 'Main Store Floor',
             ]);
 
-            return ['success' => true, 'outlet_id' => $outletId];
+            return ['success' => true, 'outlet_id' => $outletId, 'warehouse_created' => true];
         }
     } catch (PDOException $e) {
         return ['success' => false, 'error' => $e->getMessage()];
@@ -102,6 +262,7 @@ function save_outlet(array $data, ?int $id = null, ?int $businessId = null): arr
    ========================================================================= */
 
 function get_warehouses(?int $outletId = null, string $status = '', ?int $businessId = null): array {
+    ensure_business_warehouse_baseline($businessId);
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
@@ -164,7 +325,93 @@ function set_product_warehouse_stock(int $productId, int $warehouseId, int $newS
    3. STOCK TRANSFERS WORKFLOW
    ========================================================================= */
 
+function ensure_stock_transfer_schema(): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $db = get_db();
+    try {
+        $db->exec("
+            ALTER TABLE stock_transfers
+            MODIFY COLUMN `status` ENUM(
+                'draft', 'requested', 'approved', 'picked', 'dispatched',
+                'in_transit', 'received', 'cancelled'
+            ) NOT NULL DEFAULT 'draft'
+        ");
+    } catch (Exception $e) {
+        // Table or column may differ on older installs; ignore.
+    }
+}
+
+function sync_product_stock_from_warehouses(int $productId, int $businessId): void {
+    $db = get_db();
+    $stmtCount = $db->prepare('
+        SELECT COUNT(*) FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+        WHERE ws.product_id = :pid
+    ');
+    $stmtCount->execute(['pid' => $productId, 'bid' => $businessId]);
+    if ((int) $stmtCount->fetchColumn() === 0) {
+        return;
+    }
+
+    $stmtSum = $db->prepare('
+        SELECT COALESCE(SUM(ws.stock_quantity), 0) FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+        WHERE ws.product_id = :pid
+    ');
+    $stmtSum->execute(['pid' => $productId, 'bid' => $businessId]);
+    $total = (int) $stmtSum->fetchColumn();
+
+    $db->prepare('
+        UPDATE products SET stock_quantity = :qty, updated_at = NOW()
+        WHERE id = :pid AND business_id = :bid
+    ')->execute(['qty' => $total, 'pid' => $productId, 'bid' => $businessId]);
+}
+
+function log_stock_transfer_movement(
+    PDO $db,
+    int $businessId,
+    int $productId,
+    ?int $userId,
+    string $reason,
+    string $movementType = 'adjustment',
+    int $quantityChange = 0
+): void {
+    $stmtStock = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid');
+    $stmtStock->execute(['id' => $productId, 'bid' => $businessId]);
+    $stock = (int) $stmtStock->fetchColumn();
+    $after = $stock + $quantityChange;
+
+    $stmtMov = $db->prepare('
+        INSERT INTO inventory_movements (
+            business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+        ) VALUES (
+            :biz_id, :pid, :uid, :mtype, :change, :before, :after, :reason, NOW()
+        )
+    ');
+    $stmtMov->execute([
+        'biz_id' => $businessId,
+        'pid' => $productId,
+        'uid' => $userId ?: null,
+        'mtype' => $movementType,
+        'change' => $quantityChange,
+        'before' => $stock,
+        'after' => $after,
+        'reason' => $reason,
+    ]);
+}
+
+function stock_transfer_assert_status(array $trf, array $allowed): void {
+    if (!in_array($trf['status'], $allowed, true)) {
+        throw new Exception('Stock transfer is not in the correct state for this action.');
+    }
+}
+
 function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, array $items, string $notes = '', ?int $userId = null, ?int $businessId = null): array {
+    ensure_stock_transfer_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     if ($sourceWarehouseId === $destWarehouseId) {
@@ -220,64 +467,166 @@ function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, arr
     }
 }
 
-function dispatch_stock_transfer(int $transferId, ?int $userId = null): array {
+function approve_stock_transfer(int $transferId, ?int $userId = null): array {
+    ensure_stock_transfer_schema();
     $db = get_db();
-
     try {
         $db->beginTransaction();
         $trf = get_stock_transfer_by_id($transferId);
-        if (!$trf || !in_array($trf['status'], ['draft', 'requested'], true)) {
-            throw new Exception('Stock transfer is not in dispatchable state.');
+        if (!$trf) {
+            throw new Exception('Stock transfer not found.');
+        }
+        stock_transfer_assert_status($trf, ['draft', 'requested']);
+        $bid = (int) ($trf['business_id'] ?? current_business_id());
+
+        foreach ($trf['items'] as $item) {
+            log_stock_transfer_movement(
+                $db,
+                $bid,
+                (int) $item['product_id'],
+                $userId,
+                "Stock Transfer #{$trf['transfer_number']} approved",
+                'adjustment',
+                0
+            );
         }
 
-        $bid = (int)($trf['business_id'] ?? current_business_id());
-        $sourceWhId = (int)$trf['source_warehouse_id'];
+        $db->prepare('UPDATE stock_transfers SET status = "approved", updated_at = NOW() WHERE id = :id')
+            ->execute(['id' => $transferId]);
+        $db->commit();
+        return ['success' => true, 'status' => 'approved'];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
 
-        // Deduct from source warehouse stock & log audit
+function pick_stock_transfer(int $transferId, ?int $userId = null): array {
+    ensure_stock_transfer_schema();
+    $db = get_db();
+    try {
+        $db->beginTransaction();
+        $trf = get_stock_transfer_by_id($transferId);
+        if (!$trf) {
+            throw new Exception('Stock transfer not found.');
+        }
+        stock_transfer_assert_status($trf, ['approved']);
+        $bid = (int) ($trf['business_id'] ?? current_business_id());
+
         foreach ($trf['items'] as $item) {
-            $pid = (int)$item['product_id'];
-            $qty = (int)$item['quantity_requested'];
+            log_stock_transfer_movement(
+                $db,
+                $bid,
+                (int) $item['product_id'],
+                $userId,
+                "Stock Transfer #{$trf['transfer_number']} picked at {$trf['source_warehouse_name']}",
+                'adjustment',
+                0
+            );
+        }
+
+        $db->prepare('UPDATE stock_transfers SET status = "picked", updated_at = NOW() WHERE id = :id')
+            ->execute(['id' => $transferId]);
+        $db->commit();
+        return ['success' => true, 'status' => 'picked'];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+function dispatch_stock_transfer(int $transferId, ?int $userId = null): array {
+    ensure_stock_transfer_schema();
+    $db = get_db();
+    try {
+        $db->beginTransaction();
+        $trf = get_stock_transfer_by_id($transferId);
+        if (!$trf) {
+            throw new Exception('Stock transfer not found.');
+        }
+        stock_transfer_assert_status($trf, ['picked']);
+        $bid = (int) ($trf['business_id'] ?? current_business_id());
+
+        foreach ($trf['items'] as $item) {
+            $qty = (int) $item['quantity_requested'];
+            log_stock_transfer_movement(
+                $db,
+                $bid,
+                (int) $item['product_id'],
+                $userId,
+                "Stock Transfer #{$trf['transfer_number']} dispatched to {$trf['dest_warehouse_name']} ({$qty} units)",
+                'adjustment',
+                0
+            );
+        }
+
+        $db->prepare('UPDATE stock_transfers SET status = "dispatched", updated_at = NOW() WHERE id = :id')
+            ->execute(['id' => $transferId]);
+        $db->commit();
+        return ['success' => true, 'status' => 'dispatched'];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+function ship_stock_transfer_in_transit(int $transferId, ?int $userId = null): array {
+    ensure_stock_transfer_schema();
+    $db = get_db();
+    try {
+        $db->beginTransaction();
+        $trf = get_stock_transfer_by_id($transferId);
+        if (!$trf) {
+            throw new Exception('Stock transfer not found.');
+        }
+        stock_transfer_assert_status($trf, ['dispatched']);
+        $bid = (int) ($trf['business_id'] ?? current_business_id());
+        $sourceWhId = (int) $trf['source_warehouse_id'];
+
+        foreach ($trf['items'] as $item) {
+            $pid = (int) $item['product_id'];
+            $qty = (int) $item['quantity_requested'];
 
             $currStock = get_product_warehouse_stock($pid, $sourceWhId);
             if ($currStock < $qty) {
-                throw new Exception("Insufficient stock in source warehouse for product: {$item['product_name']} (Available: {$currStock}, Required: {$qty})");
+                throw new Exception("Insufficient stock in source warehouse for {$item['product_name']} (Available: {$currStock}, Required: {$qty})");
             }
 
             $newSourceStock = $currStock - $qty;
             set_product_warehouse_stock($pid, $sourceWhId, $newSourceStock);
 
-            // Also decrement general product table stock while in transit
-            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity - :qty WHERE id = :id AND business_id = :biz_id');
-            $stmtProd->execute(['qty' => $qty, 'id' => $pid, 'biz_id' => $bid]);
-
-            // Audit movement
-            $stmtMov = $db->prepare('
-                INSERT INTO inventory_movements (business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
-                VALUES (:biz_id, :pid, :uid, "out", :change, :before, :after, :reason, NOW())
-            ');
-            $stmtMov->execute([
-                'biz_id' => $bid,
-                'pid' => $pid,
-                'uid' => $userId ?: 1,
-                'change' => -$qty,
-                'before' => $currStock,
-                'after' => $newSourceStock,
-                'reason' => "Dispatched Stock Transfer #{$trf['transfer_number']} to {$trf['dest_warehouse_name']}",
-            ]);
+            // Company-wide product stock is unchanged while goods are in transit (warehouse-level move only).
+            log_stock_transfer_movement(
+                $db,
+                $bid,
+                $pid,
+                $userId,
+                "Stock Transfer #{$trf['transfer_number']} in transit: {$qty} unit(s) left {$trf['source_warehouse_name']} (WH {$currStock} → {$newSourceStock})",
+                'adjustment',
+                0
+            );
         }
 
-        $stmtUp = $db->prepare('UPDATE stock_transfers SET status = "in_transit", updated_at = NOW() WHERE id = :id');
-        $stmtUp->execute(['id' => $transferId]);
-
+        $db->prepare('UPDATE stock_transfers SET status = "in_transit", updated_at = NOW() WHERE id = :id')
+            ->execute(['id' => $transferId]);
         $db->commit();
         return ['success' => true, 'status' => 'in_transit'];
     } catch (Exception $e) {
-        if ($db->inTransaction()) $db->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         return ['success' => false, 'error' => $e->getMessage()];
     }
 }
 
 function receive_stock_transfer(int $transferId, ?int $userId = null): array {
+    ensure_stock_transfer_schema();
     $db = get_db();
 
     try {
@@ -298,28 +647,20 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
             $newDestStock = $currDestStock + $qty;
             set_product_warehouse_stock($pid, $destWhId, $newDestStock);
 
-            // Increment general product stock table
-            $stmtProd = $db->prepare('UPDATE products SET stock_quantity = stock_quantity + :qty WHERE id = :id AND business_id = :biz_id');
-            $stmtProd->execute(['qty' => $qty, 'id' => $pid, 'biz_id' => $bid]);
-
-            // Update item received qty
             $stmtItemUp = $db->prepare('UPDATE stock_transfer_items SET quantity_received = :qty WHERE stock_transfer_id = :tid AND product_id = :pid');
             $stmtItemUp->execute(['qty' => $qty, 'tid' => $transferId, 'pid' => $pid]);
 
-            // Audit movement
-            $stmtMov = $db->prepare('
-                INSERT INTO inventory_movements (business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at)
-                VALUES (:biz_id, :pid, :uid, "in", :change, :before, :after, :reason, NOW())
-            ');
-            $stmtMov->execute([
-                'biz_id' => $bid,
-                'pid' => $pid,
-                'uid' => $userId ?: 1,
-                'change' => $qty,
-                'before' => $currDestStock,
-                'after' => $newDestStock,
-                'reason' => "Received Stock Transfer #{$trf['transfer_number']} from {$trf['source_warehouse_name']}",
-            ]);
+            sync_product_stock_from_warehouses($pid, $bid);
+
+            log_stock_transfer_movement(
+                $db,
+                $bid,
+                $pid,
+                $userId,
+                "Stock Transfer #{$trf['transfer_number']} received at {$trf['dest_warehouse_name']} ({$qty} units, WH {$currDestStock} → {$newDestStock})",
+                'adjustment',
+                0
+            );
         }
 
         $stmtDone = $db->prepare('UPDATE stock_transfers SET status = "received", completed_at = NOW(), updated_at = NOW() WHERE id = :id');

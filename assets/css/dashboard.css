@@ -2399,6 +2399,54 @@ body {
     color: var(--saas-primary);
 }
 
+.pos-split-payment-section {
+    margin-bottom: 14px;
+    padding: 12px;
+    border-radius: var(--saas-radius-md);
+    border: 1px dashed var(--saas-border-light);
+    background: #f8fafc;
+}
+
+.pos-split-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pos-split-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 32px;
+    gap: 8px;
+    align-items: center;
+}
+
+.pos-split-remove {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 8px;
+    background: #fff;
+    color: #64748b;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.pos-split-remain {
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #b45309;
+}
+
+.pos-split-remain.is-balanced {
+    color: #047857;
+}
+
+.pos-split-remain.is-over {
+    color: #b91c1c;
+}
+
 .quick-cash-row {
     display: flex;
     flex-wrap: wrap;

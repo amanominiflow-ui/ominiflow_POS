@@ -576,6 +576,67 @@ function save_customer(array $data, ?int $businessId = null): array {
    3. ATOMIC POS ORDER CHECKOUT, INVOICE GENERATION & INVENTORY DEDUCTION
    ========================================================================= */
 
+function pos_register_sales_column(string $paymentMethod): ?string {
+    $m = strtolower(trim($paymentMethod));
+    if ($m === 'cash') {
+        return 'total_cash_sales';
+    }
+    if ($m === 'card' || str_contains($m, 'card') || in_array($m, ['pinelabs', 'worldline', 'stripe', 'verifone'], true)) {
+        return 'total_card_sales';
+    }
+    if ($m === 'upi' || $m === 'razorpay' || str_contains($m, 'upi')) {
+        return 'total_upi_sales';
+    }
+    return null;
+}
+
+function format_pos_split_payment_label(array $splits): string {
+    $parts = [];
+    foreach ($splits as $sp) {
+        $method = (string) ($sp['method'] ?? '');
+        $amount = (float) ($sp['amount'] ?? 0);
+        if ($method === '' || $amount <= 0) {
+            continue;
+        }
+        $parts[] = ucwords(str_replace('_', ' ', $method)) . ' ₹' . number_format($amount, 2);
+    }
+    return $parts !== [] ? ('Split (' . implode(' + ', $parts) . ')') : 'Split Payment';
+}
+
+/**
+ * @return array{success:bool,error?:string,splits?:list<array{method:string,amount:float}>}
+ */
+function parse_pos_payment_splits_json(string $json, float $grandTotal): array {
+    $raw = json_decode($json, true);
+    if (!is_array($raw)) {
+        return ['success' => false, 'error' => 'Invalid split payment data.'];
+    }
+    $splits = [];
+    foreach ($raw as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $method = strtolower(trim((string) ($row['method'] ?? '')));
+        $method = preg_replace('/\s+/', '_', $method) ?? $method;
+        $amount = round((float) ($row['amount'] ?? 0), 2);
+        if ($method === '' || $amount <= 0) {
+            continue;
+        }
+        $splits[] = ['method' => $method, 'amount' => $amount];
+    }
+    if ($splits === []) {
+        return ['success' => false, 'error' => 'Add at least one payment method with an amount for split payment.'];
+    }
+    $sum = round(array_sum(array_column($splits, 'amount')), 2);
+    if (abs($sum - round($grandTotal, 2)) > 0.02) {
+        return [
+            'success' => false,
+            'error' => sprintf('Split amounts (₹%.2f) must equal the bill total (₹%.2f).', $sum, $grandTotal),
+        ];
+    }
+    return ['success' => true, 'splits' => $splits];
+}
+
 function process_pos_order(
     array $cartItems,
     ?int $customerId,
@@ -595,7 +656,8 @@ function process_pos_order(
     ?int $businessId = null,
     string $salesChannel = 'pos',
     string $fulfillmentStatus = 'delivered',
-    ?string $overridePaymentStatus = null
+    ?string $overridePaymentStatus = null,
+    ?string $paymentSplitsJson = null
 ): array {
     ensure_orders_invoices_schema();
     require_once __DIR__ . '/promotions_db.php';
@@ -634,6 +696,10 @@ function process_pos_order(
 
     try {
         $db->beginTransaction();
+
+        require_once __DIR__ . '/outlets_db.php';
+        $outletId = resolve_pos_outlet_id($outletId, $bid);
+        $posWarehouseId = get_warehouse_id_for_outlet($outletId, $bid) ?? 0;
 
         $subtotal = 0.00;
         $totalTax = 0.00;
@@ -738,6 +804,10 @@ function process_pos_order(
                 $stockLabel .= ' (' . trim($lineSize . ' / ' . $lineColour, ' /') . ')';
             }
 
+            if (!$isComposite && !$chosenVariant && $posWarehouseId > 0) {
+                $currentStock = get_outlet_product_stock($productId, $posWarehouseId, $bid);
+            }
+
             if (!$isComposite && $currentStock < $qty) {
                 throw new Exception(sprintf(
                     'Insufficient stock for "%s" (SKU: %s). Available: %d units, Requested: %d units.',
@@ -775,6 +845,7 @@ function process_pos_order(
                 'stock_before' => $currentStock,
                 'stock_after' => max(0, $currentStock - $qty),
                 'parent_stock_before' => $parentStock,
+                'pos_warehouse_id' => $posWarehouseId,
             ];
         }
 
@@ -829,9 +900,36 @@ function process_pos_order(
         $taxableAmount = max(0.00, $subtotal - $discountAmount);
         $grandTotal = max(0.00, round(($taxableAmount + $totalTax), 2));
 
+        $paymentSplits = [];
+        if ($paymentSplitsJson !== null && trim($paymentSplitsJson) !== '') {
+            $splitParsed = parse_pos_payment_splits_json($paymentSplitsJson, $grandTotal);
+            if (empty($splitParsed['success'])) {
+                throw new Exception($splitParsed['error'] ?? 'Invalid split payment.');
+            }
+            $paymentSplits = $splitParsed['splits'] ?? [];
+            $paymentMethod = 'split';
+        }
+
         // 3. Validate Cash Tendered
         $changeAmount = 0.00;
-        if ($paymentMethod === 'cash') {
+        $cashDue = 0.00;
+        if ($paymentMethod === 'split' && $paymentSplits !== []) {
+            foreach ($paymentSplits as $sp) {
+                if (($sp['method'] ?? '') === 'cash') {
+                    $cashDue += (float) ($sp['amount'] ?? 0);
+                }
+            }
+            $cashDue = round($cashDue, 2);
+            if ($cashDue > 0 && $amountTendered > 0 && $amountTendered < $cashDue) {
+                throw new Exception(sprintf(
+                    'Cash received (₹%.2f) is less than the cash portion (₹%.2f) of this split payment.',
+                    $amountTendered,
+                    $cashDue
+                ));
+            }
+            $tendered = ($cashDue > 0 && $amountTendered > 0) ? $amountTendered : $grandTotal;
+            $changeAmount = ($cashDue > 0 && $amountTendered > 0) ? max(0.00, $amountTendered - $cashDue) : 0.00;
+        } elseif ($paymentMethod === 'cash') {
             if ($amountTendered > 0 && $amountTendered < $grandTotal) {
                 throw new Exception(sprintf(
                     'Amount received (₹%.2f) is less than the payable total (₹%.2f).',
@@ -843,6 +941,11 @@ function process_pos_order(
             $changeAmount = max(0.00, $tendered - $grandTotal);
         } else {
             $tendered = $grandTotal;
+        }
+
+        if ($paymentSplits !== []) {
+            $splitNote = format_pos_split_payment_label($paymentSplits);
+            $notes = trim($notes . ($notes !== '' ? "\n" : '') . $splitNote);
         }
 
         // Validate User ID against foreign key
@@ -1001,30 +1104,52 @@ function process_pos_order(
                     ]);
                 }
 
-                // Deduct simple or variable product stock
-                $stmtStockDec->execute([
-                    'qty' => $pItem['quantity'],
-                    'id' => $pItem['product_id'],
-                    'biz_id' => $bid,
-                ]);
-
-                $parentBefore = (int) ($pItem['parent_stock_before'] ?? $pItem['stock_before']);
                 $variantNote = '';
                 if (!empty($pItem['size']) || !empty($pItem['colour'])) {
                     $variantNote = ' [' . trim((string) ($pItem['size'] ?? '') . ' / ' . (string) ($pItem['colour'] ?? ''), ' /') . ']';
                 }
+                $saleReason = 'POS Sale Order #' . $orderNumber . $variantNote;
 
-                // Log inventory movement
-                $stmtMoveLog->execute([
-                    'biz_id' => $bid,
-                    'product_id' => $pItem['product_id'],
-                    'user_id' => $validUserId,
-                    'movement_type' => 'out',
-                    'quantity_change' => -$pItem['quantity'],
-                    'quantity_before' => $parentBefore,
-                    'quantity_after' => max(0, $parentBefore - $pItem['quantity']),
-                    'reason' => 'POS Sale Order #' . $orderNumber . $variantNote,
-                ]);
+                $whId = (int) ($pItem['pos_warehouse_id'] ?? 0);
+                if ($whId > 0 && warehouse_has_product_stock_row((int) $pItem['product_id'], $whId)) {
+                    pos_deduct_inventory_for_sale(
+                        $db,
+                        $bid,
+                        (int) $pItem['product_id'],
+                        (int) $pItem['quantity'],
+                        $whId,
+                        $validUserId,
+                        $saleReason
+                    );
+                } elseif (empty($pItem['variant_id'])) {
+                    pos_deduct_inventory_for_sale(
+                        $db,
+                        $bid,
+                        (int) $pItem['product_id'],
+                        (int) $pItem['quantity'],
+                        0,
+                        $validUserId,
+                        $saleReason
+                    );
+                } else {
+                    $stmtStockDec->execute([
+                        'qty' => $pItem['quantity'],
+                        'id' => $pItem['product_id'],
+                        'biz_id' => $bid,
+                    ]);
+
+                    $parentBefore = (int) ($pItem['parent_stock_before'] ?? $pItem['stock_before']);
+                    $stmtMoveLog->execute([
+                        'biz_id' => $bid,
+                        'product_id' => $pItem['product_id'],
+                        'user_id' => $validUserId,
+                        'movement_type' => 'out',
+                        'quantity_change' => -$pItem['quantity'],
+                        'quantity_before' => $parentBefore,
+                        'quantity_after' => max(0, $parentBefore - $pItem['quantity']),
+                        'reason' => $saleReason,
+                    ]);
+                }
             }
         }
 
@@ -1077,8 +1202,6 @@ function process_pos_order(
 
         // 8. Record in Centralized Payments table (collected payments only)
         if ($resolvedPaymentStatus === 'paid') {
-            $paymentNumber = generate_next_payment_number($bid, $db);
-
             // Check for active open register session
             $activeSessionId = null;
             if ($validUserId !== null) {
@@ -1096,26 +1219,43 @@ function process_pos_order(
                     "sale", :method, :amount, "paid", NOW()
                 )
             ');
-            $stmtPay->execute([
-                'biz_id' => $bid,
-                'pay_num' => $paymentNumber,
-                'order_id' => $orderId,
-                'inv_id' => $invoiceId,
-                'cust_id' => $customerId ?: 1,
-                'user_id' => $validUserId,
-                'session_id' => $activeSessionId,
-                'method' => $paymentMethod ?: 'cash',
-                'amount' => $grandTotal,
-            ]);
 
-            if ($activeSessionId) {
-                $col = 'total_cash_sales';
-                if ($paymentMethod === 'card') {
-                    $col = 'total_card_sales';
-                } elseif ($paymentMethod === 'upi' || $paymentMethod === 'razorpay') {
-                    $col = 'total_upi_sales';
+            $payRows = $paymentSplits !== []
+                ? $paymentSplits
+                : [['method' => $paymentMethod ?: 'cash', 'amount' => $grandTotal]];
+
+            $registerDeltas = [];
+            foreach ($payRows as $payRow) {
+                $rowMethod = (string) ($payRow['method'] ?? 'cash');
+                $rowAmount = round((float) ($payRow['amount'] ?? 0), 2);
+                if ($rowAmount <= 0) {
+                    continue;
                 }
-                $db->exec("UPDATE register_sessions SET {$col} = {$col} + {$grandTotal} WHERE id = {$activeSessionId}");
+                $paymentNumber = generate_next_payment_number($bid, $db);
+                $stmtPay->execute([
+                    'biz_id' => $bid,
+                    'pay_num' => $paymentNumber,
+                    'order_id' => $orderId,
+                    'inv_id' => $invoiceId,
+                    'cust_id' => $customerId ?: 1,
+                    'user_id' => $validUserId,
+                    'session_id' => $activeSessionId,
+                    'method' => $rowMethod,
+                    'amount' => $rowAmount,
+                ]);
+                $regCol = pos_register_sales_column($rowMethod);
+                if ($regCol) {
+                    $registerDeltas[$regCol] = ($registerDeltas[$regCol] ?? 0) + $rowAmount;
+                }
+            }
+
+            if ($activeSessionId && $registerDeltas !== []) {
+                foreach ($registerDeltas as $col => $delta) {
+                    $safeCol = in_array($col, ['total_cash_sales', 'total_card_sales', 'total_upi_sales'], true) ? $col : null;
+                    if ($safeCol) {
+                        $db->exec('UPDATE register_sessions SET ' . $safeCol . ' = ' . $safeCol . ' + ' . (float) $delta . ' WHERE id = ' . (int) $activeSessionId);
+                    }
+                }
             }
         }
 
@@ -1160,7 +1300,8 @@ function process_pos_order(
             'customer_name' => $customerName,
             'customer_phone' => $customerPhone,
             'cashier_name' => $cashierName,
-            'payment_method' => $paymentMethod,
+            'payment_method' => $paymentSplits !== [] ? format_pos_split_payment_label($paymentSplits) : $paymentMethod,
+            'payment_splits' => $paymentSplits,
             'payment_status' => $resolvedPaymentStatus,
             'invoice_status' => 'paid',
             'created_at' => date('Y-m-d H:i:s'),

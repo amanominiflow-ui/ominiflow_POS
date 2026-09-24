@@ -38,13 +38,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 set_flash('error', $res['error'] ?? 'Failed to create transfer.');
             }
+        } elseif ($action === 'approve_transfer') {
+            $tid = (int)($_POST['transfer_id'] ?? 0);
+            $res = approve_stock_transfer($tid, (int)$user['id']);
+            if ($res['success']) {
+                set_flash('success', 'Stock transfer approved.');
+            } else {
+                set_flash('error', $res['error'] ?? 'Failed to approve transfer.');
+            }
+        } elseif ($action === 'pick_transfer') {
+            $tid = (int)($_POST['transfer_id'] ?? 0);
+            $res = pick_stock_transfer($tid, (int)$user['id']);
+            if ($res['success']) {
+                set_flash('success', 'Stock transfer marked as picked.');
+            } else {
+                set_flash('error', $res['error'] ?? 'Failed to pick transfer.');
+            }
         } elseif ($action === 'dispatch_transfer') {
             $tid = (int)($_POST['transfer_id'] ?? 0);
             $res = dispatch_stock_transfer($tid, (int)$user['id']);
             if ($res['success']) {
-                set_flash('success', 'Stock Transfer dispatched into In-Transit state.');
+                set_flash('success', 'Stock transfer marked as dispatched.');
             } else {
                 set_flash('error', $res['error'] ?? 'Failed to dispatch transfer.');
+            }
+        } elseif ($action === 'ship_transfer') {
+            $tid = (int)($_POST['transfer_id'] ?? 0);
+            $res = ship_stock_transfer_in_transit($tid, (int)$user['id']);
+            if ($res['success']) {
+                set_flash('success', 'Stock is now in transit (company total unchanged until receive).');
+            } else {
+                set_flash('error', $res['error'] ?? 'Failed to start in-transit.');
             }
         } elseif ($action === 'receive_transfer') {
             $tid = (int)($_POST['transfer_id'] ?? 0);
@@ -62,6 +86,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $transfers = get_stock_transfers(100);
 $warehouses = get_warehouses();
 $products = get_products();
+$defaultSourceWarehouseId = !empty($warehouses[0]['id']) ? (int) $warehouses[0]['id'] : 0;
+$defaultDestWarehouseId = !empty($warehouses[1]['id'])
+    ? (int) $warehouses[1]['id']
+    : (!empty($warehouses[0]['id']) && count($warehouses) > 1 ? (int) $warehouses[count($warehouses) - 1]['id'] : 0);
+$canCreateTransfer = count($warehouses) >= 2;
 $pageTitle = 'Warehouse Stock Transfers';
 ?>
 <!DOCTYPE html>
@@ -83,7 +112,7 @@ $pageTitle = 'Warehouse Stock Transfers';
                 <div class="page-header-row">
                     <div>
                         <h1 class="page-title">Warehouse Stock Transfers</h1>
-                        <p class="page-subtitle">Inter-warehouse inventory movements (Draft &rarr; In Transit &rarr; Received) with audit tracking.</p>
+                        <p class="page-subtitle">Requested &rarr; Approved &rarr; Picked &rarr; Dispatched &rarr; In Transit &rarr; Received. Receive uses a button (no scan). Movement log on each step.</p>
                     </div>
                     <div>
                         <button type="button" onclick="document.getElementById('transferModal').style.display='flex'" class="header-btn">
@@ -139,34 +168,51 @@ $pageTitle = 'Warehouse Stock Transfers';
                                             <td>
                                                 <?php
                                                 $badge = 'badge-secondary';
-                                                if ($trf['status'] === 'in_transit') $badge = 'badge-warning';
-                                                elseif ($trf['status'] === 'received') $badge = 'badge-success';
+                                                $st = (string) $trf['status'];
+                                                if ($st === 'approved') {
+                                                    $badge = 'badge-info';
+                                                } elseif ($st === 'picked') {
+                                                    $badge = 'badge-info';
+                                                } elseif ($st === 'dispatched') {
+                                                    $badge = 'badge-warning';
+                                                } elseif ($st === 'in_transit') {
+                                                    $badge = 'badge-warning';
+                                                } elseif ($st === 'received') {
+                                                    $badge = 'badge-success';
+                                                }
                                                 ?>
                                                 <span class="badge <?= $badge ?>">
-                                                    <?= strtoupper(str_replace('_', ' ', $trf['status'])) ?>
+                                                    <?= strtoupper(str_replace('_', ' ', $st)) ?>
                                                 </span>
                                             </td>
                                             <td style="text-align: right;">
-                                                <?php if (in_array($trf['status'], ['draft', 'requested'], true)): ?>
+                                                <?php
+                                                $actionBtn = null;
+                                                if (in_array($st, ['draft', 'requested'], true)) {
+                                                    $actionBtn = ['approve_transfer', 'Approve', '#2563eb'];
+                                                } elseif ($st === 'approved') {
+                                                    $actionBtn = ['pick_transfer', 'Mark Picked', '#4f46e5'];
+                                                } elseif ($st === 'picked') {
+                                                    $actionBtn = ['dispatch_transfer', 'Dispatch', '#d97706'];
+                                                } elseif ($st === 'dispatched') {
+                                                    $actionBtn = ['ship_transfer', 'In Transit', '#b45309'];
+                                                } elseif ($st === 'in_transit') {
+                                                    $actionBtn = ['receive_transfer', 'Receive', '#059669'];
+                                                }
+                                                ?>
+                                                <?php if ($actionBtn): ?>
                                                     <form method="POST" action="<?= asset('transfers.php') ?>" style="display: inline;">
                                                         <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
-                                                        <input type="hidden" name="action" value="dispatch_transfer">
-                                                        <input type="hidden" name="transfer_id" value="<?= $trf['id'] ?>">
-                                                        <button type="submit" class="header-btn" style="padding: 4px 10px; font-size: 11.5px; background: #d97706;">
-                                                            Dispatch
+                                                        <input type="hidden" name="action" value="<?= e($actionBtn[0]) ?>">
+                                                        <input type="hidden" name="transfer_id" value="<?= (int) $trf['id'] ?>">
+                                                        <button type="submit" class="header-btn" style="padding: 4px 10px; font-size: 11.5px; background: <?= e($actionBtn[2]) ?>;">
+                                                            <?= e($actionBtn[1]) ?>
                                                         </button>
                                                     </form>
-                                                <?php elseif ($trf['status'] === 'in_transit'): ?>
-                                                    <form method="POST" action="<?= asset('transfers.php') ?>" style="display: inline;">
-                                                        <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
-                                                        <input type="hidden" name="action" value="receive_transfer">
-                                                        <input type="hidden" name="transfer_id" value="<?= $trf['id'] ?>">
-                                                        <button type="submit" class="header-btn" style="padding: 4px 10px; font-size: 11.5px; background: #059669;">
-                                                            Receive
-                                                        </button>
-                                                    </form>
-                                                <?php else: ?>
+                                                <?php elseif ($st === 'received'): ?>
                                                     <span style="font-size: 12px; color: var(--saas-slate-400);">Completed</span>
+                                                <?php else: ?>
+                                                    <span style="font-size: 12px; color: var(--saas-slate-400);">—</span>
                                                 <?php endif; ?>
                                             </td>
                                         </tr>
@@ -187,24 +233,30 @@ $pageTitle = 'Warehouse Stock Transfers';
                 <h3 style="font-size: 16px; font-weight: 700; color: var(--saas-navy-950);">Create Stock Transfer</h3>
                 <button type="button" onclick="document.getElementById('transferModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--saas-slate-400);">&times;</button>
             </div>
-            <form method="POST" action="<?= asset('transfers.php') ?>" style="display: flex; flex-direction: column; gap: 12px;">
+            <?php if (!$canCreateTransfer): ?>
+                <p style="font-size: 13px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    You need at least <strong>two warehouses</strong> to transfer stock. Add another warehouse under Outlets / Warehouses, then try again.
+                </p>
+            <?php endif; ?>
+            <form id="createTransferForm" method="POST" action="<?= asset('transfers.php') ?>" style="display: flex; flex-direction: column; gap: 12px;">
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
                 <input type="hidden" name="action" value="create_transfer">
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Source Warehouse (Origin) *</label>
-                    <select name="source_warehouse_id" required class="form-control" style="width: 100%;">
+                    <select name="source_warehouse_id" id="transferSourceWh" required class="form-control" style="width: 100%;" <?= $canCreateTransfer ? '' : 'disabled' ?>>
                         <?php foreach ($warehouses as $w): ?>
-                            <option value="<?= $w['id'] ?>"><?= e($w['name']) ?> (<?= e($w['code']) ?>)</option>
+                            <option value="<?= (int) $w['id'] ?>" <?= (int) $w['id'] === $defaultSourceWarehouseId ? 'selected' : '' ?>><?= e($w['name']) ?> (<?= e($w['code']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Destination Warehouse (Target) *</label>
-                    <select name="dest_warehouse_id" required class="form-control" style="width: 100%;">
+                    <select name="dest_warehouse_id" id="transferDestWh" required class="form-control" style="width: 100%;" <?= $canCreateTransfer ? '' : 'disabled' ?>>
                         <?php foreach ($warehouses as $w): ?>
-                            <option value="<?= $w['id'] ?>"><?= e($w['name']) ?> (<?= e($w['code']) ?>)</option>
+                            <option value="<?= (int) $w['id'] ?>" <?= (int) $w['id'] === $defaultDestWarehouseId ? 'selected' : '' ?>><?= e($w['name']) ?> (<?= e($w['code']) ?>)</option>
                         <?php endforeach; ?>
                     </select>
+                    <p id="transferWhHint" style="font-size: 11.5px; color: #64748b; margin: 6px 0 0;">Destination must be different from source.</p>
                 </div>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Select Product *</label>
@@ -224,10 +276,57 @@ $pageTitle = 'Warehouse Stock Transfers';
                 </div>
                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
                     <button type="button" onclick="document.getElementById('transferModal').style.display='none'" class="header-btn-secondary" style="padding: 8px 16px;">Cancel</button>
-                    <button type="submit" class="header-btn" style="padding: 8px 18px;">Create Transfer</button>
+                    <button type="submit" class="header-btn" style="padding: 8px 18px;" <?= $canCreateTransfer ? '' : 'disabled' ?>>Create Transfer</button>
                 </div>
             </form>
         </div>
     </div>
+    <script>
+        (function () {
+            const srcSel = document.getElementById('transferSourceWh');
+            const dstSel = document.getElementById('transferDestWh');
+            const form = document.getElementById('createTransferForm');
+            if (!srcSel || !dstSel) return;
+
+            function syncDestinationOptions() {
+                const srcId = srcSel.value;
+                let pickedValid = false;
+                Array.from(dstSel.options).forEach(function (opt) {
+                    const same = opt.value === srcId;
+                    opt.disabled = same;
+                    if (same && dstSel.value === srcId) {
+                        return;
+                    }
+                    if (opt.value === dstSel.value && !same) {
+                        pickedValid = true;
+                    }
+                });
+                if (dstSel.value === srcId || !pickedValid) {
+                    const fallback = Array.from(dstSel.options).find(function (o) { return o.value !== srcId && !o.disabled; });
+                    if (fallback) {
+                        dstSel.value = fallback.value;
+                    }
+                }
+            }
+
+            srcSel.addEventListener('change', syncDestinationOptions);
+            dstSel.addEventListener('change', function () {
+                if (dstSel.value === srcSel.value) {
+                    alert('Destination warehouse must be different from source.');
+                    syncDestinationOptions();
+                }
+            });
+            syncDestinationOptions();
+
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    if (srcSel.value === dstSel.value) {
+                        e.preventDefault();
+                        alert('Source and destination warehouse cannot be identical. Please choose a different destination.');
+                    }
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

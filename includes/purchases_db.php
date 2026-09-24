@@ -117,6 +117,7 @@ function create_purchase_order(
         return ['success' => false, 'error' => 'Purchase order must have at least one product.'];
     }
 
+    ensure_purchases_full_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
 
@@ -187,7 +188,7 @@ function create_purchase_order(
                     'cat_id' => $catId,
                     'name' => $pName,
                     'sku' => $pSku,
-                    'barcode' => $pSku,
+                    'barcode' => null,
                     'cost' => $unitCost,
                     'price' => round($unitCost * 1.3, 2),
                 ]);
@@ -201,8 +202,15 @@ function create_purchase_order(
             $subtotal += $lineSubtotal;
             $totalTax += $lineTax;
 
+            $lineVariantId = (int) ($item['variant_id'] ?? 0);
+            $lineSize = trim((string) ($item['size'] ?? ''));
+            $lineColour = trim((string) ($item['colour'] ?? $item['color'] ?? ''));
+
             $processedItems[] = [
                 'product_id' => $productId,
+                'variant_id' => $lineVariantId > 0 ? $lineVariantId : null,
+                'size' => $lineSize !== '' ? $lineSize : null,
+                'colour' => $lineColour !== '' ? $lineColour : null,
                 'product_name' => $pName,
                 'product_sku' => $pSku,
                 'unit_cost' => $unitCost,
@@ -236,27 +244,57 @@ function create_purchase_order(
         ]);
         $poId = (int) $db->lastInsertId();
 
-        $stmtPOI = $db->prepare('
-            INSERT INTO purchase_order_items (
-                purchase_order_id, product_id, product_name, product_sku, unit_cost,
-                quantity_ordered, quantity_received, tax_percent, line_total, created_at
-            ) VALUES (
-                :po_id, :product_id, :product_name, :product_sku, :unit_cost,
-                :quantity_ordered, 0, :tax_percent, :line_total, NOW()
-            )
-        ');
+        $poItemHasVariantCols = purchases_table_has_column($db, 'purchase_order_items', 'variant_id');
+
+        if ($poItemHasVariantCols) {
+            $stmtPOI = $db->prepare('
+                INSERT INTO purchase_order_items (
+                    purchase_order_id, product_id, variant_id, product_name, product_sku, size, colour, unit_cost,
+                    quantity_ordered, quantity_received, tax_percent, line_total, created_at
+                ) VALUES (
+                    :po_id, :product_id, :variant_id, :product_name, :product_sku, :size, :colour, :unit_cost,
+                    :quantity_ordered, 0, :tax_percent, :line_total, NOW()
+                )
+            ');
+        } else {
+            $stmtPOI = $db->prepare('
+                INSERT INTO purchase_order_items (
+                    purchase_order_id, product_id, product_name, product_sku, unit_cost,
+                    quantity_ordered, quantity_received, tax_percent, line_total, created_at
+                ) VALUES (
+                    :po_id, :product_id, :product_name, :product_sku, :unit_cost,
+                    :quantity_ordered, 0, :tax_percent, :line_total, NOW()
+                )
+            ');
+        }
 
         foreach ($processedItems as $pItem) {
-            $stmtPOI->execute([
-                'po_id' => $poId,
-                'product_id' => $pItem['product_id'],
-                'product_name' => $pItem['product_name'],
-                'product_sku' => $pItem['product_sku'],
-                'unit_cost' => $pItem['unit_cost'],
-                'quantity_ordered' => $pItem['quantity_ordered'],
-                'tax_percent' => $pItem['tax_percent'],
-                'line_total' => $pItem['line_total'],
-            ]);
+            if ($poItemHasVariantCols) {
+                $stmtPOI->execute([
+                    'po_id' => $poId,
+                    'product_id' => $pItem['product_id'],
+                    'variant_id' => $pItem['variant_id'],
+                    'product_name' => $pItem['product_name'],
+                    'product_sku' => $pItem['product_sku'],
+                    'size' => $pItem['size'],
+                    'colour' => $pItem['colour'],
+                    'unit_cost' => $pItem['unit_cost'],
+                    'quantity_ordered' => $pItem['quantity_ordered'],
+                    'tax_percent' => $pItem['tax_percent'],
+                    'line_total' => $pItem['line_total'],
+                ]);
+            } else {
+                $stmtPOI->execute([
+                    'po_id' => $poId,
+                    'product_id' => $pItem['product_id'],
+                    'product_name' => $pItem['product_name'],
+                    'product_sku' => $pItem['product_sku'],
+                    'unit_cost' => $pItem['unit_cost'],
+                    'quantity_ordered' => $pItem['quantity_ordered'],
+                    'tax_percent' => $pItem['tax_percent'],
+                    'line_total' => $pItem['line_total'],
+                ]);
+            }
         }
 
         $db->commit();
@@ -268,118 +306,29 @@ function create_purchase_order(
 }
 
 function receive_purchase_order_items(int $poId, array $receivingList, ?int $userId = null, ?int $businessId = null): array {
-    $db = get_db();
-    $bid = $businessId ?: current_business_id();
-
-    if ($userId) {
-        $stmtU = $db->prepare('SELECT id FROM users WHERE id = :id');
-        $stmtU->execute(['id' => $userId]);
-        if (!$stmtU->fetch()) $userId = null;
+    $po = get_purchase_order_by_id($poId, $businessId ?: current_business_id());
+    if ($po && $po['status'] === 'received') {
+        return ['success' => false, 'error' => 'This purchase order has already been fully received.'];
     }
 
-    try {
-        $db->beginTransaction();
-
-        $po = get_purchase_order_by_id($poId, $bid);
-        if (!$po) throw new Exception("Purchase Order #{$poId} not found.");
-
-        if ($po['status'] === 'received') {
-            throw new Exception("This purchase order has already been fully received.");
-        }
-
-        $stmtUpdatePOI = $db->prepare('
-            UPDATE purchase_order_items
-            SET quantity_received = quantity_received + :qty
-            WHERE id = :id
-        ');
-
-        $stmtStockInc = $db->prepare('
-            UPDATE products
-            SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
-            WHERE id = :id AND business_id = :bid
-        ');
-
-        $stmtMoveLog = $db->prepare('
-            INSERT INTO inventory_movements (
-                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
-            ) VALUES (
-                :biz_id, :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
-            )
-        ');
-
-        $totalReceivedInBatch = 0;
-
-        foreach ($receivingList as $rec) {
-            $poiId = (int) ($rec['po_item_id'] ?? 0);
-            $qtyToReceive = (int) ($rec['quantity_to_receive'] ?? 0);
-
-            if ($qtyToReceive <= 0) continue;
-
-            // Find matching item
-            $foundItem = null;
-            foreach ($po['items'] as $it) {
-                if ((int)$it['id'] === $poiId) {
-                    $foundItem = $it;
-                    break;
-                }
-            }
-
-            if (!$foundItem) throw new Exception("PO Item ID {$poiId} not in this order.");
-
-            $remainingNeeded = (int)$foundItem['quantity_ordered'] - (int)$foundItem['quantity_received'];
-            if ($qtyToReceive > $remainingNeeded) {
-                throw new Exception("Cannot receive {$qtyToReceive} units for {$foundItem['product_name']}. Only {$remainingNeeded} remaining.");
-            }
-
-            // Update PO Item quantity received
-            $stmtUpdatePOI->execute(['qty' => $qtyToReceive, 'id' => $poiId]);
-
-            // Get product current stock & increment
-            $prodId = (int) $foundItem['product_id'];
-            $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
-            $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
-            $currStock = (int) $stmtCur->fetchColumn();
-
-            $stmtStockInc->execute(['qty' => $qtyToReceive, 'id' => $prodId, 'bid' => $bid]);
-
-            // Log movement
-            $stmtMoveLog->execute([
-                'biz_id' => $bid,
-                'product_id' => $prodId,
-                'user_id' => $userId,
-                'quantity_change' => $qtyToReceive,
-                'quantity_before' => $currStock,
-                'quantity_after' => $currStock + $qtyToReceive,
-                'reason' => "PO Goods Receiving #{$po['po_number']} (Vendor: {$po['vendor_name']})",
-            ]);
-
-            $totalReceivedInBatch += $qtyToReceive;
-        }
-
-        if ($totalReceivedInBatch === 0) {
-            throw new Exception("Please specify at least 1 unit to receive.");
-        }
-
-        // Re-evaluate overall PO status
-        $updatedPO = get_purchase_order_by_id($poId, $bid);
-        $allComplete = true;
-        foreach ($updatedPO['items'] as $uit) {
-            if ((int)$uit['quantity_received'] < (int)$uit['quantity_ordered']) {
-                $allComplete = false;
-                break;
-            }
-        }
-
-        $newStatus = $allComplete ? 'received' : 'partially_received';
-        $stmtStatus = $db->prepare('UPDATE purchase_orders SET status = :status, updated_at = NOW() WHERE id = :id AND business_id = :bid');
-        $stmtStatus->execute(['status' => $newStatus, 'id' => $poId, 'bid' => $bid]);
-
-        $db->commit();
-        return ['success' => true, 'new_status' => $newStatus, 'received_units' => $totalReceivedInBatch];
-    } catch (Exception $e) {
-        if ($db->inTransaction()) $db->rollBack();
-        return ['success' => false, 'error' => $e->getMessage()];
+    $res = create_purchase_receive_log(
+        $poId,
+        $receivingList,
+        date('Y-m-d'),
+        'Head Office',
+        'Received from Purchase Orders screen',
+        $userId,
+        $businessId
+    );
+    if (!$res['success']) {
+        return $res;
     }
+    return [
+        'success' => true,
+        'new_status' => $res['po_status'] ?? 'partially_received',
+        'received_units' => $res['total_received'] ?? 0,
+        'receive_number' => $res['receive_number'] ?? null,
+    ];
 }
 
 function get_purchase_orders(string $search = '', string $status = '', int $limit = 50, ?int $businessId = null): array {
@@ -582,6 +531,106 @@ function ensure_purchases_full_schema(): void {
         }
         $db->exec("ALTER TABLE vendor_payments MODIFY COLUMN `user_id` INT UNSIGNED NULL");
     } catch (Exception $ign) {}
+
+    purchases_migrate_receive_columns($db);
+}
+
+function purchases_table_has_column(PDO $db, string $table, string $column): bool {
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (!array_key_exists($key, $cache)) {
+        try {
+            $stmt = $db->prepare('
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :tbl AND COLUMN_NAME = :col
+            ');
+            $stmt->execute(['tbl' => $table, 'col' => $column]);
+            $cache[$key] = (int) $stmt->fetchColumn() > 0;
+        } catch (Exception $e) {
+            $cache[$key] = false;
+        }
+    }
+    return $cache[$key];
+}
+
+function purchases_migrate_receive_columns(PDO $db): void {
+    $migrations = [
+        'purchase_order_items' => [
+            'variant_id' => 'INT UNSIGNED NULL AFTER `product_id`',
+            'size' => 'VARCHAR(100) NULL AFTER `product_sku`',
+            'colour' => 'VARCHAR(100) NULL AFTER `size`',
+        ],
+        'purchase_receive_items' => [
+            'variant_id' => 'INT UNSIGNED NULL AFTER `product_id`',
+            'size' => 'VARCHAR(100) NULL AFTER `product_sku`',
+            'colour' => 'VARCHAR(100) NULL AFTER `size`',
+            'quantity_counted' => 'INT NULL AFTER `quantity_received`',
+            'cost_status' => "ENUM('pending','confirmed') NOT NULL DEFAULT 'confirmed' AFTER `unit_cost`",
+        ],
+        'purchase_receives' => [
+            'cost_status' => "ENUM('pending','confirmed','mixed') NOT NULL DEFAULT 'confirmed' AFTER `notes`",
+        ],
+    ];
+
+    foreach ($migrations as $table => $columns) {
+        try {
+            $existing = $db->query("SHOW COLUMNS FROM `{$table}`")->fetchAll(PDO::FETCH_COLUMN);
+        } catch (Exception $e) {
+            continue;
+        }
+        foreach ($columns as $col => $definition) {
+            if (!in_array($col, $existing, true)) {
+                try {
+                    $db->exec("ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$definition}");
+                } catch (Exception $ign) {
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Resolve variant for a receive line (explicit id or size/colour match).
+ */
+function purchases_resolve_receive_variant(
+    PDO $db,
+    int $productId,
+    int $businessId,
+    int $variantId,
+    string $size,
+    string $colour
+): ?int {
+    if ($variantId > 0) {
+        $stmt = $db->prepare('
+            SELECT id FROM product_variants
+            WHERE id = :id AND product_id = :pid AND business_id = :bid LIMIT 1
+        ');
+        $stmt->execute(['id' => $variantId, 'pid' => $productId, 'bid' => $businessId]);
+        return $stmt->fetchColumn() ? $variantId : null;
+    }
+
+    $size = trim($size);
+    $colour = trim($colour);
+    if ($size === '' && $colour === '') {
+        return null;
+    }
+
+    require_once __DIR__ . '/orders_db.php';
+    $stmtVars = $db->prepare('
+        SELECT * FROM product_variants
+        WHERE product_id = :pid AND business_id = :bid AND status = "active"
+        ORDER BY id ASC
+    ');
+    $stmtVars->execute(['pid' => $productId, 'bid' => $businessId]);
+    foreach ($stmtVars->fetchAll() as $variantRow) {
+        $attrs = parse_variant_size_colour($variantRow);
+        $sizeOk = $size === '' || strcasecmp($attrs['size'], $size) === 0;
+        $colourOk = $colour === '' || strcasecmp($attrs['colour'], $colour) === 0;
+        if ($sizeOk && $colourOk) {
+            return (int) $variantRow['id'];
+        }
+    }
+    return null;
 }
 
 function get_purchase_locations(?int $businessId = null): array {
@@ -732,15 +781,31 @@ function create_purchase_receive_log(
             )
         ');
 
-        $stmtRecItem = $db->prepare('
-            INSERT INTO purchase_receive_items (
-                receive_id, po_item_id, product_id, product_name, product_sku, quantity_received, unit_cost, created_at
-            ) VALUES (
-                :rec_id, :po_item_id, :product_id, :product_name, :product_sku, :qty, :cost, NOW()
-            )
-        ');
+        // Receive contract: qty per PO line only — stock up immediately; no separate count,
+        // cost-pending workflow, size/colour lines, variant splits, or product/barcode changes.
+        $receiveItemHasExtras = purchases_table_has_column($db, 'purchase_receive_items', 'quantity_counted');
+        if ($receiveItemHasExtras) {
+            $stmtRecItem = $db->prepare('
+                INSERT INTO purchase_receive_items (
+                    receive_id, po_item_id, product_id, variant_id, product_name, product_sku, size, colour,
+                    quantity_received, quantity_counted, unit_cost, cost_status, created_at
+                ) VALUES (
+                    :rec_id, :po_item_id, :product_id, NULL, :product_name, :product_sku, NULL, NULL,
+                    :qty, :qty, :cost, "confirmed", NOW()
+                )
+            ');
+        } else {
+            $stmtRecItem = $db->prepare('
+                INSERT INTO purchase_receive_items (
+                    receive_id, po_item_id, product_id, product_name, product_sku, quantity_received, unit_cost, created_at
+                ) VALUES (
+                    :rec_id, :po_item_id, :product_id, :product_name, :product_sku, :qty, :cost, NOW()
+                )
+            ');
+        }
 
         $totalUnitsReceived = 0;
+
         foreach ($receivingList as $rec) {
             $poiId = (int) ($rec['po_item_id'] ?? 0);
             $qtyToReceive = (int) ($rec['quantity_to_receive'] ?? 0);
@@ -760,29 +825,39 @@ function create_purchase_receive_log(
                 throw new Exception("Cannot receive {$qtyToReceive} units for {$foundItem['product_name']}. Only {$rem} remaining.");
             }
 
-            // 1. Update PO Item
+            $prodId = (int) $foundItem['product_id'];
+            $unitCost = (float) $foundItem['unit_cost'];
+
             $stmtUpdatePOI->execute(['qty' => $qtyToReceive, 'id' => $poiId]);
 
-            // 2. Insert Receive Item
-            $stmtRecItem->execute([
-                'rec_id' => $receiveId,
-                'po_item_id' => $poiId,
-                'product_id' => (int)$foundItem['product_id'],
-                'product_name' => $foundItem['product_name'],
-                'product_sku' => $foundItem['product_sku'],
-                'qty' => $qtyToReceive,
-                'cost' => (float)$foundItem['unit_cost'],
-            ]);
+            if ($receiveItemHasExtras) {
+                $stmtRecItem->execute([
+                    'rec_id' => $receiveId,
+                    'po_item_id' => $poiId,
+                    'product_id' => $prodId,
+                    'product_name' => $foundItem['product_name'],
+                    'product_sku' => $foundItem['product_sku'],
+                    'qty' => $qtyToReceive,
+                    'cost' => $unitCost,
+                ]);
+            } else {
+                $stmtRecItem->execute([
+                    'rec_id' => $receiveId,
+                    'po_item_id' => $poiId,
+                    'product_id' => $prodId,
+                    'product_name' => $foundItem['product_name'],
+                    'product_sku' => $foundItem['product_sku'],
+                    'qty' => $qtyToReceive,
+                    'cost' => $unitCost,
+                ]);
+            }
 
-            // 3. Increment Product Stock
-            $prodId = (int) $foundItem['product_id'];
             $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
             $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
             $currStock = (int) $stmtCur->fetchColumn();
 
             $stmtStockInc->execute(['qty' => $qtyToReceive, 'id' => $prodId, 'bid' => $bid]);
 
-            // 4. Movement Log
             $stmtMoveLog->execute([
                 'biz_id' => $bid,
                 'product_id' => $prodId,
@@ -798,6 +873,11 @@ function create_purchase_receive_log(
 
         if ($totalUnitsReceived === 0) {
             throw new Exception("Please specify at least 1 unit to receive.");
+        }
+
+        if (purchases_table_has_column($db, 'purchase_receives', 'cost_status')) {
+            $db->prepare('UPDATE purchase_receives SET cost_status = "confirmed" WHERE id = :id AND business_id = :bid')
+                ->execute(['id' => $receiveId, 'bid' => $bid]);
         }
 
         // Check PO status
@@ -821,6 +901,72 @@ function create_purchase_receive_log(
             'total_received' => $totalUnitsReceived,
             'po_status' => $newPoStatus,
         ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+function confirm_purchase_receive_costs(int $receiveId, ?int $businessId = null): array {
+    ensure_purchases_full_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $receive = get_purchase_receive_by_id($receiveId, $bid);
+    if (!$receive) {
+        return ['success' => false, 'error' => 'Receive record not found.'];
+    }
+
+    if (!purchases_table_has_column($db, 'purchase_receive_items', 'cost_status')) {
+        return ['success' => false, 'error' => 'Cost tracking is not available on this database.'];
+    }
+
+    try {
+        $db->beginTransaction();
+        $stmtPending = $db->prepare('
+            SELECT * FROM purchase_receive_items
+            WHERE receive_id = :rid AND cost_status = "pending"
+        ');
+        $stmtPending->execute(['rid' => $receiveId]);
+        $pendingLines = $stmtPending->fetchAll();
+
+        $stmtCostProduct = $db->prepare('
+            UPDATE products SET cost_price = :cost, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid
+        ');
+        $stmtCostVariant = $db->prepare('
+            UPDATE product_variants SET cost_price = :cost, updated_at = NOW()
+            WHERE id = :id AND product_id = :pid AND business_id = :bid
+        ');
+        $stmtConfirmLine = $db->prepare('
+            UPDATE purchase_receive_items SET cost_status = "confirmed" WHERE id = :id
+        ');
+
+        foreach ($pendingLines as $line) {
+            $unitCost = (float) ($line['unit_cost'] ?? 0);
+            $prodId = (int) $line['product_id'];
+            if ($unitCost > 0) {
+                $stmtCostProduct->execute(['cost' => $unitCost, 'id' => $prodId, 'bid' => $bid]);
+                $vid = (int) ($line['variant_id'] ?? 0);
+                if ($vid > 0) {
+                    $stmtCostVariant->execute([
+                        'cost' => $unitCost,
+                        'id' => $vid,
+                        'pid' => $prodId,
+                        'bid' => $bid,
+                    ]);
+                }
+            }
+            $stmtConfirmLine->execute(['id' => (int) $line['id']]);
+        }
+
+        if (purchases_table_has_column($db, 'purchase_receives', 'cost_status')) {
+            $db->prepare('UPDATE purchase_receives SET cost_status = "confirmed" WHERE id = :id AND business_id = :bid')
+                ->execute(['id' => $receiveId, 'bid' => $bid]);
+        }
+
+        $db->commit();
+        return ['success' => true, 'lines_confirmed' => count($pendingLines)];
     } catch (Exception $e) {
         if ($db->inTransaction()) $db->rollBack();
         return ['success' => false, 'error' => $e->getMessage()];

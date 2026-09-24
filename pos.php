@@ -15,11 +15,19 @@ require_once __DIR__ . '/includes/payment_options_db.php';
 require_once __DIR__ . '/includes/payment_integrations_db.php';
 require_once __DIR__ . '/includes/razorpay_oauth.php';
 require_once __DIR__ . '/includes/invoice_whatsapp.php';
+require_once __DIR__ . '/includes/outlets_db.php';
 
 require_auth();
 
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_pos_outlet') {
+    if (verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        $_SESSION['pos_outlet_id'] = (int) ($_POST['outlet_id'] ?? 0);
+    }
+    redirect(APP_URL . '/pos.php');
+}
 
 // Handle AJAX Actions (Checkout, Hold, Resume, Add Customer)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -100,10 +108,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notes = trim($notes . "\nRazorpay order: {$rzpOrderId}; payment: {$rzpPaymentId}");
         }
 
+        $paymentSplitsJson = trim((string) ($_POST['payment_splits_json'] ?? ''));
+        if ($paymentSplitsJson !== '') {
+            $paymentMethod = 'split';
+        }
+
         $result = process_pos_order(
             $cartItems, $customerId, $userId, $discountVal, $discountType, $paymentMethod,
             $notes, $amountTendered, $outletId, $clientOrderUuid, $couponId, $couponCode,
-            $loyaltyPoints, $loyaltyDiscount, $priceListId
+            $loyaltyPoints, $loyaltyDiscount, $priceListId, null, 'pos', 'delivered', null,
+            $paymentSplitsJson !== '' ? $paymentSplitsJson : null
         );
 
         if (!empty($result['success'])) {
@@ -371,11 +385,43 @@ $customers = get_customers();
 $heldSales = get_held_sales();
 $paymentOptions = get_payment_options('active');
 $activeGateways = get_active_pos_payment_gateways();
+$posSplitPayMethods = [];
+foreach ($paymentOptions as $pOpt) {
+    $code = strtolower(str_replace(' ', '_', (string) ($pOpt['payment_mode'] ?? '')));
+    if ($code === '') {
+        continue;
+    }
+    $posSplitPayMethods[] = [
+        'code' => $code,
+        'label' => (string) ($pOpt['display_name'] ?? ucfirst($code)),
+    ];
+}
+if ($posSplitPayMethods === []) {
+    $posSplitPayMethods = [
+        ['code' => 'cash', 'label' => 'Cash'],
+        ['code' => 'upi', 'label' => 'UPI'],
+        ['code' => 'card', 'label' => 'Card / POS'],
+        ['code' => 'credit', 'label' => 'Credit'],
+    ];
+}
 
 // Daily Alerts: Low Stock & Unsold for a Week (7+ Days)
 $lowStockAlerts = get_pos_low_stock_alerts();
 $unsoldAlerts = get_pos_unsold_products_alerts(7);
 $totalPosAlerts = count($lowStockAlerts) + count($unsoldAlerts);
+
+$posOutlets = get_outlets('active');
+$posOutletId = resolve_pos_outlet_id((int) ($_SESSION['pos_outlet_id'] ?? 0));
+$_SESSION['pos_outlet_id'] = $posOutletId;
+$posWarehouseId = get_warehouse_id_for_outlet($posOutletId) ?? 0;
+$posWarehouseStockByProduct = [];
+if ($posWarehouseId > 0) {
+    $wsStmt = get_db()->prepare('SELECT product_id, stock_quantity FROM warehouse_stock WHERE warehouse_id = :wid');
+    $wsStmt->execute(['wid' => $posWarehouseId]);
+    foreach ($wsStmt->fetchAll() as $wsRow) {
+        $posWarehouseStockByProduct[(int) $wsRow['product_id']] = (int) $wsRow['stock_quantity'];
+    }
+}
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -429,6 +475,20 @@ $flashError = get_flash('error');
                     <div class="pos-catalog-panel">
                         <!-- Barcode & Search Controls -->
                         <div class="pos-search-barcode-row">
+                            <?php if (count($posOutlets) > 0): ?>
+                            <form method="POST" action="<?= asset('pos.php') ?>" class="pos-outlet-switch" style="min-width: 200px;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="set_pos_outlet">
+                                <label class="form-label" style="font-size: 11px; font-weight: 700; color: var(--saas-slate-600); margin-bottom: 4px; display: block;">Billing store</label>
+                                <select name="outlet_id" class="form-control" onchange="this.form.submit()" title="Stock is deducted from this store's warehouse">
+                                    <?php foreach ($posOutlets as $posOutlet): ?>
+                                        <option value="<?= (int) $posOutlet['id'] ?>" <?= (int) $posOutlet['id'] === $posOutletId ? 'selected' : '' ?>>
+                                            <?= e($posOutlet['name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </form>
+                            <?php endif; ?>
                             <div class="search-input-wrap">
                                 <span class="search-icon">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -491,7 +551,12 @@ $flashError = get_flash('error');
                             <?php foreach ($products as $prod): ?>
                                 <?php
                                     $prodVariants = $posVariantsByProduct[(int) $prod['id']] ?? [];
-                                    $stock = (int) $prod['stock_quantity'];
+                                    $pid = (int) $prod['id'];
+                                    if (array_key_exists($pid, $posWarehouseStockByProduct)) {
+                                        $stock = (int) $posWarehouseStockByProduct[$pid];
+                                    } else {
+                                        $stock = (int) $prod['stock_quantity'];
+                                    }
                                     if ($prodVariants) {
                                         $stock = 0;
                                         foreach ($prodVariants as $prodVariant) {
@@ -696,6 +761,9 @@ $flashError = get_flash('error');
                 <input type="hidden" name="razorpay_order_id" id="hiddenRazorpayOrderId" value="">
                 <input type="hidden" name="razorpay_payment_id" id="hiddenRazorpayPaymentId" value="">
                 <input type="hidden" name="razorpay_signature" id="hiddenRazorpaySignature" value="">
+                <input type="hidden" name="payment_splits_json" id="hiddenPaymentSplitsJson" value="">
+                <input type="hidden" name="amount_tendered" id="hiddenAmountTendered" value="">
+                <input type="hidden" name="outlet_id" id="hiddenOutletId" value="<?= (int) $posOutletId ?>">
 
                 <div class="modal-body">
                     <!-- Grand Total Banner -->
@@ -749,6 +817,18 @@ $flashError = get_flash('error');
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <div class="payment-method-card" data-method="split" title="Pay using multiple methods">
+                            <span style="font-size: 20px;">➗</span>
+                            <span>Split Payment</span>
+                        </div>
+                    </div>
+
+                    <div id="splitPaymentSection" class="pos-split-payment-section" style="display: none;">
+                        <label class="form-label" style="margin-bottom: 8px;">Split across methods <span style="color: #ef4444;">*</span></label>
+                        <p style="font-size: 12px; color: var(--saas-slate-500); margin: 0 0 10px;">Enter amounts for each method. Total must match the payable amount.</p>
+                        <div id="splitPaymentRows" class="pos-split-rows"></div>
+                        <button type="button" class="btn-secondary pos-split-add-btn" id="addSplitRowBtn" style="margin-top: 8px; padding: 6px 12px; font-size: 12px;">+ Add line</button>
+                        <div class="pos-split-remain" id="splitPaymentRemain">Remaining: ₹0.00</div>
                     </div>
 
                     <!-- Cash Payment Calculator -->
@@ -1117,6 +1197,13 @@ $flashError = get_flash('error');
 
             // Modals
             const paymentModal = document.getElementById('checkoutPaymentModal');
+            const POS_SPLIT_PAY_METHODS = <?= json_encode($posSplitPayMethods, JSON_UNESCAPED_UNICODE) ?>;
+            const splitPaymentSection = document.getElementById('splitPaymentSection');
+            const splitPaymentRows = document.getElementById('splitPaymentRows');
+            const splitPaymentRemain = document.getElementById('splitPaymentRemain');
+            const hiddenPaymentSplitsJson = document.getElementById('hiddenPaymentSplitsJson');
+            const hiddenAmountTendered = document.getElementById('hiddenAmountTendered');
+            const addSplitRowBtn = document.getElementById('addSplitRowBtn');
             const closePaymentBtn = document.getElementById('closePaymentModal');
             const cancelPaymentBtn = document.getElementById('cancelPaymentModal');
             const checkoutForm = document.getElementById('checkoutForm');
@@ -1857,8 +1944,17 @@ $flashError = get_flash('error');
                 if (rzpPid) rzpPid.value = '';
                 if (rzpSig) rzpSig.value = '';
 
+                if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                if (hiddenPaymentMethod.value === 'split') {
+                    ensureDefaultSplitRows();
+                }
+
                 paymentModal.classList.add('open');
-                tenderedInput.focus();
+                if (hiddenPaymentMethod.value === 'split') {
+                    updateSplitRemainder();
+                } else {
+                    tenderedInput.focus();
+                }
             });
 
             function closePaymentModalFn() {
@@ -1871,6 +1967,95 @@ $flashError = get_flash('error');
             const paymentMethodCards = document.querySelectorAll('.payment-method-card');
             const cashSection = document.getElementById('cashTenderSection');
 
+            function getCheckoutTotal() {
+                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
+                return parseFloat(totalStr) || 0;
+            }
+
+            function buildSplitMethodOptions(selected) {
+                return POS_SPLIT_PAY_METHODS.map(function (m) {
+                    const sel = m.code === selected ? ' selected' : '';
+                    return '<option value="' + m.code + '"' + sel + '>' + m.label + '</option>';
+                }).join('');
+            }
+
+            function addSplitPaymentRow(methodCode, amountVal) {
+                if (!splitPaymentRows) return;
+                const row = document.createElement('div');
+                row.className = 'pos-split-row';
+                row.innerHTML =
+                    '<select class="form-control pos-split-method">' + buildSplitMethodOptions(methodCode || 'cash') + '</select>' +
+                    '<input type="number" step="0.01" min="0" class="form-control pos-split-amount" placeholder="Amount ₹" value="' + (amountVal !== undefined && amountVal !== null ? amountVal : '') + '">' +
+                    '<button type="button" class="pos-split-remove" title="Remove line" aria-label="Remove">&times;</button>';
+                splitPaymentRows.appendChild(row);
+                row.querySelector('.pos-split-amount').addEventListener('input', function () {
+                    updateSplitRemainder();
+                    updateCashSectionForSplit();
+                });
+                row.querySelector('.pos-split-method').addEventListener('change', updateCashSectionForSplit);
+                row.querySelector('.pos-split-remove').addEventListener('click', function () {
+                    if (splitPaymentRows.querySelectorAll('.pos-split-row').length <= 1) return;
+                    row.remove();
+                    updateSplitRemainder();
+                    updateCashSectionForSplit();
+                });
+            }
+
+            function ensureDefaultSplitRows() {
+                if (!splitPaymentRows || splitPaymentRows.children.length > 0) return;
+                addSplitPaymentRow('cash', '');
+                addSplitPaymentRow('upi', '');
+            }
+
+            function collectSplitPayments() {
+                const rows = splitPaymentRows ? splitPaymentRows.querySelectorAll('.pos-split-row') : [];
+                const out = [];
+                rows.forEach(function (row) {
+                    const method = row.querySelector('.pos-split-method')?.value || '';
+                    const amount = parseFloat(row.querySelector('.pos-split-amount')?.value) || 0;
+                    if (method && amount > 0) {
+                        out.push({ method: method, amount: Math.round(amount * 100) / 100 });
+                    }
+                });
+                return out;
+            }
+
+            function splitCashPortion(splits) {
+                let cash = 0;
+                (splits || []).forEach(function (s) {
+                    if (s.method === 'cash') cash += s.amount;
+                });
+                return cash;
+            }
+
+            function updateSplitRemainder() {
+                if (!splitPaymentRemain) return;
+                const total = getCheckoutTotal();
+                const splits = collectSplitPayments();
+                const paid = splits.reduce(function (sum, s) { return sum + s.amount; }, 0);
+                const remain = Math.round((total - paid) * 100) / 100;
+                splitPaymentRemain.textContent = 'Remaining: ₹' + remain.toFixed(2);
+                splitPaymentRemain.classList.toggle('is-balanced', Math.abs(remain) < 0.02);
+                splitPaymentRemain.classList.toggle('is-over', remain < -0.01);
+            }
+
+            function updateCashSectionForSplit() {
+                if (hiddenPaymentMethod.value !== 'split') return;
+                const cashPart = splitCashPortion(collectSplitPayments());
+                if (cashPart > 0) {
+                    cashSection.style.display = 'block';
+                } else {
+                    cashSection.style.display = 'none';
+                }
+            }
+
+            if (addSplitRowBtn) {
+                addSplitRowBtn.addEventListener('click', function () {
+                    addSplitPaymentRow('cash', '');
+                    updateSplitRemainder();
+                });
+            }
+
             paymentMethodCards.forEach(card => {
                 card.addEventListener('click', function () {
                     paymentMethodCards.forEach(c => c.classList.remove('active'));
@@ -1878,20 +2063,34 @@ $flashError = get_flash('error');
                     const method = this.getAttribute('data-method');
                     hiddenPaymentMethod.value = method;
 
-                    if (method === 'cash') {
-                        cashSection.style.display = 'block';
+                    if (method === 'split') {
+                        if (splitPaymentSection) splitPaymentSection.style.display = 'block';
+                        ensureDefaultSplitRows();
+                        updateSplitRemainder();
+                        updateCashSectionForSplit();
+                        if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
                     } else {
-                        cashSection.style.display = 'none';
+                        if (splitPaymentSection) splitPaymentSection.style.display = 'none';
+                        if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                        if (method === 'cash') {
+                            cashSection.style.display = 'block';
+                        } else {
+                            cashSection.style.display = 'none';
+                        }
                     }
                 });
             });
 
             // Change Due Calculation
             function calculateChange() {
-                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
-                const total = parseFloat(totalStr) || 0;
+                const total = getCheckoutTotal();
                 const tendered = parseFloat(tenderedInput.value) || 0;
-                const change = Math.max(0, tendered - total);
+                let due = total;
+                if (hiddenPaymentMethod.value === 'split') {
+                    const cashPart = splitCashPortion(collectSplitPayments());
+                    if (cashPart > 0) due = cashPart;
+                }
+                const change = Math.max(0, tendered - due);
                 changeDueVal.textContent = '₹' + change.toFixed(2);
             }
             tenderedInput.addEventListener('input', calculateChange);
@@ -1917,19 +2116,9 @@ $flashError = get_flash('error');
             checkoutForm.addEventListener('submit', function (e) {
                 e.preventDefault();
 
-                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
-                const total = parseFloat(totalStr) || 0;
+                const total = getCheckoutTotal();
                 const method = hiddenPaymentMethod.value;
                 const formEl = this;
-
-                if (method === 'cash') {
-                    const tendered = parseFloat(tenderedInput.value) || 0;
-                    if (tendered < total) {
-                        alert('Amount received (₹' + tendered.toFixed(2) + ') is less than the payable amount (₹' + total.toFixed(2) + '). Please enter the full amount.');
-                        tenderedInput.focus();
-                        return;
-                    }
-                }
 
                 const finishCheckout = function () {
                     confirmPaymentBtn.disabled = true;
@@ -1959,6 +2148,46 @@ $flashError = get_flash('error');
                         alert('Network/API Error: ' + err);
                     });
                 };
+
+                if (method === 'split') {
+                    const splits = collectSplitPayments();
+                    const paid = splits.reduce(function (s, x) { return s + x.amount; }, 0);
+                    if (splits.length < 1) {
+                        alert('Add at least one payment line with an amount.');
+                        return;
+                    }
+                    if (Math.abs(paid - total) > 0.02) {
+                        alert('Split amounts (₹' + paid.toFixed(2) + ') must equal the payable total (₹' + total.toFixed(2) + ').');
+                        return;
+                    }
+                    const cashPart = splitCashPortion(splits);
+                    if (cashPart > 0) {
+                        const tendered = parseFloat(tenderedInput.value) || 0;
+                        if (tendered > 0 && tendered < cashPart) {
+                            alert('Cash received (₹' + tendered.toFixed(2) + ') is less than the cash portion (₹' + cashPart.toFixed(2) + ').');
+                            tenderedInput.focus();
+                            return;
+                        }
+                    }
+                    if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = JSON.stringify(splits);
+                    if (hiddenAmountTendered) hiddenAmountTendered.value = tenderedInput.value || '';
+                } else {
+                    if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                    if (hiddenAmountTendered) hiddenAmountTendered.value = method === 'cash' ? (tenderedInput.value || '') : '';
+                    if (method === 'cash') {
+                        const tendered = parseFloat(tenderedInput.value) || 0;
+                        if (tendered < total) {
+                            alert('Amount received (₹' + tendered.toFixed(2) + ') is less than the payable amount (₹' + total.toFixed(2) + '). Please enter the full amount.');
+                            tenderedInput.focus();
+                            return;
+                        }
+                    }
+                }
+
+                if (method === 'split') {
+                    finishCheckout();
+                    return;
+                }
 
                 if (method === 'razorpay' && !document.getElementById('hiddenRazorpayPaymentId').value) {
                     confirmPaymentBtn.disabled = true;
@@ -2064,9 +2293,16 @@ $flashError = get_flash('error');
                 document.getElementById('receiptGrandTotal').textContent = '₹' + parseFloat(data.total_amount).toFixed(2);
 
                 const cashDetails = document.getElementById('receiptCashDetails');
-                if (data.payment_method === 'cash') {
-                    const tendered = parseFloat(tenderedInput.value) || parseFloat(data.total_amount);
-                    const change = Math.max(0, tendered - parseFloat(data.total_amount));
+                let cashPart = 0;
+                if (Array.isArray(data.payment_splits) && data.payment_splits.length) {
+                    data.payment_splits.forEach(function (sp) {
+                        if (sp.method === 'cash') cashPart += parseFloat(sp.amount) || 0;
+                    });
+                }
+                if (data.payment_method === 'cash' || cashPart > 0) {
+                    const tendered = parseFloat(tenderedInput.value) || cashPart || parseFloat(data.total_amount);
+                    const changeBase = cashPart > 0 ? cashPart : parseFloat(data.total_amount);
+                    const change = Math.max(0, tendered - changeBase);
                     document.getElementById('receiptReceived').textContent = '₹' + tendered.toFixed(2);
                     document.getElementById('receiptChange').textContent = '₹' + change.toFixed(2);
                     cashDetails.style.display = 'block';

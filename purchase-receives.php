@@ -137,7 +137,7 @@ $flashError = get_flash('error');
                 <div class="page-header-row">
                     <div>
                         <h1 class="page-title">All Purchase Receives</h1>
-                        <p class="page-subtitle">Track and log vendor shipments received at your warehouses and counters.</p>
+                        <p class="page-subtitle">Receive purchase orders into stock (qty per line). No separate count, cost pending, or size/colour on receive.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
                         <button type="button" class="header-btn" id="openReceiveModalBtn" style="padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px;">
@@ -305,7 +305,6 @@ $flashError = get_flash('error');
             $full = get_purchase_order_by_id((int)$po['id']);
             return $full ?: $po;
         }, $openPOs))) ?>;
-
         const receiveModal = document.getElementById('receiveItemsModal');
         const openReceiveBtn = document.getElementById('openReceiveModalBtn');
         const closeReceiveBtn = document.getElementById('closeReceiveModal');
@@ -313,13 +312,22 @@ $flashError = get_flash('error');
         const poSelect = document.getElementById('poSelectDropdown');
         const poItemsContainer = document.getElementById('poItemsContainer');
 
-        if (openReceiveBtn) openReceiveBtn.addEventListener('click', () => receiveModal.classList.add('open'));
+        if (openReceiveBtn) {
+            openReceiveBtn.addEventListener('click', () => {
+                receiveModal.classList.add('open');
+                if (poSelect && poSelect.value) {
+                    renderPOItems(parseInt(poSelect.value, 10));
+                }
+            });
+        }
         if (closeReceiveBtn) closeReceiveBtn.addEventListener('click', () => receiveModal.classList.remove('open'));
         if (cancelReceiveBtn) cancelReceiveBtn.addEventListener('click', () => receiveModal.classList.remove('open'));
 
-        poSelect.addEventListener('change', function() {
-            renderPOItems(parseInt(this.value, 10));
-        });
+        if (poSelect) {
+            poSelect.addEventListener('change', function() {
+                renderPOItems(parseInt(this.value, 10));
+            });
+        }
 
         <?php if ($preSelectedPoId > 0): ?>
             receiveModal.classList.add('open');
@@ -343,6 +351,7 @@ $flashError = get_flash('error');
                 const ordered = parseInt(it.quantity_ordered, 10) || 0;
                 const recvd = parseInt(it.quantity_received, 10) || 0;
                 const remaining = Math.max(0, ordered - recvd);
+                if (remaining <= 0) return;
 
                 html += `
                     <div class="receive-item-row" data-poi-id="${it.id}" style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
@@ -360,6 +369,10 @@ $flashError = get_flash('error');
                 `;
             });
             html += '</div>';
+            if (!html.includes('receive-item-row')) {
+                poItemsContainer.innerHTML = '<div style="padding: 16px; color: #64748b;">All items on this purchase order are already fully received.</div>';
+                return;
+            }
             poItemsContainer.innerHTML = html;
         }
 
