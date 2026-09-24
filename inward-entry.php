@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Warehouse inward count: product + size + colour + quantity.
- * Saved counts stay not sellable. Purchase receive, stock, and POS are unchanged.
+ * Received quantity is company stock at once. Ready stock is placed in Central only after QC, checking, and tagging.
  */
 
 require_once __DIR__ . '/config/app.php';
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userId
         );
         if ($res['success']) {
-            set_flash('success', 'Inward ' . $res['entry_number'] . ' saved. This count is not sellable yet.');
+            set_flash('success', 'Inward ' . $res['entry_number'] . ' saved. Quantity is company stock now. It is not ready stock in Central until QC, checking, and tagging is complete.');
             redirect(APP_URL . '/inward-entry.php?id=' . (int) $res['entry_id']);
         }
         set_flash('error', $res['error'] ?? 'Could not save the inward count.');
@@ -69,9 +69,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim((string) ($_POST['vendor_name'] ?? ''))
         );
         if ($res['success']) {
-            set_flash('success', 'Costs confirmed. Bill ' . ($res['bill_number'] ?? '') . ' is in Purchases → Bills. This count is still not sellable.');
+            set_flash('success', 'Costs confirmed. Bill ' . ($res['bill_number'] ?? '') . ' is in Purchases → Bills. Barcodes stay unreleased until you confirm the purchase. This count is still not sellable.');
         } else {
             set_flash('error', $res['error'] ?? 'Could not confirm these costs.');
+        }
+        redirect(APP_URL . '/inward-entry.php?id=' . $entryId);
+    }
+
+    if (($_POST['action'] ?? '') === 'confirm_purchase') {
+        $entryId = (int) ($_POST['entry_id'] ?? 0);
+        $res = confirm_inward_purchase($entryId);
+        if ($res['success']) {
+            set_flash('success', 'Purchase confirmed. Barcodes are ready for the warehouse to print. Stock stays company stock until QC, checking, and tagging is complete.');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not confirm this purchase.');
+        }
+        redirect(APP_URL . '/inward-entry.php?id=' . $entryId);
+    }
+
+    if (($_POST['action'] ?? '') === 'complete_qc') {
+        $entryId = (int) ($_POST['entry_id'] ?? 0);
+        $res = complete_inward_qc($entryId, null, $userId);
+        if ($res['success']) {
+            set_flash('success', 'QC, checking, and tagging is complete. Ready stock is in Central Warehouse only.');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not finish QC, checking, and tagging.');
         }
         redirect(APP_URL . '/inward-entry.php?id=' . $entryId);
     }
@@ -134,7 +156,7 @@ $flashError = get_flash('error');
                 <div class="page-header-row">
                     <div>
                         <h1 class="page-title">Inward Entry</h1>
-                        <p class="page-subtitle">Warehouse count by product, size, colour, and quantity. Purchase cost and selling price stay blank until you confirm them here. Sellable stock is not changed.</p>
+                        <p class="page-subtitle">Warehouse count by product, size, colour, and quantity. Saving adds company stock at once. Ready stock goes to Central Warehouse only after QC, checking, and tagging, with no pass or fail.</p>
                     </div>
                 </div>
 
@@ -163,14 +185,29 @@ $flashError = get_flash('error');
                             </div>
                             <a href="<?= asset('inward-entry.php') ?>" class="btn-secondary" style="padding: 8px 14px;">Back to list</a>
                         </div>
-                        <?php $costPending = (string) ($selected['status'] ?? '') !== 'confirmed'; ?>
+                        <?php
+                        $costPending = (string) ($selected['status'] ?? '') !== 'confirmed';
+                        $purchaseConfirmed = (string) ($selected['purchase_status'] ?? 'pending') === 'confirmed';
+                        $qcDone = (string) ($selected['qc_status'] ?? 'pending') === 'done';
+                        ?>
                         <div style="padding: 0 20px 16px;">
                             <?php if ($costPending): ?>
                                 <span class="badge-warning">Cost pending</span>
                             <?php else: ?>
                                 <span class="badge-success">Costs confirmed</span>
                             <?php endif; ?>
-                            <span class="badge-secondary">Not sellable</span>
+                            <?php if ($purchaseConfirmed): ?>
+                                <span class="badge-success">Purchase confirmed</span>
+                                <span class="badge-info">Barcode ready</span>
+                            <?php else: ?>
+                                <span class="badge-warning">Barcode not released</span>
+                            <?php endif; ?>
+                            <?php if ($qcDone): ?>
+                                <span class="badge-success">Ready in Central</span>
+                            <?php else: ?>
+                                <span class="badge-secondary">Company stock</span>
+                                <span class="badge-warning">Not ready in Central</span>
+                            <?php endif; ?>
                             <?php if (!empty($selected['bill_number'])): ?>
                                 <a href="<?= asset('bills.php?id=' . (int) $selected['bill_id']) ?>" class="badge-info" style="text-decoration:underline;">Bill <?= e((string) $selected['bill_number']) ?></a>
                             <?php elseif (!$costPending): ?>
@@ -180,7 +217,13 @@ $flashError = get_flash('error');
                                 <p style="margin: 12px 0 0; color: #475569;"><?= e((string) $selected['notes']) ?></p>
                             <?php endif; ?>
                             <?php if ($costPending): ?>
-                                <p style="margin: 12px 0 0; color: #475569;">Purchase cost and selling price stay blank until you confirm them. Open this page on your phone and enter both amounts. There is no separate phone screen.</p>
+                                <p style="margin: 12px 0 0; color: #475569;">Purchase cost and selling price stay blank until you confirm them. Confirming cost does not release a barcode for the warehouse to print.</p>
+                            <?php elseif (!$purchaseConfirmed): ?>
+                                <p style="margin: 12px 0 0; color: #475569;">Costs are saved. Confirm the purchase to release a barcode for each line so the warehouse can print labels. This quantity is already company stock.</p>
+                            <?php elseif (!$qcDone): ?>
+                                <p style="margin: 12px 0 0; color: #475569;">Print the barcodes, then finish QC, checking, and tagging. There is no pass or fail. Ready stock is added to Central Warehouse only.</p>
+                            <?php else: ?>
+                                <p style="margin: 12px 0 0; color: #475569;">QC, checking, and tagging is complete. Ready stock is in Central Warehouse only.</p>
                             <?php endif; ?>
                         </div>
                         <?php if ($costPending): ?>
@@ -217,6 +260,7 @@ $flashError = get_flash('error');
                                         <th>Quantity</th>
                                         <th>Purchase cost</th>
                                         <th>Selling price</th>
+                                        <th>Barcode</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -234,10 +278,11 @@ $flashError = get_flash('error');
                                                 <td><?= $line['purchase_cost'] === null ? '—' : '₹' . number_format((float) $line['purchase_cost'], 2) ?></td>
                                                 <td><?= $line['selling_price'] === null ? '—' : '₹' . number_format((float) $line['selling_price'], 2) ?></td>
                                             <?php endif; ?>
+                                            <td><?= $purchaseConfirmed && trim((string) ($line['barcode'] ?? '')) !== '' ? e((string) $line['barcode']) : 'Not released' ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                     <?php if (empty($selected['lines'])): ?>
-                                        <tr><td colspan="7" style="text-align:center; padding: 24px; color:#64748b;">No lines on this count.</td></tr>
+                                        <tr><td colspan="8" style="text-align:center; padding: 24px; color:#64748b;">No lines on this count.</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
@@ -249,7 +294,27 @@ $flashError = get_flash('error');
                         <?php endif; ?>
                         <?php if ($costPending): ?>
                         </form>
-                        <?php elseif (empty($selected['bill_id'])): ?>
+                        <?php elseif (!$purchaseConfirmed && !empty($selected['lines'])): ?>
+                        <form method="post" style="padding: 0 20px 16px; display:flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="confirm_purchase">
+                            <input type="hidden" name="entry_id" value="<?= (int) $selected['id'] ?>">
+                            <button type="submit" class="header-btn" style="padding: 12px 18px; min-height: 48px;">Confirm purchase</button>
+                        </form>
+                        <?php elseif ($purchaseConfirmed): ?>
+                        <div style="padding: 0 20px 16px; display:flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
+                            <a href="<?= asset('barcode-print.php?inward=' . (int) $selected['id']) ?>" class="header-btn" style="padding: 12px 18px; min-height: 48px; text-decoration: none; display: inline-flex; align-items: center;">Print barcodes</a>
+                            <?php if (!$qcDone): ?>
+                            <form method="post" style="margin: 0;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="complete_qc">
+                                <input type="hidden" name="entry_id" value="<?= (int) $selected['id'] ?>">
+                                <button type="submit" class="header-btn" style="padding: 12px 18px; min-height: 48px;">QC, checking, and tagging complete</button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!$costPending && empty($selected['bill_id'])): ?>
                         <form method="post" style="padding: 0 20px 16px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="create_bill">
@@ -281,7 +346,7 @@ $flashError = get_flash('error');
                         <div class="section-header">
                             <div>
                                 <h2 class="section-heading">New warehouse count</h2>
-                                <p class="section-subheading">Counted by <?= e((string) ($user['name'] ?? 'you')) ?>. This does not add stock for sale.</p>
+                                <p class="section-subheading">Counted by <?= e((string) ($user['name'] ?? 'you')) ?>. Saving adds company stock. It does not put ready stock in Central.</p>
                             </div>
                         </div>
                         <form method="post" id="inwardForm" style="padding: 0 20px 20px;">
@@ -348,7 +413,7 @@ $flashError = get_flash('error');
                     <div class="section-header">
                         <div>
                             <h2 class="section-heading">Saved counts</h2>
-                            <p class="section-subheading">Held in the warehouse. Not available to sell.</p>
+                            <p class="section-subheading">Received quantity is company stock. Ready stock appears in Central only after QC, checking, and tagging.</p>
                         </div>
                         <form method="get" style="display:flex; gap: 8px;">
                             <input type="text" name="search" value="<?= e($search) ?>" class="form-control" placeholder="Search entry, warehouse, supplier">
@@ -396,7 +461,16 @@ $flashError = get_flash('error');
                                                 <?php else: ?>
                                                     <span class="badge-warning">Cost pending</span>
                                                 <?php endif; ?>
-                                                <span class="badge-secondary">Not sellable</span>
+                                                <?php if ((string) ($entry['purchase_status'] ?? 'pending') === 'confirmed'): ?>
+                                                    <a href="<?= asset('barcode-print.php?inward=' . (int) $entry['id']) ?>" class="badge-info" style="text-decoration:underline;">Barcode ready</a>
+                                                <?php else: ?>
+                                                    <span class="badge-warning">Barcode not released</span>
+                                                <?php endif; ?>
+                                                <?php if ((string) ($entry['qc_status'] ?? 'pending') === 'done'): ?>
+                                                    <span class="badge-success">Ready in Central</span>
+                                                <?php else: ?>
+                                                    <span class="badge-secondary">Company stock</span>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

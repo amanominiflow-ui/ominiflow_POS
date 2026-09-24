@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tid = (int)($_POST['transfer_id'] ?? 0);
             $res = ship_stock_transfer_in_transit($tid, (int)$user['id']);
             if ($res['success']) {
-                set_flash('success', 'Stock is now in transit (company total unchanged until receive).');
+                set_flash('success', 'Stock is now in transit (source warehouse reduced; company total unchanged).');
             } else {
                 set_flash('error', $res['error'] ?? 'Failed to start in-transit.');
             }
@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tid = (int)($_POST['transfer_id'] ?? 0);
             $res = receive_stock_transfer($tid, (int)$user['id']);
             if ($res['success']) {
-                set_flash('success', 'Stock Transfer received and destination inventory updated!');
+                set_flash('success', 'Transfer received at destination (warehouse moved; company total unchanged).');
             } else {
                 set_flash('error', $res['error'] ?? 'Failed to receive transfer.');
             }
@@ -112,7 +112,7 @@ $pageTitle = 'Warehouse Stock Transfers';
                 <div class="page-header-row">
                     <div>
                         <h1 class="page-title">Warehouse Stock Transfers</h1>
-                        <p class="page-subtitle">Requested &rarr; Approved &rarr; Picked &rarr; Dispatched &rarr; In Transit &rarr; Received. Receive uses a button (no scan). Movement log on each step.</p>
+                        <p class="page-subtitle">Requested &rarr; Approved &rarr; Picked &rarr; Dispatched &rarr; In Transit &rarr; Received. Destination receives with one button (no piece-by-piece scan). Company total stays the same; only warehouse rows move.</p>
                     </div>
                     <div>
                         <button type="button" onclick="document.getElementById('transferModal').style.display='flex'" class="header-btn">

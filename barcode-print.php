@@ -13,6 +13,13 @@ require_once __DIR__ . '/includes/barcode_helper.php';
 
 require_auth();
 
+$inwardId = isset($_GET['inward']) ? (int) $_GET['inward'] : 0;
+$inwardPrint = null;
+if ($inwardId > 0) {
+    require_once __DIR__ . '/includes/inward_db.php';
+    $inwardPrint = get_inward_print_labels($inwardId);
+}
+
 $pageTitle = 'Barcode & Price Label Printing';
 
 $products = get_products();
@@ -191,8 +198,17 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                 <div class="page-top-header no-print" style="margin-bottom: 20px;">
                     <div>
                         <h1 class="page-title">Barcode & Price Label Printing</h1>
-                        <p class="page-subtitle">Print labels from barcodes you set on each product. Receiving purchase stock does not create barcodes — add UPC/EAN on the item, then print here.</p>
+                        <?php if ($inwardId > 0): ?>
+                            <p class="page-subtitle">Warehouse labels for a confirmed purchase. Confirming cost does not release these barcodes.</p>
+                        <?php else: ?>
+                            <p class="page-subtitle">Print labels from barcodes you set on each product. A warehouse label is released only after the purchase is confirmed.</p>
+                        <?php endif; ?>
                     </div>
+                    <?php if ($inwardId > 0 && !empty($inwardPrint['success'])): ?>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" onclick="window.print()" class="header-btn" style="padding: 10px 20px; font-size: 13.5px;">Print warehouse labels</button>
+                        </div>
+                    <?php endif; ?>
                     <?php if ($targetProduct && $hasBarcode): ?>
                         <div style="display: flex; gap: 10px;">
                             <button type="button" onclick="window.print()" class="header-btn" style="padding: 10px 20px; font-size: 13.5px; display: inline-flex; align-items: center; gap: 8px;">
@@ -203,6 +219,45 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                     <?php endif; ?>
                 </div>
 
+                <?php if ($inwardId > 0): ?>
+                    <?php if (empty($inwardPrint['success'])): ?>
+                        <div class="section-card no-print" style="text-align: center; padding: 40px 24px;">
+                            <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 8px;">Barcode not released</h3>
+                            <p style="font-size: 13.5px; color: #64748b; max-width: 520px; margin: 0 auto 16px;">
+                                <?= e((string) ($inwardPrint['error'] ?? 'Confirm the purchase before the warehouse prints.')) ?>
+                            </p>
+                            <a href="<?= asset('inward-entry.php?id=' . $inwardId) ?>" class="header-btn" style="display: inline-flex; padding: 10px 20px; text-decoration: none;">Back to inward count</a>
+                        </div>
+                    <?php else: ?>
+                        <?php $inwardEntry = $inwardPrint['entry']; ?>
+                        <div class="no-print" style="background: #f8fafc; border: 1px solid var(--saas-border); border-radius: var(--saas-radius-md); padding: 14px 18px; margin-bottom: 20px;">
+                            <div style="font-size: 15px; font-weight: 700;"><?= e((string) $inwardEntry['entry_number']) ?> · <?= e((string) ($inwardEntry['warehouse_name'] ?? 'Warehouse')) ?></div>
+                            <div style="font-size: 12.5px; color: #64748b; margin-top: 4px;">Purchase confirmed. One label per counted unit, up to 100 per line.</div>
+                        </div>
+                        <div class="print-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px;">
+                            <?php foreach ($inwardPrint['labels'] as $label): ?>
+                                <?php
+                                $labelSvg = generate_code128_svg((string) $label['barcode'], 36, 1.5);
+                                $labelTitle = trim((string) $label['size'] . ' / ' . (string) $label['colour'], ' /');
+                                ?>
+                                <?php for ($i = 0; $i < (int) $label['copies']; $i++): ?>
+                                    <div class="barcode-card-item">
+                                        <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
+                                        <div class="barcode-prod-name" title="<?= e((string) $label['name']) ?>"><?= e((string) $label['name']) ?></div>
+                                        <?php if ($labelTitle !== ''): ?>
+                                            <div class="barcode-sku-sub"><?= e($labelTitle) ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($label['price'] !== null && $label['price'] !== ''): ?>
+                                            <div class="barcode-price-tag">₹<?= number_format((float) $label['price'], 2) ?></div>
+                                        <?php endif; ?>
+                                        <div class="barcode-svg-container"><?= $labelSvg ?></div>
+                                        <div class="barcode-sku-sub">SKU: <?= e((string) $label['sku']) ?></div>
+                                    </div>
+                                <?php endfor; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                <?php else: ?>
                 <!-- Product Selector & Print Configuration Card -->
                 <div class="filter-card no-print" style="padding: 24px; margin-bottom: 24px;">
                     <form method="GET" action="<?= asset('barcode-print.php') ?>" id="barcodeConfigForm" style="display: flex; flex-direction: column; gap: 18px;">
@@ -353,6 +408,7 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                         <h3 style="font-size: 16px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 6px;">No Product Selected</h3>
                         <p style="font-size: 13.5px; max-width: 480px; margin: 0 auto 18px;">Please select a product from the dropdown above and choose the number of label copies to preview and print barcode stickers.</p>
                     </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </main>
         </div>

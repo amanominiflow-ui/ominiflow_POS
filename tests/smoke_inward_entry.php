@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Inward entry stores a warehouse count and does not change sellable stock.
+ * Inward entry adds company stock on save. Ready stock is posted to Central only after QC.
  * Run: php tests/smoke_inward_entry.php
  * Uses a transaction and rolls back.
  */
@@ -143,28 +143,132 @@ try {
                 fail('purchase bill was not created');
             } elseif ((string) ($saved['vendor_name'] ?? '') !== 'Smoke Supplier') {
                 fail('typed supplier name was not saved');
+            } elseif ((string) ($saved['purchase_status'] ?? '') !== 'pending' || trim((string) ($savedLine['barcode'] ?? '')) !== '') {
+                fail('confirming cost released a barcode');
             } else {
                 ok('confirm stores prices and creates bill ' . $saved['bill_number']);
+                ok('confirming cost does not release a barcode');
+            }
+
+            $priceAfter = $db->prepare('SELECT cost_price, selling_price, barcode, stock_quantity FROM products WHERE id = :id');
+            $priceAfter->execute(['id' => $productId]);
+            $productAfter = $priceAfter->fetch(PDO::FETCH_ASSOC);
+            if ($productBefore == $productAfter) {
+                ok('product price, barcode, and stock unchanged');
+            } else {
+                fail('product master changed when costs were confirmed');
+            }
+            if ($variantRow && $variantBefore) {
+                $va = $db->prepare('SELECT cost_price, selling_price, barcode, stock_quantity FROM product_variants WHERE id = :id');
+                $va->execute(['id' => (int) $variantRow['id']]);
+                if ($variantBefore == $va->fetch(PDO::FETCH_ASSOC)) {
+                    ok('variant price, barcode, and stock unchanged');
+                } else {
+                    fail('variant master changed when costs were confirmed');
+                }
+            }
+
+            $tooSoon = create_inward_entry($warehouseId, [[
+                'product_id' => $productId,
+                'size' => $size,
+                'colour' => $colour,
+                'quantity' => 1,
+            ]], date('Y-m-d'), 'smoke before purchase', null, null, $bid);
+            if (!empty($tooSoon['success'])) {
+                $blocked = confirm_inward_purchase((int) $tooSoon['entry_id'], $bid);
+                $blockedEntry = get_inward_entry_by_id((int) $tooSoon['entry_id'], $bid);
+                $blockedLine = $blockedEntry['lines'][0] ?? null;
+                if (!empty($blocked['success']) || trim((string) ($blockedLine['barcode'] ?? '')) !== '') {
+                    fail('purchase confirm ran before costs were confirmed');
+                } else {
+                    ok('purchase confirm waits until costs are confirmed');
+                }
+            }
+
+            $released = confirm_inward_purchase((int) $res['entry_id'], $bid);
+            $ready = get_inward_entry_by_id((int) $res['entry_id'], $bid);
+            $readyLine = $ready['lines'][0] ?? null;
+            $readyCode = trim((string) ($readyLine['barcode'] ?? ''));
+            if (empty($released['success']) || (string) ($ready['purchase_status'] ?? '') !== 'confirmed' || $readyCode === '') {
+                fail('confirm purchase did not release a barcode: ' . ($released['error'] ?? 'missing code'));
+            } else {
+                ok('purchase confirmed releases barcode ' . $readyCode);
+            }
+            $labels = get_inward_print_labels((int) $res['entry_id'], $bid);
+            if (empty($labels['success']) || (int) ($labels['labels'][0]['copies'] ?? 0) !== 7 || ($labels['labels'][0]['barcode'] ?? '') !== $readyCode) {
+                fail('warehouse print labels were not ready');
+            } else {
+                ok('warehouse can print the released barcode');
+            }
+            $again = confirm_inward_purchase((int) $res['entry_id'], $bid);
+            if (!empty($again['success'])) {
+                fail('purchase was confirmed twice');
+            } else {
+                ok('purchase confirm is one time');
+            }
+            $priceAfterPurchase = $db->prepare('SELECT cost_price, selling_price, stock_quantity FROM products WHERE id = :id');
+            $priceAfterPurchase->execute(['id' => $productId]);
+            $productPrices = $priceAfterPurchase->fetch(PDO::FETCH_ASSOC);
+            $expectedCompany = (int) $productBefore['stock_quantity'] + (!empty($tooSoon['success']) ? 1 : 0);
+            if ((string) $productPrices['cost_price'] === (string) $productBefore['cost_price']
+                && (string) $productPrices['selling_price'] === (string) $productBefore['selling_price']
+                && (int) $productPrices['stock_quantity'] === $expectedCompany) {
+                ok('purchase confirm leaves product price and company stock unchanged');
+            } else {
+                fail('purchase confirm changed product price or stock');
+            }
+
+            $central = $db->prepare('SELECT id FROM warehouses WHERE business_id = :bid AND status = "active" AND (code = "WH-CENTRAL" OR name LIKE "%Central%") ORDER BY (code = "WH-CENTRAL") DESC, id ASC LIMIT 1');
+            $central->execute(['bid' => $bid]);
+            $centralId = (int) $central->fetchColumn();
+            $centralQty = static function (PDO $db, int $productId, int $warehouseId): int {
+                if ($warehouseId <= 0) {
+                    return 0;
+                }
+                $stmt = $db->prepare('SELECT COALESCE(SUM(stock_quantity), 0) FROM warehouse_stock WHERE product_id = :pid AND warehouse_id = :wid');
+                $stmt->execute(['pid' => $productId, 'wid' => $warehouseId]);
+                return (int) $stmt->fetchColumn();
+            };
+            $centralBeforeQc = $centralQty($db, $productId, $centralId);
+            $other = $db->prepare('SELECT COALESCE(SUM(stock_quantity), 0) FROM warehouse_stock WHERE product_id = :pid AND warehouse_id <> :wid');
+            $other->execute(['pid' => $productId, 'wid' => $centralId > 0 ? $centralId : 0]);
+            $otherBeforeQc = (int) $other->fetchColumn();
+            $companyBeforeQc = (int) $productPrices['stock_quantity'];
+
+            $earlyQc = complete_inward_qc((int) ($tooSoon['entry_id'] ?? 0), $bid);
+            if (!empty($earlyQc['success'])) {
+                fail('QC ran before the purchase was confirmed');
+            } else {
+                ok('QC waits until the purchase is confirmed');
+            }
+
+            $qc = complete_inward_qc((int) $res['entry_id'], $bid);
+            $readyEntry = get_inward_entry_by_id((int) $res['entry_id'], $bid);
+            $companyAfterQc = (int) $db->query('SELECT stock_quantity FROM products WHERE id = ' . $productId)->fetchColumn();
+            $central->execute(['bid' => $bid]);
+            $centralId = (int) $central->fetchColumn();
+            if (empty($qc['success']) || (string) ($readyEntry['qc_status'] ?? '') !== 'done' || (int) ($readyEntry['is_sellable'] ?? 0) !== 1) {
+                fail('QC did not make the count ready: ' . ($qc['error'] ?? 'unknown'));
+            } elseif ($centralId <= 0 || $centralQty($db, $productId, $centralId) !== $centralBeforeQc + 7) {
+                fail('ready stock was not added to Central only');
+            } elseif ($companyAfterQc !== $companyBeforeQc) {
+                fail('QC changed company stock again');
+            } else {
+                $other->execute(['pid' => $productId, 'wid' => $centralId]);
+                if ((int) $other->fetchColumn() !== $otherBeforeQc) {
+                    fail('ready stock was added outside Central');
+                } else {
+                    ok('QC places ready stock in Central only');
+                }
+            }
+            $qcAgain = complete_inward_qc((int) $res['entry_id'], $bid);
+            if (!empty($qcAgain['success'])) {
+                fail('QC completed twice');
+            } else {
+                ok('QC complete is one time and has no pass or fail');
             }
         }
 
-        $priceAfter = $db->prepare('SELECT cost_price, selling_price, barcode, stock_quantity FROM products WHERE id = :id');
-        $priceAfter->execute(['id' => $productId]);
-        $productAfter = $priceAfter->fetch(PDO::FETCH_ASSOC);
-        if ($productBefore == $productAfter) {
-            ok('product price, barcode, and stock unchanged');
-        } else {
-            fail('product master changed when costs were confirmed');
-        }
-        if ($variantRow && $variantBefore) {
-            $va = $db->prepare('SELECT cost_price, selling_price, barcode, stock_quantity FROM product_variants WHERE id = :id');
-            $va->execute(['id' => (int) $variantRow['id']]);
-            if ($variantBefore == $va->fetch(PDO::FETCH_ASSOC)) {
-                ok('variant price, barcode, and stock unchanged');
-            } else {
-                fail('variant master changed when costs were confirmed');
-            }
-        }
         if ($variantRow && ($attrs['size'] === '' || $attrs['colour'] === '')) {
             ok('product variant has no size/colour pair; line stored as a count only');
         } elseif ($variantRow && (int) ($line['variant_id'] ?? 0) !== (int) $variantRow['id']) {
@@ -174,13 +278,16 @@ try {
         }
     }
 
-    $after = snapshot($db, $productId, $warehouseId);
-    foreach (['product', 'warehouse', 'variants', 'movements'] as $key) {
-        if ($before[$key] === $after[$key]) {
-            ok("{$key} stock unchanged ({$before[$key]})");
-        } else {
-            fail("{$key} changed from {$before[$key]} to {$after[$key]}");
-        }
+    $afterCreate = snapshot($db, $productId, $warehouseId);
+    if ($afterCreate['variants'] === $before['variants']) {
+        ok('variant stock unchanged');
+    } else {
+        fail('variant stock changed');
+    }
+    if ($afterCreate['product'] === $before['product'] + 8) {
+        ok('company stock increased once per received unit');
+    } else {
+        fail('company stock is ' . $afterCreate['product'] . ', expected ' . ($before['product'] + 8));
     }
 
     $named = create_inward_entry($warehouseId, [[

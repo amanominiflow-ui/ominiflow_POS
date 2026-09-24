@@ -345,6 +345,95 @@ function ensure_stock_transfer_schema(): void {
     }
 }
 
+/**
+ * Company-wide piece total (products.stock_quantity). Includes stock not yet placed in a store warehouse.
+ */
+function get_company_stock_piece_total(?int $businessId = null): int {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('SELECT COALESCE(SUM(stock_quantity), 0) FROM products WHERE business_id = :bid');
+    $stmt->execute(['bid' => $bid]);
+    return (int) $stmt->fetchColumn();
+}
+
+function stock_location_display_label(array $warehouseRow): string {
+    $outlet = trim((string) ($warehouseRow['outlet_name'] ?? ''));
+    if ($outlet !== '') {
+        return $outlet;
+    }
+    $name = trim((string) ($warehouseRow['name'] ?? 'Warehouse'));
+    if (stripos($name, 'central') !== false) {
+        return 'Central';
+    }
+    if (stripos($name, 'online') !== false) {
+        return 'Online';
+    }
+    return $name;
+}
+
+function stock_location_display_sort_key(array $warehouseRow): int {
+    $haystack = strtolower(stock_location_display_label($warehouseRow) . ' ' . (string) ($warehouseRow['name'] ?? ''));
+    $order = [
+        'garden reach' => 10,
+        'behala' => 20,
+        'store 3' => 30,
+        'central' => 40,
+        'online' => 50,
+    ];
+    foreach ($order as $needle => $priority) {
+        if (str_contains($haystack, $needle)) {
+            return $priority;
+        }
+    }
+    return 100 + (int) ($warehouseRow['id'] ?? 0);
+}
+
+/**
+ * @return array{company_pieces:int, locations:array<int, array{label:string, pieces:int, warehouse_id:int}>}
+ */
+function get_company_and_store_stock_summary(?int $businessId = null): array {
+    ensure_business_warehouse_baseline($businessId);
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $companyPieces = get_company_stock_piece_total($bid);
+
+    $stmt = $db->prepare('
+        SELECT w.id, w.name, w.code, o.name AS outlet_name,
+               COALESCE(SUM(ws.stock_quantity), 0) AS pieces
+        FROM warehouses w
+        LEFT JOIN outlets o ON o.id = w.outlet_id AND o.business_id = :bid_o
+        LEFT JOIN warehouse_stock ws ON ws.warehouse_id = w.id
+        LEFT JOIN products p ON p.id = ws.product_id AND p.business_id = :bid_p
+        WHERE w.business_id = :bid_w AND w.status = "active"
+        GROUP BY w.id, w.name, w.code, o.name
+    ');
+    $stmt->execute(['bid_o' => $bid, 'bid_p' => $bid, 'bid_w' => $bid]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    usort($rows, static function (array $a, array $b): int {
+        $cmp = stock_location_display_sort_key($a) <=> stock_location_display_sort_key($b);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp(stock_location_display_label($a), stock_location_display_label($b));
+    });
+
+    $locations = [];
+    foreach ($rows as $row) {
+        $locations[] = [
+            'warehouse_id' => (int) $row['id'],
+            'label' => stock_location_display_label($row),
+            'pieces' => (int) $row['pieces'],
+        ];
+    }
+
+    return [
+        'company_pieces' => $companyPieces,
+        'locations' => $locations,
+    ];
+}
+
 function sync_product_stock_from_warehouses(int $productId, int $businessId): void {
     $db = get_db();
     $stmtCount = $db->prepare('
@@ -650,8 +739,7 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
             $stmtItemUp = $db->prepare('UPDATE stock_transfer_items SET quantity_received = :qty WHERE stock_transfer_id = :tid AND product_id = :pid');
             $stmtItemUp->execute(['qty' => $qty, 'tid' => $transferId, 'pid' => $pid]);
 
-            sync_product_stock_from_warehouses($pid, $bid);
-
+            // Destination warehouse +qty only; products.stock_quantity (company total) stays unchanged.
             log_stock_transfer_movement(
                 $db,
                 $bid,

@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/products_db.php';
+require_once __DIR__ . '/includes/outlets_db.php';
 
 require_auth();
 
@@ -51,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $inventoryStats = get_inventory_stats();
+$storeStockSummary = get_company_and_store_stock_summary();
 $products = get_products($search, null, '', $stockFilter);
 $movements = get_inventory_movements(null, 100);
 ?>
@@ -191,6 +193,31 @@ $movements = get_inventory_movements(null, 100);
                         <div class="kpi-footer">
                             <span>Cost value: ₹<?= number_format($inventoryStats['total_cost_value'], 2) ?></span>
                         </div>
+                    </div>
+                </section>
+
+                <section class="section-card" aria-label="Company and store stock" style="margin-bottom: 24px;">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-heading">Company &amp; store stock</div>
+                            <div class="section-subheading">Company total is all pieces on hand. Store lines are ready stock in each warehouse (transfers only move between these rows).</div>
+                        </div>
+                    </div>
+                    <div style="padding: 0 20px 20px; display: grid; gap: 10px; max-width: 420px;">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid var(--saas-border);">
+                            <span style="font-weight: 700; color: var(--saas-navy-950);">Total pieces (company)</span>
+                            <span style="font-size: 20px; font-weight: 800; color: var(--saas-navy-950);"><?= number_format($storeStockSummary['company_pieces']) ?></span>
+                        </div>
+                        <?php if (empty($storeStockSummary['locations'])): ?>
+                            <p style="margin: 0; font-size: 13px; color: #64748b;">No active warehouses yet. Add stores under Outlets to see store-wise stock.</p>
+                        <?php else: ?>
+                            <?php foreach ($storeStockSummary['locations'] as $loc): ?>
+                                <div style="display: flex; justify-content: space-between; font-size: 13.5px; color: var(--saas-slate-700);">
+                                    <span><?= e($loc['label']) ?></span>
+                                    <strong style="color: var(--saas-navy-950);"><?= number_format($loc['pieces']) ?></strong>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
                 </section>
 

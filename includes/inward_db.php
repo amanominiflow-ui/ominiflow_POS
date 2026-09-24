@@ -1,8 +1,8 @@
 <?php
 /**
  * Warehouse inward count.
- * Stores product + size + colour + quantity only.
- * Does not change sellable stock, variants, purchase receives, or POS.
+ * Saving a count adds company stock at once. It is not ready stock in Central.
+ * QC, checking, and tagging has no pass or fail. Completing it places ready stock in Central only.
  */
 
 declare(strict_types=1);
@@ -27,6 +27,7 @@ function ensure_inward_schema(): void {
             `user_id` INT UNSIGNED NULL,
             `entry_date` DATE NOT NULL,
             `status` ENUM('cost_pending','confirmed') NOT NULL DEFAULT 'cost_pending',
+            `purchase_status` ENUM('pending','confirmed') NOT NULL DEFAULT 'pending',
             `is_sellable` TINYINT(1) NOT NULL DEFAULT 0,
             `notes` TEXT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -49,6 +50,7 @@ function ensure_inward_schema(): void {
             `purchase_cost` DECIMAL(12,2) NULL,
             `selling_price` DECIMAL(12,2) NULL,
             `cost_status` ENUM('pending','confirmed') NOT NULL DEFAULT 'pending',
+            `barcode` VARCHAR(100) NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX `idx_inward_line_entry` (`inward_entry_id`),
             INDEX `idx_inward_line_product` (`product_id`),
@@ -74,6 +76,7 @@ function inward_migrate_cost_columns(PDO $db): void {
         'purchase_cost' => 'DECIMAL(12,2) NULL AFTER `quantity`',
         'selling_price' => 'DECIMAL(12,2) NULL AFTER `purchase_cost`',
         'cost_status' => "ENUM('pending','confirmed') NOT NULL DEFAULT 'pending' AFTER `selling_price`",
+        'barcode' => 'VARCHAR(100) NULL AFTER `cost_status`',
     ];
     foreach ($add as $col => $definition) {
         if (!in_array($col, $existing, true)) {
@@ -88,6 +91,15 @@ function inward_migrate_cost_columns(PDO $db): void {
         $entryCols = $db->query('SHOW COLUMNS FROM `inward_entries`')->fetchAll(PDO::FETCH_COLUMN);
         if (!in_array('bill_id', $entryCols, true)) {
             $db->exec('ALTER TABLE `inward_entries` ADD COLUMN `bill_id` INT UNSIGNED NULL AFTER `vendor_id`');
+        }
+        if (!in_array('purchase_status', $entryCols, true)) {
+            $db->exec("ALTER TABLE `inward_entries` ADD COLUMN `purchase_status` ENUM('pending','confirmed') NOT NULL DEFAULT 'pending' AFTER `status`");
+        }
+        if (!in_array('qc_status', $entryCols, true)) {
+            $db->exec("ALTER TABLE `inward_entries` ADD COLUMN `qc_status` ENUM('pending','done') NOT NULL DEFAULT 'pending' AFTER `purchase_status`");
+        }
+        if (!in_array('company_stock_posted', $entryCols, true)) {
+            $db->exec('ALTER TABLE `inward_entries` ADD COLUMN `company_stock_posted` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_sellable`');
         }
     } catch (Throwable $e) {
     }
@@ -245,6 +257,10 @@ function create_inward_entry(
             ]);
         }
 
+        inward_post_company_stock($db, $bid, $entryId, $entryNumber, $resolved['lines'], $userId);
+        $db->prepare('UPDATE inward_entries SET company_stock_posted = 1 WHERE id = :id AND business_id = :bid')
+            ->execute(['id' => $entryId, 'bid' => $bid]);
+
         if ($ownTx) {
             $db->commit();
         } else {
@@ -307,6 +323,7 @@ function inward_resolve_vendor(?int $vendorId, ?string $vendorName, int $busines
 /**
  * Confirm purchase cost and selling price on an inward count.
  * Prices stay null until this runs. Product, variant, stock, and barcode rows are not changed.
+ * Confirming cost does not release a barcode for the warehouse to print.
  *
  * @param array<int, array<string, mixed>> $prices
  * @return array{success:bool, error?:string}
@@ -448,6 +465,405 @@ function confirm_inward_costs(int $entryId, array $prices, ?int $businessId = nu
         }
         return ['success' => false, 'error' => $message];
     }
+}
+
+/**
+ * Confirm the purchase and release one barcode per line for warehouse printing.
+ * Cost confirmation does not call this. Stock and prices on the product stay unchanged.
+ *
+ * @return array{success:bool, error?:string}
+ */
+function confirm_inward_purchase(int $entryId, ?int $businessId = null): array {
+    ensure_inward_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $entry = get_inward_entry_by_id($entryId, $bid);
+    if (!$entry) {
+        return ['success' => false, 'error' => 'That inward count was not found.'];
+    }
+    if ((string) ($entry['status'] ?? '') !== 'confirmed') {
+        return ['success' => false, 'error' => 'Confirm the costs first. Confirming cost does not release a barcode.'];
+    }
+    if ((string) ($entry['purchase_status'] ?? 'pending') === 'confirmed') {
+        return ['success' => false, 'error' => 'This purchase is already confirmed. Barcodes are ready to print.'];
+    }
+    if (empty($entry['lines'])) {
+        return ['success' => false, 'error' => 'This count has no lines to barcode.'];
+    }
+
+    $ownTx = !$db->inTransaction();
+    if ($ownTx) {
+        $db->beginTransaction();
+    } else {
+        $db->exec('SAVEPOINT inward_confirm_purchase');
+    }
+
+    try {
+        $locked = $db->prepare('
+            SELECT status, purchase_status
+            FROM inward_entries
+            WHERE id = :id AND business_id = :bid
+            FOR UPDATE
+        ');
+        $locked->execute(['id' => $entryId, 'bid' => $bid]);
+        $row = $locked->fetch();
+        if (!$row || (string) $row['status'] !== 'confirmed' || (string) $row['purchase_status'] !== 'pending') {
+            throw new RuntimeException('This purchase is not waiting to be confirmed.');
+        }
+
+        $stmtLine = $db->prepare('
+            UPDATE inward_lines SET barcode = :barcode
+            WHERE id = :id AND inward_entry_id = :eid
+        ');
+        foreach ($entry['lines'] as $line) {
+            $code = inward_release_line_barcode($db, $bid, $line);
+            $stmtLine->execute([
+                'barcode' => $code,
+                'id' => (int) $line['id'],
+                'eid' => $entryId,
+            ]);
+        }
+
+        $updated = $db->prepare('
+            UPDATE inward_entries
+            SET purchase_status = "confirmed", is_sellable = 0, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid AND status = "confirmed" AND purchase_status = "pending"
+        ');
+        $updated->execute(['id' => $entryId, 'bid' => $bid]);
+        if ($updated->rowCount() !== 1) {
+            throw new RuntimeException('This purchase is not waiting to be confirmed.');
+        }
+
+        if ($ownTx) {
+            $db->commit();
+        } else {
+            $db->exec('RELEASE SAVEPOINT inward_confirm_purchase');
+        }
+        return ['success' => true];
+    } catch (Throwable $e) {
+        if ($ownTx && $db->inTransaction()) {
+            $db->rollBack();
+        } elseif ($db->inTransaction()) {
+            $db->exec('ROLLBACK TO SAVEPOINT inward_confirm_purchase');
+        }
+        $message = $e->getMessage();
+        if ($message === '' || str_starts_with($message, 'SQLSTATE')) {
+            $message = 'Could not confirm this purchase.';
+        }
+        return ['success' => false, 'error' => $message];
+    }
+}
+
+/**
+ * Received quantity becomes company stock. Warehouse rows, including Central, stay unchanged.
+ *
+ * @param array<int, array<string, mixed>> $lines
+ */
+function inward_post_company_stock(PDO $db, int $businessId, int $entryId, string $entryNumber, array $lines, ?int $userId): void {
+    $byProduct = [];
+    foreach ($lines as $line) {
+        $productId = (int) ($line['product_id'] ?? 0);
+        $qty = (int) ($line['quantity'] ?? 0);
+        if ($productId <= 0 || $qty <= 0) {
+            continue;
+        }
+        $byProduct[$productId] = ($byProduct[$productId] ?? 0) + $qty;
+    }
+
+    $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+    $stmtInc = $db->prepare('
+        UPDATE products SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
+        WHERE id = :id AND business_id = :bid
+    ');
+    $stmtMov = $db->prepare('
+        INSERT INTO inventory_movements (
+            business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+        ) VALUES (
+            :bid, :pid, :uid, "in", :change, :before, :after, :reason, NOW()
+        )
+    ');
+    foreach ($byProduct as $productId => $qty) {
+        $stmtCur->execute(['id' => $productId, 'bid' => $businessId]);
+        $before = $stmtCur->fetchColumn();
+        if ($before === false) {
+            throw new RuntimeException('One of the products is not available for company stock.');
+        }
+        $beforeQty = (int) $before;
+        $stmtInc->execute(['qty' => $qty, 'id' => $productId, 'bid' => $businessId]);
+        $stmtMov->execute([
+            'bid' => $businessId,
+            'pid' => $productId,
+            'uid' => ($userId !== null && $userId > 0) ? $userId : null,
+            'change' => $qty,
+            'before' => $beforeQty,
+            'after' => $beforeQty + $qty,
+            'reason' => 'Inward ' . $entryNumber . ' received as company stock',
+        ]);
+    }
+    unset($entryId);
+}
+
+function inward_central_warehouse_id(PDO $db, int $businessId): int {
+    require_once __DIR__ . '/outlets_db.php';
+    ensure_business_warehouse_baseline($businessId);
+    $stmt = $db->prepare('
+        SELECT id FROM warehouses
+        WHERE business_id = :bid AND status = "active"
+          AND (code = "WH-CENTRAL" OR name LIKE "%Central%")
+        ORDER BY (code = "WH-CENTRAL") DESC, id ASC
+        LIMIT 1
+    ');
+    $stmt->execute(['bid' => $businessId]);
+    $id = (int) $stmt->fetchColumn();
+    if ($id > 0) {
+        return $id;
+    }
+
+    $code = 'WH-CENTRAL';
+    $taken = $db->prepare('SELECT id FROM warehouses WHERE code = :code LIMIT 1');
+    $taken->execute(['code' => $code]);
+    if ($taken->fetchColumn()) {
+        $code = 'WH-CENTRAL-' . $businessId;
+    }
+    $db->prepare('
+        INSERT INTO warehouses (business_id, outlet_id, name, code, location, status, created_at, updated_at)
+        VALUES (:bid, NULL, :name, :code, :loc, "active", NOW(), NOW())
+    ')->execute([
+        'bid' => $businessId,
+        'name' => 'Central Warehouse',
+        'code' => $code,
+        'loc' => 'Main distribution hub',
+    ]);
+    return (int) $db->lastInsertId();
+}
+
+/**
+ * Finish QC, checking, and tagging. There is no pass or fail.
+ * Ready quantity is added to Central Warehouse only. Company stock is not increased again.
+ *
+ * @return array{success:bool, error?:string, warehouse_name?:string}
+ */
+function complete_inward_qc(int $entryId, ?int $businessId = null, ?int $userId = null): array {
+    ensure_inward_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $entry = get_inward_entry_by_id($entryId, $bid);
+    if (!$entry) {
+        return ['success' => false, 'error' => 'That inward count was not found.'];
+    }
+    if ((string) ($entry['purchase_status'] ?? 'pending') !== 'confirmed') {
+        return ['success' => false, 'error' => 'Confirm the purchase so barcodes can be printed before QC, checking, and tagging.'];
+    }
+    if ((string) ($entry['qc_status'] ?? 'pending') === 'done') {
+        return ['success' => false, 'error' => 'QC, checking, and tagging is already complete. This stock is already ready in Central.'];
+    }
+    if (empty($entry['lines'])) {
+        return ['success' => false, 'error' => 'This count has no lines to make ready.'];
+    }
+
+    $centralId = inward_central_warehouse_id($db, $bid);
+    if ($centralId <= 0) {
+        return ['success' => false, 'error' => 'Central Warehouse was not found. Ready stock can go there only.'];
+    }
+
+    $ownTx = !$db->inTransaction();
+    if ($ownTx) {
+        $db->beginTransaction();
+    } else {
+        $db->exec('SAVEPOINT inward_complete_qc');
+    }
+
+    try {
+        $locked = $db->prepare('
+            SELECT purchase_status, qc_status, company_stock_posted, entry_number
+            FROM inward_entries
+            WHERE id = :id AND business_id = :bid
+            FOR UPDATE
+        ');
+        $locked->execute(['id' => $entryId, 'bid' => $bid]);
+        $row = $locked->fetch();
+        if (!$row || (string) $row['purchase_status'] !== 'confirmed' || (string) $row['qc_status'] !== 'pending') {
+            throw new RuntimeException('This count is not waiting for QC, checking, and tagging.');
+        }
+
+        if ((int) ($row['company_stock_posted'] ?? 0) !== 1) {
+            inward_post_company_stock($db, $bid, $entryId, (string) $row['entry_number'], $entry['lines'], $userId);
+            $db->prepare('UPDATE inward_entries SET company_stock_posted = 1 WHERE id = :id AND business_id = :bid')
+                ->execute(['id' => $entryId, 'bid' => $bid]);
+        }
+
+        $byProduct = [];
+        foreach ($entry['lines'] as $line) {
+            $productId = (int) $line['product_id'];
+            $byProduct[$productId] = ($byProduct[$productId] ?? 0) + (int) $line['quantity'];
+        }
+
+        $stmtHave = $db->prepare('SELECT stock_quantity FROM warehouse_stock WHERE product_id = :pid AND warehouse_id = :wid LIMIT 1 FOR UPDATE');
+        foreach ($byProduct as $productId => $qty) {
+            $stmtHave->execute(['pid' => $productId, 'wid' => $centralId]);
+            $have = $stmtHave->fetchColumn();
+            $next = ($have === false ? 0 : (int) $have) + $qty;
+            $db->prepare('
+                INSERT INTO warehouse_stock (warehouse_id, product_id, stock_quantity, created_at, updated_at)
+                VALUES (:wid, :pid, :qty, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE stock_quantity = :qty_up, updated_at = NOW()
+            ')->execute([
+                'wid' => $centralId,
+                'pid' => $productId,
+                'qty' => $next,
+                'qty_up' => $next,
+            ]);
+        }
+
+        $updated = $db->prepare('
+            UPDATE inward_entries
+            SET qc_status = "done", is_sellable = 1, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid AND qc_status = "pending" AND purchase_status = "confirmed"
+        ');
+        $updated->execute(['id' => $entryId, 'bid' => $bid]);
+        if ($updated->rowCount() !== 1) {
+            throw new RuntimeException('This count is not waiting for QC, checking, and tagging.');
+        }
+
+        if ($ownTx) {
+            $db->commit();
+        } else {
+            $db->exec('RELEASE SAVEPOINT inward_complete_qc');
+        }
+        return ['success' => true, 'warehouse_name' => 'Central Warehouse'];
+    } catch (Throwable $e) {
+        if ($ownTx && $db->inTransaction()) {
+            $db->rollBack();
+        } elseif ($db->inTransaction()) {
+            $db->exec('ROLLBACK TO SAVEPOINT inward_complete_qc');
+        }
+        $message = $e->getMessage();
+        if ($message === '' || str_starts_with($message, 'SQLSTATE')) {
+            $message = 'Could not finish QC, checking, and tagging.';
+        }
+        return ['success' => false, 'error' => $message];
+    }
+}
+
+function inward_barcode_taken(PDO $db, int $businessId, string $barcode): bool {
+    $product = $db->prepare('SELECT id FROM products WHERE business_id = :bid AND barcode = :bc LIMIT 1');
+    $product->execute(['bid' => $businessId, 'bc' => $barcode]);
+    if ($product->fetchColumn()) {
+        return true;
+    }
+    $variant = $db->prepare('SELECT id FROM product_variants WHERE barcode = :bc LIMIT 1');
+    $variant->execute(['bc' => $barcode]);
+    if ($variant->fetchColumn()) {
+        return true;
+    }
+    $line = $db->prepare('
+        SELECT il.id
+        FROM inward_lines il
+        INNER JOIN inward_entries ie ON ie.id = il.inward_entry_id
+        WHERE ie.business_id = :bid AND il.barcode = :bc
+        LIMIT 1
+    ');
+    $line->execute(['bid' => $businessId, 'bc' => $barcode]);
+    return (bool) $line->fetchColumn();
+}
+
+function inward_allocate_barcode(PDO $db, int $businessId): string {
+    for ($try = 0; $try < 12; $try++) {
+        $code = '2'
+            . str_pad((string) ($businessId % 10000), 4, '0', STR_PAD_LEFT)
+            . str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+        if (!inward_barcode_taken($db, $businessId, $code)) {
+            return $code;
+        }
+    }
+    throw new RuntimeException('Could not release a barcode.');
+}
+
+/**
+ * @param array<string, mixed> $line
+ */
+function inward_release_line_barcode(PDO $db, int $businessId, array $line): string {
+    $variantId = (int) ($line['variant_id'] ?? 0);
+    $productId = (int) ($line['product_id'] ?? 0);
+
+    if ($variantId > 0) {
+        $stmt = $db->prepare('
+            SELECT barcode FROM product_variants
+            WHERE id = :id AND product_id = :pid AND business_id = :bid
+            LIMIT 1
+            FOR UPDATE
+        ');
+        $stmt->execute(['id' => $variantId, 'pid' => $productId, 'bid' => $businessId]);
+        $existing = $stmt->fetchColumn();
+        if ($existing !== false && trim((string) $existing) !== '') {
+            return trim((string) $existing);
+        }
+        if ($existing !== false) {
+            $code = inward_allocate_barcode($db, $businessId);
+            $db->prepare('
+                UPDATE product_variants
+                SET barcode = :bc, updated_at = NOW()
+                WHERE id = :id AND business_id = :bid AND (barcode IS NULL OR barcode = "")
+            ')->execute(['bc' => $code, 'id' => $variantId, 'bid' => $businessId]);
+            return $code;
+        }
+    }
+
+    $stmt = $db->prepare('
+        SELECT barcode FROM products
+        WHERE id = :id AND business_id = :bid
+        LIMIT 1
+        FOR UPDATE
+    ');
+    $stmt->execute(['id' => $productId, 'bid' => $businessId]);
+    $existing = $stmt->fetchColumn();
+    if ($existing !== false && trim((string) $existing) !== '') {
+        return trim((string) $existing);
+    }
+    $code = inward_allocate_barcode($db, $businessId);
+    if ($existing !== false) {
+        $db->prepare('
+            UPDATE products
+            SET barcode = :bc, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid AND (barcode IS NULL OR barcode = "")
+        ')->execute(['bc' => $code, 'id' => $productId, 'bid' => $businessId]);
+    }
+    return $code;
+}
+
+/**
+ * @return array{success:bool, error?:string, entry?:array<string, mixed>, labels?:array<int, array<string, mixed>>}
+ */
+function get_inward_print_labels(int $entryId, ?int $businessId = null): array {
+    $entry = get_inward_entry_by_id($entryId, $businessId);
+    if (!$entry) {
+        return ['success' => false, 'error' => 'That inward count was not found.'];
+    }
+    if ((string) ($entry['purchase_status'] ?? 'pending') !== 'confirmed') {
+        return ['success' => false, 'error' => 'Confirming cost does not release a barcode. Confirm the purchase before the warehouse prints.'];
+    }
+
+    $labels = [];
+    foreach ($entry['lines'] as $line) {
+        $code = trim((string) ($line['barcode'] ?? ''));
+        if ($code === '') {
+            continue;
+        }
+        $copies = max(1, min(100, (int) $line['quantity']));
+        $labels[] = [
+            'name' => (string) ($line['product_name'] ?? 'Product'),
+            'sku' => (string) ($line['product_sku'] ?? ''),
+            'size' => (string) ($line['size'] ?? ''),
+            'colour' => (string) ($line['colour'] ?? ''),
+            'price' => $line['selling_price'],
+            'barcode' => $code,
+            'copies' => $copies,
+        ];
+    }
+    if ($labels === []) {
+        return ['success' => false, 'error' => 'This purchase has no barcode ready to print.'];
+    }
+    return ['success' => true, 'entry' => $entry, 'labels' => $labels];
 }
 
 function inward_insert_purchase_bill(array $entry, array $lines, int $businessId, ?int $userId): array {
