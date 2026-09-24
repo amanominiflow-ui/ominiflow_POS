@@ -1060,8 +1060,13 @@ function create_purchase_bill(array $data, ?int $userId = null, ?int $businessId
     if ($vendorId <= 0) return ['success' => false, 'error' => 'Vendor is required.'];
     if (empty($items)) return ['success' => false, 'error' => 'At least one item is required in the bill.'];
 
+    $ownTx = !$db->inTransaction();
     try {
-        $db->beginTransaction();
+        if ($ownTx) {
+            $db->beginTransaction();
+        } else {
+            $db->exec('SAVEPOINT purchase_bill');
+        }
 
         $vendor = get_vendor_by_id($vendorId, $bid);
         if (!$vendor) throw new Exception("Vendor not found.");
@@ -1168,10 +1173,18 @@ function create_purchase_bill(array $data, ?int $userId = null, ?int $businessId
             ]);
         }
 
-        $db->commit();
+        if ($ownTx) {
+            $db->commit();
+        } else {
+            $db->exec('RELEASE SAVEPOINT purchase_bill');
+        }
         return ['success' => true, 'bill_id' => $billId, 'bill_number' => $billNumber, 'total_amount' => $grandTotal];
     } catch (Exception $e) {
-        if ($db->inTransaction()) $db->rollBack();
+        if ($ownTx && $db->inTransaction()) {
+            $db->rollBack();
+        } elseif ($db->inTransaction()) {
+            $db->exec('ROLLBACK TO SAVEPOINT purchase_bill');
+        }
         return ['success' => false, 'error' => $e->getMessage()];
     }
 }

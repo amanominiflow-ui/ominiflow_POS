@@ -1532,6 +1532,42 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay_speed', "INT NOT NULL DEFAULT 4000");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inward_entries` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `entry_number` VARCHAR(50) NOT NULL,
+            `warehouse_id` INT UNSIGNED NOT NULL,
+            `vendor_id` INT UNSIGNED NULL,
+            `user_id` INT UNSIGNED NULL,
+            `entry_date` DATE NOT NULL,
+            `status` ENUM('counted') NOT NULL DEFAULT 'counted',
+            `is_sellable` TINYINT(1) NOT NULL DEFAULT 0,
+            `notes` TEXT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_inward_entry_number` (`business_id`, `entry_number`),
+            INDEX `idx_inward_business` (`business_id`),
+            INDEX `idx_inward_warehouse` (`warehouse_id`),
+            INDEX `idx_inward_date` (`entry_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inward_lines` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `inward_entry_id` INT UNSIGNED NOT NULL,
+            `product_id` INT UNSIGNED NOT NULL,
+            `variant_id` INT UNSIGNED NULL,
+            `size` VARCHAR(80) NOT NULL,
+            `colour` VARCHAR(80) NOT NULL,
+            `quantity` INT UNSIGNED NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_inward_line_entry` (`inward_entry_id`),
+            INDEX `idx_inward_line_product` (`product_id`),
+            CONSTRAINT `fk_inward_line_entry` FOREIGN KEY (`inward_entry_id`) REFERENCES `inward_entries` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
 
     if (php_sapi_name() === 'cli') {
         echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";

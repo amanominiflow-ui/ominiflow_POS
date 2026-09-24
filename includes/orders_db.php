@@ -88,6 +88,21 @@ function ensure_orders_invoices_schema(): void {
         'product_variants' => ['sku', 'uk_business_var_sku'],
     ];
 
+    foreach (['orders', 'invoices'] as $outletTable) {
+        try {
+            $stmtCol = $db->prepare("
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = 'outlet_id'
+            ");
+            $stmtCol->execute(['db' => DB_NAME, 'tbl' => $outletTable]);
+            if ((int) $stmtCol->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `{$outletTable}` ADD `outlet_id` INT UNSIGNED NULL");
+            }
+        } catch (Throwable $e) {
+            // Column may already exist.
+        }
+    }
+
     foreach ($tablesAndCols as $tbl => $info) {
         [$col, $ukName] = $info;
         try {
@@ -988,7 +1003,7 @@ function process_pos_order(
         $stmtOrder->execute([
             'biz_id' => $bid,
             'order_number' => $orderNumber,
-            'outlet_id' => $outletId ?: 1,
+            'outlet_id' => $outletId > 0 ? $outletId : null,
             'customer_id' => $customerId ?: 1, // Default to Walk-in customer
             'user_id' => $validUserId,
             'subtotal' => $subtotal,
@@ -1165,12 +1180,12 @@ function process_pos_order(
 
         $stmtInvoice = $db->prepare('
             INSERT INTO invoices (
-                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, outlet_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
+                :biz_id, :invoice_number, :order_id, :outlet_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
@@ -1178,6 +1193,7 @@ function process_pos_order(
         ');
         $stmtInvoice->execute([
             'biz_id' => $bid,
+            'outlet_id' => $outletId > 0 ? $outletId : null,
             'invoice_number' => $invoiceNumber,
             'order_id' => $orderId,
             'customer_id' => $customerId ?: 1,
@@ -1272,6 +1288,12 @@ function process_pos_order(
         $userData = $userStmt->fetch();
         $cashierName = $userData ? $userData['name'] : 'Cashier';
 
+        $outletName = '';
+        if ($outletId > 0) {
+            $outletRow = get_outlet_by_id($outletId, $bid);
+            $outletName = $outletRow ? (string) ($outletRow['name'] ?? '') : '';
+        }
+
         $db->commit();
 
         if ($couponId) {
@@ -1300,6 +1322,8 @@ function process_pos_order(
             'customer_name' => $customerName,
             'customer_phone' => $customerPhone,
             'cashier_name' => $cashierName,
+            'outlet_id' => $outletId > 0 ? $outletId : null,
+            'outlet_name' => $outletName,
             'payment_method' => $paymentSplits !== [] ? format_pos_split_payment_label($paymentSplits) : $paymentMethod,
             'payment_splits' => $paymentSplits,
             'payment_status' => $resolvedPaymentStatus,
@@ -1361,14 +1385,15 @@ function bill_generate_pos(int $orderId, array $options = []): array {
         $invoiceBizId = (int)($order['business_id'] ?? 1);
         $invoiceNumber = generate_next_invoice_number($invoiceBizId, $db);
 
+        $invoiceOutletId = (int) ($order['outlet_id'] ?? 0);
         $stmtInsert = $db->prepare('
             INSERT INTO invoices (
-                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, outlet_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, NOW(), :subtotal,
+                :biz_id, :invoice_number, :order_id, :outlet_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
@@ -1381,6 +1406,7 @@ function bill_generate_pos(int $orderId, array $options = []): array {
             'biz_id' => $invoiceBizId,
             'invoice_number' => $invoiceNumber,
             'order_id' => $orderId,
+            'outlet_id' => $invoiceOutletId > 0 ? $invoiceOutletId : null,
             'customer_id' => $order['customer_id'],
             'user_id' => $order['user_id'],
             'subtotal' => $subtotal,
@@ -1522,19 +1548,22 @@ function get_invoices(string $search = '', string $status = '', string $dateFrom
 }
 
 function get_invoice_by_id(int $id, ?int $businessId = null): ?array {
+    ensure_orders_invoices_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
-        SELECT inv.*, o.order_number, o.notes AS order_notes, c.name AS customer_name, c.phone AS customer_phone,
+        SELECT inv.*, o.order_number, o.notes AS order_notes, o.outlet_id AS order_outlet_id,
+               ot.name AS outlet_name, c.name AS customer_name, c.phone AS customer_phone,
                c.email AS customer_email, c.address AS customer_address, u.name AS cashier_name
         FROM invoices inv
         LEFT JOIN orders o ON o.id = inv.order_id AND o.business_id = :bid_o
+        LEFT JOIN outlets ot ON ot.id = COALESCE(inv.outlet_id, o.outlet_id) AND ot.business_id = :bid_ot
         LEFT JOIN customers c ON c.id = inv.customer_id AND c.business_id = :bid_c
         LEFT JOIN users u ON u.id = inv.user_id
         WHERE inv.id = :id AND inv.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_o' => $bid, 'bid_c' => $bid]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_o' => $bid, 'bid_ot' => $bid, 'bid_c' => $bid]);
     $invoice = $stmt->fetch();
 
     if (!$invoice) return null;
@@ -2287,14 +2316,17 @@ function create_custom_invoice(array $data, ?int $userId, ?int $businessId = nul
                 tax_amount, total_amount, payment_method, payment_status, order_status, fulfillment_status,
                 notes, created_at, updated_at
             ) VALUES (
-                :biz_id, :order_number, 1, :customer_id, :user_id, :subtotal, :discount_amount, "fixed",
+                :biz_id, :order_number, :outlet_id, :customer_id, :user_id, :subtotal, :discount_amount, "fixed",
                 :tax_amount, :total_amount, :payment_method, :payment_status, "completed", "delivered",
                 :notes, NOW(), NOW()
             )
         ');
+        require_once __DIR__ . '/outlets_db.php';
+        $manualOutletId = resolve_pos_outlet_id(!empty($data['outlet_id']) ? (int) $data['outlet_id'] : null, $bid);
         $stmtOrder->execute([
             'biz_id' => $bid,
             'order_number' => $orderNumber,
+            'outlet_id' => $manualOutletId > 0 ? $manualOutletId : null,
             'customer_id' => $customerId,
             'user_id' => $userId ?: 1,
             'subtotal' => $subtotal,
@@ -2372,12 +2404,12 @@ function create_custom_invoice(array $data, ?int $userId, ?int $businessId = nul
 
         $stmtInsert = $db->prepare('
             INSERT INTO invoices (
-                business_id, invoice_number, order_id, customer_id, user_id, invoice_date, subtotal,
+                business_id, invoice_number, order_id, outlet_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                 tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
-                :biz_id, :invoice_number, :order_id, :customer_id, :user_id, :invoice_date, :subtotal,
+                :biz_id, :invoice_number, :order_id, :outlet_id, :customer_id, :user_id, :invoice_date, :subtotal,
                 :discount_amount, "fixed", :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
                 :tax_amount, :total_amount, :amount_paid, 0.00, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
@@ -2387,6 +2419,7 @@ function create_custom_invoice(array $data, ?int $userId, ?int $businessId = nul
             'biz_id' => $bid,
             'invoice_number' => $invNum,
             'order_id' => $orderId,
+            'outlet_id' => $manualOutletId > 0 ? $manualOutletId : null,
             'customer_id' => $customerId,
             'user_id' => $userId ?: 1,
             'invoice_date' => $invoiceDate . ' ' . date('H:i:s'),

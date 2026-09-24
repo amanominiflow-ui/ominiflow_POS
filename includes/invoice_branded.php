@@ -203,6 +203,7 @@ function prepare_branded_invoice_view(array $invoice, int $businessId, string $k
         'order_date' => $invoiceDateStr,
         'invoice_no' => $displayInvoiceNo,
         'payment_mode' => $paymentModeStr,
+        'outlet_name' => trim((string) ($invoice['outlet_name'] ?? '')),
         'customer_name' => $custName,
         'customer_phone' => $custPhone,
         'customer_address' => $custAddress,
@@ -534,6 +535,7 @@ table.products td.col-price, table.products td.col-total { text-align: right; pa
   <div class="kv"><span class="lbl">Order Date</span><span> : ' . $e($view['order_date']) . '</span></div>
   <div class="kv"><span class="lbl">Invoice No</span><span> : ' . $e($view['invoice_no']) . '</span></div>
   <div class="kv"><span class="lbl">Payment Mode</span><span> : ' . $e($view['payment_mode']) . '</span></div>
+  ' . (($view['outlet_name'] ?? '') !== '' ? '<div class="kv"><span class="lbl">Outlet</span><span> : ' . $e($view['outlet_name']) . '</span></div>' : '') . '
 </td>
 <td class="cust">
   <h3>Customer Details</h3>

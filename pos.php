@@ -82,7 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $paymentMethod = (string) ($_POST['payment_method'] ?? 'cash');
         $notes = (string) ($_POST['notes'] ?? '');
         $amountTendered = (float) ($_POST['amount_tendered'] ?? 0.00);
-        $outletId = !empty($_POST['outlet_id']) ? (int)$_POST['outlet_id'] : 1;
+        $outletId = (int) ($_POST['outlet_id'] ?? 0);
+        if ($outletId <= 0) {
+            $outletId = (int) ($_SESSION['pos_outlet_id'] ?? 0);
+        }
         $clientOrderUuid = !empty($_POST['client_order_uuid']) ? (string)$_POST['client_order_uuid'] : null;
         $couponId = !empty($_POST['coupon_id']) ? (int)$_POST['coupon_id'] : null;
         $couponCode = !empty($_POST['coupon_code']) ? (string)$_POST['coupon_code'] : null;
@@ -413,6 +416,13 @@ $totalPosAlerts = count($lowStockAlerts) + count($unsoldAlerts);
 $posOutlets = get_outlets('active');
 $posOutletId = resolve_pos_outlet_id((int) ($_SESSION['pos_outlet_id'] ?? 0));
 $_SESSION['pos_outlet_id'] = $posOutletId;
+$posOutletName = '';
+foreach ($posOutlets as $posOutletRow) {
+    if ((int) $posOutletRow['id'] === $posOutletId) {
+        $posOutletName = (string) $posOutletRow['name'];
+        break;
+    }
+}
 $posWarehouseId = get_warehouse_id_for_outlet($posOutletId) ?? 0;
 $posWarehouseStockByProduct = [];
 if ($posWarehouseId > 0) {
@@ -889,7 +899,7 @@ $flashError = get_flash('error');
                     <div style="text-align: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 12px;">
                         <div style="font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #111827;">OMINIFLOW POS</div>
                         <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Official Retail Sales Receipt & Tax Invoice</div>
-                        <div style="font-size: 14px; font-weight: 800; color: var(--saas-primary); margin-top: 6px;" id="receiptInvoiceNumber">INV-00000000-0000</div>
+                        <a href="<?= asset('invoice-view.php') ?>" id="receiptInvoiceNumber" target="_blank" style="display: inline-block; font-size: 14px; font-weight: 800; color: var(--saas-primary); margin-top: 6px; text-decoration: none;">INV-00000000-0000</a>
                         <div style="font-size: 11px; color: #64748b;" id="receiptOrderNumber">Order #ORD-000000</div>
                         <div style="font-size: 11px; color: #64748b;" id="receiptTimestamp">Date Time</div>
                     </div>
@@ -897,6 +907,7 @@ $flashError = get_flash('error');
                     <div style="font-size: 12px; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
                         <div>Customer: <strong id="receiptCustomerName">Walk-in Customer</strong></div>
                         <div id="receiptCustomerPhoneRow" style="display: none;">Phone: <span id="receiptCustomerPhone"></span></div>
+                        <div>Outlet: <strong id="receiptOutletName"><?= e($posOutletName) ?></strong></div>
                         <div>Cashier: <span id="receiptCashierName"><?= e($user['name'] ?? 'Cashier') ?></span></div>
                         <div>Payment Method: <strong style="text-transform: uppercase;" id="receiptPaymentMethod">CASH</strong> (Status: PAID)</div>
                     </div>
@@ -2243,9 +2254,6 @@ $flashError = get_flash('error');
 
             // 10. Display Sale Completed Modal / Receipt
             function showSaleCompletedModal(data) {
-                if (document.getElementById('receiptInvoiceNumber')) {
-                    document.getElementById('receiptInvoiceNumber').textContent = data.invoice_number || 'INV-PENDING';
-                }
                 document.getElementById('receiptOrderNumber').textContent = 'Order #' + data.order_number;
                 document.getElementById('receiptTimestamp').textContent = data.created_at;
                 document.getElementById('receiptCustomerName').textContent = data.customer_name || 'Walk-in Customer';
@@ -2260,6 +2268,10 @@ $flashError = get_flash('error');
                 }
 
                 document.getElementById('receiptCashierName').textContent = data.cashier_name || 'Cashier';
+                const receiptOutlet = document.getElementById('receiptOutletName');
+                if (receiptOutlet) {
+                    receiptOutlet.textContent = data.outlet_name || receiptOutlet.textContent || 'Outlet';
+                }
                 document.getElementById('receiptPaymentMethod').textContent = data.payment_method;
 
                 // Populate Items
@@ -2310,9 +2322,19 @@ $flashError = get_flash('error');
                     cashDetails.style.display = 'none';
                 }
 
+                const invNumber = document.getElementById('receiptInvoiceNumber');
+                const invoiceHref = data.invoice_id
+                    ? '<?= asset('invoice-view.php?id=') ?>' + data.invoice_id
+                    : (data.order_id ? '<?= asset('invoice-view.php?order_id=') ?>' + data.order_id : '');
+                if (invNumber) {
+                    invNumber.textContent = data.invoice_number || 'INV-PENDING';
+                    if (invoiceHref) {
+                        invNumber.href = invoiceHref;
+                    }
+                }
                 const invLink = document.getElementById('viewInvoiceLink');
-                if (invLink && data.invoice_id) {
-                    invLink.href = '<?= asset('invoice-view.php?id=') ?>' + data.invoice_id;
+                if (invLink && invoiceHref) {
+                    invLink.href = invoiceHref;
                 }
 
                 const waStatus = document.getElementById('receiptWhatsAppStatus');

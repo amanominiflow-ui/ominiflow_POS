@@ -84,6 +84,57 @@ function start_stock_count(int $userId, string $notes = '', ?int $businessId = n
     }
 }
 
+/**
+ * Apply a typed physical count. Warehouse rows stay in step with product stock
+ * so a later sync does not erase the adjustment. Returns the stock actually saved.
+ */
+function apply_counted_quantity_to_stock(PDO $db, int $businessId, int $productId, int $newStock): int {
+    require_once __DIR__ . '/outlets_db.php';
+    $newStock = max(0, $newStock);
+
+    $stmtWh = $db->prepare('
+        SELECT ws.warehouse_id, ws.stock_quantity
+        FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+        WHERE ws.product_id = :pid
+        ORDER BY ws.stock_quantity DESC, ws.warehouse_id ASC
+    ');
+    $stmtWh->execute(['bid' => $businessId, 'pid' => $productId]);
+    $rows = $stmtWh->fetchAll();
+
+    if (!$rows) {
+        $db->prepare('UPDATE products SET stock_quantity = :qty, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute(['qty' => $newStock, 'id' => $productId, 'bid' => $businessId]);
+        return $newStock;
+    }
+
+    $sum = 0;
+    foreach ($rows as $row) {
+        $sum += (int) $row['stock_quantity'];
+    }
+    $delta = $newStock - $sum;
+    if ($delta > 0) {
+        $first = $rows[0];
+        set_product_warehouse_stock($productId, (int) $first['warehouse_id'], (int) $first['stock_quantity'] + $delta);
+    } elseif ($delta < 0) {
+        $left = -$delta;
+        foreach ($rows as $row) {
+            if ($left <= 0) {
+                break;
+            }
+            $have = (int) $row['stock_quantity'];
+            $take = min($have, $left);
+            set_product_warehouse_stock($productId, (int) $row['warehouse_id'], $have - $take);
+            $left -= $take;
+        }
+    }
+
+    sync_product_stock_from_warehouses($productId, $businessId);
+    $stmt = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid');
+    $stmt->execute(['id' => $productId, 'bid' => $businessId]);
+    return (int) $stmt->fetchColumn();
+}
+
 function update_stock_count_item(int $stockCountItemId, int $countedQty): array {
     $db = get_db();
     $stmt = $db->prepare('SELECT expected_qty FROM stock_count_items WHERE id = :id');
@@ -118,7 +169,6 @@ function reconcile_and_complete_stock_count(int $countId, int $userId, ?int $bus
             throw new Exception('Active stock count session not found.');
         }
 
-        $stmtStockAdj = $db->prepare('UPDATE products SET stock_quantity = :qty, updated_at = NOW() WHERE id = :id AND business_id = :bid');
         $stmtMoveLog = $db->prepare('
             INSERT INTO inventory_movements (
                 business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
@@ -129,28 +179,36 @@ function reconcile_and_complete_stock_count(int $countId, int $userId, ?int $bus
 
         $adjustmentsMade = 0;
         foreach ($count['items'] as $item) {
-            $diff = (int) $item['difference_qty'];
-            if ($diff !== 0) {
-                $prodId = (int) $item['product_id'];
+            $prodId = (int) $item['product_id'];
+            $countedQty = max(0, (int) $item['counted_qty']);
 
-                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
-                $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
-                $currStock = (int) $stmtCur->fetchColumn();
-
-                $newStock = (int) $item['counted_qty'];
-                $stmtStockAdj->execute(['qty' => $newStock, 'id' => $prodId, 'bid' => $bid]);
-
-                $stmtMoveLog->execute([
-                    'biz_id' => $bid,
-                    'product_id' => $prodId,
-                    'user_id' => $userId,
-                    'quantity_change' => $diff,
-                    'quantity_before' => $currStock,
-                    'quantity_after' => $newStock,
-                    'reason' => "Physical Stock Audit #{$count['count_number']} Reconciliation",
-                ]);
-                $adjustmentsMade++;
+            $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+            $stmtCur->execute(['id' => $prodId, 'bid' => $bid]);
+            $currStock = $stmtCur->fetchColumn();
+            if ($currStock === false) {
+                continue;
             }
+            $currStock = (int) $currStock;
+            if ($countedQty === $currStock) {
+                continue;
+            }
+
+            $newStock = apply_counted_quantity_to_stock($db, $bid, $prodId, $countedQty);
+            $change = $newStock - $currStock;
+            if ($change === 0) {
+                continue;
+            }
+
+            $stmtMoveLog->execute([
+                'biz_id' => $bid,
+                'product_id' => $prodId,
+                'user_id' => $userId,
+                'quantity_change' => $change,
+                'quantity_before' => $currStock,
+                'quantity_after' => $newStock,
+                'reason' => "Physical Stock Audit #{$count['count_number']} Reconciliation",
+            ]);
+            $adjustmentsMade++;
         }
 
         // Mark count completed

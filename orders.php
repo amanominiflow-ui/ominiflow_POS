@@ -12,6 +12,103 @@ require_once __DIR__ . '/includes/orders_db.php';
 
 require_auth();
 
+if (!empty($_GET['fetch_receipt']) && !empty($_GET['id'])) {
+    $receiptOrder = get_order_by_id((int) $_GET['id']);
+    if (!$receiptOrder) {
+        echo '<div style="color:red; text-align:center;">Order not found.</div>';
+        exit;
+    }
+    ?>
+    <div class="receipt-paper">
+        <div style="text-align: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 12px;">
+            <div style="font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">OMINIFLOW POS</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Official Sales Receipt</div>
+            <?php if (!empty($receiptOrder['invoice_id'])): ?>
+                <div style="margin-top: 6px;">
+                    <a href="<?= asset('invoice-view.php?id=' . (int) $receiptOrder['invoice_id']) ?>" target="_blank" style="font-size: 13px; font-weight: 800; color: #1e3a8a; text-decoration: none;">
+                        <?= e((string) ($receiptOrder['invoice_number'] ?: 'Open invoice')) ?>
+                    </a>
+                </div>
+            <?php endif; ?>
+            <div style="font-size: 12px; font-weight: 700; margin-top: 6px;"><?= e($receiptOrder['order_number']) ?></div>
+            <div style="font-size: 11px; color: #64748b;"><?= date('M d, Y • h:i:s A', strtotime($receiptOrder['created_at'])) ?></div>
+        </div>
+
+        <div style="font-size: 12px; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
+            <div>Customer: <strong><?= e($receiptOrder['customer_name'] ?: 'Walk-in') ?></strong></div>
+            <?php if (!empty($receiptOrder['customer_phone'])): ?>
+                <div>Phone: <?= e($receiptOrder['customer_phone']) ?></div>
+            <?php endif; ?>
+            <div>Cashier: <?= e($receiptOrder['cashier_name'] ?: 'Cashier') ?></div>
+            <div>Payment: <span style="text-transform: uppercase; font-weight: 700;"><?= e($receiptOrder['payment_method']) ?></span></div>
+        </div>
+
+        <table style="width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 12px;">
+            <thead>
+                <tr style="border-bottom: 1px solid #94a3b8; text-align: left;">
+                    <th style="padding: 4px 0;">Item</th>
+                    <th style="padding: 4px 0; text-align: center;">Qty</th>
+                    <th style="padding: 4px 0; text-align: right;">Price</th>
+                    <th style="padding: 4px 0; text-align: right;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($receiptOrder['items'] as $it): ?>
+                    <tr style="border-bottom: 1px dotted #e2e8f0;">
+                        <td style="padding: 6px 0;">
+                            <div style="font-weight: 600;"><?= e($it['product_name']) ?></div>
+                            <?php
+                                $lineSize = trim((string)($it['size'] ?? ''));
+                                $lineColour = trim((string)($it['colour'] ?? ''));
+                            ?>
+                            <?php if ($lineSize !== '' || $lineColour !== ''): ?>
+                                <div style="font-size: 10px; color: #475569;">
+                                    <?= $lineSize !== '' ? 'Size: ' . e($lineSize) : '' ?>
+                                    <?= ($lineSize !== '' && $lineColour !== '') ? ' · ' : '' ?>
+                                    <?= $lineColour !== '' ? 'Colour: ' . e($lineColour) : '' ?>
+                                </div>
+                            <?php endif; ?>
+                            <div style="font-size: 10px; color: #64748b;">SKU: <?= e($it['product_sku']) ?></div>
+                        </td>
+                        <td style="padding: 6px 0; text-align: center;"><?= (int)$it['quantity'] ?></td>
+                        <td style="padding: 6px 0; text-align: right;">₹<?= number_format((float)$it['unit_price'], 2) ?></td>
+                        <td style="padding: 6px 0; text-align: right; font-weight: 700;">₹<?= number_format((float)$it['line_total'], 2) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <div style="font-size: 12px; border-top: 1px dashed #cbd5e1; padding-top: 8px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                <span>Subtotal:</span>
+                <span>₹<?= number_format((float)$receiptOrder['subtotal'], 2) ?></span>
+            </div>
+            <?php if ((float)$receiptOrder['discount_amount'] > 0): ?>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #b91c1c;">
+                    <span>Discount:</span>
+                    <span>− ₹<?= number_format((float)$receiptOrder['discount_amount'], 2) ?></span>
+                </div>
+            <?php endif; ?>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                <span>Tax:</span>
+                <span>₹<?= number_format((float)$receiptOrder['tax_amount'], 2) ?></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; margin-top: 6px; border-top: 1px solid #111827; padding-top: 6px;">
+                <span>GRAND TOTAL:</span>
+                <span>₹<?= number_format((float)$receiptOrder['total_amount'], 2) ?></span>
+            </div>
+        </div>
+
+        <?php if (!empty($receiptOrder['invoice_id'])): ?>
+            <div style="text-align: center; margin-top: 14px;">
+                <a href="<?= asset('invoice-view.php?id=' . (int) $receiptOrder['invoice_id']) ?>" target="_blank" style="display: inline-block; padding: 8px 14px; background: #0f172a; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none;">Open invoice</a>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+    exit;
+}
+
 $search = trim((string) ($_GET['q'] ?? ''));
 $statusFilter = trim((string) ($_GET['status'] ?? ''));
 $dateFrom = trim((string) ($_GET['date_from'] ?? ''));
@@ -378,93 +475,3 @@ $flashError = get_flash('error');
     </script>
 </body>
 </html>
-<?php
-// Handle AJAX Receipt Partial Rendering
-if (!empty($_GET['fetch_receipt']) && !empty($_GET['id'])) {
-    $receiptOrder = get_order_by_id((int)$_GET['id']);
-    if (!$receiptOrder) {
-        echo '<div style="color:red; text-align:center;">Order not found.</div>';
-        exit;
-    }
-    ?>
-    <div class="receipt-paper">
-        <div style="text-align: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 12px;">
-            <div style="font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">OMINIFLOW POS</div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Official Sales Receipt</div>
-            <div style="font-size: 12px; font-weight: 700; margin-top: 6px;"><?= e($receiptOrder['order_number']) ?></div>
-            <div style="font-size: 11px; color: #64748b;"><?= date('M d, Y • h:i:s A', strtotime($receiptOrder['created_at'])) ?></div>
-        </div>
-
-        <div style="font-size: 12px; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
-            <div>Customer: <strong><?= e($receiptOrder['customer_name'] ?: 'Walk-in') ?></strong></div>
-            <?php if (!empty($receiptOrder['customer_phone'])): ?>
-                <div>Phone: <?= e($receiptOrder['customer_phone']) ?></div>
-            <?php endif; ?>
-            <div>Cashier: <?= e($receiptOrder['cashier_name'] ?: 'Cashier') ?></div>
-            <div>Payment: <span style="text-transform: uppercase; font-weight: 700;"><?= e($receiptOrder['payment_method']) ?></span></div>
-        </div>
-
-        <table style="width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 12px;">
-            <thead>
-                <tr style="border-bottom: 1px solid #94a3b8; text-align: left;">
-                    <th style="padding: 4px 0;">Item</th>
-                    <th style="padding: 4px 0; text-align: center;">Qty</th>
-                    <th style="padding: 4px 0; text-align: right;">Price</th>
-                    <th style="padding: 4px 0; text-align: right;">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($receiptOrder['items'] as $it): ?>
-                    <tr style="border-bottom: 1px dotted #e2e8f0;">
-                        <td style="padding: 6px 0;">
-                            <div style="font-weight: 600;"><?= e($it['product_name']) ?></div>
-                            <?php
-                                $lineSize = trim((string)($it['size'] ?? ''));
-                                $lineColour = trim((string)($it['colour'] ?? ''));
-                            ?>
-                            <?php if ($lineSize !== '' || $lineColour !== ''): ?>
-                                <div style="font-size: 10px; color: #475569;">
-                                    <?= $lineSize !== '' ? 'Size: ' . e($lineSize) : '' ?>
-                                    <?= ($lineSize !== '' && $lineColour !== '') ? ' · ' : '' ?>
-                                    <?= $lineColour !== '' ? 'Colour: ' . e($lineColour) : '' ?>
-                                </div>
-                            <?php endif; ?>
-                            <div style="font-size: 10px; color: #64748b;">SKU: <?= e($it['product_sku']) ?></div>
-                        </td>
-                        <td style="padding: 6px 0; text-align: center;"><?= (int)$it['quantity'] ?></td>
-                        <td style="padding: 6px 0; text-align: right;">₹<?= number_format((float)$it['unit_price'], 2) ?></td>
-                        <td style="padding: 6px 0; text-align: right; font-weight: 700;">₹<?= number_format((float)$it['line_total'], 2) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <div style="font-size: 12px; border-top: 1px dashed #cbd5e1; padding-top: 8px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                <span>Subtotal:</span>
-                <span>₹<?= number_format((float)$receiptOrder['subtotal'], 2) ?></span>
-            </div>
-            <?php if ((float)$receiptOrder['discount_amount'] > 0): ?>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #b91c1c;">
-                    <span>Discount:</span>
-                    <span>− ₹<?= number_format((float)$receiptOrder['discount_amount'], 2) ?></span>
-                </div>
-            <?php endif; ?>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                <span>Tax:</span>
-                <span>₹<?= number_format((float)$receiptOrder['tax_amount'], 2) ?></span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; margin-top: 6px; border-top: 1px solid #111827; padding-top: 6px;">
-                <span>GRAND TOTAL:</span>
-                <span>₹<?= number_format((float)$receiptOrder['total_amount'], 2) ?></span>
-            </div>
-        </div>
-
-        <div style="text-align: center; margin-top: 14px; font-size: 11px; color: #64748b;">
-            Thank you for shopping with us!
-        </div>
-    </div>
-    <?php
-    exit;
-}
-?>
