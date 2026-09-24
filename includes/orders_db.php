@@ -819,8 +819,16 @@ function process_pos_order(
                 $stockLabel .= ' (' . trim($lineSize . ' / ' . $lineColour, ' /') . ')';
             }
 
-            if (!$isComposite && !$chosenVariant && $posWarehouseId > 0) {
-                $currentStock = get_outlet_product_stock($productId, $posWarehouseId, $bid);
+            if (!$isComposite && $posWarehouseId > 0) {
+                $isolateCounter = $salesChannel === 'pos'
+                    && pos_isolates_outlet_stock($bid)
+                    && product_has_location_stock($productId, $bid);
+                if ($isolateCounter) {
+                    $outletQty = get_pos_counter_stock($productId, $posWarehouseId, $bid);
+                    $currentStock = $chosenVariant ? min($currentStock, $outletQty) : $outletQty;
+                } elseif (!$chosenVariant) {
+                    $currentStock = get_outlet_product_stock($productId, $posWarehouseId, $bid);
+                }
             }
 
             if (!$isComposite && $currentStock < $qty) {
@@ -1126,7 +1134,11 @@ function process_pos_order(
                 $saleReason = 'POS Sale Order #' . $orderNumber . $variantNote;
 
                 $whId = (int) ($pItem['pos_warehouse_id'] ?? 0);
-                if ($whId > 0 && warehouse_has_product_stock_row((int) $pItem['product_id'], $whId)) {
+                $isolateCounter = $salesChannel === 'pos'
+                    && $whId > 0
+                    && pos_isolates_outlet_stock($bid)
+                    && product_has_location_stock((int) $pItem['product_id'], $bid);
+                if ($isolateCounter || ($whId > 0 && warehouse_has_product_stock_row((int) $pItem['product_id'], $whId))) {
                     pos_deduct_inventory_for_sale(
                         $db,
                         $bid,
@@ -1134,7 +1146,8 @@ function process_pos_order(
                         (int) $pItem['quantity'],
                         $whId,
                         $validUserId,
-                        $saleReason
+                        $saleReason,
+                        $isolateCounter
                     );
                 } elseif (empty($pItem['variant_id'])) {
                     pos_deduct_inventory_for_sale(
@@ -1894,6 +1907,160 @@ function get_sales_stats(?int $businessId = null): array {
    9. RETURNS & REFUNDS SERVICES
    ========================================================================= */
 
+function ensure_return_exchange_schema(): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $db = get_db();
+    foreach ([
+        'return_type' => "VARCHAR(20) NOT NULL DEFAULT 'refund'",
+        'exchange_total' => 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00',
+        'amount_collected' => 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00',
+    ] as $col => $def) {
+        try {
+            $stmt = $db->prepare("
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'returns' AND COLUMN_NAME = :col
+            ");
+            $stmt->execute(['db' => DB_NAME, 'col' => $col]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `returns` ADD `{$col}` {$def}");
+            }
+        } catch (Throwable $e) {
+            // Older installs keep working.
+        }
+    }
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS `return_exchange_items` (
+                `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                `return_id` INT UNSIGNED NOT NULL,
+                `order_item_id` INT UNSIGNED NULL,
+                `product_id` INT UNSIGNED NOT NULL,
+                `product_name` VARCHAR(191) NOT NULL,
+                `product_sku` VARCHAR(100) NOT NULL,
+                `quantity` INT NOT NULL DEFAULT 1,
+                `line_total` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX `idx_rex_return` (`return_id`),
+                INDEX `idx_rex_order_item` (`order_item_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+        // Table may already exist.
+    }
+}
+
+/**
+ * @return array{processed: array<int, array<string, mixed>>, exchange_total: float, exchange_subtotal: float, exchange_tax: float}
+ */
+function build_exchange_lines_for_order(PDO $db, int $businessId, array $cartItems, int $outletId): array {
+    require_once __DIR__ . '/outlets_db.php';
+    $posWarehouseId = $outletId > 0 ? (get_warehouse_id_for_outlet($outletId, $businessId) ?? 0) : 0;
+    $exchangeSubtotal = 0.00;
+    $exchangeTax = 0.00;
+    $processed = [];
+
+    foreach ($cartItems as $item) {
+        $productId = (int) ($item['product_id'] ?? 0);
+        $variantId = !empty($item['variant_id']) ? (int) $item['variant_id'] : null;
+        $qty = max(1, (int) ($item['quantity'] ?? 1));
+        if ($productId <= 0) {
+            throw new Exception('Invalid replacement product in exchange.');
+        }
+
+        $stmtProd = $db->prepare('
+            SELECT id, name, sku, barcode, selling_price, tax_percent, stock_quantity, status, hsn_code
+            FROM products WHERE id = :id AND business_id = :bid FOR UPDATE
+        ');
+        $stmtProd->execute(['id' => $productId, 'bid' => $businessId]);
+        $product = $stmtProd->fetch();
+        if (!$product || ($product['status'] ?? '') !== 'active') {
+            throw new Exception('Replacement product is not available for exchange.');
+        }
+
+        $lineSize = '';
+        $lineColour = '';
+        $lineSku = (string) $product['sku'];
+        $unitPrice = (float) $product['selling_price'];
+        $currentStock = (int) $product['stock_quantity'];
+
+        if ($variantId) {
+            $stmtVar = $db->prepare('
+                SELECT * FROM product_variants
+                WHERE id = :id AND product_id = :pid AND business_id = :bid AND status = "active"
+                LIMIT 1 FOR UPDATE
+            ');
+            $stmtVar->execute(['id' => $variantId, 'pid' => $productId, 'bid' => $businessId]);
+            $variant = $stmtVar->fetch();
+            if (!$variant) {
+                throw new Exception('The selected size or colour is not available for exchange.');
+            }
+            $attrs = parse_variant_size_colour($variant);
+            $lineSize = $attrs['size'];
+            $lineColour = $attrs['colour'];
+            if (trim((string) $variant['sku']) !== '') {
+                $lineSku = (string) $variant['sku'];
+            }
+            $currentStock = (int) $variant['stock_quantity'];
+            if ((float) $variant['selling_price'] > 0) {
+                $unitPrice = (float) $variant['selling_price'];
+            }
+        } elseif (!empty($item['price']) && (float) $item['price'] > 0) {
+            $unitPrice = (float) $item['price'];
+        }
+
+        if ($posWarehouseId > 0 && !$variantId) {
+            $currentStock = get_pos_counter_stock($productId, $posWarehouseId, $businessId);
+        }
+        if ($currentStock < $qty) {
+            throw new Exception(sprintf(
+                'Insufficient stock to exchange into "%s". Available: %d, requested: %d.',
+                (string) $product['name'],
+                $currentStock,
+                $qty
+            ));
+        }
+
+        $taxPercent = (float) $product['tax_percent'];
+        $itemSubtotal = $unitPrice * $qty;
+        $itemTax = $itemSubtotal * ($taxPercent / 100.0);
+        $lineTotal = $itemSubtotal + $itemTax;
+        $exchangeSubtotal += $itemSubtotal;
+        $exchangeTax += $itemTax;
+
+        $processed[] = [
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+            'size' => $lineSize !== '' ? $lineSize : null,
+            'colour' => $lineColour !== '' ? $lineColour : null,
+            'product_name' => (string) $product['name'],
+            'product_sku' => $lineSku,
+            'hsn_code' => $product['hsn_code'] ?? '',
+            'unit_price' => $unitPrice,
+            'quantity' => $qty,
+            'tax_percent' => $taxPercent,
+            'tax_amount' => $itemTax,
+            'discount_amount' => 0.00,
+            'line_total' => $lineTotal,
+            'pos_warehouse_id' => $posWarehouseId,
+        ];
+    }
+
+    if ($processed === []) {
+        throw new Exception('Add at least one replacement item for exchange.');
+    }
+
+    return [
+        'processed' => $processed,
+        'exchange_total' => round($exchangeSubtotal + $exchangeTax, 2),
+        'exchange_subtotal' => round($exchangeSubtotal, 2),
+        'exchange_tax' => round($exchangeTax, 2),
+    ];
+}
+
 /**
  * Retrieves order items and calculates the remaining returnable quantity for each.
  */
@@ -2127,6 +2294,347 @@ function process_pos_return(
             'refund_amount' => $totalRefund,
             'order_number' => $order['order_number'],
             'items_count' => count($processedReturns),
+        ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Exchange: return selected lines on the original order and add replacement lines on the same bill.
+ */
+function process_pos_exchange(
+    int $orderId,
+    array $returnItems,
+    array $exchangeCartItems,
+    string $settlementMethod = 'cash',
+    string $reason = 'Size / Variant Exchange',
+    string $notes = '',
+    ?int $userId = null,
+    ?int $businessId = null
+): array {
+    ensure_return_exchange_schema();
+    if (empty($returnItems)) {
+        return ['success' => false, 'error' => 'Select at least one item to return for exchange.'];
+    }
+    if (empty($exchangeCartItems)) {
+        return ['success' => false, 'error' => 'Add at least one replacement item for exchange.'];
+    }
+
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    try {
+        $db->beginTransaction();
+
+        $order = get_order_by_id($orderId, $bid);
+        if (!$order) {
+            throw new Exception('Order #' . $orderId . ' does not exist.');
+        }
+        if ($order['order_status'] === 'cancelled') {
+            throw new Exception('Cannot exchange items on a cancelled order.');
+        }
+
+        $outletId = (int) ($order['outlet_id'] ?? 0);
+        $returnableItems = get_returnable_order_items($orderId);
+        $itemLookup = [];
+        foreach ($returnableItems as $rit) {
+            $itemLookup[(int) $rit['id']] = $rit;
+        }
+
+        $returnCredit = 0.00;
+        $processedReturns = [];
+        foreach ($returnItems as $req) {
+            $orderItemId = (int) ($req['order_item_id'] ?? 0);
+            $qty = (int) ($req['quantity'] ?? 0);
+            if ($qty <= 0) {
+                continue;
+            }
+            if (!isset($itemLookup[$orderItemId])) {
+                throw new Exception('Invalid order item ID: ' . $orderItemId);
+            }
+            $orderItem = $itemLookup[$orderItemId];
+            $availableToReturn = (int) $orderItem['returnable_quantity'];
+            if ($qty > $availableToReturn) {
+                throw new Exception(sprintf(
+                    'Cannot return %d units of "%s". Maximum returnable is %d units.',
+                    $qty,
+                    $orderItem['product_name'],
+                    $availableToReturn
+                ));
+            }
+            $effectiveUnitPrice = (float) $orderItem['effective_unit_price'];
+            $lineRefund = round($effectiveUnitPrice * $qty, 2);
+            $returnCredit += $lineRefund;
+            $processedReturns[] = [
+                'order_item_id' => $orderItemId,
+                'product_id' => (int) $orderItem['product_id'],
+                'variant_id' => (int) ($orderItem['variant_id'] ?? 0),
+                'product_name' => $orderItem['product_name'],
+                'product_sku' => $orderItem['product_sku'],
+                'unit_price' => (float) $orderItem['unit_price'],
+                'quantity' => $qty,
+                'refund_amount' => $lineRefund,
+            ];
+        }
+        if ($processedReturns === []) {
+            throw new Exception('Please select at least 1 unit to return.');
+        }
+
+        $exchangeBuilt = build_exchange_lines_for_order($db, $bid, $exchangeCartItems, $outletId);
+        $exchangeLines = $exchangeBuilt['processed'];
+        $exchangeTotal = (float) $exchangeBuilt['exchange_total'];
+        $exchangeSubtotal = (float) $exchangeBuilt['exchange_subtotal'];
+        $exchangeTax = (float) $exchangeBuilt['exchange_tax'];
+
+        $netSettlement = round($exchangeTotal - $returnCredit, 2);
+        $refundToCustomer = $netSettlement < 0 ? abs($netSettlement) : 0.00;
+        $amountCollected = $netSettlement > 0 ? $netSettlement : 0.00;
+
+        $returnNumber = generate_next_return_number($bid, $db);
+        $stmtInv = $db->prepare('SELECT id FROM invoices WHERE order_id = :order_id AND business_id = :bid LIMIT 1');
+        $stmtInv->execute(['order_id' => $orderId, 'bid' => $bid]);
+        $invoiceId = $stmtInv->fetchColumn() ?: null;
+
+        $stmtRet = $db->prepare('
+            INSERT INTO returns (
+                business_id, return_number, order_id, invoice_id, customer_id, user_id,
+                refund_amount, refund_method, reason, notes, status, return_type, exchange_total, amount_collected,
+                created_at, updated_at
+            ) VALUES (
+                :biz_id, :return_number, :order_id, :invoice_id, :customer_id, :user_id,
+                :refund_amount, :refund_method, :reason, :notes, "completed", "exchange", :exchange_total, :amount_collected,
+                NOW(), NOW()
+            )
+        ');
+        $stmtRet->execute([
+            'biz_id' => $bid,
+            'return_number' => $returnNumber,
+            'order_id' => $orderId,
+            'invoice_id' => $invoiceId,
+            'customer_id' => $order['customer_id'],
+            'user_id' => $userId,
+            'refund_amount' => $refundToCustomer,
+            'refund_method' => $settlementMethod ?: 'cash',
+            'reason' => trim($reason) ?: 'Exchange',
+            'notes' => trim($notes) ?: null,
+            'exchange_total' => $exchangeTotal,
+            'amount_collected' => $amountCollected,
+        ]);
+        $returnId = (int) $db->lastInsertId();
+
+        $stmtRetItem = $db->prepare('
+            INSERT INTO return_items (
+                return_id, order_item_id, product_id, product_name, product_sku,
+                unit_price, quantity, refund_amount, created_at
+            ) VALUES (
+                :return_id, :order_item_id, :product_id, :product_name, :product_sku,
+                :unit_price, :quantity, :refund_amount, NOW()
+            )
+        ');
+        $stmtStockInc = $db->prepare('
+            UPDATE products SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid
+        ');
+        $stmtMoveLog = $db->prepare('
+            INSERT INTO inventory_movements (
+                business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+            ) VALUES (
+                :biz_id, :product_id, :user_id, "in", :quantity_change, :quantity_before, :quantity_after, :reason, NOW()
+            )
+        ');
+
+        foreach ($processedReturns as $pRet) {
+            $stmtRetItem->execute([
+                'return_id' => $returnId,
+                'order_item_id' => $pRet['order_item_id'],
+                'product_id' => $pRet['product_id'],
+                'product_name' => $pRet['product_name'],
+                'product_sku' => $pRet['product_sku'],
+                'unit_price' => $pRet['unit_price'],
+                'quantity' => $pRet['quantity'],
+                'refund_amount' => $pRet['refund_amount'],
+            ]);
+            if ($pRet['product_id'] > 0) {
+                $stmtCur = $db->prepare('SELECT stock_quantity FROM products WHERE id = :id AND business_id = :bid FOR UPDATE');
+                $stmtCur->execute(['id' => $pRet['product_id'], 'bid' => $bid]);
+                $currStock = (int) $stmtCur->fetchColumn();
+                $stmtStockInc->execute(['qty' => $pRet['quantity'], 'id' => $pRet['product_id'], 'bid' => $bid]);
+                if (!empty($pRet['variant_id'])) {
+                    $db->prepare('
+                        UPDATE product_variants SET stock_quantity = stock_quantity + :qty, updated_at = NOW()
+                        WHERE id = :id AND product_id = :pid AND business_id = :bid
+                    ')->execute([
+                        'qty' => $pRet['quantity'],
+                        'id' => (int) $pRet['variant_id'],
+                        'pid' => $pRet['product_id'],
+                        'bid' => $bid,
+                    ]);
+                }
+                $stmtMoveLog->execute([
+                    'biz_id' => $bid,
+                    'product_id' => $pRet['product_id'],
+                    'user_id' => $userId,
+                    'quantity_change' => $pRet['quantity'],
+                    'quantity_before' => $currStock,
+                    'quantity_after' => $currStock + $pRet['quantity'],
+                    'reason' => 'Exchange return #' . $returnNumber . ' (Order #' . $order['order_number'] . ')',
+                ]);
+            }
+        }
+
+        require_once __DIR__ . '/outlets_db.php';
+        $stmtItem = $db->prepare('
+            INSERT INTO order_items (
+                order_id, product_id, variant_id, size, colour, product_name, product_sku, hsn_code, unit_price,
+                quantity, tax_percent, tax_amount, discount_amount, line_total, created_at
+            ) VALUES (
+                :order_id, :product_id, :variant_id, :size, :colour, :product_name, :product_sku, :hsn_code, :unit_price,
+                :quantity, :tax_percent, :tax_amount, :discount_amount, :line_total, NOW()
+            )
+        ');
+        $stmtRex = $db->prepare('
+            INSERT INTO return_exchange_items (return_id, order_item_id, product_id, product_name, product_sku, quantity, line_total, created_at)
+            VALUES (:return_id, :order_item_id, :product_id, :product_name, :product_sku, :quantity, :line_total, NOW())
+        ');
+
+        foreach ($exchangeLines as $line) {
+            $stmtItem->execute([
+                'order_id' => $orderId,
+                'product_id' => $line['product_id'],
+                'variant_id' => $line['variant_id'],
+                'size' => $line['size'],
+                'colour' => $line['colour'],
+                'product_name' => $line['product_name'],
+                'product_sku' => $line['product_sku'],
+                'hsn_code' => $line['hsn_code'],
+                'unit_price' => $line['unit_price'],
+                'quantity' => $line['quantity'],
+                'tax_percent' => $line['tax_percent'],
+                'tax_amount' => $line['tax_amount'],
+                'discount_amount' => 0.00,
+                'line_total' => $line['line_total'],
+            ]);
+            $newOrderItemId = (int) $db->lastInsertId();
+            $stmtRex->execute([
+                'return_id' => $returnId,
+                'order_item_id' => $newOrderItemId,
+                'product_id' => $line['product_id'],
+                'product_name' => $line['product_name'],
+                'product_sku' => $line['product_sku'],
+                'quantity' => $line['quantity'],
+                'line_total' => $line['line_total'],
+            ]);
+
+            $whId = (int) ($line['pos_warehouse_id'] ?? 0);
+            $saleReason = 'Exchange replacement #' . $returnNumber . ' on Order #' . $order['order_number'];
+            if ($whId > 0 && warehouse_has_product_stock_row((int) $line['product_id'], $whId)) {
+                pos_deduct_inventory_for_sale($db, $bid, (int) $line['product_id'], (int) $line['quantity'], $whId, $userId, $saleReason, true);
+            } elseif (empty($line['variant_id'])) {
+                pos_deduct_inventory_for_sale($db, $bid, (int) $line['product_id'], (int) $line['quantity'], 0, $userId, $saleReason);
+            } else {
+                $db->prepare('
+                    UPDATE product_variants SET stock_quantity = stock_quantity - :qty, updated_at = NOW()
+                    WHERE id = :id AND product_id = :pid AND business_id = :bid
+                ')->execute([
+                    'qty' => $line['quantity'],
+                    'id' => (int) $line['variant_id'],
+                    'pid' => $line['product_id'],
+                    'bid' => $bid,
+                ]);
+            }
+        }
+
+        $newOrderSubtotal = round((float) $order['subtotal'] + $exchangeSubtotal, 2);
+        $newOrderTax = round((float) $order['tax_amount'] + $exchangeTax, 2);
+        $newOrderTotal = round((float) $order['total_amount'] + $netSettlement, 2);
+        $db->prepare('
+            UPDATE orders
+            SET subtotal = :sub, tax_amount = :tax, total_amount = :total,
+                notes = CONCAT(COALESCE(notes, ""), :note_sep, :note),
+                updated_at = NOW()
+            WHERE id = :id AND business_id = :bid
+        ')->execute([
+            'sub' => max(0, $newOrderSubtotal),
+            'tax' => max(0, $newOrderTax),
+            'total' => max(0, $newOrderTotal),
+            'note_sep' => trim((string) ($order['notes'] ?? '')) !== '' ? "\n" : '',
+            'note' => 'Exchange #' . $returnNumber . ' (credit ₹' . number_format($returnCredit, 2) . ', replacement ₹' . number_format($exchangeTotal, 2) . ')',
+            'id' => $orderId,
+            'bid' => $bid,
+        ]);
+
+        if ($invoiceId) {
+            $db->prepare('
+                UPDATE invoices
+                SET subtotal = subtotal + :sub_delta, tax_amount = tax_amount + :tax_delta, total_amount = total_amount + :net,
+                    notes = CONCAT(COALESCE(notes, ""), :note_sep, :note), updated_at = NOW()
+                WHERE id = :id AND business_id = :bid
+            ')->execute([
+                'sub_delta' => $exchangeSubtotal,
+                'tax_delta' => $exchangeTax,
+                'net' => $netSettlement,
+                'note_sep' => "\n",
+                'note' => 'Exchange #' . $returnNumber,
+                'id' => $invoiceId,
+                'bid' => $bid,
+            ]);
+        }
+
+        if ($amountCollected > 0 || $refundToCustomer > 0) {
+            $activeSessionId = null;
+            if ($userId !== null && (int) $userId > 0) {
+                $stmtSession = $db->prepare('SELECT id FROM register_sessions WHERE user_id = :uid AND business_id = :bid AND status = "open" ORDER BY id DESC LIMIT 1');
+                $stmtSession->execute(['uid' => (int) $userId, 'bid' => $bid]);
+                $activeSessionId = $stmtSession->fetchColumn() ?: null;
+            }
+            $payType = $amountCollected > 0 ? 'sale' : 'refund';
+            $payAmount = $amountCollected > 0 ? $amountCollected : $refundToCustomer;
+            $paymentNumber = generate_next_payment_number($bid, $db);
+            $db->prepare('
+                INSERT INTO payments (
+                    business_id, payment_number, order_id, invoice_id, customer_id, user_id, session_id,
+                    payment_type, payment_method, amount, status, notes, created_at
+                ) VALUES (
+                    :biz_id, :pay_num, :order_id, :inv_id, :cust_id, :user_id, :session_id,
+                    :ptype, :method, :amount, "paid", :notes, NOW()
+                )
+            ')->execute([
+                'biz_id' => $bid,
+                'pay_num' => $paymentNumber,
+                'order_id' => $orderId,
+                'inv_id' => $invoiceId,
+                'cust_id' => $order['customer_id'],
+                'user_id' => $userId,
+                'session_id' => $activeSessionId,
+                'ptype' => $payType,
+                'method' => $settlementMethod ?: 'cash',
+                'amount' => $payAmount,
+                'notes' => 'Exchange #' . $returnNumber,
+            ]);
+            if ($activeSessionId && $payType === 'sale') {
+                require_once __DIR__ . '/registers_db.php';
+                update_session_sales((int) $activeSessionId, $payAmount, $settlementMethod ?: 'cash');
+            }
+        }
+
+        $db->commit();
+
+        return [
+            'success' => true,
+            'return_id' => $returnId,
+            'return_number' => $returnNumber,
+            'return_type' => 'exchange',
+            'order_id' => $orderId,
+            'order_number' => $order['order_number'],
+            'return_credit' => $returnCredit,
+            'exchange_total' => $exchangeTotal,
+            'amount_collected' => $amountCollected,
+            'refund_amount' => $refundToCustomer,
+            'net_settlement' => $netSettlement,
         ];
     } catch (Exception $e) {
         if ($db->inTransaction()) {

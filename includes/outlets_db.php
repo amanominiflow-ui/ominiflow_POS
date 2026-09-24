@@ -86,12 +86,45 @@ function warehouse_has_product_stock_row(int $productId, int $warehouseId): bool
     return (bool) $stmt->fetchColumn();
 }
 
+function pos_isolates_outlet_stock(?int $businessId = null): bool {
+    return count(get_outlets('active', $businessId)) > 1;
+}
+
+function product_has_location_stock(int $productId, ?int $businessId = null): bool {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $stmt = $db->prepare('
+        SELECT 1
+        FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+        WHERE ws.product_id = :pid
+        LIMIT 1
+    ');
+    $stmt->execute(['bid' => $bid, 'pid' => $productId]);
+    return (bool) $stmt->fetchColumn();
+}
+
 function get_outlet_product_stock(int $productId, int $warehouseId, ?int $businessId = null): int {
     if ($warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId)) {
         return get_product_warehouse_stock($productId, $warehouseId);
     }
     $product = get_product_by_id($productId, $businessId);
     return $product ? (int) $product['stock_quantity'] : 0;
+}
+
+/**
+ * Quantity this counter may sell. With more than one store, a product that
+ * already sits in a warehouse is sold only from this store's warehouse.
+ */
+function get_pos_counter_stock(int $productId, int $warehouseId, ?int $businessId = null): int {
+    $bid = $businessId ?: current_business_id();
+    if (pos_isolates_outlet_stock($bid) && product_has_location_stock($productId, $bid)) {
+        if ($warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId)) {
+            return get_product_warehouse_stock($productId, $warehouseId);
+        }
+        return 0;
+    }
+    return get_outlet_product_stock($productId, $warehouseId, $bid);
 }
 
 /**
@@ -106,14 +139,16 @@ function pos_deduct_inventory_for_sale(
     int $quantity,
     int $warehouseId,
     ?int $userId,
-    string $reason
+    string $reason,
+    bool $strictOutlet = false
 ): array {
     if ($quantity <= 0) {
         throw new Exception('Invalid sale quantity.');
     }
 
-    if ($warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId)) {
-        $before = get_product_warehouse_stock($productId, $warehouseId);
+    $hasWarehouseRow = $warehouseId > 0 && warehouse_has_product_stock_row($productId, $warehouseId);
+    if ($hasWarehouseRow || ($strictOutlet && $warehouseId > 0)) {
+        $before = $hasWarehouseRow ? get_product_warehouse_stock($productId, $warehouseId) : 0;
         if ($before < $quantity) {
             throw new Exception('Insufficient stock at this store warehouse.');
         }

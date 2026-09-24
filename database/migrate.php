@@ -1239,6 +1239,11 @@ try {
     add_column_if_not_exists($pdo, 'customers', 'outstanding_receivable', "DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `credit_limit`");
     add_column_if_not_exists($pdo, 'customers', 'password', "VARCHAR(255) NULL");
 
+    add_column_if_not_exists($pdo, 'users', 'outlet_id', "INT UNSIGNED NULL");
+    add_column_if_not_exists($pdo, 'registers', 'outlet_id', "INT UNSIGNED NULL");
+    add_column_if_not_exists($pdo, 'returns', 'return_type', "VARCHAR(20) NOT NULL DEFAULT 'refund'");
+    add_column_if_not_exists($pdo, 'returns', 'exchange_total', 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00');
+    add_column_if_not_exists($pdo, 'returns', 'amount_collected', 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00');
     add_column_if_not_exists($pdo, 'orders', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'orders', 'fulfillment_status', "ENUM('pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled', 'returned') NOT NULL DEFAULT 'delivered' AFTER `order_status`");
     add_column_if_not_exists($pdo, 'orders', 'price_list_id', "INT UNSIGNED NULL AFTER `discount_type`");

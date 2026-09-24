@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
+require_once __DIR__ . '/includes/products_db.php';
 
 require_auth();
 
@@ -69,6 +70,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', $res['error'] ?? 'Could not process return.');
         }
         redirect(APP_URL . '/returns.php');
+    } elseif ($action === 'process_exchange') {
+        $orderId = (int) ($_POST['order_id'] ?? 0);
+        $settlementMethod = (string) ($_POST['refund_method'] ?? 'cash');
+        $reason = (string) ($_POST['reason'] ?? 'Size / Variant Exchange');
+        $notes = (string) ($_POST['notes'] ?? '');
+        $returnItemsJson = (string) ($_POST['return_items_json'] ?? '[]');
+        $exchangeItemsJson = (string) ($_POST['exchange_items_json'] ?? '[]');
+        $returnItems = json_decode($returnItemsJson, true) ?: [];
+        $exchangeItems = json_decode($exchangeItemsJson, true) ?: [];
+
+        $res = process_pos_exchange($orderId, $returnItems, $exchangeItems, $settlementMethod, $reason, $notes, $userId);
+
+        if (!empty($_POST['is_ajax'])) {
+            header('Content-Type: application/json');
+            echo json_encode($res);
+            exit;
+        }
+
+        if ($res['success']) {
+            set_flash('success', 'Exchange #' . $res['return_number'] . ' completed on bill ' . $res['order_number'] . '.');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not process exchange.');
+        }
+        redirect(APP_URL . '/returns.php');
     }
 }
 
@@ -80,6 +105,18 @@ $dateTo = trim($_GET['date_to'] ?? '');
 $returns = get_returns($search, $dateFrom, $dateTo, 100);
 $salesStats = get_sales_stats();
 $recentOrders = get_orders('', 'completed', '', '', 50);
+$exchangeCatalog = [];
+foreach (get_products('', null, 'active') as $catProd) {
+    $exchangeCatalog[] = [
+        'id' => (int) $catProd['id'],
+        'name' => (string) $catProd['name'],
+        'sku' => (string) $catProd['sku'],
+        'barcode' => (string) ($catProd['barcode'] ?? ''),
+        'price' => (float) $catProd['selling_price'],
+        'tax' => (float) $catProd['tax_percent'],
+        'stock' => (int) $catProd['stock_quantity'],
+    ];
+}
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -113,7 +150,7 @@ $flashError = get_flash('error');
                 <div class="page-top-header">
                     <div>
                         <h1 class="page-title">Returns & Refunds</h1>
-                        <p class="page-subtitle">Process itemized customer returns, issue refunds, and restore inventory stock safely.</p>
+                        <p class="page-subtitle">Process refunds or exchange items on the same bill, and restore or deduct stock safely.</p>
                     </div>
                     <div class="page-top-actions">
                         <button type="button" class="header-btn" id="openNewReturnBtn">
@@ -254,6 +291,9 @@ $flashError = get_flash('error');
                                                 <strong style="font-family: monospace; color: #b91c1c; font-size: 13.5px;">
                                                     <?= e($ret['return_number']) ?>
                                                 </strong>
+                                                <?php if (($ret['return_type'] ?? 'refund') === 'exchange'): ?>
+                                                    <span class="badge badge-info" style="margin-left: 6px; font-size: 10px;">Exchange</span>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <a href="<?= asset('orders.php?search=' . urlencode($ret['order_number'])) ?>" style="font-weight: 600; color: var(--saas-primary); text-decoration: none;">
@@ -323,16 +363,29 @@ $flashError = get_flash('error');
     <div class="modal-overlay" id="newReturnModal">
         <div class="modal-box" style="max-width: 680px;">
             <div class="modal-header">
-                <h3 class="modal-title">Process Customer Return & Refund</h3>
+                <h3 class="modal-title" id="returnModalTitle">Process Customer Return & Refund</h3>
                 <button type="button" class="modal-close-btn" id="closeNewReturnModal">&times;</button>
             </div>
             <form id="processReturnForm" method="POST" action="<?= asset('returns.php') ?>">
                 <?= csrf_field() ?>
-                <input type="hidden" name="action" value="process_return">
+                <input type="hidden" name="action" id="returnFormAction" value="process_return">
                 <input type="hidden" name="is_ajax" value="1">
                 <input type="hidden" name="return_items_json" id="returnItemsJson" value="[]">
+                <input type="hidden" name="exchange_items_json" id="exchangeItemsJson" value="[]">
 
                 <div class="modal-body">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label">Transaction type</label>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;">
+                                <input type="radio" name="return_mode" value="refund" id="returnModeRefund" checked> Return & refund
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;">
+                                <input type="radio" name="return_mode" value="exchange" id="returnModeExchange"> Exchange on same bill
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Step 1: Select Order -->
                     <div class="form-group" style="margin-bottom: 16px;">
                         <label for="returnOrderSelect" class="form-label">Select Original Sale Order <span style="color: #ef4444;">*</span></label>
@@ -366,11 +419,34 @@ $flashError = get_flash('error');
                             </table>
                         </div>
 
-                        <!-- Refund Total Banner -->
+                        <div id="exchangeReplacementSection" style="display: none; margin-bottom: 16px;">
+                            <label class="form-label">Replacement items (added to same bill)</label>
+                            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                                <input type="text" id="exchangeProductSearch" class="form-control" placeholder="Search by name, SKU, or barcode..." autocomplete="off">
+                                <button type="button" class="btn-secondary" id="exchangeAddFirstMatchBtn" style="white-space: nowrap;">Add match</button>
+                            </div>
+                            <div id="exchangeSearchResults" style="max-height: 120px; overflow: auto; border: 1px solid var(--saas-border); border-radius: 8px; margin-bottom: 8px; display: none;"></div>
+                            <table style="width: 100%; font-size: 12.5px; border-collapse: collapse; border: 1px solid var(--saas-border); border-radius: 8px; overflow: hidden;">
+                                <thead>
+                                    <tr style="background: var(--saas-slate-50);">
+                                        <th style="padding: 8px 10px; text-align: left;">Replacement</th>
+                                        <th style="padding: 8px 10px; text-align: center; width: 90px;">Qty</th>
+                                        <th style="padding: 8px 10px; text-align: right;">Line total</th>
+                                        <th style="padding: 8px 10px; width: 40px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exchangeCartBody">
+                                    <tr id="exchangeCartEmptyRow"><td colspan="4" style="padding: 12px; text-align: center; color: #64748b;">No replacement items yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Refund / settlement banner -->
                         <div style="display: flex; justify-content: space-between; align-items: center; background: #fef2f2; border: 1px solid #fecaca; padding: 12px 16px; border-radius: var(--saas-radius-md); margin-bottom: 16px;">
-                            <span style="font-weight: 700; color: #991b1b;">Total Refund to Customer:</span>
+                            <span style="font-weight: 700; color: #991b1b;" id="settlementLabel">Total Refund to Customer:</span>
                             <span style="font-size: 20px; font-weight: 800; color: #b91c1c;" id="totalRefundText">₹0.00</span>
                         </div>
+                        <div id="exchangeSettlementHint" style="display: none; font-size: 12px; color: #64748b; margin: -8px 0 16px;"></div>
 
                         <!-- Step 3: Refund Payment Method & Reason -->
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
@@ -406,7 +482,7 @@ $flashError = get_flash('error');
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" id="cancelNewReturnBtn">Cancel</button>
                     <button type="submit" class="header-btn" id="confirmReturnSubmitBtn" style="border: 0; background: #b91c1c;" disabled>
-                        <span>Confirm Return & Restore Stock</span>
+                        <span id="confirmReturnSubmitLabel">Confirm Return & Restore Stock</span>
                     </button>
                 </div>
             </form>
@@ -428,11 +504,25 @@ $flashError = get_flash('error');
             const returnTableBody = document.getElementById('returnItemsTableBody');
             const totalRefundText = document.getElementById('totalRefundText');
             const returnItemsJson = document.getElementById('returnItemsJson');
+            const exchangeItemsJson = document.getElementById('exchangeItemsJson');
             const confirmReturnBtn = document.getElementById('confirmReturnSubmitBtn');
+            const confirmReturnSubmitLabel = document.getElementById('confirmReturnSubmitLabel');
             const processReturnForm = document.getElementById('processReturnForm');
+            const returnFormAction = document.getElementById('returnFormAction');
+            const returnModeRefund = document.getElementById('returnModeRefund');
+            const returnModeExchange = document.getElementById('returnModeExchange');
+            const exchangeReplacementSection = document.getElementById('exchangeReplacementSection');
+            const exchangeProductSearch = document.getElementById('exchangeProductSearch');
+            const exchangeSearchResults = document.getElementById('exchangeSearchResults');
+            const exchangeAddFirstMatchBtn = document.getElementById('exchangeAddFirstMatchBtn');
+            const exchangeCartBody = document.getElementById('exchangeCartBody');
+            const settlementLabel = document.getElementById('settlementLabel');
+            const exchangeSettlementHint = document.getElementById('exchangeSettlementHint');
             const csrfToken = document.getElementById('pageCsrfToken').value;
+            const exchangeCatalog = <?= json_encode($exchangeCatalog, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
             let currentOrderItems = [];
+            let exchangeCart = [];
 
             if (openNewReturnBtn) openNewReturnBtn.addEventListener('click', () => newReturnModal.classList.add('open'));
             function closeModal() {
@@ -440,7 +530,34 @@ $flashError = get_flash('error');
                 processReturnForm.reset();
                 returnItemsSection.style.display = 'none';
                 confirmReturnBtn.disabled = true;
+                exchangeCart = [];
+                renderExchangeCart();
+                setReturnMode('refund');
             }
+
+            function isExchangeMode() {
+                return returnModeExchange && returnModeExchange.checked;
+            }
+
+            function setReturnMode(mode) {
+                const exchange = mode === 'exchange';
+                if (returnModeRefund) returnModeRefund.checked = !exchange;
+                if (returnModeExchange) returnModeExchange.checked = exchange;
+                if (exchangeReplacementSection) exchangeReplacementSection.style.display = exchange ? 'block' : 'none';
+                if (returnFormAction) returnFormAction.value = exchange ? 'process_exchange' : 'process_return';
+                if (confirmReturnSubmitLabel) {
+                    confirmReturnSubmitLabel.textContent = exchange
+                        ? 'Confirm Exchange on Same Bill'
+                        : 'Confirm Return & Restore Stock';
+                }
+                document.getElementById('returnModalTitle').textContent = exchange
+                    ? 'Exchange Items on Same Bill'
+                    : 'Process Customer Return & Refund';
+                recalculateRefund();
+            }
+
+            if (returnModeRefund) returnModeRefund.addEventListener('change', () => setReturnMode('refund'));
+            if (returnModeExchange) returnModeExchange.addEventListener('change', () => setReturnMode('exchange'));
             if (closeNewReturnBtn) closeNewReturnBtn.addEventListener('click', closeModal);
             if (cancelNewReturnBtn) cancelNewReturnBtn.addEventListener('click', closeModal);
 
@@ -515,6 +632,121 @@ $flashError = get_flash('error');
                 return (str + '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
 
+            function lineTotalWithTax(prod, qty) {
+                const sub = (parseFloat(prod.price) || 0) * qty;
+                const tax = sub * ((parseFloat(prod.tax) || 0) / 100);
+                return sub + tax;
+            }
+
+            function findExchangeProducts(query) {
+                const q = (query || '').trim().toLowerCase();
+                if (!q) return [];
+                return exchangeCatalog.filter(p => {
+                    return (p.name || '').toLowerCase().includes(q)
+                        || (p.sku || '').toLowerCase() === q
+                        || (p.barcode || '').toLowerCase() === q
+                        || (p.sku || '').toLowerCase().includes(q);
+                }).slice(0, 8);
+            }
+
+            function addExchangeProduct(prod) {
+                if (!prod) return;
+                const key = String(prod.id);
+                const existing = exchangeCart.find(r => String(r.product_id) === key);
+                if (existing) {
+                    existing.quantity += 1;
+                } else {
+                    exchangeCart.push({ product_id: prod.id, quantity: 1, price: prod.price, tax: prod.tax, name: prod.name, sku: prod.sku });
+                }
+                renderExchangeCart();
+                recalculateRefund();
+            }
+
+            function renderExchangeCart() {
+                if (!exchangeCartBody) return;
+                exchangeCartBody.innerHTML = '';
+                if (exchangeCart.length === 0) {
+                    exchangeCartBody.innerHTML = '<tr id="exchangeCartEmptyRow"><td colspan="4" style="padding: 12px; text-align: center; color: #64748b;">No replacement items yet.</td></tr>';
+                    if (exchangeItemsJson) exchangeItemsJson.value = '[]';
+                    return;
+                }
+                exchangeCart.forEach((row, idx) => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid var(--saas-border)';
+                    const lt = lineTotalWithTax(row, row.quantity);
+                    tr.innerHTML = `
+                        <td style="padding: 8px 10px;">
+                            <div style="font-weight:700;">${escapeHtml(row.name)}</div>
+                            <div style="font-size:11px;color:#64748b;">${escapeHtml(row.sku)}</div>
+                        </td>
+                        <td style="padding: 8px 10px; text-align:center;">
+                            <input type="number" min="1" value="${row.quantity}" data-idx="${idx}" class="form-control exchange-qty-input" style="width:64px;margin:0 auto;text-align:center;padding:4px;">
+                        </td>
+                        <td style="padding: 8px 10px; text-align:right; font-weight:700;">₹${lt.toFixed(2)}</td>
+                        <td style="padding: 8px 10px; text-align:center;">
+                            <button type="button" class="btn-secondary exchange-remove-btn" data-idx="${idx}" style="padding:2px 8px;">×</button>
+                        </td>`;
+                    exchangeCartBody.appendChild(tr);
+                });
+                if (exchangeItemsJson) {
+                    exchangeItemsJson.value = JSON.stringify(exchangeCart.map(r => ({
+                        product_id: r.product_id,
+                        quantity: r.quantity,
+                        price: r.price
+                    })));
+                }
+            }
+
+            if (exchangeProductSearch) {
+                exchangeProductSearch.addEventListener('input', function () {
+                    const matches = findExchangeProducts(this.value);
+                    if (!matches.length) {
+                        exchangeSearchResults.style.display = 'none';
+                        return;
+                    }
+                    exchangeSearchResults.style.display = 'block';
+                    exchangeSearchResults.innerHTML = matches.map(p => `
+                        <button type="button" class="exchange-pick-btn" data-id="${p.id}" style="display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-bottom:1px solid #e2e8f0;background:#fff;cursor:pointer;">
+                            <strong>${escapeHtml(p.name)}</strong> · ${escapeHtml(p.sku)} · ₹${parseFloat(p.price).toFixed(2)}
+                        </button>
+                    `).join('');
+                });
+            }
+            if (exchangeSearchResults) {
+                exchangeSearchResults.addEventListener('click', function (e) {
+                    const btn = e.target.closest('.exchange-pick-btn');
+                    if (!btn) return;
+                    const id = parseInt(btn.getAttribute('data-id'), 10);
+                    const prod = exchangeCatalog.find(p => p.id === id);
+                    addExchangeProduct(prod);
+                    exchangeProductSearch.value = '';
+                    exchangeSearchResults.style.display = 'none';
+                });
+            }
+            if (exchangeAddFirstMatchBtn && exchangeProductSearch) {
+                exchangeAddFirstMatchBtn.addEventListener('click', function () {
+                    const matches = findExchangeProducts(exchangeProductSearch.value);
+                    if (matches[0]) addExchangeProduct(matches[0]);
+                });
+            }
+            if (exchangeCartBody) {
+                exchangeCartBody.addEventListener('input', function (e) {
+                    if (e.target.classList.contains('exchange-qty-input')) {
+                        const idx = parseInt(e.target.getAttribute('data-idx'), 10);
+                        exchangeCart[idx].quantity = Math.max(1, parseInt(e.target.value, 10) || 1);
+                        renderExchangeCart();
+                        recalculateRefund();
+                    }
+                });
+                exchangeCartBody.addEventListener('click', function (e) {
+                    const btn = e.target.closest('.exchange-remove-btn');
+                    if (!btn) return;
+                    exchangeCart.splice(parseInt(btn.getAttribute('data-idx'), 10), 1);
+                    renderExchangeCart();
+                    recalculateRefund();
+                });
+            }
+
             function recalculateRefund() {
                 let grandRefund = 0;
                 const returnPayload = [];
@@ -550,9 +782,39 @@ $flashError = get_flash('error');
                     }
                 });
 
-                totalRefundText.textContent = '₹' + grandRefund.toFixed(2);
+                let exchangeTotal = 0;
+                exchangeCart.forEach(row => { exchangeTotal += lineTotalWithTax(row, row.quantity); });
+
+                if (isExchangeMode()) {
+                    const net = exchangeTotal - grandRefund;
+                    if (net > 0.009) {
+                        settlementLabel.textContent = 'Customer pays (difference):';
+                        totalRefundText.textContent = '₹' + net.toFixed(2);
+                        totalRefundText.style.color = '#1e3a8a';
+                        exchangeSettlementHint.style.display = 'block';
+                        exchangeSettlementHint.textContent = 'Return credit ₹' + grandRefund.toFixed(2) + ' applied toward replacement total ₹' + exchangeTotal.toFixed(2) + '.';
+                    } else if (net < -0.009) {
+                        settlementLabel.textContent = 'Refund to customer (difference):';
+                        totalRefundText.textContent = '₹' + Math.abs(net).toFixed(2);
+                        totalRefundText.style.color = '#b91c1c';
+                        exchangeSettlementHint.style.display = 'block';
+                        exchangeSettlementHint.textContent = 'Replacement is lower than returned value. Balance refunded on same bill.';
+                    } else {
+                        settlementLabel.textContent = 'Even exchange:';
+                        totalRefundText.textContent = '₹0.00';
+                        totalRefundText.style.color = '#047857';
+                        exchangeSettlementHint.style.display = 'block';
+                        exchangeSettlementHint.textContent = 'Returned value matches replacement total.';
+                    }
+                    confirmReturnBtn.disabled = (returnPayload.length === 0 || exchangeCart.length === 0);
+                } else {
+                    settlementLabel.textContent = 'Total Refund to Customer:';
+                    totalRefundText.textContent = '₹' + grandRefund.toFixed(2);
+                    totalRefundText.style.color = '#b91c1c';
+                    exchangeSettlementHint.style.display = 'none';
+                    confirmReturnBtn.disabled = (returnPayload.length === 0 || grandRefund <= 0);
+                }
                 returnItemsJson.value = JSON.stringify(returnPayload);
-                confirmReturnBtn.disabled = (returnPayload.length === 0 || grandRefund <= 0);
             }
 
             returnTableBody.addEventListener('input', function (e) {
@@ -566,7 +828,7 @@ $flashError = get_flash('error');
                 e.preventDefault();
 
                 confirmReturnBtn.disabled = true;
-                confirmReturnBtn.innerHTML = '<span>Processing Return...</span>';
+                confirmReturnBtn.innerHTML = '<span>' + (isExchangeMode() ? 'Processing Exchange...' : 'Processing Return...') + '</span>';
 
                 const formData = new FormData(this);
 
@@ -574,18 +836,32 @@ $flashError = get_flash('error');
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        alert('Return #' + data.return_number + ' processed successfully! Total Refund: ₹' + parseFloat(data.refund_amount).toFixed(2) + '. Inventory has been restored.');
+                        if (data.return_type === 'exchange') {
+                            let msg = 'Exchange #' + data.return_number + ' completed on bill ' + data.order_number + '.';
+                            if (parseFloat(data.amount_collected) > 0) {
+                                msg += ' Collected: ₹' + parseFloat(data.amount_collected).toFixed(2) + '.';
+                            } else if (parseFloat(data.refund_amount) > 0) {
+                                msg += ' Refunded: ₹' + parseFloat(data.refund_amount).toFixed(2) + '.';
+                            }
+                            alert(msg);
+                        } else {
+                            alert('Return #' + data.return_number + ' processed successfully! Total Refund: ₹' + parseFloat(data.refund_amount).toFixed(2) + '. Inventory has been restored.');
+                        }
                         location.reload();
                     } else {
-                        alert('Return Error: ' + (data.error || 'Could not process return.'));
+                        alert((isExchangeMode() ? 'Exchange' : 'Return') + ' error: ' + (data.error || 'Could not complete.'));
                         confirmReturnBtn.disabled = false;
-                        confirmReturnBtn.innerHTML = '<span>Confirm Return & Restore Stock</span>';
+                        confirmReturnSubmitLabel.textContent = isExchangeMode()
+                            ? 'Confirm Exchange on Same Bill'
+                            : 'Confirm Return & Restore Stock';
                     }
                 })
                 .catch(err => {
                     alert('Network error: ' + err);
                     confirmReturnBtn.disabled = false;
-                    confirmReturnBtn.innerHTML = '<span>Confirm Return & Restore Stock</span>';
+                    confirmReturnSubmitLabel.textContent = isExchangeMode()
+                        ? 'Confirm Exchange on Same Bill'
+                        : 'Confirm Return & Restore Stock';
                 });
             });
         });

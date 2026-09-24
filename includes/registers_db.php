@@ -9,26 +9,37 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 
 function get_registers(?int $businessId = null): array {
+    ensure_counter_store_columns();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
-    $stmt = $db->prepare('SELECT * FROM registers WHERE business_id = :bid ORDER BY id ASC');
-    $stmt->execute(['bid' => $bid]);
+    $stmt = $db->prepare('
+        SELECT r.*, o.name AS outlet_name
+        FROM registers r
+        LEFT JOIN outlets o ON o.id = r.outlet_id AND o.business_id = :bid_o
+        WHERE r.business_id = :bid
+        ORDER BY r.id ASC
+    ');
+    $stmt->execute(['bid' => $bid, 'bid_o' => $bid]);
     return $stmt->fetchAll();
 }
 
 function get_open_register_session(?int $userId = null, ?int $businessId = null): ?array {
+    ensure_counter_store_columns();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
-        SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
+        SELECT s.*, r.name AS register_name, r.code AS register_code, r.outlet_id,
+               o.name AS outlet_name, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
         JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
+        LEFT JOIN outlets o ON o.id = r.outlet_id AND o.business_id = :bid_o
         LEFT JOIN users u ON u.id = s.user_id
         WHERE s.status = "open" AND s.business_id = :bid
     ';
     $params = [
         'bid' => $bid,
         'bid_r' => $bid,
+        'bid_o' => $bid,
     ];
     if ($userId !== null) {
         $sql .= ' AND s.user_id = :user_id';
@@ -42,9 +53,52 @@ function get_open_register_session(?int $userId = null, ?int $businessId = null)
     return $session ?: null;
 }
 
-function open_register_session(int $registerId, int $userId, float $openingCash, ?int $businessId = null): array {
+function open_register_session(int $registerId, int $userId, float $openingCash, ?int $businessId = null, ?int $outletId = null): array {
+    ensure_counter_store_columns();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
+
+    $regStmt = $db->prepare('SELECT id, outlet_id FROM registers WHERE id = :id AND business_id = :bid LIMIT 1');
+    $regStmt->execute(['id' => $registerId, 'bid' => $bid]);
+    $register = $regStmt->fetch();
+    if (!$register) {
+        return ['success' => false, 'error' => 'That register counter was not found.'];
+    }
+
+    $userStmt = $db->prepare('SELECT id, role, outlet_id FROM users WHERE id = :id AND business_id = :bid LIMIT 1');
+    $userStmt->execute(['id' => $userId, 'bid' => $bid]);
+    $cashier = $userStmt->fetch() ?: [];
+    $locked = user_pos_is_outlet_locked($cashier);
+    $assignedOutlet = (int) ($cashier['outlet_id'] ?? 0);
+    $registerOutlet = (int) ($register['outlet_id'] ?? 0);
+
+    if ($locked) {
+        if ($assignedOutlet <= 0) {
+            return ['success' => false, 'error' => 'This staff account is not assigned to a store.'];
+        }
+        if ($registerOutlet > 0 && $registerOutlet !== $assignedOutlet) {
+            return ['success' => false, 'error' => 'This counter belongs to another store.'];
+        }
+        $outletId = $assignedOutlet;
+    } else {
+        if ($outletId === null || $outletId <= 0) {
+            $outletId = $registerOutlet;
+        }
+        if ($outletId <= 0) {
+            return ['success' => false, 'error' => 'Choose the store this counter sells from.'];
+        }
+    }
+
+    require_once __DIR__ . '/outlets_db.php';
+    $outlet = get_outlet_by_id((int) $outletId, $bid);
+    if (!$outlet || ($outlet['status'] ?? '') !== 'active') {
+        return ['success' => false, 'error' => 'Choose an active store for this counter.'];
+    }
+
+    if ($registerOutlet !== (int) $outletId) {
+        $db->prepare('UPDATE registers SET outlet_id = :oid, updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute(['oid' => (int) $outletId, 'id' => $registerId, 'bid' => $bid]);
+    }
 
     // Check if user already has an open session
     $existing = get_open_register_session($userId, $bid);
@@ -154,12 +208,15 @@ function close_register_session(int $sessionId, float $closingCashActual, string
 }
 
 function get_register_sessions(int $limit = 50, ?int $businessId = null): array {
+    ensure_counter_store_columns();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
-        SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
+        SELECT s.*, r.name AS register_name, r.code AS register_code, r.outlet_id,
+               o.name AS outlet_name, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
         JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
+        LEFT JOIN outlets o ON o.id = r.outlet_id AND o.business_id = :bid_o
         LEFT JOIN users u ON u.id = s.user_id
         WHERE s.business_id = :bid
         ORDER BY s.id DESC
@@ -167,23 +224,27 @@ function get_register_sessions(int $limit = 50, ?int $businessId = null): array 
     ');
     $stmt->bindValue(':bid', $bid, PDO::PARAM_INT);
     $stmt->bindValue(':bid_r', $bid, PDO::PARAM_INT);
+    $stmt->bindValue(':bid_o', $bid, PDO::PARAM_INT);
     $stmt->bindValue(':limit', max(1, $limit), PDO::PARAM_INT);
     $stmt->execute();
     return $stmt->fetchAll();
 }
 
 function get_register_session_by_id(int $id, ?int $businessId = null): ?array {
+    ensure_counter_store_columns();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $stmt = $db->prepare('
-        SELECT s.*, r.name AS register_name, r.code AS register_code, COALESCE(u.name, "Cashier") AS cashier_name
+        SELECT s.*, r.name AS register_name, r.code AS register_code, r.outlet_id,
+               o.name AS outlet_name, COALESCE(u.name, "Cashier") AS cashier_name
         FROM register_sessions s
         JOIN registers r ON r.id = s.register_id AND r.business_id = :bid_r
+        LEFT JOIN outlets o ON o.id = r.outlet_id AND o.business_id = :bid_o
         LEFT JOIN users u ON u.id = s.user_id
         WHERE s.id = :id AND s.business_id = :bid
         LIMIT 1
     ');
-    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_r' => $bid]);
+    $stmt->execute(['id' => $id, 'bid' => $bid, 'bid_r' => $bid, 'bid_o' => $bid]);
     $res = $stmt->fetch();
     return $res ?: null;
 }

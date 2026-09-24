@@ -14,6 +14,41 @@ function is_authenticated(): bool {
     return !empty($_SESSION['user_id']);
 }
 
+function ensure_counter_store_columns(): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $db = get_db();
+        foreach (['users', 'registers'] as $table) {
+            $stmt = $db->prepare('
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = "outlet_id"
+            ');
+            $stmt->execute(['db' => DB_NAME, 'tbl' => $table]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `{$table}` ADD `outlet_id` INT UNSIGNED NULL");
+            }
+        }
+    } catch (Throwable $e) {
+        // Older installs keep working if the alter cannot run.
+    }
+}
+
+function user_pos_is_outlet_locked(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) {
+        return false;
+    }
+    $role = strtolower(trim((string) ($user['role'] ?? '')));
+    if (in_array($role, ['admin', 'administrator', 'owner'], true)) {
+        return false;
+    }
+    return (int) ($user['outlet_id'] ?? 0) > 0;
+}
+
 function current_user(): ?array {
     if (!is_authenticated()) {
         return null;
@@ -24,10 +59,11 @@ function current_user(): ?array {
         return $cachedUser;
     }
 
+    ensure_counter_store_columns();
     $db = get_db();
     $user = null;
     try {
-        $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
+        $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, outlet_id, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
         $stmt->execute([
             'id' => $_SESSION['user_id'],
             'status' => 'active',
@@ -44,6 +80,7 @@ function current_user(): ?array {
             $user = $stmt->fetch();
             if ($user) {
                 $user['business_id'] = 1;
+                $user['outlet_id'] = $user['outlet_id'] ?? null;
             }
         } catch (Exception $e2) {
             $user = null;

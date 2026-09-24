@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/outlets_db.php';
 
 require_auth();
 
@@ -32,14 +33,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = strtolower(trim($_POST['email'] ?? ''));
         $name = trim($_POST['name'] ?? '');
         $role = trim($_POST['role'] ?? 'Staff');
+        $editId = (int) ($_POST['user_id'] ?? 0);
+        $outletId = (int) ($_POST['outlet_id'] ?? 0);
         $bid = current_business_id();
+        $roleKey = strtolower($role);
+        $storeRequired = !in_array($roleKey, ['admin', 'administrator', 'owner'], true);
 
         if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             set_flash('error', 'Please enter a valid email address.');
         } elseif (!$name) {
             set_flash('error', 'Please enter user full name.');
+        } elseif ($storeRequired && $outletId <= 0) {
+            set_flash('error', 'Choose the store this person can sell from.');
+        } elseif ($outletId > 0 && !get_outlet_by_id($outletId, $bid)) {
+            set_flash('error', 'That store was not found.');
         } else {
             // Check if user email already exists for this business
+            $savedOutlet = $outletId > 0 ? $outletId : null;
+            if ($editId > 0) {
+                $stmt = $db->prepare('
+                    UPDATE users
+                    SET name = :name, role = :role, outlet_id = :outlet_id, updated_at = NOW()
+                    WHERE id = :id AND business_id = :bid AND email = :email
+                ');
+                $stmt->execute([
+                    'name' => $name,
+                    'role' => $role,
+                    'outlet_id' => $savedOutlet,
+                    'id' => $editId,
+                    'bid' => $bid,
+                    'email' => $email,
+                ]);
+                set_flash('success', 'User store and role updated.');
+            } else {
             $stmtChk = $db->prepare('SELECT id FROM users WHERE email = :email AND business_id = :bid LIMIT 1');
             $stmtChk->execute(['email' => $email, 'bid' => $bid]);
             if ($stmtChk->fetch()) {
@@ -47,8 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $tempPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
                 $stmt = $db->prepare('
-                    INSERT INTO users (business_id, name, email, password, role, status, created_at, updated_at)
-                    VALUES (:bid, :name, :email, :pass, :role, "active", NOW(), NOW())
+                    INSERT INTO users (business_id, name, email, password, role, outlet_id, status, created_at, updated_at)
+                    VALUES (:bid, :name, :email, :pass, :role, :outlet_id, "active", NOW(), NOW())
                 ');
                 $stmt->execute([
                     'bid' => $bid,
@@ -56,9 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'email' => $email,
                     'pass' => $tempPassword,
                     'role' => $role,
+                    'outlet_id' => $savedOutlet,
                 ]);
 
                 set_flash('success', "Invitation sent to {$email} successfully!");
+            }
             }
         }
         redirect(APP_URL . '/users.php');
@@ -80,7 +108,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $bid = current_business_id();
 // Filter support
 $filter = $_GET['filter'] ?? 'all';
-$sql = 'SELECT id, name, email, role, status, created_at FROM users WHERE business_id = :bid';
+ensure_counter_store_columns();
+$userOutlets = get_outlets('active');
+$outletNames = [];
+foreach ($userOutlets as $outletRow) {
+    $outletNames[(int) $outletRow['id']] = (string) $outletRow['name'];
+}
+$sql = 'SELECT id, name, email, role, outlet_id, status, created_at FROM users WHERE business_id = :bid';
 $params = ['bid' => $bid];
 
 if ($filter === 'active') {
@@ -469,7 +503,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                                             </svg>
                                         </div>
                                         <div>
-                                            <a href="javascript:void(0)" class="user-name-link" onclick="openEditUser('<?= e($u['name']) ?>', '<?= e($u['email']) ?>', '<?= e($u['role']) ?>')">
+                                            <a href="javascript:void(0)" class="user-name-link" onclick="openEditUser('<?= e($u['name']) ?>', '<?= e($u['email']) ?>', '<?= e($u['role']) ?>', <?= (int) $u['id'] ?>, <?= (int) ($u['outlet_id'] ?? 0) ?>)">
                                                 <?= e($u['name']) ?>
                                             </a>
                                             <div class="user-email-text"><?= e($u['email']) ?></div>
@@ -478,6 +512,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                                 </td>
                                 <td>
                                     <span style="font-weight: 500; color: #334155;"><?= e($u['role'] ?: 'Staff') ?></span>
+                                    <div style="font-size: 12px; color: #64748b; margin-top: 2px;"><?= e($outletNames[(int) ($u['outlet_id'] ?? 0)] ?? 'All stores') ?></div>
                                 </td>
                                 <td>
                                     <?php if ($u['status'] === 'active'): ?>
@@ -504,6 +539,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             <form method="POST" action="<?= asset('users.php') ?>">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="invite_user">
+                <input type="hidden" name="user_id" id="modalUserId" value="">
 
                 <div class="modal-invite-body">
                     <!-- Email Field -->
@@ -541,6 +577,20 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                             </select>
                         </div>
                     </div>
+
+                    <div class="modal-field-row">
+                        <label class="modal-field-label">
+                            <span>Store</span>
+                        </label>
+                        <div>
+                            <select name="outlet_id" id="modalUserOutlet" class="modal-field-input">
+                                <option value="">All stores (Admin)</option>
+                                <?php foreach ($userOutlets as $outletRow): ?>
+                                    <option value="<?= (int) $outletRow['id'] ?>"><?= e($outletRow['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="modal-invite-footer">
@@ -553,6 +603,8 @@ $usersList = $stmtUsers->fetchAll() ?: [];
 
     <script>
         function openInviteModal() {
+            var idField = document.getElementById('modalUserId');
+            if (idField) idField.value = '';
             var m = document.getElementById('inviteUserModal');
             if (m) {
                 m.classList.add('show');
@@ -568,11 +620,14 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             if (m) m.classList.remove('show');
         }
 
-        function openEditUser(name, email, role) {
+        function openEditUser(name, email, role, userId, outletId) {
             openInviteModal();
+            document.getElementById('modalUserId').value = userId || '';
             document.getElementById('modalUserName').value = name;
             document.getElementById('modalUserEmail').value = email;
             document.getElementById('modalUserRole').value = role;
+            var outlet = document.getElementById('modalUserOutlet');
+            if (outlet) outlet.value = outletId > 0 ? String(outletId) : '';
         }
 
         document.addEventListener('keydown', function(e) {

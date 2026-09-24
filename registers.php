@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/registers_db.php';
+require_once __DIR__ . '/includes/outlets_db.php';
 
 require_auth();
 
@@ -28,7 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'open_session') {
         $registerId = (int) ($_POST['register_id'] ?? 1);
         $openingCash = (float) ($_POST['opening_cash'] ?? 0.00);
-        $res = open_register_session($registerId, (int)$userId, $openingCash);
+        $outletId = (int) ($_POST['outlet_id'] ?? 0);
+        $res = open_register_session($registerId, (int)$userId, $openingCash, null, $outletId);
 
         if ($res['success']) {
             set_flash('success', 'Register opened successfully! Opening Cash Float: ₹' . number_format($openingCash, 2));
@@ -67,6 +69,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $activeSession = get_open_register_session($userId);
 $registers = get_registers();
+$registerOutlets = get_outlets('active');
+$staffOutletId = user_pos_is_outlet_locked($user) ? (int) ($user['outlet_id'] ?? 0) : 0;
+if ($staffOutletId > 0) {
+    $registers = array_values(array_filter($registers, static function (array $reg) use ($staffOutletId): bool {
+        $regOutlet = (int) ($reg['outlet_id'] ?? 0);
+        return $regOutlet === 0 || $regOutlet === $staffOutletId;
+    }));
+}
 $pastSessions = get_register_sessions(25);
 
 $flashSuccess = get_flash('success');
@@ -117,6 +127,9 @@ $flashError = get_flash('error');
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <span class="badge badge-success" style="font-size: 12px; padding: 4px 10px;">🟢 ACTIVE SHIFT SESSION</span>
                                     <strong style="color: var(--saas-navy-950); font-size: 16px;"><?= e($activeSession['register_name']) ?> (<?= e($activeSession['register_code']) ?>)</strong>
+                                    <?php if (!empty($activeSession['outlet_name'])): ?>
+                                        <span style="color: #1e3a8a; font-weight: 700;">· <?= e($activeSession['outlet_name']) ?></span>
+                                    <?php endif; ?>
                                 </div>
                                 <div style="color: var(--saas-slate-500); font-size: 13px; margin-top: 6px;">
                                     Opened on <strong><?= date('M d, Y • h:i A', strtotime($activeSession['opened_at'])) ?></strong> by <strong><?= e($activeSession['cashier_name']) ?></strong>
@@ -197,7 +210,7 @@ $flashError = get_flash('error');
                                     <?php foreach ($pastSessions as $ps): ?>
                                         <tr>
                                             <td><strong style="font-family: monospace; color: var(--saas-primary);">#<?= $ps['id'] ?></strong></td>
-                                            <td><?= e($ps['register_name']) ?></td>
+                                            <td><?= e($ps['register_name']) ?><?php if (!empty($ps['outlet_name'])): ?> <span style="color:#64748b;">· <?= e($ps['outlet_name']) ?></span><?php endif; ?></td>
                                             <td><strong><?= e($ps['cashier_name']) ?></strong></td>
                                             <td style="font-size: 12px;"><?= date('M d, h:i A', strtotime($ps['opened_at'])) ?></td>
                                             <td style="font-size: 12px;"><?= $ps['closed_at'] ? date('M d, h:i A', strtotime($ps['closed_at'])) : '<span style="color:#047857; font-weight:700;">Open Now</span>' ?></td>
@@ -244,9 +257,35 @@ $flashError = get_flash('error');
                         <label class="form-label">Select Register Counter</label>
                         <select name="register_id" class="form-control">
                             <?php foreach ($registers as $reg): ?>
-                                <option value="<?= $reg['id'] ?>"><?= e($reg['name']) ?> (<?= e($reg['code']) ?>)</option>
+                                <option value="<?= $reg['id'] ?>"><?= e($reg['name']) ?> (<?= e($reg['code']) ?>)<?php if (!empty($reg['outlet_name'])): ?> — <?= e($reg['outlet_name']) ?><?php endif; ?></option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label class="form-label">Store for this counter</label>
+                        <?php if ($staffOutletId > 0): ?>
+                            <input type="hidden" name="outlet_id" value="<?= $staffOutletId ?>">
+                            <div class="form-control" style="background:#f8fafc; font-weight:700;">
+                                <?php
+                                    $staffStoreName = '';
+                                    foreach ($registerOutlets as $outletRow) {
+                                        if ((int) $outletRow['id'] === $staffOutletId) {
+                                            $staffStoreName = (string) $outletRow['name'];
+                                            break;
+                                        }
+                                    }
+                                    echo e($staffStoreName !== '' ? $staffStoreName : 'Your store');
+                                ?>
+                            </div>
+                        <?php else: ?>
+                            <select name="outlet_id" class="form-control" required>
+                                <option value="">Select store</option>
+                                <?php foreach ($registerOutlets as $outletRow): ?>
+                                    <option value="<?= (int) $outletRow['id'] ?>"><?= e($outletRow['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php endif; ?>
+                        <span style="font-size: 11.5px; color: var(--saas-slate-400);">This counter sells only this store's quantity.</span>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Opening Cash Float Amount (₹)</label>

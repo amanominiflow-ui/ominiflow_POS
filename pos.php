@@ -16,6 +16,7 @@ require_once __DIR__ . '/includes/payment_integrations_db.php';
 require_once __DIR__ . '/includes/razorpay_oauth.php';
 require_once __DIR__ . '/includes/invoice_whatsapp.php';
 require_once __DIR__ . '/includes/outlets_db.php';
+require_once __DIR__ . '/includes/registers_db.php';
 
 require_auth();
 
@@ -23,8 +24,11 @@ $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_pos_outlet') {
-    if (verify_csrf_token($_POST['csrf_token'] ?? '')) {
-        $_SESSION['pos_outlet_id'] = (int) ($_POST['outlet_id'] ?? 0);
+    if (verify_csrf_token($_POST['csrf_token'] ?? '') && !user_pos_is_outlet_locked($user)) {
+        $openShift = get_open_register_session($userId);
+        if ((int) ($openShift['outlet_id'] ?? 0) <= 0) {
+            $_SESSION['pos_outlet_id'] = (int) ($_POST['outlet_id'] ?? 0);
+        }
     }
     redirect(APP_URL . '/pos.php');
 }
@@ -85,6 +89,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $outletId = (int) ($_POST['outlet_id'] ?? 0);
         if ($outletId <= 0) {
             $outletId = (int) ($_SESSION['pos_outlet_id'] ?? 0);
+        }
+        if (user_pos_is_outlet_locked($user)) {
+            $outletId = (int) ($user['outlet_id'] ?? 0);
+        } else {
+            $openShift = get_open_register_session($userId);
+            if ((int) ($openShift['outlet_id'] ?? 0) > 0) {
+                $outletId = (int) $openShift['outlet_id'];
+            }
         }
         $clientOrderUuid = !empty($_POST['client_order_uuid']) ? (string)$_POST['client_order_uuid'] : null;
         $couponId = !empty($_POST['coupon_id']) ? (int)$_POST['coupon_id'] : null;
@@ -414,7 +426,20 @@ $unsoldAlerts = get_pos_unsold_products_alerts(7);
 $totalPosAlerts = count($lowStockAlerts) + count($unsoldAlerts);
 
 $posOutlets = get_outlets('active');
-$posOutletId = resolve_pos_outlet_id((int) ($_SESSION['pos_outlet_id'] ?? 0));
+$posOpenShift = get_open_register_session($userId);
+$posLockedToStore = false;
+$posLockLabel = '';
+if (user_pos_is_outlet_locked($user)) {
+    $posOutletId = resolve_pos_outlet_id((int) ($user['outlet_id'] ?? 0));
+    $posLockedToStore = true;
+    $posLockLabel = 'Your store';
+} elseif ((int) ($posOpenShift['outlet_id'] ?? 0) > 0) {
+    $posOutletId = resolve_pos_outlet_id((int) $posOpenShift['outlet_id']);
+    $posLockedToStore = true;
+    $posLockLabel = trim((string) ($posOpenShift['register_name'] ?? 'This counter'));
+} else {
+    $posOutletId = resolve_pos_outlet_id((int) ($_SESSION['pos_outlet_id'] ?? 0));
+}
 $_SESSION['pos_outlet_id'] = $posOutletId;
 $posOutletName = '';
 foreach ($posOutlets as $posOutletRow) {
@@ -424,12 +449,34 @@ foreach ($posOutlets as $posOutletRow) {
     }
 }
 $posWarehouseId = get_warehouse_id_for_outlet($posOutletId) ?? 0;
+$posIsolateOutletStock = pos_isolates_outlet_stock();
 $posWarehouseStockByProduct = [];
+$posLocationTracked = [];
 if ($posWarehouseId > 0) {
     $wsStmt = get_db()->prepare('SELECT product_id, stock_quantity FROM warehouse_stock WHERE warehouse_id = :wid');
     $wsStmt->execute(['wid' => $posWarehouseId]);
     foreach ($wsStmt->fetchAll() as $wsRow) {
         $posWarehouseStockByProduct[(int) $wsRow['product_id']] = (int) $wsRow['stock_quantity'];
+    }
+}
+if ($posIsolateOutletStock) {
+    $locStmt = get_db()->prepare('
+        SELECT DISTINCT ws.product_id
+        FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+    ');
+    $locStmt->execute(['bid' => current_business_id()]);
+    foreach ($locStmt->fetchAll() as $locRow) {
+        $posLocationTracked[(int) $locRow['product_id']] = true;
+    }
+    foreach ($posVariantsByProduct as $variantProductId => $variantRows) {
+        if (empty($posLocationTracked[(int) $variantProductId])) {
+            continue;
+        }
+        $storeCap = (int) ($posWarehouseStockByProduct[(int) $variantProductId] ?? 0);
+        foreach ($variantRows as $variantIndex => $variantRow) {
+            $posVariantsByProduct[$variantProductId][$variantIndex]['stock'] = min((int) $variantRow['stock'], $storeCap);
+        }
     }
 }
 
@@ -485,7 +532,15 @@ $flashError = get_flash('error');
                     <div class="pos-catalog-panel">
                         <!-- Barcode & Search Controls -->
                         <div class="pos-search-barcode-row">
-                            <?php if (count($posOutlets) > 0): ?>
+                            <?php if ($posLockedToStore): ?>
+                            <div class="pos-outlet-switch" style="min-width: 200px;">
+                                <label class="form-label" style="font-size: 11px; font-weight: 700; color: var(--saas-slate-600); margin-bottom: 4px; display: block;">Billing store</label>
+                                <div class="form-control" style="background: #f8fafc; font-weight: 700;" title="This counter sells only this store's quantity">
+                                    <?= e($posOutletName !== '' ? $posOutletName : 'Store') ?>
+                                    <span style="font-weight: 500; color: #64748b;"> · <?= e($posLockLabel) ?></span>
+                                </div>
+                            </div>
+                            <?php elseif (count($posOutlets) > 0): ?>
                             <form method="POST" action="<?= asset('pos.php') ?>" class="pos-outlet-switch" style="min-width: 200px;">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="action" value="set_pos_outlet">
@@ -562,12 +617,15 @@ $flashError = get_flash('error');
                                 <?php
                                     $prodVariants = $posVariantsByProduct[(int) $prod['id']] ?? [];
                                     $pid = (int) $prod['id'];
-                                    if (array_key_exists($pid, $posWarehouseStockByProduct)) {
+                                    $sellsStoreQty = $posIsolateOutletStock && !empty($posLocationTracked[$pid]);
+                                    if ($sellsStoreQty) {
+                                        $stock = (int) ($posWarehouseStockByProduct[$pid] ?? 0);
+                                    } elseif (array_key_exists($pid, $posWarehouseStockByProduct)) {
                                         $stock = (int) $posWarehouseStockByProduct[$pid];
                                     } else {
                                         $stock = (int) $prod['stock_quantity'];
                                     }
-                                    if ($prodVariants) {
+                                    if ($prodVariants && !$sellsStoreQty) {
                                         $stock = 0;
                                         foreach ($prodVariants as $prodVariant) {
                                             $stock += (int) $prodVariant['stock'];
