@@ -1573,6 +1573,80 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_entries` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `entry_number` VARCHAR(40) NOT NULL,
+            `vendor_id` INT UNSIGNED NOT NULL,
+            `supplier_invoice_no` VARCHAR(80) NULL,
+            `purchase_date` DATE NOT NULL,
+            `received_date` DATE NOT NULL,
+            `warehouse_id` INT UNSIGNED NOT NULL,
+            `notes` TEXT NULL,
+            `status` ENUM('draft','pending_cost','finalized','barcode_generated','completed') NOT NULL DEFAULT 'pending_cost',
+            `stock_posted` TINYINT(1) NOT NULL DEFAULT 0,
+            `user_id` INT UNSIGNED NULL,
+            `finalized_by` INT UNSIGNED NULL,
+            `finalized_at` DATETIME NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_number` (`business_id`, `entry_number`),
+            INDEX `idx_pe_status` (`business_id`, `status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_entry_lines` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `purchase_entry_id` INT UNSIGNED NOT NULL,
+            `line_no` INT UNSIGNED NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL,
+            `subcategory_id` INT UNSIGNED NULL,
+            `sku` VARCHAR(100) NOT NULL,
+            `colour` VARCHAR(80) NOT NULL,
+            `size_label` VARCHAR(80) NOT NULL,
+            `selling_price` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            `cost_price` DECIMAL(12,2) NULL,
+            `quantity` INT UNSIGNED NOT NULL,
+            `product_id` INT UNSIGNED NULL,
+            `variant_id` INT UNSIGNED NULL,
+            `barcode` VARCHAR(100) NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pel_entry` (`purchase_entry_id`),
+            CONSTRAINT `fk_pel_entry` FOREIGN KEY (`purchase_entry_id`) REFERENCES `purchase_entries` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_subcategories` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL,
+            `name` VARCHAR(120) NOT NULL,
+            `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_sub` (`business_id`, `category_id`, `name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_attr_options` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `attr_type` ENUM('colour','size') NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `name` VARCHAR(80) NOT NULL,
+            `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_attr` (`business_id`, `attr_type`, `category_id`, `name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_sku_sequences` (
+            `business_id` INT UNSIGNED NOT NULL,
+            `prefix` VARCHAR(12) NOT NULL,
+            `next_number` INT UNSIGNED NOT NULL DEFAULT 1,
+            PRIMARY KEY (`business_id`, `prefix`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
 
     if (php_sapi_name() === 'cli') {
         echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";

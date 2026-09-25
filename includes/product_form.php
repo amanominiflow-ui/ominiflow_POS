@@ -26,13 +26,40 @@ $units = ['pcs', 'box', 'dz', 'kg', 'g', 'mg', 'lb', 'ml', 'l', 'm', 'cm', 'ft',
 $salesAccounts = ['Sales', 'Other Charges', 'Shipping Charge', 'Discount'];
 $purchaseAccounts = ['Cost of Goods Sold', 'Inventory Asset', 'Freight', 'Purchase'];
 $inventoryAccounts = ['Inventory Asset', 'Finished Goods', 'Raw Materials', 'Stock in Hand'];
+
+$taxRates = is_array($taxRates ?? null) ? $taxRates : [];
+$taxSeen = [];
+$taxRatesDeduped = [];
+foreach ($taxRates as $tr) {
+    if (!is_array($tr)) {
+        continue;
+    }
+    $taxKey = strtolower((string) ($tr['type'] ?? 'gst')) . '|' . number_format((float) ($tr['rate'] ?? 0), 2, '.', '');
+    if (isset($taxSeen[$taxKey])) {
+        continue;
+    }
+    $taxSeen[$taxKey] = true;
+    $taxRatesDeduped[] = $tr;
+}
+$taxRates = $taxRatesDeduped;
+
 $gstRates = array_values(array_filter($taxRates ?? [], static fn($t) => in_array(($t['type'] ?? ''), ['gst', 'exempt'], true)));
-$igstRates = array_values(array_filter($taxRates ?? [], static fn($t) => ($t['type'] ?? '') === 'igst'));
 if (!$gstRates) {
     $gstRates = $taxRates ?? [];
 }
-if (!$igstRates) {
-    $igstRates = $taxRates ?? [];
+
+/** Inter dropdown: same % slabs as intra (IGST row when present, else same rate row). */
+$interRates = [];
+foreach ($gstRates as $g) {
+    $rate = (float) ($g['rate'] ?? 0);
+    $matched = null;
+    foreach ($taxRates as $tr) {
+        if (($tr['type'] ?? '') === 'igst' && (float) ($tr['rate'] ?? -1) === $rate) {
+            $matched = $tr;
+            break;
+        }
+    }
+    $interRates[] = $matched ?? $g;
 }
 
 $itemKind = product_form_val('item_kind', 'goods');
@@ -76,18 +103,43 @@ $defaultIntra = product_form_val('intra_tax_rate_id');
 $defaultInter = product_form_val('inter_tax_rate_id');
 if ($defaultIntra === '' && $gstRates) {
     foreach ($gstRates as $g) {
-        if ((float) $g['rate'] == 5.0) { $defaultIntra = (string) $g['id']; break; }
+        if ((float) $g['rate'] === 0.0) {
+            $defaultIntra = (string) $g['id'];
+            break;
+        }
     }
     if ($defaultIntra === '') {
         $defaultIntra = (string) $gstRates[0]['id'];
     }
 }
-if ($defaultInter === '' && $igstRates) {
-    foreach ($igstRates as $g) {
-        if ((float) $g['rate'] == 5.0) { $defaultInter = (string) $g['id']; break; }
+if ($defaultInter === '' && $interRates) {
+    foreach ($interRates as $g) {
+        if ((float) $g['rate'] === 0.0) {
+            $defaultInter = (string) $g['id'];
+            break;
+        }
     }
     if ($defaultInter === '') {
-        $defaultInter = (string) $igstRates[0]['id'];
+        $defaultInter = (string) $interRates[0]['id'];
+    }
+} elseif ($defaultInter !== '' && $interRates) {
+    $interIds = array_map(static fn($t) => (string) (int) $t['id'], $interRates);
+    if (!in_array($defaultInter, $interIds, true)) {
+        $savedRate = null;
+        foreach ($taxRates as $tr) {
+            if ((string) (int) $tr['id'] === $defaultInter) {
+                $savedRate = (float) ($tr['rate'] ?? 0);
+                break;
+            }
+        }
+        if ($savedRate !== null) {
+            foreach ($interRates as $g) {
+                if ((float) ($g['rate'] ?? -1) === $savedRate) {
+                    $defaultInter = (string) $g['id'];
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -601,7 +653,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             <div class="item-row">
                 <label class="item-label">Inter State Tax Rate</label>
                 <select class="item-select" name="inter_tax_rate_id">
-                    <?php foreach ($igstRates as $tr): ?>
+                    <?php foreach ($interRates as $tr): ?>
                         <option value="<?= (int) $tr['id'] ?>" <?= $defaultInter === (string) $tr['id'] ? 'selected' : '' ?>><?= e((string) $tr['name']) ?> (<?= e((string) $tr['rate']) ?>%)</option>
                     <?php endforeach; ?>
                 </select>

@@ -161,17 +161,36 @@ function has_permission(string $permission, ?array $user = null): bool {
     if ($user === null) {
         $user = current_user();
     }
-    if (!$user) return false;
+    if (!$user) {
+        return false;
+    }
 
-    $role = strtolower((string)($user['role'] ?? 'admin'));
-    if (in_array($role, ['owner', 'admin'], true)) {
+    $role = strtolower((string) ($user['role'] ?? 'admin'));
+    if (in_array($role, ['owner', 'admin', 'administrator'], true)) {
         return true;
     }
 
     $perms = get_role_permissions($role);
-    if (in_array('*', $perms, true)) return true;
+    if (in_array('*', $perms, true) || !empty($perms['all'])) {
+        return true;
+    }
 
-    return true;
+    $parts = explode('.', $permission);
+    if (count($parts) !== 3) {
+        return true;
+    }
+
+    [$module, $resource, $action] = $parts;
+    if (!array_key_exists($module, $perms)) {
+        return true;
+    }
+
+    $resourcePerms = $perms[$module][$resource] ?? [];
+    if (!is_array($resourcePerms)) {
+        return false;
+    }
+
+    return in_array($action, $resourcePerms, true);
 }
 
 function require_permission(string $permission): void {

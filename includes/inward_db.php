@@ -10,6 +10,47 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 
+function inward_entry_can_manage_cost(?array $user = null): bool {
+    if ($user === null) {
+        $user = current_user();
+    }
+    if (!$user) {
+        return false;
+    }
+    require_once __DIR__ . '/roles_db.php';
+    $role = strtolower(trim((string) ($user['role'] ?? '')));
+    if (in_array($role, ['owner', 'admin', 'administrator'], true)) {
+        return true;
+    }
+    return has_permission('purchases.inward_entry_cost.view', $user)
+        || has_permission('purchases.inward_entry_cost.edit', $user);
+}
+
+function inward_entry_permission_for_action(string $action): string {
+    return match ($action) {
+        'save_inward' => 'purchases.inward_entry.create',
+        'confirm_costs' => 'purchases.inward_entry_cost.edit',
+        'confirm_purchase', 'complete_qc', 'create_bill' => 'purchases.inward_entry.edit',
+        default => 'purchases.inward_entry.view',
+    };
+}
+
+function inward_entry_assert_action(string $action, bool $ajax = false): void {
+    require_once __DIR__ . '/roles_db.php';
+    $perm = inward_entry_permission_for_action($action);
+    if (has_permission($perm)) {
+        return;
+    }
+    if ($ajax) {
+        header('Content-Type: application/json');
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'You do not have permission for this action.']);
+        exit;
+    }
+    set_flash('error', 'Access denied for Inward Entry.');
+    redirect(APP_URL . '/inward-entry.php');
+}
+
 function ensure_inward_schema(): void {
     static $done = false;
     if ($done) {

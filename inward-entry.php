@@ -13,20 +13,29 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/purchases_db.php';
 require_once __DIR__ . '/includes/outlets_db.php';
 require_once __DIR__ . '/includes/inward_db.php';
+require_once __DIR__ . '/includes/roles_db.php';
 
 require_auth();
 
 $pageTitle = 'Inward Entry';
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
+$canInwardCost = inward_entry_can_manage_cost($user);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $postAction = (string) ($_POST['action'] ?? '');
+    inward_entry_assert_action($postAction, false);
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         set_flash('error', 'Invalid session token.');
         redirect(APP_URL . '/inward-entry.php');
     }
 
-    if (($_POST['action'] ?? '') === 'save_inward') {
+    if ($postAction === 'confirm_costs' && !$canInwardCost) {
+        set_flash('error', 'Only users with inward cost permission can confirm costs.');
+        redirect(APP_URL . '/inward-entry.php?id=' . (int) ($_POST['entry_id'] ?? 0));
+    }
+
+    if ($postAction === 'save_inward') {
         $lines = json_decode((string) ($_POST['lines_json'] ?? '[]'), true);
         if (!is_array($lines)) {
             $lines = [];
@@ -114,6 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect(APP_URL . '/inward-entry.php?id=' . $entryId);
     }
+} else {
+    require_permission('purchases.inward_entry.view');
 }
 
 $search = trim((string) ($_GET['search'] ?? ''));
@@ -218,6 +229,9 @@ $flashError = get_flash('error');
                             <?php endif; ?>
                             <?php if ($costPending): ?>
                                 <p style="margin: 12px 0 0; color: #475569;">Purchase cost and selling price stay blank until you confirm them. Confirming cost does not release a barcode for the warehouse to print.</p>
+                                <?php if (!$canInwardCost): ?>
+                                    <p style="margin: 8px 0 0; color: #9a3412; font-weight: 650;">Cost fields are restricted for your role. An owner or a user with <strong>Inward Entry — cost &amp; confirm</strong> permission must enter costs.</p>
+                                <?php endif; ?>
                             <?php elseif (!$purchaseConfirmed): ?>
                                 <p style="margin: 12px 0 0; color: #475569;">Costs are saved. Confirm the purchase to release a barcode for each line so the warehouse can print labels. This quantity is already company stock.</p>
                             <?php elseif (!$qcDone): ?>
@@ -226,7 +240,7 @@ $flashError = get_flash('error');
                                 <p style="margin: 12px 0 0; color: #475569;">QC, checking, and tagging is complete. Ready stock is in Central Warehouse only.</p>
                             <?php endif; ?>
                         </div>
-                        <?php if ($costPending): ?>
+                        <?php if ($costPending && $canInwardCost): ?>
                         <form method="post" id="costForm" style="padding: 0 20px 8px;">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="confirm_costs">
@@ -271,9 +285,11 @@ $flashError = get_flash('error');
                                             <td><?= e((string) $line['size']) ?></td>
                                             <td><?= e((string) $line['colour']) ?></td>
                                             <td><?= (int) $line['quantity'] ?></td>
-                                            <?php if ($costPending): ?>
+                                            <?php if ($costPending && $canInwardCost): ?>
                                                 <td><input type="text" inputmode="decimal" class="form-control inw-cost" autocomplete="off" placeholder="Blank" style="min-height: 48px; font-size: 18px;"></td>
                                                 <td><input type="text" inputmode="decimal" class="form-control inw-price" autocomplete="off" placeholder="Blank" style="min-height: 48px; font-size: 18px;"></td>
+                                            <?php elseif ($costPending): ?>
+                                                <td colspan="2" style="color:#64748b; font-weight:700;">🔒 Restricted</td>
                                             <?php else: ?>
                                                 <td><?= $line['purchase_cost'] === null ? '—' : '₹' . number_format((float) $line['purchase_cost'], 2) ?></td>
                                                 <td><?= $line['selling_price'] === null ? '—' : '₹' . number_format((float) $line['selling_price'], 2) ?></td>
@@ -287,12 +303,12 @@ $flashError = get_flash('error');
                                 </tbody>
                             </table>
                         </div>
-                        <?php if ($costPending && !empty($selected['lines'])): ?>
+                        <?php if ($costPending && $canInwardCost && !empty($selected['lines'])): ?>
                             <div style="padding: 14px 0 16px; display:flex; justify-content: flex-end;">
                                 <button type="submit" class="header-btn" style="padding: 12px 18px; min-height: 48px;">Confirm costs</button>
                             </div>
                         <?php endif; ?>
-                        <?php if ($costPending): ?>
+                        <?php if ($costPending && $canInwardCost): ?>
                         </form>
                         <?php elseif (!$purchaseConfirmed && !empty($selected['lines'])): ?>
                         <form method="post" style="padding: 0 20px 16px; display:flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
