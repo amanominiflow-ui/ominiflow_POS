@@ -350,12 +350,13 @@ function purchase_entry_validate_lines(array $lines, int $businessId, bool $requ
             $cost = number_format((float) $line['cost_price'], 2, '.', '');
         }
         $sku = strtoupper(trim((string) ($line['sku'] ?? '')));
-        if ($sku !== '' && isset($seen[$sku])) {
+        if ($sku === '') {
+            return ['success' => false, 'error' => 'Please enter SKU on row ' . $rowNo . '.'];
+        }
+        if (isset($seen[$sku])) {
             return ['success' => false, 'error' => 'Duplicate SKU on row ' . $rowNo . ' — each line needs a unique SKU.'];
         }
-        if ($sku !== '') {
-            $seen[$sku] = true;
-        }
+        $seen[$sku] = true;
         $clean[] = [
             'category_id' => $categoryId,
             'subcategory_id' => $subId > 0 ? $subId : null,
@@ -387,6 +388,45 @@ function purchase_entry_next_number(PDO $db, int $businessId): string {
     return $prefix . str_pad((string) $n, 6, '0', STR_PAD_LEFT);
 }
 
+/**
+ * Valid vendor id, or create/find vendor by typed name when dropdown was not used.
+ *
+ * @return array{success: bool, vendor_id?: int, error?: string}
+ */
+function purchase_entry_resolve_vendor_id(PDO $db, int $businessId, int $vendorId, string $vendorName): array
+{
+    if ($vendorId > 0) {
+        $vendor = $db->prepare('SELECT id FROM vendors WHERE id = :id AND business_id = :bid LIMIT 1');
+        $vendor->execute(['id' => $vendorId, 'bid' => $businessId]);
+        if ($vendor->fetch()) {
+            return ['success' => true, 'vendor_id' => $vendorId];
+        }
+    }
+
+    $name = trim($vendorName);
+    if ($name === '') {
+        return ['success' => false, 'error' => 'Please select or enter a supplier name.'];
+    }
+
+    $find = $db->prepare('
+        SELECT id FROM vendors
+        WHERE business_id = :bid AND LOWER(TRIM(name)) = LOWER(:name)
+        LIMIT 1
+    ');
+    $find->execute(['bid' => $businessId, 'name' => $name]);
+    $row = $find->fetch();
+    if ($row) {
+        return ['success' => true, 'vendor_id' => (int) $row['id']];
+    }
+
+    $db->prepare('
+        INSERT INTO vendors (business_id, name, payment_terms, status, created_at, updated_at)
+        VALUES (:bid, :name, "Net 30", "active", NOW(), NOW())
+    ')->execute(['bid' => $businessId, 'name' => $name]);
+
+    return ['success' => true, 'vendor_id' => (int) $db->lastInsertId()];
+}
+
 function purchase_entry_audit(PDO $db, ?int $userId, string $action, int $entryId, string $details): void {
     try {
         $db->prepare('
@@ -413,12 +453,16 @@ function save_purchase_entry(array $header, array $lines, ?int $entryId, ?int $u
     $bid = $businessId ?: current_business_id();
     $canCost = purchase_entry_can_view_cost();
 
-    $vendorId = (int) ($header['vendor_id'] ?? 0);
-    $vendor = $db->prepare('SELECT id, phone FROM vendors WHERE id = :id AND business_id = :bid LIMIT 1');
-    $vendor->execute(['id' => $vendorId, 'bid' => $bid]);
-    if (!$vendor->fetch()) {
-        return ['success' => false, 'error' => 'Please select a supplier.'];
+    $vendorResolved = purchase_entry_resolve_vendor_id(
+        $db,
+        $bid,
+        (int) ($header['vendor_id'] ?? 0),
+        (string) ($header['vendor_name'] ?? '')
+    );
+    if (!$vendorResolved['success']) {
+        return $vendorResolved;
     }
+    $vendorId = (int) $vendorResolved['vendor_id'];
     $warehouseId = (int) ($header['warehouse_id'] ?? 0);
     $wh = $db->prepare('SELECT id FROM warehouses WHERE id = :id AND business_id = :bid AND status = "active" LIMIT 1');
     $wh->execute(['id' => $warehouseId, 'bid' => $bid]);
@@ -521,9 +565,6 @@ function save_purchase_entry(array $header, array $lines, ?int $entryId, ?int $u
         $lineNo = 1;
         foreach ($validated['lines'] as $line) {
             $sku = $line['sku'];
-            if ($sku === '') {
-                $sku = purchase_entry_alloc_sku($db, $bid, $line['category_id']);
-            }
             if ($sku !== '') {
                 $clashLine = $db->prepare('
                     SELECT pel.id FROM purchase_entry_lines pel
@@ -737,13 +778,106 @@ function finalize_purchase_entry(int $entryId, array $costs, ?int $userId, ?int 
     }
 }
 
+function purchase_entry_product_name_from_line(array $line): string
+{
+    $sub = trim((string) ($line['subcategory_name'] ?? ''));
+    if ($sub !== '' && in_array(strtolower($sub), ['none', 'n/a', '-'], true)) {
+        $sub = '';
+    }
+    $parts = array_filter([
+        $sub,
+        trim((string) ($line['colour'] ?? '')),
+        trim((string) ($line['size_label'] ?? '')),
+    ], static fn(string $p): bool => $p !== '');
+    $name = trim(implode(' ', $parts));
+    if ($name === '') {
+        $name = strtoupper(trim((string) ($line['sku'] ?? '')));
+    }
+    if ($name === '') {
+        $name = 'Item';
+    }
+    return preg_replace('/\s+/', ' ', $name) ?? $name;
+}
+
+/**
+ * Remove category name wrongly prefixed on products created from purchase entry (one-time / safe re-run).
+ *
+ * @return array{success: bool, fixed: int, skipped: int}
+ */
+function purchase_entry_repair_prefixed_product_names(?int $businessId = null): array
+{
+    $db = get_db();
+    $fixed = 0;
+    $skipped = 0;
+
+    if ($businessId !== null && $businessId > 0) {
+        $businessIds = [$businessId];
+    } else {
+        $ids = $db->query('SELECT DISTINCT business_id FROM products ORDER BY business_id')->fetchAll(PDO::FETCH_COLUMN);
+        $businessIds = array_values(array_filter(array_map('intval', $ids ?: []), static fn(int $id): bool => $id > 0));
+        if ($businessIds === []) {
+            $businessIds = [current_business_id()];
+        }
+    }
+
+    $stmt = $db->prepare('
+        SELECT p.id, p.name, p.sku, c.name AS category_name
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = p.business_id
+        WHERE p.business_id = :bid
+    ');
+
+    $upd = $db->prepare('
+        UPDATE products SET name = :name, updated_at = NOW()
+        WHERE id = :id AND business_id = :bid AND name = :old
+    ');
+
+    foreach ($businessIds as $bid) {
+        $stmt->execute(['bid' => $bid]);
+        foreach ($stmt->fetchAll() ?: [] as $row) {
+            $oldName = trim((string) ($row['name'] ?? ''));
+            $cat = trim((string) ($row['category_name'] ?? ''));
+            if ($oldName === '') {
+                $skipped++;
+                continue;
+            }
+
+            $newName = $oldName;
+            if ($cat !== '') {
+                $pattern = '/^' . preg_quote($cat, '/') . '\s+/iu';
+                if (preg_match($pattern, $oldName)) {
+                    $newName = trim((string) preg_replace($pattern, '', $oldName, 1));
+                }
+            }
+
+            if ($newName === '' || $newName === $oldName) {
+                $skipped++;
+                continue;
+            }
+
+            $upd->execute([
+                'name' => $newName,
+                'id' => (int) $row['id'],
+                'bid' => $bid,
+                'old' => $oldName,
+            ]);
+            if ($upd->rowCount() === 1) {
+                $fixed++;
+            } else {
+                $skipped++;
+            }
+        }
+    }
+
+    return ['success' => true, 'fixed' => $fixed, 'skipped' => $skipped];
+}
+
 function purchase_entry_post_line(PDO $db, int $businessId, int $warehouseId, string $entryNumber, array $line, ?int $userId): void {
     $sku = strtoupper(trim((string) $line['sku']));
     $qty = (int) $line['quantity'];
     $selling = (float) $line['selling_price'];
     $cost = (float) $line['cost_price'];
-    $name = trim((string) ($line['category_name'] ?? 'Item') . ' ' . (string) ($line['subcategory_name'] ?? '') . ' ' . $line['colour'] . ' ' . $line['size_label']);
-    $name = preg_replace('/\s+/', ' ', $name) ?? $name;
+    $name = purchase_entry_product_name_from_line($line);
 
     $find = $db->prepare('SELECT id, stock_quantity, barcode FROM products WHERE business_id = :bid AND sku = :sku LIMIT 1 FOR UPDATE');
     $find->execute(['bid' => $businessId, 'sku' => $sku]);

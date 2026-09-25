@@ -165,10 +165,10 @@ function has_permission(string $permission, ?array $user = null): bool {
         return false;
     }
 
-    $role = strtolower((string) ($user['role'] ?? 'admin'));
-    if (in_array($role, ['owner', 'admin', 'administrator'], true)) {
+    if (user_has_full_access($user)) {
         return true;
     }
+    $role = strtolower(trim((string) ($user['role'] ?? 'admin')));
 
     $perms = get_role_permissions($role);
     if (in_array('*', $perms, true) || !empty($perms['all'])) {

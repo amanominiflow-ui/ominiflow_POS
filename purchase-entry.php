@@ -36,11 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $action = (string) ($_POST['action'] ?? '');
 
-    if ($action === 'peek_sku') {
-        $res = purchase_entry_peek_sku((int) ($_POST['category_id'] ?? 0));
-        purchase_entry_json($res, !empty($res['success']) ? 200 : 422);
-    }
-
     if ($action === 'add_option') {
         $res = purchase_entry_add_option(
             (string) ($_POST['kind'] ?? ''),
@@ -63,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $entryId = (int) ($_POST['entry_id'] ?? 0);
         $res = save_purchase_entry([
             'vendor_id' => (int) ($_POST['vendor_id'] ?? 0),
+            'vendor_name' => (string) ($_POST['vendor_name'] ?? ''),
             'supplier_invoice_no' => (string) ($_POST['supplier_invoice_no'] ?? ''),
             'purchase_date' => (string) ($_POST['purchase_date'] ?? ''),
             'received_date' => (string) ($_POST['received_date'] ?? ''),
@@ -315,7 +311,7 @@ $tabFilters = [
             <div class="pe-grid">
                 <div class="pe-field" style="grid-column: span 2;">
                     <label>Supplier <span class="req">*</span></label>
-                    <input type="search" id="vendorFilter" class="form-control" placeholder="Search supplier name…" style="margin-bottom:6px;" autocomplete="off">
+                    <input type="search" id="vendorFilter" class="form-control" placeholder="Search or type supplier name…" style="margin-bottom:6px;" autocomplete="off">
                     <select id="vendorId" class="form-control" required>
                         <option value="">Select supplier</option>
                         <?php foreach ($catalog['vendors'] as $v): ?>
@@ -450,6 +446,19 @@ function filterVendorSelect() {
         opt.disabled = !show;
     });
 }
+function supplierInputReady() {
+    const sel = document.getElementById('vendorId');
+    if (sel.value) return true;
+    const typed = document.getElementById('vendorFilter').value.trim();
+    if (!typed) return false;
+    const exact = [...sel.options].find((opt, i) => i > 0 && !opt.disabled && opt.text.trim().toLowerCase() === typed.toLowerCase());
+    if (exact) {
+        sel.value = exact.value;
+        syncPhone();
+        return true;
+    }
+    return true;
+}
 function syncPhone() {
     const sel = document.getElementById('vendorId');
     const opt = sel.options[sel.selectedIndex];
@@ -479,6 +488,9 @@ function renderHeader() {
     if (PE.entry) {
         document.getElementById('warehouseId').value = PE.entry.warehouse_id;
         document.getElementById('vendorId').value = PE.entry.vendor_id || '';
+        const vSel = document.getElementById('vendorId');
+        const vOpt = vSel.options[vSel.selectedIndex];
+        document.getElementById('vendorFilter').value = (vOpt && vSel.value) ? vOpt.text.trim() : '';
     } else {
         const central = PE.catalog.warehouses.find(w => /central/i.test(w.name) || w.code === 'WH-CENTRAL');
         if (central) document.getElementById('warehouseId').value = central.id;
@@ -522,7 +534,7 @@ function addRow(data) {
     tr.innerHTML = `
         <td class="line-no pe-num"></td>
         <td><select class="form-control cat"></select></td>
-        <td><input class="form-control sku" type="text" autocomplete="off" spellcheck="false" placeholder="Auto if empty" value="${esc(data.sku || '')}" title="Enter your SKU or leave blank for auto number"></td>
+        <td><input class="form-control sku" type="text" autocomplete="off" spellcheck="false" placeholder="SKU" value="${esc(data.sku || '')}" title="Enter SKU"></td>
         <td><select class="form-control colour"></select></td>
         <td><select class="form-control sub"></select></td>
         <td><select class="form-control size"></select></td>
@@ -536,11 +548,11 @@ function addRow(data) {
     fillSelect(cat, PE.catalog.categories.map(c => ({value: c.id, label: c.name})), 'Category');
     fillSelect(tr.querySelector('.colour'), PE.catalog.colours.map(c => ({value: c, label: c})), 'Colour');
     if (data.category_id) cat.value = data.category_id;
-    onCategory(tr, false);
+    onCategory(tr);
     if (data.subcategory_id) tr.querySelector('.sub').value = data.subcategory_id;
     if (data.colour) tr.querySelector('.colour').value = data.colour;
     if (data.size_label) tr.querySelector('.size').value = data.size_label;
-    cat.addEventListener('change', () => onCategory(tr, true));
+    cat.addEventListener('change', () => onCategory(tr));
     const skuIn = tr.querySelector('.sku');
     skuIn.addEventListener('blur', () => { skuIn.value = skuIn.value.trim().toUpperCase(); });
     bindRowEvents(tr);
@@ -548,22 +560,12 @@ function addRow(data) {
     renumber();
     updateTotals();
 }
-function onCategory(tr, fetchSku) {
+function onCategory(tr) {
     const id = tr.querySelector('.cat').value;
     const cat = PE.catalog.categories.find(c => String(c.id) === String(id));
     const subs = cat ? cat.subcategories : [];
     fillSelect(tr.querySelector('.sub'), subs.map(s => ({value: s.id, label: s.name})), subs.length ? 'Sub-category' : 'None');
     fillSelect(tr.querySelector('.size'), sizesFor(id).map(s => ({value: s.name, label: s.name})), 'Size');
-    if (fetchSku && id && !isLocked()) {
-        const body = new FormData();
-        body.append('csrf_token', PE.csrf);
-        body.append('is_ajax', '1');
-        body.append('action', 'peek_sku');
-        body.append('category_id', id);
-        fetch(PE.apiUrl, {method:'POST', body}).then(r => r.json()).then(data => {
-            if (data.success && !tr.querySelector('.sku').value) tr.querySelector('.sku').value = data.sku;
-        });
-    }
 }
 function renumber() {
     [...lineBody.rows].forEach((tr, i) => tr.querySelector('.line-no').textContent = String(i + 1).padStart(3, '0'));
@@ -599,7 +601,11 @@ function headerBody() {
     const body = new FormData();
     body.append('csrf_token', PE.csrf);
     body.append('is_ajax', '1');
-    body.append('vendor_id', document.getElementById('vendorId').value);
+    const vendorSel = document.getElementById('vendorId');
+    const vendorId = vendorSel.value;
+    const vendorTyped = document.getElementById('vendorFilter').value.trim();
+    body.append('vendor_id', vendorId);
+    if (!vendorId && vendorTyped) body.append('vendor_name', vendorTyped);
     body.append('supplier_invoice_no', document.getElementById('invoiceNo').value);
     body.append('purchase_date', document.getElementById('purchaseDate').value);
     body.append('received_date', document.getElementById('receivedDate').value);
@@ -657,10 +663,6 @@ function printLabels(onlyChecked) {
 }
 
 function openNewPurchaseForm() {
-    if (!PE.catalog.vendors.length) {
-        alert('Add a supplier under Purchases → Vendors first.');
-        return;
-    }
     if (!PE.catalog.categories.length) {
         alert('Add at least one category under Inventory → Categories first.');
         return;
@@ -696,8 +698,8 @@ document.addEventListener('keydown', e => {
     if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); addRow(); }
 });
 document.getElementById('saveDraft').addEventListener('click', () => {
-    if (!document.getElementById('vendorId').value) {
-        showError('Please select a supplier.');
+    if (!supplierInputReady() || !document.getElementById('vendorFilter').value.trim()) {
+        showError('Please select or enter a supplier name.');
         return;
     }
     const btn = document.getElementById('saveDraft');

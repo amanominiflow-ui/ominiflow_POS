@@ -37,13 +37,31 @@ function ensure_counter_store_columns(): void {
     }
 }
 
-function user_pos_is_outlet_locked(?array $user = null): bool {
+/**
+ * Full-access users (owner dashboard, cost, all stores). Matches legacy installs with blank role.
+ */
+function user_has_full_access(?array $user = null): bool {
     $user = $user ?? current_user();
     if (!$user) {
         return false;
     }
     $role = strtolower(trim((string) ($user['role'] ?? '')));
-    if (in_array($role, ['admin', 'administrator', 'owner'], true)) {
+    if ($role === '') {
+        return true;
+    }
+    if (in_array($role, ['owner', 'admin', 'administrator'], true)) {
+        return true;
+    }
+    $slug = preg_replace('/[^a-z0-9]/', '', $role) ?? '';
+    return in_array($slug, ['admin', 'administrator', 'owner'], true);
+}
+
+function user_pos_is_outlet_locked(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) {
+        return false;
+    }
+    if (user_has_full_access($user)) {
         return false;
     }
     return (int) ($user['outlet_id'] ?? 0) > 0;
