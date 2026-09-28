@@ -1260,6 +1260,7 @@ try {
 
     add_column_if_not_exists($pdo, 'product_variants', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");
     add_column_if_not_exists($pdo, 'product_variants', 'attribute_values', "JSON NULL AFTER `variant_name`");
+    add_column_if_not_exists($pdo, 'product_variants', 'image_path', "VARCHAR(255) NULL AFTER `attribute_values`");
 
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");

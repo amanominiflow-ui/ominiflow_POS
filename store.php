@@ -565,6 +565,17 @@ if (!function_exists('storefront_get_all_product_images')) {
                 $images[] = $url;
             }
         }
+        if (function_exists('get_product_variants')) {
+            $vars = get_product_variants((int) ($p['id'] ?? 0), $businessId);
+            foreach ($vars as $v) {
+                if (!empty($v['image_path'])) {
+                    $url = sf_product_image((string) $v['image_path']);
+                    if ($url && !in_array($url, $images, true)) {
+                        $images[] = $url;
+                    }
+                }
+            }
+        }
         if (function_exists('get_product_images')) {
             $gallery = get_product_images((int) ($p['id'] ?? 0), $businessId);
             foreach ($gallery as $g) {
@@ -611,7 +622,21 @@ if (!function_exists('storefront_get_product_media')) {
             ];
         }
 
-        // 3. Additional Images
+        // 3. Variant Images
+        if (function_exists('get_product_variants')) {
+            $vars = get_product_variants((int) ($p['id'] ?? 0), $businessId);
+            foreach ($vars as $v) {
+                if (!empty($v['image_path'])) {
+                    $url = sf_product_image((string) $v['image_path']);
+                    if ($url && !in_array($url, $added, true)) {
+                        $media[] = ['type' => 'image', 'url' => $url, 'is_video' => false, 'variant_id' => (int) $v['id']];
+                        $added[] = $url;
+                    }
+                }
+            }
+        }
+
+        // 4. Additional Images
         if (function_exists('get_product_images')) {
             $gallery = get_product_images((int) ($p['id'] ?? 0), $businessId);
             foreach ($gallery as $g) {
@@ -625,7 +650,7 @@ if (!function_exists('storefront_get_product_media')) {
             }
         }
 
-        // 4. Rear Image
+        // 5. Rear Image
         if (!empty($p['rear_image_path'])) {
             $url = sf_product_image((string) $p['rear_image_path']);
             if ($url && !in_array($url, $added, true)) {
@@ -2937,10 +2962,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $pdpVariantJson = $variants ? htmlspecialchars(json_encode($variantUi), ENT_QUOTES, 'UTF-8') : '';
                     $pdpMedia = storefront_get_product_media($product, $bid);
                     $firstImgUrl = '';
-                    foreach ($pdpMedia as $m) {
-                        if (empty($m['is_video'])) {
-                            $firstImgUrl = $m['url'];
-                            break;
+                    if (!empty($product['image_path'])) {
+                        $firstImgUrl = sf_product_image((string) $product['image_path']);
+                    }
+                    if ($firstImgUrl === '') {
+                        foreach ($pdpMedia as $m) {
+                            if (empty($m['is_video'])) {
+                                $firstImgUrl = $m['url'];
+                                break;
+                            }
                         }
                     }
                     if ($firstImgUrl === '' && !empty($pdpMedia[0]['url'])) {
@@ -3127,7 +3157,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             });
                         }
                         if (typeof sfInitStorePdpVariants === 'function') {
-                            sfInitStorePdpVariants(<?= !empty($variantUi) ? json_encode($variantUi) : '[]' ?>);
+                            sfInitStorePdpVariants(<?= !empty($variantUi) ? json_encode($variantUi) : '[]' ?>, { price: <?= (float)$product['selling_price'] ?>, stock: <?= (int)$product['stock_quantity'] ?> });
                         }
                     });
                     </script>
@@ -4656,7 +4686,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
 <div class="sf-variant-modal" id="sfVariantModal" aria-hidden="true">
     <div class="sf-variant-modal-box" role="dialog" aria-modal="true" aria-labelledby="sfVariantModalTitle">
-        <div class="sf-variant-modal-title" id="sfVariantModalTitle">Choose size and colour</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <img id="sfModalVariantImg" src="" alt="Variant" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:1px solid #e2e8f0;display:none;">
+            <div>
+                <div class="sf-variant-modal-title" id="sfVariantModalTitle" style="margin-bottom:0;">Choose size and colour</div>
+                <div class="sf-variant-meta" id="sfModalVariantMeta" style="margin-top:2px;">Select a size and colour.</div>
+            </div>
+        </div>
         <div class="sf-variant-row" id="sfModalSizeRow" style="display:none;">
             <span class="sf-variant-label">Size</span>
             <div class="sf-variant-chips" id="sfModalSizes"></div>
@@ -4665,7 +4701,6 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <span class="sf-variant-label">Colour</span>
             <div class="sf-variant-chips" id="sfModalColours"></div>
         </div>
-        <div class="sf-variant-meta" id="sfModalVariantMeta">Select a size and colour.</div>
         <div class="sf-variant-modal-actions">
             <button type="button" class="ms-card-add-btn" style="width:auto;padding:0 14px;" onclick="sfCloseVariantModal()">Cancel</button>
             <button type="button" class="ms-card-buy-btn" id="sfModalConfirmBtn" style="width:auto;margin-top:0;padding:0 16px;" onclick="sfConfirmVariantModal()">Continue</button>
@@ -5165,6 +5200,17 @@ function sfRefreshVariantModal() {
     var chosen = sfFindVariantMatch(sfPendingVariantList, selectedSize, selectedColour);
     var meta = document.getElementById('sfModalVariantMeta');
     var confirmBtn = document.getElementById('sfModalConfirmBtn');
+    var modalImg = document.getElementById('sfModalVariantImg');
+
+    if (modalImg) {
+        if (chosen && chosen.image && chosen.image.trim() !== '') {
+            modalImg.src = chosen.image;
+            modalImg.style.display = 'block';
+        } else {
+            modalImg.style.display = 'none';
+        }
+    }
+
     if (!chosen) {
         if (meta) meta.textContent = 'Select a size and colour.';
         if (confirmBtn) confirmBtn.disabled = true;
@@ -5233,29 +5279,79 @@ function sfConfirmVariantModal() {
     });
 });
 
-function sfInitStorePdpVariants(variantList) {
+function sfInitStorePdpVariants(variantList, parentProductInfo) {
     if (!variantList || !variantList.length) return;
     var sizesBox = document.getElementById('sfPdpSizes');
     var coloursBox = document.getElementById('sfPdpColours');
     var form = document.querySelector('.sf-store-cart-form[data-variants]');
     if (!sizesBox || !coloursBox || !form) return;
+
+    var parentImgEl = document.getElementById('pdpMainImg');
+    var parentDefaultImg = parentImgEl ? (parentImgEl.getAttribute('src') || '') : '';
+    var parentDefaultPrice = parentProductInfo && parentProductInfo.price ? parentProductInfo.price : '';
+    var parentDefaultStock = parentProductInfo && parentProductInfo.stock !== undefined ? parentProductInfo.stock : 0;
+
     var sizes = sfUniqueVariantValues(variantList, 'size');
-    var colours = sfUniqueVariantValues(variantList, 'colour');
+    var rawColours = sfUniqueVariantValues(variantList, 'colour');
+    var colours = ['Default'].concat(rawColours.filter(function(c){ return c.toLowerCase() !== 'default'; }));
+
     document.getElementById('sfPdpSizeRow').style.display = sizes.length ? 'block' : 'none';
-    document.getElementById('sfPdpColourRow').style.display = colours.length ? 'block' : 'none';
+    document.getElementById('sfPdpColourRow').style.display = 'block';
     sfPaintVariantChips(sizesBox, sizes, 'data-size');
     sfPaintVariantChips(coloursBox, colours, 'data-colour');
 
-    function refreshPdpVariant() {
-        var sizeChip = sizesBox.querySelector('.sf-variant-chip.on');
-        var colourChip = coloursBox.querySelector('.sf-variant-chip.on');
+    function refreshPdpVariant(isUserClick) {
+        var sizeChip = sizesBox ? sizesBox.querySelector('.sf-variant-chip.on') : null;
+        var colourChip = coloursBox ? coloursBox.querySelector('.sf-variant-chip.on') : null;
         var selectedSize = sizeChip ? sizeChip.getAttribute('data-size') : '';
         var selectedColour = colourChip ? colourChip.getAttribute('data-colour') : '';
-        var chosen = sfFindVariantMatch(variantList, selectedSize, selectedColour);
         var meta = document.getElementById('sfPdpVariantMeta');
         var vidInput = document.getElementById('sfPdpVariantId');
         var qtyInput = document.getElementById('pdpQty');
         var priceEl = document.querySelector('.ms-pdp-price');
+        var mainImg = document.getElementById('pdpMainImg');
+        var mainVid = document.getElementById('pdpMainVideo');
+
+        // Check if "Default" is selected
+        if (selectedColour === 'Default' || (!selectedColour && !selectedSize)) {
+            var defaultVariant = variantList.find(function(r){ return r.stock > 0; }) || variantList[0];
+            if (vidInput) vidInput.value = defaultVariant ? String(defaultVariant.id) : '';
+            var totalStock = 0;
+            variantList.forEach(function(r){ totalStock += (parseInt(r.stock, 10) || 0); });
+            if (totalStock === 0 && parentDefaultStock > 0) totalStock = parentDefaultStock;
+
+            if (meta) meta.textContent = totalStock > 0 ? (totalStock + ' in stock') : 'Out of stock';
+            if (priceEl && parentDefaultPrice) {
+                priceEl.textContent = '₹' + parseFloat(parentDefaultPrice).toFixed(2);
+            }
+            if (qtyInput) {
+                qtyInput.setAttribute('max', String(Math.max(1, totalStock || 1)));
+                if (totalStock <= 0) qtyInput.setAttribute('disabled', 'disabled');
+                else qtyInput.removeAttribute('disabled');
+            }
+
+            // Restore parent product image
+            if (parentDefaultImg && parentDefaultImg.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = parentDefaultImg;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    pdpCurrentIdx = 0;
+                    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                    for (var ti = 0; ti < thumbs.length; ti++) {
+                        thumbs[ti].classList.toggle('is-active', ti === 0);
+                    }
+                }
+            }
+            return;
+        }
+
+        var chosen = sfFindVariantMatch(variantList, selectedSize, selectedColour);
         if (!chosen) {
             if (meta) meta.textContent = 'Select a size and colour.';
             if (vidInput) vidInput.value = '';
@@ -5271,28 +5367,71 @@ function sfInitStorePdpVariants(variantList) {
             if (chosen.stock <= 0) qtyInput.setAttribute('disabled', 'disabled');
             else qtyInput.removeAttribute('disabled');
         }
+
+        // Switch main image to chosen variant image on click
+        if (isUserClick) {
+            if (chosen.image && chosen.image.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = chosen.image;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    var foundIdx = -1;
+                    for (var mi = 0; mi < pdpMedia.length; mi++) {
+                        if (pdpMedia[mi].url === chosen.image || (pdpMedia[mi].variant_id && pdpMedia[mi].variant_id === chosen.id)) {
+                            foundIdx = mi;
+                            break;
+                        }
+                    }
+                    if (foundIdx >= 0) {
+                        pdpCurrentIdx = foundIdx;
+                        var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                        for (var ti = 0; ti < thumbs.length; ti++) {
+                            thumbs[ti].classList.toggle('is-active', ti === foundIdx);
+                        }
+                    }
+                }
+            } else if (parentDefaultImg && parentDefaultImg.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = parentDefaultImg;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    pdpCurrentIdx = 0;
+                    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                    for (var ti = 0; ti < thumbs.length; ti++) {
+                        thumbs[ti].classList.toggle('is-active', ti === 0);
+                    }
+                }
+            }
+        }
     }
 
     [sizesBox, coloursBox].forEach(function (box) {
+        if (!box) return;
         box.addEventListener('click', function (e) {
             var chip = e.target.closest('.sf-variant-chip');
             if (!chip) return;
             box.querySelectorAll('.sf-variant-chip').forEach(function (el) { el.classList.remove('on'); });
             chip.classList.add('on');
-            refreshPdpVariant();
+            refreshPdpVariant(true);
         });
     });
 
-    var first = variantList.find(function (row) { return row.stock > 0; }) || variantList[0];
-    if (first && first.size) {
-        var sc = sizesBox.querySelector('[data-size="' + CSS.escape(first.size) + '"]');
-        if (sc) sc.classList.add('on');
+    // Default to 'Default' chip on load
+    var defChip = coloursBox.querySelector('[data-colour="Default"]');
+    if (defChip) {
+        defChip.classList.add('on');
     }
-    if (first && first.colour) {
-        var cc = coloursBox.querySelector('[data-colour="' + CSS.escape(first.colour) + '"]');
-        if (cc) cc.classList.add('on');
-    }
-    refreshPdpVariant();
+    refreshPdpVariant(false);
 }
 
 function handleAjaxAddToCart(ev, form, isBuyNow) {

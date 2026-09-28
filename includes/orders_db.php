@@ -24,20 +24,27 @@ function parse_variant_size_colour(array $variant): array {
             }
             if (in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
                 $size = $val;
-            }
-            if (in_array($kLow, ['color', 'colour', 'shade'], true)) {
+            } elseif (in_array($kLow, ['color', 'colour', 'shade', 'rang'], true)) {
                 $colour = $val;
+            } elseif ($colour === '' && count($av) === 1) {
+                $colour = $val;
+            } elseif ($size === '' && count($av) >= 2) {
+                $size = $val;
             }
         }
     }
     $vn = trim((string) ($variant['variant_name'] ?? ''));
-    if (!$parsedAttrs && ($size === '' || $colour === '') && $vn !== '' && str_contains($vn, '/')) {
-        $parts = array_map('trim', explode('/', $vn, 2));
-        if ($size === '' && isset($parts[0])) {
-            $size = $parts[0];
-        }
-        if ($colour === '' && isset($parts[1])) {
-            $colour = $parts[1];
+    if (($size === '' && $colour === '') && $vn !== '') {
+        if (str_contains($vn, '/')) {
+            $parts = array_map('trim', explode('/', $vn, 2));
+            if ($size === '' && isset($parts[0])) {
+                $size = $parts[0];
+            }
+            if ($colour === '' && isset($parts[1])) {
+                $colour = $parts[1];
+            }
+        } else {
+            $colour = $vn;
         }
     }
     return ['size' => $size, 'colour' => $colour];

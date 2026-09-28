@@ -373,7 +373,7 @@ $products = get_products('', null, 'active');
 $posVariantsByProduct = [];
 try {
     $variantStmt = get_db()->prepare('
-        SELECT id, product_id, variant_name, attribute_values, sku, barcode, selling_price, stock_quantity
+        SELECT id, product_id, variant_name, attribute_values, image_path, sku, barcode, selling_price, stock_quantity
         FROM product_variants
         WHERE business_id = :bid AND status = "active"
         ORDER BY id ASC
@@ -385,6 +385,7 @@ try {
         $posVariantsByProduct[$variantProductId][] = [
             'id' => (int) $variantRow['id'],
             'name' => (string) $variantRow['variant_name'],
+            'image' => !empty($variantRow['image_path']) ? asset($variantRow['image_path']) : '',
             'sku' => (string) $variantRow['sku'],
             'barcode' => (string) ($variantRow['barcode'] ?? ''),
             'price' => (float) $variantRow['selling_price'],

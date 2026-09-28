@@ -1463,10 +1463,12 @@ function storefront_variant_ui_rows(array $variants): array {
     $out = [];
     foreach ($variants as $v) {
         $attrs = parse_variant_size_colour($v);
+        $imgUrl = !empty($v['image_path']) ? asset((string) $v['image_path']) : '';
         $out[] = [
             'id' => (int) ($v['id'] ?? 0),
             'name' => (string) ($v['variant_name'] ?? ''),
             'sku' => (string) ($v['sku'] ?? ''),
+            'image' => $imgUrl,
             'price' => (float) ($v['selling_price'] ?? 0),
             'stock' => (int) ($v['stock_quantity'] ?? 0),
             'size' => (string) ($attrs['size'] ?? ''),
