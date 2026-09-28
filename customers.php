@@ -10,6 +10,8 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 
+require_once __DIR__ . '/includes/customers_db.php';
+
 require_auth();
 
 $db = get_db();
@@ -24,25 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'save_customer') {
-        $name = trim($_POST['name'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $address = trim($_POST['address'] ?? '');
+        $isAjax = !empty($_POST['is_ajax']) || (!empty($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'));
+        $res = create_enterprise_customer($_POST);
 
-        if ($name === '') {
-            set_flash('error', 'Customer name is required.');
+        if ($isAjax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($res);
+            exit;
+        }
+
+        if ($res['success']) {
+            set_flash('success', $res['message'] ?? 'Customer saved successfully!');
         } else {
-            $stmt = $db->prepare('
-                INSERT INTO customers (name, phone, email, address, created_at, updated_at)
-                VALUES (:name, :phone, :email, :address, NOW(), NOW())
-            ');
-            $stmt->execute([
-                'name' => $name,
-                'phone' => $phone ?: null,
-                'email' => $email ?: null,
-                'address' => $address ?: null,
-            ]);
-            set_flash('success', "Customer '{$name}' created successfully!");
+            set_flash('error', $res['error'] ?? 'Could not save customer.');
         }
         redirect(APP_URL . '/customers.php');
     }

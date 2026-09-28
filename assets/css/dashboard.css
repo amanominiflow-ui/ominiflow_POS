@@ -1576,6 +1576,40 @@ body {
     border-radius: 0 0 var(--saas-radius-lg) var(--saas-radius-lg);
 }
 
+/* Checkout dialog only: keep Back to Cart / Complete Sale on screen when the window is short. */
+#checkoutPaymentModal.modal-overlay.open {
+    overflow-y: auto;
+    align-items: flex-start;
+}
+
+#checkoutPaymentModal .modal-box {
+    margin-top: auto;
+    margin-bottom: auto;
+    max-height: calc(100dvh - 40px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#checkoutPaymentModal form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+#checkoutPaymentModal .modal-header,
+#checkoutPaymentModal .modal-footer {
+    flex-shrink: 0;
+}
+
+#checkoutPaymentModal .modal-body {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
 /* Tabs */
 .tab-row {
     display: flex;

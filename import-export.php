@@ -24,6 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['export'])) {
     $entity = trim((string)$_GET['export']);
     if ($entity === 'sample_template' || $entity === 'sample_products') {
         export_sample_products_template();
+    } elseif ($entity === 'sample_invoices' || $entity === 'sample_invoices_template') {
+        export_sample_invoices_template();
     } elseif (in_array($entity, ['products', 'customers', 'orders', 'invoices'], true)) {
         export_data_to_csv($entity);
     }
@@ -31,11 +33,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['export'])) {
 }
 
 // Handle Import
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'import_products') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         set_flash('error', 'Invalid session token. Please refresh.');
         redirect(APP_URL . '/import-export.php');
-    } else {
+    }
+
+    $action = (string)$_POST['action'];
+
+    if ($action === 'import_products') {
         if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
             set_flash('error', 'Please select a valid CSV file to upload.');
         } else {
@@ -43,11 +49,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if ($res['success']) {
                 if ($res['imported_count'] > 0) {
                     $warnTxt = !empty($res['errors']) ? ' (' . count($res['errors']) . ' warning(s): ' . implode('; ', array_slice($res['errors'], 0, 2)) . ')' : '';
-                    set_flash('success', "Import completed successfully: {$res['imported_count']} product(s) added/updated{$warnTxt}.");
+                    set_flash('success', "Product import completed successfully: {$res['imported_count']} product(s) added/updated{$warnTxt}.");
                 } elseif (!empty($res['errors'])) {
                     set_flash('error', 'CSV Import failed: ' . implode('; ', array_slice($res['errors'], 0, 3)));
                 } else {
                     set_flash('error', 'No valid product rows found in uploaded CSV file.');
+                }
+            } else {
+                set_flash('error', $res['error'] ?? 'Import failed.');
+            }
+        }
+        redirect(APP_URL . '/import-export.php');
+    } elseif ($action === 'import_invoices') {
+        if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            set_flash('error', 'Please select a valid CSV file to upload.');
+        } else {
+            $res = import_invoices_from_csv($_FILES['csv_file']['tmp_name'], (int)$user['id']);
+            if ($res['success']) {
+                if ($res['imported_count'] > 0) {
+                    $warnTxt = !empty($res['errors']) ? ' (' . count($res['errors']) . ' warning(s): ' . implode('; ', array_slice($res['errors'], 0, 2)) . ')' : '';
+                    set_flash('success', "Invoice import completed successfully: {$res['imported_count']} invoice(s) imported and ledger recorded{$warnTxt}.");
+                } elseif (!empty($res['errors'])) {
+                    set_flash('error', 'Invoice Import failed: ' . implode('; ', array_slice($res['errors'], 0, 3)));
+                } else {
+                    set_flash('error', 'No valid invoice rows found in uploaded CSV file.');
                 }
             } else {
                 set_flash('error', $res['error'] ?? 'Import failed.');
@@ -95,42 +120,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <?php endif; ?>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                    <!-- CSV Import Card -->
-                    <div class="section-card">
-                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h2 class="section-heading">Bulk Import Products (CSV)</h2>
-                                <p class="section-subheading">Upload new products or update existing inventory</p>
+                    <!-- Left Column: CSV Import Cards -->
+                    <div style="display: flex; flex-direction: column; gap: 24px;">
+                        <!-- Invoices CSV Import Card -->
+                        <div class="section-card">
+                            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h2 class="section-heading">Bulk Import Invoices (CSV)</h2>
+                                    <p class="section-subheading">Upload retail bills, sales history, and customer tax invoices</p>
+                                </div>
+                                <a href="<?= asset('import-export.php?export=sample_invoices') ?>" class="btn-secondary" style="font-size: 12px; font-weight: 600; padding: 6px 12px; text-decoration: none;">
+                                    📥 Invoices Template
+                                </a>
                             </div>
-                            <a href="<?= asset('import-export.php?export=sample_template') ?>" class="btn-secondary" style="font-size: 12px; font-weight: 600; padding: 6px 12px; text-decoration: none;">
-                                📥 Sample Template
-                            </a>
+                            <div style="padding: 24px;">
+                                <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 16px; line-height: 1.5;">
+                                    Upload a standard CSV file with headers:<br>
+                                    <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px; color: #0f172a;">Invoice Number, Date, Customer Name, Customer Phone, Product SKU, Quantity, Unit Price, Tax Percent, Status</code>
+                                </p>
+
+                                <form method="POST" action="<?= asset('import-export.php') ?>" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 16px;">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="import_invoices">
+
+                                    <div style="border: 2px dashed var(--saas-border); padding: 28px 20px; border-radius: var(--saas-radius-md); text-align: center; background: #f8fafc;">
+                                        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: var(--saas-slate-400); margin-bottom: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                        <div style="font-size: 13px; font-weight: 600; color: var(--saas-navy-950); margin-bottom: 4px;">Select Invoices CSV file from computer</div>
+                                        <input type="file" name="csv_file" accept=".csv" required style="font-size: 12px; margin-top: 6px;">
+                                    </div>
+
+                                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                                        <button type="submit" class="header-btn" style="padding: 10px 20px; border: 0; background: #2563eb; color: #fff;">
+                                            Upload & Process Invoices Import
+                                        </button>
+                                        <a href="<?= asset('import-export.php?export=sample_invoices') ?>" style="font-size: 12.5px; color: var(--saas-primary); font-weight: 600; text-decoration: none;">
+                                            Download Sample Invoices CSV &darr;
+                                        </a>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
-                        <div style="padding: 24px;">
-                            <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 16px; line-height: 1.5;">
-                                Upload a standard CSV file with headers:<br>
-                                <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px; color: #0f172a;">Name, SKU, Barcode, Category, Selling Price, Cost Price, Tax Percent, Stock</code>
-                            </p>
 
-                            <form method="POST" action="<?= asset('import-export.php') ?>" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 16px;">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="action" value="import_products">
-
-                                <div style="border: 2px dashed var(--saas-border); padding: 28px 20px; border-radius: var(--saas-radius-md); text-align: center; background: #f8fafc;">
-                                    <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: var(--saas-slate-400); margin-bottom: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                                    <div style="font-size: 13px; font-weight: 600; color: var(--saas-navy-950); margin-bottom: 4px;">Select CSV file from computer</div>
-                                    <input type="file" name="csv_file" accept=".csv" required style="font-size: 12px; margin-top: 6px;">
+                        <!-- Products CSV Import Card -->
+                        <div class="section-card">
+                            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h2 class="section-heading">Bulk Import Products (CSV)</h2>
+                                    <p class="section-subheading">Upload new products or update existing inventory</p>
                                 </div>
+                                <a href="<?= asset('import-export.php?export=sample_template') ?>" class="btn-secondary" style="font-size: 12px; font-weight: 600; padding: 6px 12px; text-decoration: none;">
+                                    📥 Sample Template
+                                </a>
+                            </div>
+                            <div style="padding: 24px;">
+                                <p style="font-size: 13px; color: var(--saas-slate-600); margin-bottom: 16px; line-height: 1.5;">
+                                    Upload a standard CSV file with headers:<br>
+                                    <code style="background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 11.5px; display: inline-block; margin-top: 4px; color: #0f172a;">Name, SKU, Barcode, Category, Selling Price, Cost Price, Tax Percent, Stock</code>
+                                </p>
 
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <button type="submit" class="header-btn" style="padding: 10px 20px; border: 0;">
-                                        Upload & Process CSV Import
-                                    </button>
-                                    <a href="<?= asset('import-export.php?export=sample_template') ?>" style="font-size: 12.5px; color: var(--saas-primary); font-weight: 600; text-decoration: none;">
-                                        Download Sample CSV &darr;
-                                    </a>
-                                </div>
-                            </form>
+                                <form method="POST" action="<?= asset('import-export.php') ?>" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 16px;">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="import_products">
+
+                                    <div style="border: 2px dashed var(--saas-border); padding: 28px 20px; border-radius: var(--saas-radius-md); text-align: center; background: #f8fafc;">
+                                        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: var(--saas-slate-400); margin-bottom: 8px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                        <div style="font-size: 13px; font-weight: 600; color: var(--saas-navy-950); margin-bottom: 4px;">Select CSV file from computer</div>
+                                        <input type="file" name="csv_file" accept=".csv" required style="font-size: 12px; margin-top: 6px;">
+                                    </div>
+
+                                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                                        <button type="submit" class="header-btn" style="padding: 10px 20px; border: 0;">
+                                            Upload & Process CSV Import
+                                        </button>
+                                        <a href="<?= asset('import-export.php?export=sample_template') ?>" style="font-size: 12.5px; color: var(--saas-primary); font-weight: 600; text-decoration: none;">
+                                            Download Sample CSV &darr;
+                                        </a>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </div>
 
