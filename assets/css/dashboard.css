@@ -616,7 +616,7 @@ body {
 
 /* Header Styles */
 .app-header {
-    height: 70px;
+    height: 76px;
     background: #ffffff;
     border-bottom: 1px solid var(--saas-border);
     display: flex;
@@ -646,10 +646,11 @@ body {
 }
 
 .header-brand-logo {
-    height: 32px;
+    height: 54px;
     width: auto;
-    max-width: 140px;
+    max-width: 260px;
     object-fit: contain;
+    object-position: left center;
     border-radius: 4px;
 }
 

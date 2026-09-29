@@ -1649,6 +1649,63 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    // ==========================================
+    // Super Admin & Dynamic Feature Subscriptions
+    // ==========================================
+    add_column_if_not_exists($pdo, 'users', 'is_super_admin', 'TINYINT(1) NOT NULL DEFAULT 0');
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_status', "VARCHAR(30) NOT NULL DEFAULT 'active'");
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_plan', "VARCHAR(50) NOT NULL DEFAULT 'pro'");
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_expires_at', "DATETIME NULL");
+    add_column_if_not_exists($pdo, 'businesses', 'max_outlets', "INT NOT NULL DEFAULT 5");
+    add_column_if_not_exists($pdo, 'businesses', 'max_users', "INT NOT NULL DEFAULT 10");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `system_features` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `feature_key` VARCHAR(64) NOT NULL UNIQUE,
+            `name` VARCHAR(100) NOT NULL,
+            `category` VARCHAR(50) NOT NULL DEFAULT 'General',
+            `description` VARCHAR(255) NULL,
+            `default_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `business_features` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `feature_key` VARCHAR(64) NOT NULL,
+            `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uk_biz_feature` (`business_id`, `feature_key`),
+            INDEX `idx_biz` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    // Ensure only admin@example.com is Super Admin
+    $pdo->exec("UPDATE users SET is_super_admin = 0 WHERE email != 'admin@example.com'");
+
+    // Seed or update Super Admin credentials (admin@example.com / admin@12345)
+    $adminEmail = 'admin@example.com';
+    $adminPassword = password_hash('admin@12345', PASSWORD_DEFAULT);
+    $checkAdmin = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+    $checkAdmin->execute(['email' => $adminEmail]);
+    $adminRow = $checkAdmin->fetch(PDO::FETCH_ASSOC);
+
+    if ($adminRow) {
+        // User already exists: only ensure permissions and active status. Preserve custom password!
+        $pdo->prepare('UPDATE users SET is_super_admin = 1, status = "active", role = "admin" WHERE id = :id')
+            ->execute(['id' => $adminRow['id']]);
+    } else {
+        $firstBiz = (int)$pdo->query('SELECT id FROM businesses ORDER BY id ASC LIMIT 1')->fetchColumn() ?: 1;
+        $pdo->prepare('
+            INSERT INTO users (business_id, name, email, phone, password, role, is_super_admin, status, created_at)
+            VALUES (:bid, "Super Administrator", :email, "9999999999", :pw, "admin", 1, "active", NOW())
+        ')->execute(['bid' => $firstBiz, 'email' => $adminEmail, 'pw' => $adminPassword]);
+    }
+
     if (php_sapi_name() === 'cli') {
         echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";
     } else {

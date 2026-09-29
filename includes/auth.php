@@ -67,6 +67,14 @@ function user_pos_is_outlet_locked(?array $user = null): bool {
     return (int) ($user['outlet_id'] ?? 0) > 0;
 }
 
+function is_super_admin(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) {
+        return false;
+    }
+    return !empty($user['is_super_admin']) && strtolower(trim((string)($user['email'] ?? ''))) === 'admin@example.com';
+}
+
 function current_user(): ?array {
     if (!is_authenticated()) {
         return null;
@@ -81,24 +89,23 @@ function current_user(): ?array {
     $db = get_db();
     $user = null;
     try {
-        $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, outlet_id, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
+        $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, outlet_id, status, is_super_admin, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
         $stmt->execute([
             'id' => $_SESSION['user_id'],
             'status' => 'active',
         ]);
         $user = $stmt->fetch();
     } catch (PDOException $e) {
-        // Fallback if business_id column not added to users table yet
+        // Fallback if is_super_admin or business_id column not added to users table yet
         try {
-            $stmt = $db->prepare('SELECT id, name, email, phone, role, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
+            $stmt = $db->prepare('SELECT id, business_id, name, email, phone, role, outlet_id, status, created_at FROM users WHERE id = :id AND status = :status LIMIT 1');
             $stmt->execute([
                 'id' => $_SESSION['user_id'],
                 'status' => 'active',
             ]);
             $user = $stmt->fetch();
             if ($user) {
-                $user['business_id'] = 1;
-                $user['outlet_id'] = $user['outlet_id'] ?? null;
+                $user['is_super_admin'] = 0;
             }
         } catch (Exception $e2) {
             $user = null;
@@ -160,12 +167,31 @@ function require_auth(): void {
         set_flash('error', 'Please sign in to access the POS Dashboard.');
         redirect(APP_URL . '/login.php');
     }
+
+    require_once __DIR__ . '/features.php';
+    $script = strtolower(basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')));
+    $subscriptionBypassPages = [
+        'account-suspended.php',
+        'logout.php',
+        'login.php',
+        'pricing.php',
+        'premium-checkout.php',
+    ];
+    if (!in_array($script, $subscriptionBypassPages, true)) {
+        if (!is_business_subscription_active() && empty($_SESSION['superadmin_impersonator']) && !is_super_admin()) {
+            redirect(APP_URL . '/account-suspended.php');
+        }
+    }
+
     require_once __DIR__ . '/premium_db.php';
     enforce_premium_gate();
 }
 
 function require_guest(): void {
     if (is_authenticated()) {
+        if (is_super_admin()) {
+            redirect(APP_URL . '/admin/dashboard.php');
+        }
         redirect(APP_URL . '/dashboard.php');
     }
 }
@@ -365,6 +391,15 @@ function register_user(string $name, string $email, string $phone, string $passw
             seed_default_payment_options_if_needed($businessId);
         } catch (Exception $ePay) {}
 
+        // 10. Automatic 7-day free trial for new stores
+        try {
+            require_once __DIR__ . '/features.php';
+            provision_new_business_free_trial($businessId);
+            if (function_exists('apply_feature_preset')) {
+                apply_feature_preset($businessId, 'all');
+            }
+        } catch (Exception $eTrial) {}
+
         if ($db->inTransaction()) {
             $db->commit();
         }
@@ -393,6 +428,13 @@ function login_user(string $email, string $password, bool $remember = false): ar
         return ['success' => false, 'errors' => $errors];
     }
 
+    if ($email === 'admin@example.com') {
+        require_once __DIR__ . '/features.php';
+        if (function_exists('ensure_super_admin_seed')) {
+            ensure_super_admin_seed();
+        }
+    }
+
     $user = find_user_by_email($email);
     if (!$user || !password_verify($password, $user['password'])) {
         return ['success' => false, 'errors' => ['general' => 'These credentials do not match our records.']];
@@ -410,6 +452,7 @@ function login_user(string $email, string $password, bool $remember = false): ar
     $_SESSION['user_name'] = $user['name'];
     $_SESSION['user_email'] = $user['email'];
     $_SESSION['user_role'] = $user['role'] ?? 'admin';
+    $_SESSION['is_super_admin'] = !empty($user['is_super_admin']);
 
     return ['success' => true, 'errors' => []];
 }

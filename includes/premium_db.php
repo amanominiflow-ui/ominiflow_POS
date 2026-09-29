@@ -143,10 +143,48 @@ function is_premium_active(?int $businessId = null): bool {
     if ($bid < 1) {
         return false;
     }
+    if (function_exists('sync_business_subscription_expiry')) {
+        require_once __DIR__ . '/features.php';
+        sync_business_subscription_expiry($bid);
+    }
     try {
-        $stmt = get_db()->prepare('SELECT is_premium FROM businesses WHERE id = :id LIMIT 1');
+        $stmt = get_db()->prepare('SELECT is_premium, subscription_status, subscription_plan, subscription_expires_at FROM businesses WHERE id = :id LIMIT 1');
         $stmt->execute(['id' => $bid]);
-        return (int) $stmt->fetchColumn() === 1;
+        $biz = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$biz) {
+            return false;
+        }
+
+        // Suspended, inactive, or cancelled accounts are never active
+        $status = strtolower(trim((string)($biz['subscription_status'] ?? '')));
+        if (in_array($status, ['suspended', 'inactive', 'cancelled', 'expired'], true)) {
+            return false;
+        }
+
+        // Check if expiry date has passed
+        if (!empty($biz['subscription_expires_at'])) {
+            if (strtotime((string)$biz['subscription_expires_at']) < time()) {
+                return false;
+            }
+        }
+
+        // Trial stays usable until the expiry date, even if the plan tier is free
+        if ($status === 'trial') {
+            return true;
+        }
+
+        // Active if is_premium column is 1
+        if ((int)($biz['is_premium'] ?? 0) === 1) {
+            return true;
+        }
+
+        // Active if subscription_status is active and plan is not free
+        $plan = strtolower(trim((string)($biz['subscription_plan'] ?? 'pro')));
+        if ($status === 'active' && $plan !== 'free') {
+            return true;
+        }
+
+        return false;
     } catch (PDOException $e) {
         return false;
     }

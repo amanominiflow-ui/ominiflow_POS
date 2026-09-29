@@ -5,6 +5,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/features.php';
+
 $user = current_user();
 $business = current_business();
 $userName = $user ? $user['name'] : 'Aman Prajapat';
@@ -353,12 +355,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </button>
 
                 <!-- Reports Tab -->
+                <?php if (is_feature_enabled('reports_analytics')): ?>
                 <button type="button" class="rail-tab-btn <?= $activeRailTab === 'reports' ? 'active' : '' ?>" onclick="handleRailTabClick('reports')" id="rail-btn-reports" title="Analytics & Reports">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                     </svg>
                     <span>Reports</span>
                 </button>
+                <?php endif; ?>
 
                 <!-- Quick Spotlight Search Button (Extra gap above) -->
                 <button type="button" class="rail-tab-btn" onclick="openSpotlightSearch()" title="Global Spotlight Search (/)" style="margin-top: 16px;">
@@ -419,6 +423,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </a>
 
                 <!-- Inventory Group -->
+                <?php if (is_feature_enabled('inventory')): ?>
                 <div class="nav-group <?= $isInventoryOpen ? 'open' : '' ?>" id="grp-inventory">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-inventory')">
                         <div class="nav-group-title">
@@ -440,11 +445,15 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('inventory.php') ?>" class="submenu-link <?= $currentPage === 'inventory.php' ? 'active' : '' ?>">Stock Movements</a>
                         <a href="<?= asset('outlets.php') ?>" class="submenu-link <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">Outlets</a>
                         <a href="<?= asset('transfers.php') ?>" class="submenu-link <?= $currentPage === 'transfers.php' ? 'active' : '' ?>">Transfers</a>
-                        <a href="<?= asset('barcode-print.php') ?>" class="submenu-link <?= $currentPage === 'barcode-print.php' ? 'active' : '' ?>">Barcode Labels</a>
+                        <?php if (is_feature_enabled('barcode_print')): ?>
+                            <a href="<?= asset('barcode-print.php') ?>" class="submenu-link <?= $currentPage === 'barcode-print.php' ? 'active' : '' ?>">Barcode Labels</a>
+                        <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Sales Group -->
+                <?php if (is_feature_enabled('sales_invoices')): ?>
                 <div class="nav-group <?= $isSalesOpen ? 'open' : '' ?>" id="grp-sales">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-sales')">
                         <div class="nav-group-title">
@@ -468,8 +477,10 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('offline-billing.php') ?>" class="submenu-link <?= $currentPage === 'offline-billing.php' ? 'active' : '' ?>">Offline Billing</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Purchases Group -->
+                <?php if (is_feature_enabled('purchases')): ?>
                 <div class="nav-group <?= $isPurchasesOpen ? 'open' : '' ?>" id="grp-purchases">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-purchases')">
                         <div class="nav-group-title">
@@ -495,8 +506,10 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Vendor Credits</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Customers & Perks Group -->
+                <?php if (is_feature_enabled('promotions_crm')): ?>
                 <div class="nav-group <?= $isCustomersOpen ? 'open' : '' ?>" id="grp-customers">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-customers')">
                         <div class="nav-group-title">
@@ -516,6 +529,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('promotions.php') ?>" class="submenu-link <?= $currentPage === 'promotions.php' ? 'active' : '' ?>">Loyalty</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Documents & Tools -->
                 <div class="nav-group <?= $isDocumentsOpen ? 'open' : '' ?>" id="grp-docs">
@@ -548,6 +562,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
             </div>
 
             <nav class="sidebar-nav">
+                <?php if (is_feature_enabled('pos_billing')): ?>
                 <div class="drawer-section-title">POINT OF SALE</div>
 
                 <a href="<?= asset('pos.php') ?>" class="nav-item <?= $currentPage === 'pos.php' ? 'active' : '' ?>">
@@ -586,10 +601,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <div class="nav-submenu">
                         <a href="<?= asset('settings.php') ?>" class="submenu-link">Preferences</a>
                         <a href="<?= asset('payment-options.php') ?>" class="submenu-link <?= $currentPage === 'payment-options.php' ? 'active' : '' ?>">Payment Options</a>
-                        <a href="<?= asset('barcode-print.php') ?>" class="submenu-link">Print Templates</a>
+                        <?php if (is_feature_enabled('barcode_print')): ?>
+                            <a href="<?= asset('barcode-print.php') ?>" class="submenu-link">Print Templates</a>
+                        <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
+                <?php if (is_feature_enabled('online_store')): ?>
                 <div class="drawer-section-title" style="margin-top: 10px;">E-COMMERCE & ONLINE CHANNELS</div>
 
                 <a href="<?= asset('integrations-cart.php') ?>" class="nav-item <?= $currentPage === 'integrations-cart.php' ? 'active' : '' ?>">
@@ -627,7 +646,9 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Customize App</span>
                 </a>
+                <?php endif; ?>
 
+                <?php if (is_feature_enabled('multi_outlet')): ?>
                 <div class="drawer-section-title" style="margin-top: 10px;">MULTI-STORE / WAREHOUSES</div>
 
                 <a href="<?= asset('outlets.php') ?>" class="nav-item <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">
@@ -647,6 +668,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Inter-Store Transfers</span>
                 </a>
+                <?php endif; ?>
             </nav>
         </div>
 
@@ -1152,17 +1174,41 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <!-- Bottom Plan Status Widget -->
-        <?php $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); ?>
+        <?php 
+        $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); 
+        $currBiz = function_exists('current_business') ? current_business() : null;
+        $subStatus = strtolower(trim((string)($currBiz['subscription_status'] ?? '')));
+        $planRaw = strtolower(trim((string)($currBiz['subscription_plan'] ?? '')));
+        $planLabel = 'OMINIFLOW PRO';
+        if ($planRaw !== '' && $planRaw !== 'free') {
+            $planLabel = strtoupper($planRaw) . ' PLAN';
+        } elseif ($subStatus === 'trial') {
+            $planLabel = 'TRIAL PLAN';
+        }
+        $showPaidPlan = $isPremiumPlan || $subStatus === 'trial' || ($subStatus === 'active' && $planRaw !== '' && $planRaw !== 'free');
+        if ($subStatus === 'trial') {
+            $planBadge = 'TRIAL';
+            $planBadgeBg = '#d97706';
+        } elseif ($subStatus === 'suspended') {
+            $planBadge = 'SUSPENDED';
+            $planBadgeBg = '#ef4444';
+        } elseif ($subStatus === 'inactive') {
+            $planBadge = 'INACTIVE';
+            $planBadgeBg = '#64748b';
+        } elseif ($showPaidPlan) {
+            $planBadge = 'ACTIVE';
+            $planBadgeBg = '#10b981';
+        } else {
+            $planBadge = 'LOCKED';
+            $planBadgeBg = '#f59e0b';
+        }
+        ?>
         <div class="sidebar-plan-card">
             <div class="plan-card-title">
-                <span><?= $isPremiumPlan ? 'OMINIFLOW PREMIUM' : 'FREE PLAN' ?></span>
-                <?php if ($isPremiumPlan): ?>
-                    <span style="background: #10b981; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">ACTIVE</span>
-                <?php else: ?>
-                    <span style="background: #f59e0b; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">LOCKED</span>
-                <?php endif; ?>
+                <span><?= $showPaidPlan ? htmlspecialchars($planLabel, ENT_QUOTES, 'UTF-8') : 'FREE PLAN' ?></span>
+                <span style="background: <?= htmlspecialchars($planBadgeBg, ENT_QUOTES, 'UTF-8') ?>; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;"><?= htmlspecialchars($planBadge, ENT_QUOTES, 'UTF-8') ?></span>
             </div>
-            <?php if (!$isPremiumPlan): ?>
+            <?php if (!$showPaidPlan): ?>
                 <a href="<?= asset('pricing.php') ?>" style="display:block;margin-top:8px;text-align:center;background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;text-decoration:none;">Upgrade to Premium</a>
             <?php endif; ?>
         </div>
@@ -1191,11 +1237,28 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <div class="zpd-body">
+            <?php if (function_exists('is_super_admin') && is_super_admin()): ?>
+                <div class="zpd-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%) !important; color: #ffffff !important; border-left: 4px solid #6366f1;">
+                    <div style="font-size: 11px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        👑 Super Admin Console
+                    </div>
+                    <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 10px; line-height: 1.4;">
+                        Manage all clients, 1-click logins, subscriptions &amp; feature flags.
+                    </div>
+                    <a href="<?= asset('admin/index.php') ?>" style="display: block; text-align: center; background: #4f46e5; color: #ffffff !important; padding: 7px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
+                        Open Super Admin Panel &rarr;
+                    </a>
+                </div>
+            <?php endif; ?>
+
             <div class="zpd-card">
                 <div class="zpd-card-heading">Subscription</div>
                 <div class="zpd-sub-row">
-                    <?php if ($isPremiumPlan): ?>
-                        <div class="zpd-sub-text">You're currently on our Premium plan</div>
+                    <?php if ($subStatus === 'trial'): ?>
+                        <div class="zpd-sub-text">You're currently on a Trial<?= $planRaw !== '' && $planRaw !== 'free' ? ' (' . htmlspecialchars(ucfirst($planRaw), ENT_QUOTES, 'UTF-8') . ')' : '' ?></div>
+                        <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
+                    <?php elseif ($showPaidPlan): ?>
+                        <div class="zpd-sub-text">You're currently on our <?= $planRaw !== '' && $planRaw !== 'free' ? htmlspecialchars(ucfirst($planRaw), ENT_QUOTES, 'UTF-8') : 'Premium' ?> plan</div>
                         <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
                     <?php else: ?>
                         <div class="zpd-sub-text">You're currently on our Free plan</div>

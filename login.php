@@ -30,7 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($result['success']) {
             clear_old_input();
-            redirect(APP_URL . '/dashboard.php');
+            if (is_super_admin()) {
+                redirect(APP_URL . '/admin/dashboard.php');
+            } else {
+                redirect(APP_URL . '/dashboard.php');
+            }
         } else {
             $errors = $result['errors'];
         }
