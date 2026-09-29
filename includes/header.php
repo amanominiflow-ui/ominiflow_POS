@@ -4,6 +4,8 @@
  */
 
 declare(strict_types=1);
+
+require_once __DIR__ . '/impersonate_banner.php';
 ?>
 <header class="app-header">
     <div class="header-left">
@@ -13,7 +15,7 @@ declare(strict_types=1);
             </svg>
         </button>
         <a href="<?= asset('dashboard.php') ?>" class="header-brand-logo-link" title="OminiFlow POS">
-            <img src="<?= asset('assets/images/logo.jpg') ?>" alt="OminiFlow" class="header-brand-logo">
+            <img src="<?= asset('assets/images/ominiflow_logo.png') ?>" alt="OminiFlow" class="header-brand-logo">
         </a>
         <div class="header-title-divider"></div>
         <div class="header-title-wrap">
