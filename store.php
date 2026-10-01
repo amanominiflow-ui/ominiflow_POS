@@ -80,10 +80,20 @@ if (!$storeBiz) {
     $hasDeliveryLoc = false;
     $buyNowCart = ['lines' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
     $storeShopper = null;
+    $storePaymentMethods = [];
+    $storeRazorpayActive = false;
 } else {
     $storeNotFound = false;
     $bid = (int) $storeBiz['id'];
     $brand = get_mobile_store_settings($bid);
+    $storePaymentMethods = get_storefront_checkout_payment_methods($bid, $brand);
+    $storeRazorpayActive = false;
+    foreach ($storePaymentMethods as $pmMeta) {
+        if (!empty($pmMeta['online'])) {
+            $storeRazorpayActive = true;
+            break;
+        }
+    }
     $storeSettings = get_store_settings($bid);
     $pageTitle = (string) $brand['display_name'];
     $published = (int) ($storeBiz['store_published'] ?? 1) === 1;
@@ -94,21 +104,73 @@ if (!$storeBiz) {
 
     $flashSuccess = get_flash('success');
     $flashError = get_flash('error');
+    $flashWarning = get_flash('warning');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = (string) ($_POST['action'] ?? '');
+        $isWaInvoiceAjax = $action === 'send_order_invoice_whatsapp';
         if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            if ($isWaInvoiceAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'Your session expired. Please refresh and try again.']);
+                exit;
+            }
             set_flash('error', 'Your session expired. Please try again.');
             redirect(public_store_url($storeBiz, $page, $_GET));
         }
 
-        $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'send_order_invoice_whatsapp') {
+            header('Content-Type: application/json; charset=utf-8');
+            ignore_user_abort(true);
+            @set_time_limit(60);
+            $orderId = (int) ($_POST['order_id'] ?? 0);
+            $shopper = get_storefront_shopper($bid);
+            if ($orderId <= 0) {
+                echo json_encode(['success' => false, 'error' => 'Order not found.']);
+                exit;
+            }
+            $orderRow = get_storefront_order_details($bid, (string) $orderId);
+            if (!$orderRow) {
+                echo json_encode(['success' => false, 'error' => 'Order not found.']);
+                exit;
+            }
+            $shopperId = is_array($shopper) ? (int) ($shopper['id'] ?? 0) : 0;
+            $orderCustId = (int) ($orderRow['customer_id'] ?? 0);
+            if ($shopperId > 0 && $orderCustId > 0 && $shopperId !== $orderCustId) {
+                echo json_encode(['success' => false, 'error' => 'Not allowed.']);
+                exit;
+            }
+            $phone = is_array($shopper) ? trim((string) ($shopper['phone'] ?? '')) : '';
+            if ($phone === '') {
+                $phone = trim((string) ($orderRow['customer_phone'] ?? ''));
+            }
+            try {
+                require_once __DIR__ . '/includes/invoice_whatsapp.php';
+                $payStatus = strtolower((string) ($orderRow['payment_status'] ?? 'pending'));
+                if ($payStatus === '') {
+                    $payStatus = 'pending';
+                }
+                $res = send_order_invoice_whatsapp($bid, $orderId, $phone, [
+                    'invoice_id' => (int) ($orderRow['invoice_id'] ?? 0),
+                    'order_number' => (string) ($orderRow['order_number'] ?? ''),
+                    'payment_status' => $payStatus,
+                    'customer_phone' => $phone,
+                ]);
+            } catch (Throwable $e) {
+                error_log('Async invoice WhatsApp: ' . $e->getMessage());
+                $res = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
+            }
+            echo json_encode($res);
+            exit;
+        }
 
         if ($action === 'add_to_cart') {
             $pid = (int) ($_POST['product_id'] ?? 0);
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
-            $res = add_to_storefront_cart($bid, $pid, $qty);
+            $vid = (int) ($_POST['variant_id'] ?? 0);
+            $res = add_to_storefront_cart($bid, $pid, $qty, $vid);
 
             $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
             if ($isAjax) {
@@ -176,7 +238,7 @@ if (!$storeBiz) {
         }
 
         if ($action === 'update_cart') {
-            $res = update_storefront_cart_qty($bid, (int) ($_POST['product_id'] ?? 0), (int) ($_POST['qty'] ?? 0));
+            $res = update_storefront_cart_qty($bid, (int) ($_POST['product_id'] ?? 0), (int) ($_POST['qty'] ?? 0), (int) ($_POST['variant_id'] ?? 0));
             if (empty($res['success']) && !empty($res['error'])) {
                 set_flash('error', $res['error']);
             }
@@ -265,31 +327,155 @@ if (!$storeBiz) {
             redirect(public_store_url($storeBiz, $action === 'update_address' ? 'addresses' : 'profile'));
         }
 
+        if ($action === 'validate_store_coupon') {
+            require_once __DIR__ . '/includes/promotions_db.php';
+            $isBuyNowCoupon = storefront_checkout_is_buynow($bid, $_POST);
+            $hydratedCoupon = $isBuyNowCoupon ? hydrate_storefront_buynow($bid) : hydrate_storefront_cart($bid);
+            $code = strtoupper(trim((string) ($_POST['coupon_code'] ?? '')));
+            if ($code === '') {
+                clear_storefront_applied_coupon($bid);
+                $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+                header('Content-Type: application/json');
+                echo json_encode(['valid' => true, 'removed' => true, 'totals' => storefront_checkout_totals_payload($enriched)]);
+                exit;
+            }
+            $subtotal = (float) ($hydratedCoupon['subtotal'] ?? 0);
+            $check = validate_and_apply_coupon($code, $subtotal, $bid);
+            if (empty($check['valid'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['valid' => false, 'error' => $check['error'] ?? 'Invalid coupon.']);
+                exit;
+            }
+            set_storefront_applied_coupon($bid, [
+                'coupon_id' => (int) $check['coupon_id'],
+                'code' => (string) $check['code'],
+            ]);
+            $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'valid' => true,
+                'code' => $check['code'],
+                'totals' => storefront_checkout_totals_payload($enriched),
+            ]);
+            exit;
+        }
+
+        if ($action === 'remove_store_coupon') {
+            clear_storefront_applied_coupon($bid);
+            $isBuyNowCoupon = storefront_checkout_is_buynow($bid, $_POST);
+            $hydratedCoupon = $isBuyNowCoupon ? hydrate_storefront_buynow($bid) : hydrate_storefront_cart($bid);
+            $enriched = storefront_apply_checkout_discounts($bid, $hydratedCoupon);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'totals' => storefront_checkout_totals_payload($enriched)]);
+            exit;
+        }
+
+        if ($action === 'create_razorpay_order') {
+            require_once __DIR__ . '/includes/payment_integrations_db.php';
+            require_once __DIR__ . '/includes/razorpay_oauth.php';
+            header('Content-Type: application/json');
+            if (empty($brand['enable_razorpay']) || empty(get_active_store_payment_gateways($bid)['razorpay'])) {
+                echo json_encode(['success' => false, 'error' => 'Razorpay is not enabled for this store.']);
+                exit;
+            }
+            if (razorpay_checkout_key($bid) === '') {
+                echo json_encode(['success' => false, 'error' => 'Razorpay is not configured for this store.']);
+                exit;
+            }
+            $amount = (float) ($_POST['amount'] ?? 0);
+            $amountPaise = (int) round($amount * 100);
+            if ($amountPaise < 100) {
+                echo json_encode(['success' => false, 'error' => 'Amount must be at least ₹1.00']);
+                exit;
+            }
+            $receipt = 'STORE-' . $bid . '-' . time();
+            $created = razorpay_create_order($amountPaise, $receipt, [
+                'source' => 'online_store',
+                'business_id' => (string) $bid,
+            ], $bid);
+            if (empty($created['success'])) {
+                echo json_encode(['success' => false, 'error' => $created['error'] ?? 'Could not start Razorpay']);
+                exit;
+            }
+            $storeName = (string) ($brand['display_name'] ?? 'Online Store');
+            echo json_encode([
+                'success' => true,
+                'key' => razorpay_checkout_key($bid),
+                'order_id' => $created['order']['id'],
+                'amount' => $created['order']['amount'] ?? $amountPaise,
+                'currency' => $created['order']['currency'] ?? 'INR',
+                'name' => $storeName,
+            ]);
+            exit;
+        }
+
         if ($action === 'place_order') {
-            $isBuyNowCheckout = (string) ($_POST['checkout_mode'] ?? '') === 'buynow';
+            $isBuyNowCheckout = storefront_checkout_is_buynow($bid, $_POST);
             $shopper = get_storefront_shopper($bid);
+            $checkoutAsGuest = !empty($_POST['checkout_as_guest']);
+            if (!$shopper && $checkoutAsGuest) {
+                $guestRes = storefront_ensure_guest_shopper($bid, [
+                    'name' => (string) ($_POST['name'] ?? ''),
+                    'phone' => (string) ($_POST['phone'] ?? ''),
+                    'email' => (string) ($_POST['email'] ?? ''),
+                    'address' => (string) ($_POST['address'] ?? ''),
+                ]);
+                if (!empty($guestRes['success'])) {
+                    $shopper = $guestRes['shopper'];
+                } else {
+                    $guestErr = is_array($guestRes['errors'] ?? null)
+                        ? implode(' ', $guestRes['errors'])
+                        : 'Could not continue as guest.';
+                    set_flash('error', $guestErr);
+                    $redirectParams = $isBuyNowCheckout ? ['buynow' => '1'] : ['checkout' => '1'];
+                    redirect(public_store_url($storeBiz, 'home', $redirectParams));
+                }
+            }
             if (!$shopper) {
-                set_flash('error', 'Please sign in or create an account with your mobile number to complete your order.');
+                set_flash('warning', 'Sign in to your account or choose Continue as Guest to place the order.');
                 redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
             }
-            $result = place_online_store_order($bid, [
-                'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
-                'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
-                'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
-                'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
-                'notes' => (string) ($_POST['notes'] ?? ''),
-                'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
-                'buy_now' => $isBuyNowCheckout,
-            ]);
+            try {
+                $result = place_online_store_order($bid, [
+                    'name' => (string) ($_POST['name'] ?? $shopper['name'] ?? ''),
+                    'phone' => (string) ($_POST['phone'] ?? $shopper['phone'] ?? ''),
+                    'email' => (string) ($_POST['email'] ?? $shopper['email'] ?? ''),
+                    'address' => (string) ($_POST['address'] ?? $shopper['address'] ?? ''),
+                    'notes' => (string) ($_POST['notes'] ?? ''),
+                    'payment_method' => (string) ($_POST['payment_method'] ?? 'cod'),
+                    'checkout_mode' => (string) ($_POST['checkout_mode'] ?? ($isBuyNowCheckout ? 'buynow' : '')),
+                    'razorpay_order_id' => (string) ($_POST['razorpay_order_id'] ?? ''),
+                    'razorpay_payment_id' => (string) ($_POST['razorpay_payment_id'] ?? ''),
+                    'razorpay_signature' => (string) ($_POST['razorpay_signature'] ?? ''),
+                    'buy_now' => $isBuyNowCheckout,
+                    'coupon_id' => (int) ($_POST['coupon_id'] ?? 0),
+                    'coupon_code' => (string) ($_POST['coupon_code'] ?? ''),
+                ]);
+            } catch (Throwable $placeEx) {
+                error_log('Store place_order failed: ' . $placeEx->getMessage());
+                $result = [
+                    'success' => false,
+                    'errors' => ['checkout' => 'Could not place order. Please try again or contact the store.'],
+                ];
+            }
             if (!empty($result['success'])) {
-                redirect(public_store_url($storeBiz, 'order', [
+                $orderParams = [
                     'id' => (string) ($result['order_number'] ?? ''),
                     'new' => '1',
-                ]));
+                ];
+                if (!empty($result['invoice_number'])) {
+                    $orderParams['invoice'] = (string) $result['invoice_number'];
+                }
+                redirect(public_store_url($storeBiz, 'order', $orderParams));
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
-            redirect(public_store_url($storeBiz, $isBuyNowCheckout ? 'home' : 'checkout', $isBuyNowCheckout ? ['buynow' => '1'] : []));
+            $redirectPage = ($page === 'product' && !empty($_GET['id'])) ? 'product' : ($isBuyNowCheckout ? 'home' : 'checkout');
+            $redirectParams = $isBuyNowCheckout ? ['buynow' => '1'] : [];
+            if ($redirectPage === 'product' && !empty($_GET['id'])) {
+                $redirectParams['id'] = (int) $_GET['id'];
+            }
+            redirect(public_store_url($storeBiz, $redirectPage, $redirectParams));
         }
 
         if ($action === 'cancel_order') {
@@ -336,11 +522,11 @@ if (!$storeBiz) {
     $homeUrl = public_store_url($storeBiz, 'home');
     $cartUrl = public_store_url($storeBiz, 'cart');
     $checkoutUrl = public_store_url($storeBiz, 'checkout');
-    $drawerCart = hydrate_storefront_cart($bid);
+    $drawerCart = storefront_apply_checkout_discounts($bid, hydrate_storefront_cart($bid));
     $cartCount = (int) ($drawerCart['count'] ?? $cartCount);
     $storeShopper = refresh_storefront_shopper($bid);
     restore_storefront_delivery_location($bid, $storeShopper);
-    $buyNowCart = hydrate_storefront_buynow($bid);
+    $buyNowCart = storefront_apply_checkout_discounts($bid, hydrate_storefront_buynow($bid));
     $hasSavedDeliveryLoc = storefront_has_delivery_location($bid, $storeShopper);
     $openAccountDrawer = !empty($_GET['account']);
     $openBuyNowFlow = !empty($_GET['buynow']) && !empty($buyNowCart['lines']);
@@ -348,9 +534,12 @@ if (!$storeBiz) {
     $openBuyNowSummary = $openBuyNowFlow && $hasSavedDeliveryLoc;
     $openOrderSummaryDirect = !empty($_GET['checkout']) || $openBuyNowSummary;
     $openCartDrawer = (!$openAccountDrawer) && (!empty($_GET['cart']) || $openOrderSummaryDirect || $page === 'cart');
-    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile', 'checkout'], true) && !$storeShopper) {
-        $ret = $page === 'checkout' ? 'checkout' : 'account';
-        redirect(public_store_signin_url($storeBiz, ['return' => $ret]));
+    $storeCustomerLoggedIn = storefront_is_store_authenticated($bid);
+    $checkoutReturnDefault = (!empty($_GET['buynow']) || !empty($buyNowCart['lines'])) ? 'buynow' : 'checkout';
+    $storeCheckoutSigninUrl = public_store_signin_url($storeBiz, ['return' => $checkoutReturnDefault]);
+    $storeCheckoutSignupUrl = public_store_signin_url($storeBiz, ['mode' => 'signup', 'return' => $checkoutReturnDefault]);
+    if (in_array($page, ['orders', 'invoices', 'addresses', 'profile'], true) && !$storeShopper) {
+        redirect(public_store_signin_url($storeBiz, ['return' => 'account']));
     }
 }
 
@@ -374,6 +563,17 @@ if (!function_exists('storefront_get_all_product_images')) {
             $url = sf_product_image((string) $p['image_path']);
             if ($url && !in_array($url, $images, true)) {
                 $images[] = $url;
+            }
+        }
+        if (function_exists('get_product_variants')) {
+            $vars = get_product_variants((int) ($p['id'] ?? 0), $businessId);
+            foreach ($vars as $v) {
+                if (!empty($v['image_path'])) {
+                    $url = sf_product_image((string) $v['image_path']);
+                    if ($url && !in_array($url, $images, true)) {
+                        $images[] = $url;
+                    }
+                }
             }
         }
         if (function_exists('get_product_images')) {
@@ -422,7 +622,21 @@ if (!function_exists('storefront_get_product_media')) {
             ];
         }
 
-        // 3. Additional Images
+        // 3. Variant Images
+        if (function_exists('get_product_variants')) {
+            $vars = get_product_variants((int) ($p['id'] ?? 0), $businessId);
+            foreach ($vars as $v) {
+                if (!empty($v['image_path'])) {
+                    $url = sf_product_image((string) $v['image_path']);
+                    if ($url && !in_array($url, $added, true)) {
+                        $media[] = ['type' => 'image', 'url' => $url, 'is_video' => false, 'variant_id' => (int) $v['id']];
+                        $added[] = $url;
+                    }
+                }
+            }
+        }
+
+        // 4. Additional Images
         if (function_exists('get_product_images')) {
             $gallery = get_product_images((int) ($p['id'] ?? 0), $businessId);
             foreach ($gallery as $g) {
@@ -436,7 +650,7 @@ if (!function_exists('storefront_get_product_media')) {
             }
         }
 
-        // 4. Rear Image
+        // 5. Rear Image
         if (!empty($p['rear_image_path'])) {
             $url = sf_product_image((string) $p['rear_image_path']);
             if ($url && !in_array($url, $added, true)) {
@@ -774,6 +988,27 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             background: <?= e($brand['header_color'] ?: '#ea580c') ?>;
             color: #ffffff;
         }
+        .sf-variant-row { margin-bottom: 12px; }
+        .sf-variant-label { display: block; font-size: 12px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+        .sf-variant-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .sf-variant-chip {
+            border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 7px 12px;
+            font-size: 13px; font-weight: 700; cursor: pointer; color: #0f172a;
+        }
+        .sf-variant-chip.on { background: <?= e($brand['header_color'] ?: '#0f4c3a') ?>; border-color: <?= e($brand['header_color'] ?: '#0f4c3a') ?>; color: #fff; }
+        .sf-variant-chip:disabled, .sf-variant-chip.off { opacity: 0.45; cursor: not-allowed; }
+        .sf-variant-meta { font-size: 12.5px; font-weight: 700; color: #475569; min-height: 18px; }
+        .sf-variant-modal {
+            position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 12000;
+            display: none; align-items: center; justify-content: center; padding: 16px;
+        }
+        .sf-variant-modal.open { display: flex; }
+        .sf-variant-modal-box {
+            width: 100%; max-width: 420px; background: #fff; border-radius: 14px; padding: 18px 16px 16px;
+            box-shadow: 0 20px 50px rgba(15,23,42,0.18);
+        }
+        .sf-variant-modal-title { font-size: 17px; font-weight: 800; color: #0f172a; margin: 0 0 14px; }
+        .sf-variant-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
         .ms-footer-col-title {
             font-size: 13.5px;
             font-weight: 800;
@@ -1973,6 +2208,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
             <div class="ms-empty"><?= e($pageTitle) ?> is closed right now.</div>
         <?php else: ?>
             <?php if (!empty($flashSuccess)): ?><div class="ms-alert ms-ok"><?= e($flashSuccess) ?></div><?php endif; ?>
+            <?php if (!empty($flashWarning)): ?><div class="ms-alert" style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:12px 16px;border-radius:10px;margin:12px 16px;font-size:14px;font-weight:600;"><?= e($flashWarning) ?></div><?php endif; ?>
             <?php if (!empty($flashError)): ?><div class="ms-alert ms-err"><?= e($flashError) ?></div><?php endif; ?>
 
             <?php if ($page === 'home'):
@@ -2480,10 +2716,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?php foreach ($trendingProducts as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
-                                $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
                                 $varCount = $pInfo['variant_count'];
+                                $cardVariantJson = $varCount > 0 ? htmlspecialchars(json_encode($pInfo['variant_ui'] ?? storefront_variant_ui_rows($pInfo['variants'])), ENT_QUOTES, 'UTF-8') : '';
                                 $sellingPrice = $pInfo['selling_price'];
                                 $mrp = $pInfo['mrp'];
                                 $discountPct = $pInfo['discount_percent'];
@@ -2554,16 +2791,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
-                                            <?php elseif ($varCount > 0): ?>
-                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
-                                                    <span>View Options</span>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                                                </a>
                                             <?php else: ?>
-                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
+                                                <form method="post" class="ms-card-add-form sf-store-cart-form" style="margin:0;" <?= $varCount > 0 ? 'data-variants="' . $cardVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="add_to_cart">
                                                     <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="variant_id" value="">
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
@@ -2591,10 +2824,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                             <?php foreach ($products as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
                                 $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
-                                $inStock = (int) $p['stock_quantity'] > 0;
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
+                                $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
                                 $varCount = $pInfo['variant_count'];
+                                $cardVariantJson = $varCount > 0 ? htmlspecialchars(json_encode($pInfo['variant_ui'] ?? storefront_variant_ui_rows($pInfo['variants'])), ENT_QUOTES, 'UTF-8') : '';
                                 $sellingPrice = $pInfo['selling_price'];
                                 $mrp = $pInfo['mrp'];
                                 $discountPct = $pInfo['discount_percent'];
@@ -2665,16 +2899,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
-                                            <?php elseif ($varCount > 0): ?>
-                                                <a href="<?= e($pUrl) ?>" class="ms-card-add-btn">
-                                                    <span>View Options</span>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                                                </a>
                                             <?php else: ?>
-                                                <form method="post" class="ms-card-add-form" style="margin:0;" onsubmit="handleAjaxAddToCart(event, this);">
+                                                <form method="post" class="ms-card-add-form sf-store-cart-form" style="margin:0;" <?= $varCount > 0 ? 'data-variants="' . $cardVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="add_to_cart">
                                                     <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                                    <input type="hidden" name="variant_id" value="">
                                                     <input type="hidden" name="qty" value="1">
                                                     <input type="hidden" name="redirect_page" value="home">
                                                     <button type="submit" class="ms-card-add-btn">
@@ -2720,15 +2950,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         }
                     }
 
+                    $variantUi = storefront_variant_ui_rows($variants);
                     $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
-                    $inStock = $activeVariant ? ((int)$activeVariant['stock_quantity'] > 0) : ((int)$product['stock_quantity'] > 0);
+                    if ($activeVariant && (float)$activeVariant['selling_price'] <= 0) {
+                        $currentPrice = (float)$product['selling_price'];
+                    }
+                    $inStock = storefront_product_is_in_stock($product, $variants);
                     $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
+                    $pdpVariantJson = $variants ? htmlspecialchars(json_encode($variantUi), ENT_QUOTES, 'UTF-8') : '';
                     $pdpMedia = storefront_get_product_media($product, $bid);
                     $firstImgUrl = '';
-                    foreach ($pdpMedia as $m) {
-                        if (empty($m['is_video'])) {
-                            $firstImgUrl = $m['url'];
-                            break;
+                    if (!empty($product['image_path'])) {
+                        $firstImgUrl = sf_product_image((string) $product['image_path']);
+                    }
+                    if ($firstImgUrl === '') {
+                        foreach ($pdpMedia as $m) {
+                            if (empty($m['is_video'])) {
+                                $firstImgUrl = $m['url'];
+                                break;
+                            }
                         }
                     }
                     if ($firstImgUrl === '' && !empty($pdpMedia[0]['url'])) {
@@ -2785,27 +3025,25 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <?php endif; ?>
 
                                 <?php if (!empty($variants)): ?>
-                                    <div class="ms-pdp-opt-title">Options / Variants</div>
-                                    <div class="ms-pdp-variants-wrap">
-                                        <?php foreach ($variants as $v):
-                                            $isActiveVar = ((int)$v['id'] === $selectedVariantId);
-                                            $varUrl = public_store_url($storeBiz, 'product', ['id' => (int)$product['id'], 'variant_id' => (int)$v['id']]);
-                                            ?>
-                                            <a href="<?= e($varUrl) ?>" class="ms-pdp-var-btn<?= $isActiveVar ? ' is-active' : '' ?>">
-                                                <span class="ms-pdp-var-name"><?= e((string)$v['variant_name']) ?></span>
-                                                <span class="ms-pdp-var-price"><?= sf_money($currency, (float)$v['selling_price']) ?></span>
-                                            </a>
-                                        <?php endforeach; ?>
+                                    <div class="ms-pdp-opt-title">Choose size and colour</div>
+                                    <div class="sf-pdp-variant-pick" id="sfPdpVariantPick">
+                                        <div class="sf-variant-row" id="sfPdpSizeRow" style="display:none;">
+                                            <span class="sf-variant-label">Size</span>
+                                            <div class="sf-variant-chips" id="sfPdpSizes"></div>
+                                        </div>
+                                        <div class="sf-variant-row" id="sfPdpColourRow" style="display:none;">
+                                            <span class="sf-variant-label">Colour</span>
+                                            <div class="sf-variant-chips" id="sfPdpColours"></div>
+                                        </div>
+                                        <div class="sf-variant-meta" id="sfPdpVariantMeta"></div>
                                     </div>
                                 <?php endif; ?>
 
-                                <form method="post" style="margin-top:auto;" onsubmit="handleAjaxAddToCart(event, this);">
+                                <form method="post" class="sf-store-cart-form" style="margin-top:auto;" <?= $variants ? 'data-variants="' . $pdpVariantJson . '"' : '' ?> onsubmit="handleAjaxAddToCart(event, this);">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="add_to_cart">
                                     <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                                    <?php if ($selectedVariantId): ?>
-                                        <input type="hidden" name="variant_id" value="<?= (int) $selectedVariantId ?>">
-                                    <?php endif; ?>
+                                    <input type="hidden" name="variant_id" id="sfPdpVariantId" value="<?= $selectedVariantId ? (int) $selectedVariantId : '' ?>">
                                     <input type="hidden" name="redirect_page" value="product">
                                     <input type="hidden" name="return_id" value="<?= (int) $product['id'] ?>">
 
@@ -2915,6 +3153,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     qtyInput.value = val + 1;
                                 }
                             });
+                        }
+                        if (typeof sfInitStorePdpVariants === 'function') {
+                            sfInitStorePdpVariants(<?= !empty($variantUi) ? json_encode($variantUi) : '[]' ?>, { price: <?= (float)$product['selling_price'] ?>, stock: <?= (int)$product['stock_quantity'] ?> });
                         }
                     });
                     </script>
@@ -3038,30 +3279,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
 
                                 <!-- Payment Method -->
-                                <?php
-                                $hasAnyOpt = false;
-                                ?>
                                 <label class="ms-label">Payment Method</label>
-                                <select class="ms-select" name="payment_method" style="margin-bottom:18px;">
-                                    <?php if (!empty($brand['enable_cod'])): $hasAnyOpt = true; ?>
-                                        <option value="cod">Cash on Delivery (COD)</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_upi'])): $hasAnyOpt = true; ?>
-                                        <option value="upi">UPI (Google Pay, PhonePe, Paytm, BHIM) <?= !empty($brand['upi_id']) ? ('[' . e($brand['upi_id']) . ']') : '' ?></option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_card'])): $hasAnyOpt = true; ?>
-                                        <option value="card">Credit / Debit Card</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_netbanking'])): $hasAnyOpt = true; ?>
-                                        <option value="netbanking">Net Banking / Direct Bank Transfer</option>
-                                    <?php endif; ?>
-                                    <?php if (!empty($brand['enable_store_pickup_payment'])): $hasAnyOpt = true; ?>
-                                        <option value="pickup">Pay at Store / Pickup</option>
-                                    <?php endif; ?>
-                                    <?php if (!$hasAnyOpt): ?>
-                                        <option value="cod">Cash on Delivery (COD)</option>
-                                    <?php endif; ?>
+                                <select class="ms-select" name="payment_method" id="msCheckoutSelectedPaymentMethod" style="margin-bottom:18px;">
+                                    <?php foreach ($storePaymentMethods as $pmKey => $pmInfo): ?>
+                                        <option value="<?= e($pmKey) ?>"><?= e($pmInfo['name']) ?></option>
+                                    <?php endforeach; ?>
                                 </select>
+                                <input type="hidden" name="razorpay_order_id" id="msCheckoutRzpOrderId" value="">
+                                <input type="hidden" name="razorpay_payment_id" id="msCheckoutRzpPaymentId" value="">
+                                <input type="hidden" name="razorpay_signature" id="msCheckoutRzpSignature" value="">
                                 <?php if (!empty($brand['payment_instructions'])): ?>
                                     <div style="font-size:12.5px;color:#64748b;margin-top:-10px;margin-bottom:16px;background:#f8fafc;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;">
                                         ℹ️ <?= e($brand['payment_instructions']) ?>
@@ -3069,6 +3295,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <?php endif; ?>
 
                                 <div class="ms-total"><span>Total</span><span><?= sf_money($currency, $hydrated['total']) ?></span></div>
+                                <input type="hidden" name="checkout_as_guest" id="msPageCheckoutAsGuest" value="0">
                                 <button class="ms-btn" type="submit" style="margin-top:14px;">Place Order</button>
                             </form>
                         </div>
@@ -3225,7 +3452,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
             <?php elseif ($page === 'order' || $page === 'thanks'):
                 $ordParam = trim((string)($_GET['id'] ?? $_GET['order'] ?? ''));
-                $order = $ordParam !== '' ? get_storefront_order_details($bid, $ordParam, $storeShopper ? (int)$storeShopper['id'] : null) : null;
+                $order = $ordParam !== '' ? get_storefront_order_details($bid, $ordParam) : null;
                 $isNewOrder = !empty($_GET['new']);
                 ?>
                 <?php if (!$order): ?>
@@ -3244,11 +3471,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $orderNum = (string)($order['order_number'] ?? ('#' . $orderId));
                     $ordTotal = (float)($order['total_amount'] ?? 0);
                     $ordStatus = strtolower((string)($order['order_status'] ?? 'pending'));
-                    $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing'], true);
+                    $canCancel = in_array($ordStatus, ['pending', 'new', 'placed', 'processing', 'hold'], true);
                     $ordType = (($order['payment_method'] ?? '') === 'pickup') ? 'Store Pickup' : 'Home Delivery';
-                    $custName = trim((string)($order['customer_name'] ?? $storeShopper['name'] ?? 'Guest Customer'));
-                    $custPhone = trim((string)($order['customer_phone'] ?? $storeShopper['phone'] ?? ''));
-                    $custAddress = trim((string)($order['customer_address'] ?? $storeShopper['address'] ?? ''));
+                    $custName = trim((string)($order['customer_name'] ?? (is_array($storeShopper) ? ($storeShopper['name'] ?? '') : '') ?: 'Guest Customer'));
+                    $loginPhone = is_array($storeShopper) ? trim((string) ($storeShopper['phone'] ?? '')) : '';
+                    $custPhone = $loginPhone !== '' ? $loginPhone : trim((string)($order['customer_phone'] ?? ''));
+                    $custAddress = trim((string)($order['customer_address'] ?? (is_array($storeShopper) ? ($storeShopper['address'] ?? '') : '')));
                     ?>
                     <div class="ms-order-view-wrap">
                         <?php if ($isNewOrder): ?>
@@ -3258,7 +3486,13 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
                                 <div>
                                     <div style="font-weight:800;color:#166534;font-size:15px;">Order Placed Successfully! 🎉</div>
-                                    <div style="font-size:13px;color:#15803d;">Thank you for shopping with us.</div>
+                                    <div style="font-size:13px;color:#15803d;">
+                                        Thank you for shopping with us.
+                                        <?php if (!empty($_GET['invoice']) || !empty($order['invoice_number'])): ?>
+                                            Invoice <strong><?= e((string) ($_GET['invoice'] ?? $order['invoice_number'])) ?></strong> has been generated.
+                                        <?php endif; ?>
+                                        <span id="msWaInvoiceStatus"><?= $custPhone !== '' ? ' Sending invoice PDF to WhatsApp…' : '' ?></span>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -3832,11 +4066,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
 
+    $cartShopper = is_array($storeShopper) ? $storeShopper : [];
     $savedLoc = get_storefront_delivery_location($bid);
-    $locAddress = trim((string)($savedLoc['formatted'] ?? $storeShopper['address'] ?? ''));
-    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $storeShopper['name'] ?? ''));
-    $locPhone = trim((string)($savedLoc['phone'] ?? $storeShopper['phone'] ?? ''));
-    $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($storeShopper['address']) ? $storeShopper['address'] : 'Set delivery location');
+    $locAddress = trim((string)($savedLoc['formatted'] ?? $cartShopper['address'] ?? ''));
+    $locName = storefront_clean_person_name((string)($savedLoc['name'] ?? $cartShopper['name'] ?? ''));
+    $locPhone = trim((string)($savedLoc['phone'] ?? $cartShopper['phone'] ?? ''));
+    $locDisplay = !empty($savedLoc['display']) ? $savedLoc['display'] : (!empty($cartShopper['address']) ? (string) $cartShopper['address'] : 'Set delivery location');
     $hasDeliveryLoc = ($locAddress !== '');
 
     $osBuyNow = !empty($openBuyNowSummary);
@@ -3848,6 +4083,26 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $osTax = (float) ($osSrc['tax'] ?? 0);
     $osTotal = (float) ($osSrc['total'] ?? 0);
     $osSavings = (float) ($osSrc['total_savings'] ?? 0);
+    $osPromoDiscount = (float) ($osSrc['promo_discount'] ?? 0);
+    $osCouponDiscount = (float) ($osSrc['coupon_discount'] ?? 0);
+    $osCheckoutSave = $osPromoDiscount + $osCouponDiscount;
+    $osAppliedCouponCode = (string) ($osSrc['applied_coupon_code'] ?? '');
+    $osAppliedCouponId = (int) ($osSrc['applied_coupon_id'] ?? 0);
+    $hasBuyNowSession = !empty($buyNowCart['lines']);
+    $drawerCheckoutQuery = [];
+    if ($hasBuyNowSession || !empty($_GET['buynow'])) {
+        $drawerCheckoutQuery['buynow'] = '1';
+    }
+    foreach (['category_id', 'q', 'id'] as $pq) {
+        if (!empty($_GET[$pq])) {
+            $drawerCheckoutQuery[$pq] = $_GET[$pq];
+        }
+    }
+    $drawerCheckoutActionUrl = public_store_url($storeBiz, $page, $drawerCheckoutQuery);
+    $drawerCheckoutIsBuyNow = $hasBuyNowSession || !empty($osBuyNow) || !empty($_GET['buynow']);
+    $drawerSigninReturn = $drawerCheckoutIsBuyNow ? 'buynow' : 'checkout';
+    $drawerSigninUrl = public_store_signin_url($storeBiz, ['return' => $drawerSigninReturn]);
+    $drawerSignupUrl = public_store_signin_url($storeBiz, ['mode' => 'signup', 'return' => $drawerSigninReturn]);
     ?>
 <div class="ms-cart-overlay<?= !empty($openCartDrawer) ? ' is-open' : '' ?>" id="msCartOverlay"<?= empty($openCartDrawer) ? ' hidden' : '' ?> aria-hidden="<?= !empty($openCartDrawer) ? 'false' : 'true' ?>">
     <aside class="ms-cart-drawer" id="msCartDrawer" role="dialog" aria-labelledby="msCartTitle">
@@ -3878,11 +4133,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php foreach ($cdLines as $line):
                         $p = $line['product'];
                         $pid = (int) $p['id'];
+                        $lineVid = (int) ($line['variant_id'] ?? 0);
                         $qty = (int) $line['qty'];
-                        $stock = (int) ($p['stock_quantity'] ?? 0);
+                        $stock = (int) ($line['stock'] ?? ($p['stock_quantity'] ?? 0));
                         $img = sf_product_image($p['image_path'] ?? null);
-                        $dispInfo = storefront_parse_product_display_info($p, $bid);
-                        $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        $lineSize = trim((string) ($line['size'] ?? ''));
+                        $lineColour = trim((string) ($line['colour'] ?? ''));
+                        $pAttr = '';
+                        if ($lineSize !== '' || $lineColour !== '') {
+                            $pAttr = ($lineSize !== '' ? 'Size: ' . $lineSize : '') . ($lineSize !== '' && $lineColour !== '' ? ' · ' : '') . ($lineColour !== '' ? 'Colour: ' . $lineColour : '');
+                        }
+                        if ($pAttr === '') {
+                            $dispInfo = storefront_parse_product_display_info($p, $bid);
+                            $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        }
                         $unitPrice = (float) $line['unit_price'];
                         $lineMrp = (float) ($line['mrp'] ?? $p['mrp'] ?? 0);
                         $lineSaving = ($lineMrp > $unitPrice) ? ($lineMrp - $unitPrice) : 0;
@@ -3911,6 +4175,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="0">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -3924,6 +4189,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -3936,6 +4202,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
                                     <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -3978,6 +4245,16 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
         <!-- STEP 2: ORDER SUMMARY (Screenshot 2) -->
         <div class="ms-cd-view-panel" id="msCartViewOrderSummary" style="display:<?= !empty($openOrderSummaryDirect) ? 'flex' : 'none' ?>;flex-direction:column;height:100%;">
+            <?php if (!empty($flashError) || !empty($flashWarning)): ?>
+                <div style="padding:10px 14px 0;flex-shrink:0;">
+                    <?php if (!empty($flashError)): ?>
+                        <div class="ms-alert ms-err" style="margin:0;"><?= e($flashError) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($flashWarning)): ?>
+                        <div class="ms-alert" style="margin:0;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;"><?= e($flashWarning) ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <div class="ms-cd-head">
                 <button type="button" class="ms-cd-btn-circle" onclick="<?= !empty($osBuyNow) ? 'closeBuyNowSummary()' : 'goToCartMainView()' ?>" aria-label="<?= !empty($osBuyNow) ? 'Close' : 'Back to cart' ?>">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -4029,6 +4306,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
                                 <div style="flex:1;min-width:0;">
                                     <div style="font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e((string)$p['name']) ?></div>
+                                    <?php
+                                        $osSize = trim((string)($line['size'] ?? ''));
+                                        $osColour = trim((string)($line['colour'] ?? ''));
+                                    ?>
+                                    <?php if ($osSize !== '' || $osColour !== ''): ?>
+                                        <div style="font-size:11px;color:#475569;font-weight:600;">
+                                            <?= $osSize !== '' ? 'Size: ' . e($osSize) : '' ?><?= ($osSize !== '' && $osColour !== '') ? ' · ' : '' ?><?= $osColour !== '' ? 'Colour: ' . e($osColour) : '' ?>
+                                        </div>
+                                    <?php endif; ?>
                                     <div style="font-size:12px;color:#64748b;"><?= sf_money($currency, $uPrice) ?> × <?= $lQty ?></div>
                                 </div>
                                 <div style="font-size:13px;font-weight:800;color:#0f172a;white-space:nowrap;"><?= sf_money($currency, $lTotal) ?></div>
@@ -4037,76 +4323,52 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     </div>
                 <?php endif; ?>
 
+                <!-- Coupon code -->
+                <div class="ms-cd-coupon-box" id="msStoreCouponBox">
+                    <label class="ms-cd-coupon-label" for="msStoreCouponCode">Have a coupon code?</label>
+                    <div class="ms-cd-coupon-row">
+                        <input type="text" id="msStoreCouponCode" class="ms-cd-coupon-input" placeholder="Enter code" value="<?= e($osAppliedCouponCode) ?>" autocomplete="off" spellcheck="false">
+                        <button type="button" class="ms-cd-coupon-apply" id="msStoreCouponApplyBtn" onclick="applyStoreCouponCode()">Apply</button>
+                    </div>
+                    <div id="msStoreCouponApplied" class="ms-cd-coupon-applied" style="<?= $osAppliedCouponCode !== '' ? '' : 'display:none;' ?>">
+                        <span>Applied: <strong id="msStoreCouponAppliedCode"><?= e($osAppliedCouponCode) ?></strong></span>
+                        <button type="button" class="ms-cd-coupon-remove" onclick="removeStoreCouponCode()">Remove</button>
+                    </div>
+                    <div id="msStoreCouponError" class="ms-cd-coupon-error" style="display:none;"></div>
+                </div>
+
                 <!-- Summary -->
                 <div class="ms-cd-summary" style="padding-top:14px;">
                     <div class="ms-cd-summary-title">Summary</div>
-                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $osSub) ?></span></div>
+                    <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span id="msOsSubtotalText"><?= sf_money($currency, $osSub) ?></span></div>
+                    <div class="ms-cd-row" id="msOsPromoRow" style="<?= $osPromoDiscount > 0 ? '' : 'display:none;' ?>">
+                        <span>Promotion savings</span>
+                        <span id="msOsPromoText" style="color:#047857;font-weight:700;">− <?= sf_money($currency, $osPromoDiscount) ?></span>
+                    </div>
+                    <div class="ms-cd-row" id="msOsCouponRow" style="<?= $osCouponDiscount > 0 ? '' : 'display:none;' ?>">
+                        <span>Coupon savings</span>
+                        <span id="msOsCouponText" style="color:#047857;font-weight:700;">− <?= sf_money($currency, $osCouponDiscount) ?></span>
+                    </div>
                     <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
-                    <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $osTax) ?></span></div>
-                    <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $osTotal) ?></span></div>
+                    <div class="ms-cd-row"><span>Tax</span><span id="msOsTaxText"><?= sf_money($currency, $osTax) ?></span></div>
+                    <div class="ms-cd-row ms-cd-pay">
+                        <span>To be Paid</span>
+                        <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+                            <span id="msOsCheckoutSaveBadge" class="ms-cd-checkout-save-badge" style="<?= $osCheckoutSave > 0 ? '' : 'display:none;' ?>">
+                                You saved <strong id="msOsCheckoutSaveAmount"><?= sf_money($currency, $osCheckoutSave) ?></strong>
+                            </span>
+                            <span id="msOsTotalText"><?= sf_money($currency, $osTotal) ?></span>
+                        </span>
+                    </div>
                 </div>
 
                 <?php if ($osSavings > 0): ?>
-                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $osSavings) ?></div>
+                    <div class="ms-cd-savings-strip">You have saved <?= sf_money($currency, $osSavings) ?> on MRP</div>
                 <?php endif; ?>
 
                 <!-- Payment Method Selector Section -->
                 <?php
-                $activeDrawerMethods = [];
-                if (!empty($brand['enable_cod'])) {
-                    $activeDrawerMethods['cod'] = [
-                        'name' => 'Pay on Delivery (COD)',
-                        'label' => 'Pay on Delivery',
-                        'desc' => 'Pay with cash or UPI upon delivery',
-                        'icon' => '💵'
-                    ];
-                }
-                if (!empty($brand['enable_upi'])) {
-                    $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
-                    if (!empty($brand['upi_id'])) {
-                        $upiSub .= ' (' . e($brand['upi_id']) . ')';
-                    }
-                    $activeDrawerMethods['upi'] = [
-                        'name' => 'Pay with UPI',
-                        'label' => 'Pay with UPI',
-                        'desc' => $upiSub,
-                        'icon' => '📱'
-                    ];
-                }
-                if (!empty($brand['enable_card'])) {
-                    $activeDrawerMethods['card'] = [
-                        'name' => 'Credit / Debit Card',
-                        'label' => 'Card Payment',
-                        'desc' => 'Visa, MasterCard, RuPay',
-                        'icon' => '💳'
-                    ];
-                }
-                if (!empty($brand['enable_netbanking'])) {
-                    $activeDrawerMethods['netbanking'] = [
-                        'name' => 'Net Banking / Direct Bank Transfer',
-                        'label' => 'Bank Transfer',
-                        'desc' => 'Direct bank transfer / NEFT / IMPS',
-                        'icon' => '🏦'
-                    ];
-                }
-                if (!empty($brand['enable_store_pickup_payment'])) {
-                    $activeDrawerMethods['pickup'] = [
-                        'name' => 'Pay at Store / Pickup',
-                        'label' => 'Pay at Store',
-                        'desc' => 'Collect & pay directly at counter',
-                        'icon' => '🏪'
-                    ];
-                }
-
-                if (empty($activeDrawerMethods)) {
-                    $activeDrawerMethods['cod'] = [
-                        'name' => 'Pay on Delivery (COD)',
-                        'label' => 'Pay on Delivery',
-                        'desc' => 'Pay with cash or UPI upon delivery',
-                        'icon' => '💵'
-                    ];
-                }
-
+                $activeDrawerMethods = $storePaymentMethods;
                 $firstKey = array_key_first($activeDrawerMethods);
                 $firstOpt = $activeDrawerMethods[$firstKey];
                 ?>
@@ -4138,24 +4400,30 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 </div>
             </div>
 
-            <form method="post" id="msDrawerCheckoutForm" onsubmit="return handleCheckoutSubmit(event, this)">
+            <form method="post" id="msDrawerCheckoutForm" action="<?= e($drawerCheckoutActionUrl) ?>" onsubmit="return handleCheckoutSubmit(event, this)">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="place_order">
-                <?php if (!empty($osBuyNow)): ?>
+                <?php if ($drawerCheckoutIsBuyNow): ?>
                     <input type="hidden" name="checkout_mode" value="buynow">
                 <?php endif; ?>
                 <input type="hidden" name="name" value="<?= e($locName) ?>">
                 <input type="hidden" name="phone" value="<?= e($locPhone) ?>">
-                <input type="hidden" name="email" value="<?= e($storeShopper['email'] ?? '') ?>">
+                <input type="hidden" name="email" value="<?= e((string) ($cartShopper['email'] ?? '')) ?>">
                 <input type="hidden" name="address" value="<?= e($locAddress) ?>">
                 <input type="hidden" name="payment_method" id="msDrawerSelectedPaymentMethod" value="<?= e($firstKey) ?>">
+                <input type="hidden" name="razorpay_order_id" id="msDrawerRzpOrderId" value="">
+                <input type="hidden" name="razorpay_payment_id" id="msDrawerRzpPaymentId" value="">
+                <input type="hidden" name="razorpay_signature" id="msDrawerRzpSignature" value="">
+                <input type="hidden" name="coupon_id" id="msDrawerCouponId" value="<?= $osAppliedCouponId ?>">
+                <input type="hidden" name="coupon_code" id="msDrawerCouponCode" value="<?= e($osAppliedCouponCode) ?>">
+                <input type="hidden" name="checkout_as_guest" id="msDrawerCheckoutAsGuest" value="0">
 
                 <div class="ms-cd-foot">
                     <div class="ms-cd-foot-left" onclick="scrollToPaymentSection()" style="cursor:pointer;" title="Tap to change payment method">
                         <div class="ms-cd-pay-title" id="msDrawerPayTitle"><?= e($firstOpt['label']) ?></div>
                         <div class="ms-cd-pay-sub" style="color:#2563eb;font-weight:600;">Change Method ⌵</div>
                     </div>
-                    <button type="submit" class="ms-cd-checkout-btn">Place Order</button>
+                    <button type="submit" class="ms-cd-checkout-btn" id="msDrawerPlaceOrderBtn">Place Order</button>
                 </div>
             </form>
         </div>
@@ -4369,6 +4637,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 </div>
 <?php endif; ?>
 
+<!-- Checkout: Sign in / Create account / Guest (shown when Place Order clicked while not signed in) -->
+<div class="ms-confirm-modal-overlay" id="msCheckoutAuthModal" hidden aria-hidden="true">
+    <div class="ms-confirm-dialog ms-checkout-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="msCheckoutAuthTitle">
+        <h3 class="ms-confirm-title" id="msCheckoutAuthTitle">Continue checkout</h3>
+        <p class="ms-confirm-msg">Sign in or create an account to save your orders. You can also continue as guest with your delivery details.</p>
+        <div class="ms-checkout-auth-actions">
+            <a href="<?= e(!empty($storeCheckoutSigninUrl) ? $storeCheckoutSigninUrl : public_store_signin_url($storeBiz ?? null, ['return' => !empty($_GET['buynow']) ? 'buynow' : 'checkout'])) ?>" class="ms-checkout-auth-btn ms-checkout-auth-btn-primary" id="msCheckoutAuthSigninBtn" data-checkout-auth="signin">Sign In</a>
+            <a href="<?= e(!empty($storeCheckoutSignupUrl) ? $storeCheckoutSignupUrl : public_store_signin_url($storeBiz ?? null, ['mode' => 'signup', 'return' => !empty($_GET['buynow']) ? 'buynow' : 'checkout'])) ?>" class="ms-checkout-auth-btn ms-checkout-auth-btn-primary ms-checkout-auth-btn-outline" id="msCheckoutAuthSignupBtn" data-checkout-auth="signup">Create account</a>
+            <button type="button" class="ms-checkout-auth-btn ms-checkout-auth-btn-guest" onclick="continueGuestCheckoutFromAuthModal()">Continue as Guest</button>
+            <button type="button" class="ms-checkout-auth-btn ms-checkout-auth-btn-cancel" onclick="closeCheckoutAuthModal(true)">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <!-- Place Order Confirmation Modal (Reference Confirm Dialog) -->
 <div class="ms-confirm-modal-overlay" id="msConfirmOrderModal" hidden aria-hidden="true">
     <div class="ms-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="msConfirmOrderTitle">
@@ -4399,6 +4681,30 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     <input type="hidden" name="order_id" value="">
     <input type="hidden" name="order_number" value="">
 </form>
+
+<div class="sf-variant-modal" id="sfVariantModal" aria-hidden="true">
+    <div class="sf-variant-modal-box" role="dialog" aria-modal="true" aria-labelledby="sfVariantModalTitle">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <img id="sfModalVariantImg" src="" alt="Variant" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:1px solid #e2e8f0;display:none;">
+            <div>
+                <div class="sf-variant-modal-title" id="sfVariantModalTitle" style="margin-bottom:0;">Choose size and colour</div>
+                <div class="sf-variant-meta" id="sfModalVariantMeta" style="margin-top:2px;">Select a size and colour.</div>
+            </div>
+        </div>
+        <div class="sf-variant-row" id="sfModalSizeRow" style="display:none;">
+            <span class="sf-variant-label">Size</span>
+            <div class="sf-variant-chips" id="sfModalSizes"></div>
+        </div>
+        <div class="sf-variant-row" id="sfModalColourRow" style="display:none;">
+            <span class="sf-variant-label">Colour</span>
+            <div class="sf-variant-chips" id="sfModalColours"></div>
+        </div>
+        <div class="sf-variant-modal-actions">
+            <button type="button" class="ms-card-add-btn" style="width:auto;padding:0 14px;" onclick="sfCloseVariantModal()">Cancel</button>
+            <button type="button" class="ms-card-buy-btn" id="sfModalConfirmBtn" style="width:auto;margin-top:0;padding:0 16px;" onclick="sfConfirmVariantModal()">Continue</button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -4767,7 +5073,7 @@ function sfCardSlide(btn, dir) {
     }
 }
 
-var pdpMedia = <?= !empty($pdpMedia) ? json_encode($pdpMedia) : '[]' ?>;
+var pdpMedia = <?= !empty($pdpMedia ?? null) ? json_encode($pdpMedia) : '[]' ?>;
 var pdpCurrentIdx = 0;
 
 function sfPdpSlide(dir) {
@@ -4813,12 +5119,329 @@ function sfPdpSetImage(idx) {
     sfPdpSetMedia(idx);
 }
 
+var sfPendingVariantForm = null;
+var sfPendingVariantCallback = null;
+var sfPendingVariantList = [];
+
+function sfGetFormVariants(form) {
+    if (!form) return [];
+    var raw = form.getAttribute('data-variants');
+    if (!raw) return [];
+    try { return JSON.parse(raw) || []; } catch (e) { return []; }
+}
+
+function sfFormNeedsVariantPick(form) {
+    var list = sfGetFormVariants(form);
+    if (!list.length) return false;
+    var inp = form.querySelector('[name="variant_id"]');
+    var vid = inp ? parseInt(inp.value || '0', 10) : 0;
+    return !vid;
+}
+
+function sfUniqueVariantValues(list, key) {
+    var out = [];
+    list.forEach(function (row) {
+        var val = String(row[key] || '').trim();
+        if (val && out.indexOf(val) === -1) out.push(val);
+    });
+    return out;
+}
+
+function sfFindVariantMatch(list, size, colour) {
+    var sizes = sfUniqueVariantValues(list, 'size');
+    var colours = sfUniqueVariantValues(list, 'colour');
+    if (sizes.length && !size) return null;
+    if (colours.length && !colour) return null;
+    return list.find(function (row) {
+        var sizeOk = !sizes.length || row.size === size;
+        var colourOk = !colours.length || row.colour === colour;
+        return sizeOk && colourOk;
+    }) || null;
+}
+
+function sfPaintVariantChips(container, values, attrName) {
+    if (!container) return;
+    container.innerHTML = '';
+    values.forEach(function (value) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sf-variant-chip';
+        btn.setAttribute(attrName, value);
+        btn.textContent = value;
+        container.appendChild(btn);
+    });
+}
+
+function sfRefreshVariantModal() {
+    var sizes = sfUniqueVariantValues(sfPendingVariantList, 'size');
+    var colours = sfUniqueVariantValues(sfPendingVariantList, 'colour');
+    var sizeChip = document.querySelector('#sfModalSizes .sf-variant-chip.on');
+    var colourChip = document.querySelector('#sfModalColours .sf-variant-chip.on');
+    var selectedSize = sizeChip ? sizeChip.getAttribute('data-size') : '';
+    var selectedColour = colourChip ? colourChip.getAttribute('data-colour') : '';
+    document.querySelectorAll('#sfModalSizes .sf-variant-chip').forEach(function (chip) {
+        var size = chip.getAttribute('data-size');
+        var ok = sfPendingVariantList.some(function (row) { return row.size === size && row.stock > 0; });
+        chip.disabled = !ok;
+        chip.classList.toggle('off', !ok);
+        if (!ok) chip.classList.remove('on');
+    });
+    document.querySelectorAll('#sfModalColours .sf-variant-chip').forEach(function (chip) {
+        var colour = chip.getAttribute('data-colour');
+        var ok = sfPendingVariantList.some(function (row) {
+            return (!sizes.length || row.size === selectedSize) && row.colour === colour && row.stock > 0;
+        });
+        chip.disabled = !ok;
+        chip.classList.toggle('off', !ok);
+        if (!ok) chip.classList.remove('on');
+    });
+    var chosen = sfFindVariantMatch(sfPendingVariantList, selectedSize, selectedColour);
+    var meta = document.getElementById('sfModalVariantMeta');
+    var confirmBtn = document.getElementById('sfModalConfirmBtn');
+    var modalImg = document.getElementById('sfModalVariantImg');
+
+    if (modalImg) {
+        if (chosen && chosen.image && chosen.image.trim() !== '') {
+            modalImg.src = chosen.image;
+            modalImg.style.display = 'block';
+        } else {
+            modalImg.style.display = 'none';
+        }
+    }
+
+    if (!chosen) {
+        if (meta) meta.textContent = 'Select a size and colour.';
+        if (confirmBtn) confirmBtn.disabled = true;
+        return null;
+    }
+    if (meta) meta.textContent = '₹' + (parseFloat(chosen.price) || 0).toFixed(2) + ' · ' + chosen.stock + ' in stock';
+    if (confirmBtn) confirmBtn.disabled = chosen.stock <= 0;
+    return chosen;
+}
+
+function sfOpenVariantModal(form, onDone) {
+    sfPendingVariantForm = form;
+    sfPendingVariantCallback = onDone;
+    sfPendingVariantList = sfGetFormVariants(form);
+    var sizes = sfUniqueVariantValues(sfPendingVariantList, 'size');
+    var colours = sfUniqueVariantValues(sfPendingVariantList, 'colour');
+    document.getElementById('sfModalSizeRow').style.display = sizes.length ? 'block' : 'none';
+    document.getElementById('sfModalColourRow').style.display = colours.length ? 'block' : 'none';
+    sfPaintVariantChips(document.getElementById('sfModalSizes'), sizes, 'data-size');
+    sfPaintVariantChips(document.getElementById('sfModalColours'), colours, 'data-colour');
+    var first = sfPendingVariantList.find(function (row) { return row.stock > 0; });
+    if (first && first.size) {
+        var sc = document.querySelector('#sfModalSizes [data-size="' + CSS.escape(first.size) + '"]');
+        if (sc) sc.classList.add('on');
+    }
+    sfRefreshVariantModal();
+    if (first && first.colour) {
+        var cc = document.querySelector('#sfModalColours [data-colour="' + CSS.escape(first.colour) + '"]');
+        if (cc && !cc.disabled) cc.classList.add('on');
+    }
+    sfRefreshVariantModal();
+    document.getElementById('sfVariantModal').classList.add('open');
+}
+
+function sfCloseVariantModal() {
+    var modal = document.getElementById('sfVariantModal');
+    if (modal) modal.classList.remove('open');
+    sfPendingVariantForm = null;
+    sfPendingVariantCallback = null;
+    sfPendingVariantList = [];
+}
+
+function sfConfirmVariantModal() {
+    var chosen = sfRefreshVariantModal();
+    if (!sfPendingVariantForm || !chosen) {
+        alert('Choose a size and colour before continuing.');
+        return;
+    }
+    var inp = sfPendingVariantForm.querySelector('[name="variant_id"]');
+    if (inp) inp.value = String(chosen.id);
+    var cb = sfPendingVariantCallback;
+    var form = sfPendingVariantForm;
+    sfCloseVariantModal();
+    if (typeof cb === 'function') cb(form);
+}
+
+['sfModalSizes', 'sfModalColours'].forEach(function (id) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    box.addEventListener('click', function (e) {
+        var chip = e.target.closest('.sf-variant-chip');
+        if (!chip || chip.disabled) return;
+        box.querySelectorAll('.sf-variant-chip').forEach(function (el) { el.classList.remove('on'); });
+        chip.classList.add('on');
+        sfRefreshVariantModal();
+    });
+});
+
+function sfInitStorePdpVariants(variantList, parentProductInfo) {
+    if (!variantList || !variantList.length) return;
+    var sizesBox = document.getElementById('sfPdpSizes');
+    var coloursBox = document.getElementById('sfPdpColours');
+    var form = document.querySelector('.sf-store-cart-form[data-variants]');
+    if (!sizesBox || !coloursBox || !form) return;
+
+    var parentImgEl = document.getElementById('pdpMainImg');
+    var parentDefaultImg = parentImgEl ? (parentImgEl.getAttribute('src') || '') : '';
+    var parentDefaultPrice = parentProductInfo && parentProductInfo.price ? parentProductInfo.price : '';
+    var parentDefaultStock = parentProductInfo && parentProductInfo.stock !== undefined ? parentProductInfo.stock : 0;
+
+    var sizes = sfUniqueVariantValues(variantList, 'size');
+    var rawColours = sfUniqueVariantValues(variantList, 'colour');
+    var colours = ['Default'].concat(rawColours.filter(function(c){ return c.toLowerCase() !== 'default'; }));
+
+    document.getElementById('sfPdpSizeRow').style.display = sizes.length ? 'block' : 'none';
+    document.getElementById('sfPdpColourRow').style.display = 'block';
+    sfPaintVariantChips(sizesBox, sizes, 'data-size');
+    sfPaintVariantChips(coloursBox, colours, 'data-colour');
+
+    function refreshPdpVariant(isUserClick) {
+        var sizeChip = sizesBox ? sizesBox.querySelector('.sf-variant-chip.on') : null;
+        var colourChip = coloursBox ? coloursBox.querySelector('.sf-variant-chip.on') : null;
+        var selectedSize = sizeChip ? sizeChip.getAttribute('data-size') : '';
+        var selectedColour = colourChip ? colourChip.getAttribute('data-colour') : '';
+        var meta = document.getElementById('sfPdpVariantMeta');
+        var vidInput = document.getElementById('sfPdpVariantId');
+        var qtyInput = document.getElementById('pdpQty');
+        var priceEl = document.querySelector('.ms-pdp-price');
+        var mainImg = document.getElementById('pdpMainImg');
+        var mainVid = document.getElementById('pdpMainVideo');
+
+        // Check if "Default" is selected
+        if (selectedColour === 'Default' || (!selectedColour && !selectedSize)) {
+            var defaultVariant = variantList.find(function(r){ return r.stock > 0; }) || variantList[0];
+            if (vidInput) vidInput.value = defaultVariant ? String(defaultVariant.id) : '';
+            var totalStock = 0;
+            variantList.forEach(function(r){ totalStock += (parseInt(r.stock, 10) || 0); });
+            if (totalStock === 0 && parentDefaultStock > 0) totalStock = parentDefaultStock;
+
+            if (meta) meta.textContent = totalStock > 0 ? (totalStock + ' in stock') : 'Out of stock';
+            if (priceEl && parentDefaultPrice) {
+                priceEl.textContent = '₹' + parseFloat(parentDefaultPrice).toFixed(2);
+            }
+            if (qtyInput) {
+                qtyInput.setAttribute('max', String(Math.max(1, totalStock || 1)));
+                if (totalStock <= 0) qtyInput.setAttribute('disabled', 'disabled');
+                else qtyInput.removeAttribute('disabled');
+            }
+
+            // Restore parent product image
+            if (parentDefaultImg && parentDefaultImg.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = parentDefaultImg;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    pdpCurrentIdx = 0;
+                    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                    for (var ti = 0; ti < thumbs.length; ti++) {
+                        thumbs[ti].classList.toggle('is-active', ti === 0);
+                    }
+                }
+            }
+            return;
+        }
+
+        var chosen = sfFindVariantMatch(variantList, selectedSize, selectedColour);
+        if (!chosen) {
+            if (meta) meta.textContent = 'Select a size and colour.';
+            if (vidInput) vidInput.value = '';
+            return;
+        }
+        if (vidInput) vidInput.value = String(chosen.id);
+        if (meta) meta.textContent = (chosen.stock > 0 ? (chosen.stock + ' in stock') : 'Out of stock for this size and colour');
+        if (priceEl && parseFloat(chosen.price) > 0) {
+            priceEl.textContent = '₹' + parseFloat(chosen.price).toFixed(2);
+        }
+        if (qtyInput) {
+            qtyInput.setAttribute('max', String(Math.max(1, chosen.stock || 1)));
+            if (chosen.stock <= 0) qtyInput.setAttribute('disabled', 'disabled');
+            else qtyInput.removeAttribute('disabled');
+        }
+
+        // Switch main image to chosen variant image on click
+        if (isUserClick) {
+            if (chosen.image && chosen.image.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = chosen.image;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    var foundIdx = -1;
+                    for (var mi = 0; mi < pdpMedia.length; mi++) {
+                        if (pdpMedia[mi].url === chosen.image || (pdpMedia[mi].variant_id && pdpMedia[mi].variant_id === chosen.id)) {
+                            foundIdx = mi;
+                            break;
+                        }
+                    }
+                    if (foundIdx >= 0) {
+                        pdpCurrentIdx = foundIdx;
+                        var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                        for (var ti = 0; ti < thumbs.length; ti++) {
+                            thumbs[ti].classList.toggle('is-active', ti === foundIdx);
+                        }
+                    }
+                }
+            } else if (parentDefaultImg && parentDefaultImg.trim() !== '') {
+                if (mainVid) {
+                    mainVid.pause();
+                    mainVid.style.display = 'none';
+                }
+                if (mainImg) {
+                    mainImg.style.display = 'block';
+                    mainImg.src = parentDefaultImg;
+                }
+                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
+                    pdpCurrentIdx = 0;
+                    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
+                    for (var ti = 0; ti < thumbs.length; ti++) {
+                        thumbs[ti].classList.toggle('is-active', ti === 0);
+                    }
+                }
+            }
+        }
+    }
+
+    [sizesBox, coloursBox].forEach(function (box) {
+        if (!box) return;
+        box.addEventListener('click', function (e) {
+            var chip = e.target.closest('.sf-variant-chip');
+            if (!chip) return;
+            box.querySelectorAll('.sf-variant-chip').forEach(function (el) { el.classList.remove('on'); });
+            chip.classList.add('on');
+            refreshPdpVariant(true);
+        });
+    });
+
+    // Default to 'Default' chip on load
+    var defChip = coloursBox.querySelector('[data-colour="Default"]');
+    if (defChip) {
+        defChip.classList.add('on');
+    }
+    refreshPdpVariant(false);
+}
+
 function handleAjaxAddToCart(ev, form, isBuyNow) {
     if (isBuyNow) {
         handleBuyNow(ev, form);
         return;
     }
     if (ev) ev.preventDefault();
+    if (sfFormNeedsVariantPick(form)) {
+        sfOpenVariantModal(form, function (readyForm) { handleAjaxAddToCart(null, readyForm, false); });
+        return;
+    }
     var btn = form.querySelector('.ms-card-add-btn, .ms-pdp-add-btn');
     if (!btn) btn = form.querySelector('button[type="submit"]');
     var origHtml = btn ? btn.innerHTML : '';
@@ -4873,6 +5496,10 @@ function handleAjaxAddToCart(ev, form, isBuyNow) {
 
 function handleBuyNow(ev, form) {
     if (ev) ev.preventDefault();
+    if (sfFormNeedsVariantPick(form)) {
+        sfOpenVariantModal(form, function (readyForm) { handleBuyNow(null, readyForm); });
+        return;
+    }
     var btn = form.querySelector('.ms-card-buy-btn, .ms-pdp-buy-btn');
     if (!btn) btn = form.querySelector('button[type="button"]');
     var origHtml = btn ? btn.innerHTML : '';
@@ -4970,12 +5597,348 @@ function goToCartMainView() {
 }
 
 var msCheckoutFormPending = null;
+var msStoreCheckout = {
+    razorpayActive: <?= !empty($storeRazorpayActive) ? 'true' : 'false' ?>,
+    orderAmount: <?= json_encode((float) ($osTotal ?? ($drawerCart['total'] ?? 0))) ?>,
+    csrfToken: <?= json_encode(csrf_token()) ?>,
+    postUrl: <?= json_encode(isset($drawerCheckoutActionUrl) ? $drawerCheckoutActionUrl : public_store_url($storeBiz ?? null, $page ?? 'home', $_GET ?? [])) ?>,
+    currency: <?= json_encode($currency ?? '₹') ?>,
+    checkoutBuyNow: <?= !empty($osBuyNow) ? 'true' : 'false' ?>,
+    customerLoggedIn: <?= !empty($storeCustomerLoggedIn) ? 'true' : 'false' ?>,
+    signinUrl: <?= json_encode($drawerSigninUrl ?? ($storeCheckoutSigninUrl ?? '')) ?>,
+    signupUrl: <?= json_encode($drawerSignupUrl ?? ($storeCheckoutSignupUrl ?? '')) ?>,
+    guestMode: false
+};
+
+function storeCheckoutGuestField(scope) {
+    if (scope === 'page') return document.getElementById('msPageCheckoutAsGuest');
+    return document.getElementById('msDrawerCheckoutAsGuest');
+}
+
+function isGuestCheckoutForm(form) {
+    var h = form ? form.querySelector('[name="checkout_as_guest"]') : null;
+    return !!(h && String(h.value) === '1');
+}
+
+function checkoutFormScope(form) {
+    if (!form) return 'drawer';
+    return form.id === 'msCheckoutForm' ? 'page' : 'drawer';
+}
+
+function storeCheckoutPhoneForScope(scope) {
+    var embedded = <?= json_encode($locPhone ?? '') ?>;
+    if (embedded && String(embedded).trim() !== '') {
+        return String(embedded).trim();
+    }
+    var form = scope === 'page' ? document.getElementById('msCheckoutForm') : document.getElementById('msDrawerCheckoutForm');
+    var ph = form ? form.querySelector('[name="phone"]') : null;
+    return ph ? String(ph.value || '').trim() : '';
+}
+
+function enableStoreGuestCheckout(scope) {
+    var phone = storeCheckoutPhoneForScope(scope);
+    if (!phone) {
+        alert('Please add your delivery address with mobile number first, then continue as guest.');
+        closeCheckoutAuthModal(false);
+        if (scope === 'drawer' || scope === 'page') {
+            openLocationDrawerFromCheckout(scope === 'drawer' && msStoreCheckout.checkoutBuyNow ? 'buynow' : 'cart');
+        }
+        return false;
+    }
+    msStoreCheckout.guestMode = true;
+    var hid = storeCheckoutGuestField(scope);
+    if (hid) hid.value = '1';
+    return true;
+}
+
+function navigateCheckoutAuthUrl(url) {
+    if (!url || String(url).trim() === '' || String(url).trim() === '#') {
+        return;
+    }
+    window.location.assign(url);
+}
+
+function openCheckoutAuthModal() {
+    var modal = document.getElementById('msCheckoutAuthModal');
+    if (!modal) return;
+    var signinBtn = document.getElementById('msCheckoutAuthSigninBtn');
+    var signupBtn = document.getElementById('msCheckoutAuthSignupBtn');
+    var signinUrl = msStoreCheckout.signinUrl || (signinBtn ? signinBtn.getAttribute('href') : '');
+    var signupUrl = msStoreCheckout.signupUrl || (signupBtn ? signupBtn.getAttribute('href') : '');
+    if (signinBtn && signinUrl) {
+        signinBtn.setAttribute('href', signinUrl);
+        signinBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateCheckoutAuthUrl(signinUrl);
+        };
+    }
+    if (signupBtn && signupUrl) {
+        signupBtn.setAttribute('href', signupUrl);
+        signupBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            navigateCheckoutAuthUrl(signupUrl);
+        };
+    }
+    modal.classList.add('is-open');
+    modal.hidden = false;
+    modal.removeAttribute('hidden');
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeCheckoutAuthModal(clearPending) {
+    var modal = document.getElementById('msCheckoutAuthModal');
+    if (modal) {
+        modal.classList.remove('is-open');
+        modal.hidden = true;
+        modal.setAttribute('hidden', '');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+    if (clearPending) {
+        msCheckoutFormPending = null;
+    }
+}
+
+function continueGuestCheckoutFromAuthModal() {
+    var form = msCheckoutFormPending;
+    if (!form) return;
+    var scope = checkoutFormScope(form);
+    if (!enableStoreGuestCheckout(scope)) {
+        return;
+    }
+    closeCheckoutAuthModal(false);
+    openConfirmOrderModal();
+}
+
+function sfFormatMoney(amount) {
+    var sym = msStoreCheckout.currency || '₹';
+    return sym + Number(amount || 0).toFixed(2);
+}
+
+function sfApplyStoreTotalsToUi(totals) {
+    if (!totals) return;
+    var sub = document.getElementById('msOsSubtotalText');
+    var tax = document.getElementById('msOsTaxText');
+    var total = document.getElementById('msOsTotalText');
+    if (sub) sub.textContent = sfFormatMoney(totals.subtotal);
+    if (tax) tax.textContent = sfFormatMoney(totals.tax);
+    if (total) total.textContent = sfFormatMoney(totals.total);
+    msStoreCheckout.orderAmount = Number(totals.total) || 0;
+
+    var promoRow = document.getElementById('msOsPromoRow');
+    var promoText = document.getElementById('msOsPromoText');
+    if (promoRow && promoText) {
+        if (totals.promo_discount > 0) {
+            promoRow.style.display = '';
+            promoText.textContent = '− ' + sfFormatMoney(totals.promo_discount);
+        } else {
+            promoRow.style.display = 'none';
+        }
+    }
+    var couponRow = document.getElementById('msOsCouponRow');
+    var couponText = document.getElementById('msOsCouponText');
+    if (couponRow && couponText) {
+        if (totals.coupon_discount > 0) {
+            couponRow.style.display = '';
+            couponText.textContent = '− ' + sfFormatMoney(totals.coupon_discount);
+        } else {
+            couponRow.style.display = 'none';
+        }
+    }
+    var hidId = document.getElementById('msDrawerCouponId');
+    var hidCode = document.getElementById('msDrawerCouponCode');
+    if (hidId) hidId.value = totals.applied_coupon_id ? String(totals.applied_coupon_id) : '';
+    if (hidCode) hidCode.value = totals.applied_coupon_code || '';
+
+    var saveBadge = document.getElementById('msOsCheckoutSaveBadge');
+    var saveAmt = document.getElementById('msOsCheckoutSaveAmount');
+    var checkoutSave = (Number(totals.promo_discount) || 0) + (Number(totals.coupon_discount) || 0);
+    if (saveBadge && saveAmt) {
+        if (checkoutSave > 0) {
+            saveBadge.style.display = '';
+            saveAmt.textContent = sfFormatMoney(checkoutSave);
+        } else {
+            saveBadge.style.display = 'none';
+        }
+    }
+}
+
+function applyStoreCouponCode() {
+    var input = document.getElementById('msStoreCouponCode');
+    var err = document.getElementById('msStoreCouponError');
+    var code = input ? input.value.trim() : '';
+    if (!code) {
+        if (err) { err.style.display = 'block'; err.textContent = 'Enter a coupon code.'; }
+        return;
+    }
+    var fd = new FormData();
+    fd.append('action', 'validate_store_coupon');
+    fd.append('csrf_token', msStoreCheckout.csrfToken);
+    fd.append('coupon_code', code);
+    if (msStoreCheckout.checkoutBuyNow) fd.append('checkout_mode', 'buynow');
+    var btn = document.getElementById('msStoreCouponApplyBtn');
+    if (btn) btn.disabled = true;
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) btn.disabled = false;
+            if (!data.valid) {
+                if (err) { err.style.display = 'block'; err.textContent = data.error || 'Invalid coupon.'; }
+                return;
+            }
+            if (err) err.style.display = 'none';
+            sfApplyStoreTotalsToUi(data.totals);
+            var applied = document.getElementById('msStoreCouponApplied');
+            var appliedCode = document.getElementById('msStoreCouponAppliedCode');
+            if (applied && appliedCode && data.code) {
+                applied.style.display = '';
+                appliedCode.textContent = data.code;
+            }
+        })
+        .catch(function () {
+            if (btn) btn.disabled = false;
+            if (err) { err.style.display = 'block'; err.textContent = 'Could not apply coupon. Try again.'; }
+        });
+}
+
+function removeStoreCouponCode() {
+    var fd = new FormData();
+    fd.append('action', 'remove_store_coupon');
+    fd.append('csrf_token', msStoreCheckout.csrfToken);
+    if (msStoreCheckout.checkoutBuyNow) fd.append('checkout_mode', 'buynow');
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            sfApplyStoreTotalsToUi(data.totals);
+            var input = document.getElementById('msStoreCouponCode');
+            if (input) input.value = '';
+            var applied = document.getElementById('msStoreCouponApplied');
+            if (applied) applied.style.display = 'none';
+            var err = document.getElementById('msStoreCouponError');
+            if (err) err.style.display = 'none';
+        });
+}
+
+function storefrontPaymentNeedsRazorpay(method) {
+    return ['upi', 'card', 'netbanking', 'razorpay'].indexOf(method) >= 0;
+}
+
+function storefrontRzpFieldIds(form) {
+    if (form && form.id === 'msCheckoutForm') {
+        return { order: 'msCheckoutRzpOrderId', payment: 'msCheckoutRzpPaymentId', signature: 'msCheckoutRzpSignature' };
+    }
+    return { order: 'msDrawerRzpOrderId', payment: 'msDrawerRzpPaymentId', signature: 'msDrawerRzpSignature' };
+}
+
+function storefrontRzpMethodConfig(methodKey) {
+    if (methodKey === 'upi') return { upi: true, card: false, netbanking: false, wallet: false };
+    if (methodKey === 'card') return { upi: false, card: true, netbanking: false, wallet: false };
+    if (methodKey === 'netbanking') return { upi: false, card: false, netbanking: true, wallet: false };
+    return { upi: true, card: true, netbanking: true, wallet: true };
+}
+
+function startStoreRazorpayCheckout(methodKey) {
+    if (!msCheckoutFormPending || !msStoreCheckout.razorpayActive) {
+        return;
+    }
+    var btn = document.getElementById('msConfirmProceedBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Opening payment...';
+    }
+    var amount = msStoreCheckout.orderAmount;
+    if (!amount || amount < 1) {
+        alert('Order total must be at least ₹1 to pay online.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Place Order'; }
+        return;
+    }
+    var rzpForm = new FormData();
+    rzpForm.append('csrf_token', msStoreCheckout.csrfToken);
+    rzpForm.append('action', 'create_razorpay_order');
+    rzpForm.append('amount', String(Number(amount).toFixed(2)));
+    fetch(msStoreCheckout.postUrl, { method: 'POST', body: rzpForm })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Place Order';
+            }
+            if (!data.success) {
+                alert(data.error || 'Could not start Razorpay checkout.');
+                return;
+            }
+            if (typeof Razorpay === 'undefined') {
+                alert('Payment gateway failed to load. Please refresh and try again.');
+                return;
+            }
+            var fieldIds = storefrontRzpFieldIds(msCheckoutFormPending);
+            var prefill = {};
+            var phoneInput = msCheckoutFormPending.querySelector('input[name="phone"]');
+            var emailInput = msCheckoutFormPending.querySelector('input[name="email"]');
+            var nameInput = msCheckoutFormPending.querySelector('input[name="name"]');
+            if (nameInput && nameInput.value) prefill.name = nameInput.value;
+            if (emailInput && emailInput.value) prefill.email = emailInput.value;
+            if (phoneInput && phoneInput.value) prefill.contact = phoneInput.value.replace(/\D/g, '').slice(-10);
+            var rzp = new Razorpay({
+                key: data.key,
+                amount: data.amount,
+                currency: data.currency || 'INR',
+                name: data.name || 'Online Store',
+                description: 'Store order payment',
+                order_id: data.order_id,
+                prefill: prefill,
+                method: storefrontRzpMethodConfig(methodKey),
+                handler: function (resp) {
+                    var o = document.getElementById(fieldIds.order);
+                    var p = document.getElementById(fieldIds.payment);
+                    var s = document.getElementById(fieldIds.signature);
+                    if (o) o.value = resp.razorpay_order_id || data.order_id;
+                    if (p) p.value = resp.razorpay_payment_id || '';
+                    if (s) s.value = resp.razorpay_signature || '';
+                    msCheckoutFormPending.dataset.confirmed = '1';
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Placing order...';
+                    }
+                    msCheckoutFormPending.submit();
+                },
+                modal: {
+                    ondismiss: function () {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.textContent = 'Confirm & Place Order';
+                        }
+                    }
+                }
+            });
+            rzp.open();
+        })
+        .catch(function (err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Place Order';
+            }
+            alert('Payment error: ' + err);
+        });
+}
+
 function handleCheckoutSubmit(e, form) {
     if (form.dataset.confirmed === '1') {
         return true;
     }
     if (e) e.preventDefault();
     msCheckoutFormPending = form;
+    if (!msStoreCheckout.customerLoggedIn && !isGuestCheckoutForm(form)) {
+        msStoreCheckout.guestMode = false;
+        var guestField = form.querySelector('[name="checkout_as_guest"]');
+        if (guestField) guestField.value = '0';
+        openCheckoutAuthModal();
+        return false;
+    }
+    msStoreCheckout.orderAmount = msStoreCheckout.orderAmount || 0;
     openConfirmOrderModal();
     return false;
 }
@@ -4991,7 +5954,7 @@ function openConfirmOrderModal() {
     }
 }
 
-function closeConfirmOrderModal() {
+function closeConfirmOrderModal(clearPending) {
     var modal = document.getElementById('msConfirmOrderModal');
     if (modal) {
         modal.classList.remove('is-open');
@@ -5000,19 +5963,48 @@ function closeConfirmOrderModal() {
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
     }
-    msCheckoutFormPending = null;
+    if (clearPending !== false) {
+        msCheckoutFormPending = null;
+    }
 }
 
 function proceedConfirmOrder() {
-    if (msCheckoutFormPending) {
-        msCheckoutFormPending.dataset.confirmed = '1';
-        var btn = document.getElementById('msConfirmProceedBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Placing order...';
-        }
-        msCheckoutFormPending.submit();
+    if (!msCheckoutFormPending) {
+        return;
     }
+    if (!msStoreCheckout.customerLoggedIn && !isGuestCheckoutForm(msCheckoutFormPending)) {
+        openCheckoutAuthModal();
+        return;
+    }
+    var pmEl = msCheckoutFormPending.querySelector('[name="payment_method"]');
+    var method = pmEl ? pmEl.value : 'cod';
+    var fieldIds = storefrontRzpFieldIds(msCheckoutFormPending);
+    var paidAlready = document.getElementById(fieldIds.payment);
+    if (msStoreCheckout.razorpayActive && storefrontPaymentNeedsRazorpay(method)) {
+        if (paidAlready && paidAlready.value) {
+            var formPaid = msCheckoutFormPending;
+            formPaid.dataset.confirmed = '1';
+            var btnPaid = document.getElementById('msConfirmProceedBtn');
+            if (btnPaid) {
+                btnPaid.disabled = true;
+                btnPaid.textContent = 'Placing order...';
+            }
+            closeConfirmOrderModal(false);
+            formPaid.submit();
+            return;
+        }
+        startStoreRazorpayCheckout(method);
+        return;
+    }
+    var formToSubmit = msCheckoutFormPending;
+    formToSubmit.dataset.confirmed = '1';
+    var btn = document.getElementById('msConfirmProceedBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Placing order...';
+    }
+    closeConfirmOrderModal(false);
+    formToSubmit.submit();
 }
 
 var msCancelOrderIdPending = null;
@@ -5260,6 +6252,40 @@ document.addEventListener('DOMContentLoaded', function () {
     }, 150);
 });
 <?php endif; ?>
+<?php if (!empty($isNewOrder) && !empty($orderId) && !empty($custPhone)): ?>
+(function sendOrderInvoiceWhatsAppAsync() {
+    var statusEl = document.getElementById('msWaInvoiceStatus');
+    var body = new FormData();
+    body.append('csrf_token', (window.msStoreCheckout && msStoreCheckout.csrfToken) ? msStoreCheckout.csrfToken : <?= json_encode(csrf_token()) ?>);
+    body.append('action', 'send_order_invoice_whatsapp');
+    body.append('order_id', String(<?= (int) $orderId ?>));
+    var postUrl = (window.msStoreCheckout && msStoreCheckout.postUrl)
+        ? msStoreCheckout.postUrl
+        : <?= json_encode(public_store_url($storeBiz, 'order', ['id' => (string) ($orderNum ?? $orderId)])) ?>;
+    fetch(postUrl, { method: 'POST', body: body, credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!statusEl) return;
+            if (data && data.success) {
+                var phone = data.phone ? (' ' + data.phone) : '';
+                statusEl.textContent = ' Invoice PDF sent to WhatsApp' + phone + '.';
+            } else if (data && data.skipped) {
+                statusEl.textContent = '';
+            } else {
+                var err = (data && data.error) ? (': ' + data.error) : '';
+                statusEl.textContent = ' We could not send the invoice PDF on WhatsApp' + err + '. Use View / Print Invoice below.';
+            }
+        })
+        .catch(function () {
+            if (statusEl) {
+                statusEl.textContent = ' Invoice generated. WhatsApp send may still be in progress — check your chat shortly.';
+            }
+        });
+})();
+<?php endif; ?>
 </script>
+<?php if (!empty($storeRazorpayActive)): ?>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<?php endif; ?>
 </body>
 </html>

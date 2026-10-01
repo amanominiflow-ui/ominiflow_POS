@@ -12,6 +12,8 @@ require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/payment_integrations_db.php';
+require_once __DIR__ . '/includes/razorpay_oauth.php';
+require_once __DIR__ . '/includes/storefront_db.php';
 
 require_auth();
 
@@ -29,8 +31,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = $_POST['action'] ?? '';
 
+    if ($action === 'connect_razorpay_merchant') {
+        $res = razorpay_connect_merchant_keys([
+            'api_key' => $_POST['api_key'] ?? '',
+            'api_secret' => $_POST['api_secret'] ?? '',
+            'webhook_secret' => $_POST['webhook_secret'] ?? '',
+            'enable_in_pos' => isset($_POST['enable_in_pos']),
+            'enable_in_store' => isset($_POST['enable_in_store']),
+        ]);
+        if (!empty($res['success'])) {
+            set_flash('success', 'Razorpay connected successfully! Complete the webhook steps to sync payments.');
+            redirect(asset('payment-integrations.php') . '?razorpay_webhook=1');
+        }
+        set_flash('error', $res['error'] ?? 'Could not connect Razorpay.');
+        redirect(asset('payment-integrations.php') . '?razorpay_connect=1');
+    }
+
     if ($action === 'save_gateway') {
         $gatewayCode = trim($_POST['gateway_code'] ?? '');
+        if ($gatewayCode === 'razorpay') {
+            redirect(asset('payment-integrations.php') . '?razorpay_connect=1');
+        }
         $apiKey = trim($_POST['api_key'] ?? '');
         $apiSecret = trim($_POST['api_secret'] ?? '');
         $merchantId = trim($_POST['merchant_id'] ?? '');
@@ -67,6 +88,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(APP_URL . '/payment-integrations.php');
     }
 
+    if ($action === 'start_razorpay_oauth') {
+        if (!razorpay_oauth_configured()) {
+            set_flash('error', 'Razorpay Authorize is not configured on this server yet. Please ask your OminiFlow administrator to add Razorpay Partner OAuth (Client ID & Secret) — same as Zoho POS uses.');
+            redirect(asset('payment-integrations.php'));
+        }
+        $state = bin2hex(random_bytes(16));
+        $_SESSION['razorpay_oauth_state'] = $state;
+        redirect(razorpay_oauth_authorize_url($state));
+    }
+
     if ($action === 'disconnect_gateway') {
         $gatewayCode = trim($_POST['gateway_code'] ?? '');
         if ($gatewayCode) {
@@ -79,6 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch all payment gateways merged with DB configs
 $gateways = get_payment_integrations();
+$rzp = $gateways['razorpay'];
+$rzpWebhookUrl = !empty($rzp['is_configured']) ? razorpay_webhook_url_for($rzp) : '';
+$openRazorpayWebhook = !empty($_GET['razorpay_webhook']) && !empty($rzp['is_configured']);
+$openRazorpayConnect = !empty($_GET['razorpay_connect']) && empty($rzp['is_configured']);
+$isLocalHost = is_local_app_host();
+$razorpayOAuthReady = razorpay_oauth_configured();
+$rzpRec = $rzp['db_record'] ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -247,6 +285,143 @@ $gateways = get_payment_integrations();
         .pay-link-signup:hover {
             text-decoration: underline;
         }
+
+        .pay-section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 8px 0 14px;
+        }
+        .pay-active-pill {
+            display: inline-flex;
+            align-items: center;
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #a7f3d0;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .pay-icon-btn {
+            width: 36px;
+            height: 36px;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #64748b;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pay-icon-btn:hover { color: #ef4444; border-color: #fecaca; background: #fef2f2; }
+        .pay-note-list { margin: 12px 0 0; padding-left: 18px; color: #334155; font-size: 13.5px; line-height: 1.7; }
+        .pay-note-list a { color: #2563eb; text-decoration: none; font-weight: 600; }
+        .pay-note-list a:hover { text-decoration: underline; }
+        .webhook-steps { list-style: none; margin: 0; padding: 0; }
+        .webhook-steps li {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+            font-size: 14px;
+            color: #1e293b;
+            line-height: 1.5;
+        }
+        .webhook-num {
+            flex: 0 0 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #f1f5f9;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1px;
+        }
+        .webhook-url {
+            color: #db2777;
+            font-size: 13px;
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .webhook-modal-zoho .modal-box {
+            max-width: 680px;
+            border-radius: 4px;
+            box-shadow: 0 8px 30px rgba(15, 23, 42, 0.18);
+        }
+        .webhook-modal-zoho .modal-header {
+            padding: 18px 22px 14px;
+            border-bottom: 1px solid #eef2f7;
+        }
+        .webhook-modal-zoho .modal-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.45;
+            padding-right: 28px;
+        }
+        .webhook-modal-zoho .modal-body {
+            padding: 18px 22px 10px;
+        }
+        .webhook-modal-zoho .modal-footer {
+            padding: 14px 22px 18px;
+            border-top: 0;
+            background: #fff;
+            justify-content: flex-end;
+            gap: 16px;
+        }
+        .webhook-modal-zoho .webhook-footer-note {
+            flex: 1;
+            font-size: 13.5px;
+            color: #334155;
+            line-height: 1.55;
+            margin: 0;
+        }
+        .webhook-modal-zoho .webhook-url-box {
+            display: block;
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: #fdf2f8;
+            border-radius: 2px;
+            color: #db2777;
+            font-size: 13px;
+            line-height: 1.45;
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .webhook-copy-btn {
+            margin-top: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #2563eb;
+            background: none;
+            border: 0;
+            padding: 0;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .webhook-local-hint {
+            margin-top: 14px;
+            padding: 10px 12px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 6px;
+            font-size: 12.5px;
+            color: #92400e;
+            line-height: 1.5;
+        }
+        .pay-know-why {
+            color: #2563eb;
+            font-weight: 600;
+            text-decoration: none;
+            margin-left: 4px;
+        }
+        .pay-know-why:hover { text-decoration: underline; }
 
         /* Gateway Custom Brand Logos */
         .logo-razorpay {
@@ -491,7 +666,47 @@ $gateways = get_payment_integrations();
                 <!-- Gateways Cards List -->
                 <div class="pay-cards-list">
 
-                    <!-- 1. Razorpay -->
+                    <?php if (!empty($rzp['is_configured'])): ?>
+                    <h2 class="pay-section-title">Connected Payment Gateways</h2>
+                    <?php
+                    $rzpExtra = $rzp['extra_config_data'] ?? [];
+                    $rzpOAuthConnected = (($rzp['connect_mode'] ?? '') === 'oauth') || !empty($rzpExtra['access_token']);
+                    ?>
+                    <div class="pay-card">
+                        <div class="pay-card-top">
+                            <div class="pay-card-brand">
+                                <div class="logo-razorpay">
+                                    <span>Razorpay</span>
+                                </div>
+                                <span class="pay-active-pill">Active</span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <a href="<?= e($rzp['learn_more_url']) ?>" target="_blank" class="pay-btn-manage" style="text-decoration:none;">Learn More</a>
+                                <button type="button" class="pay-icon-btn" title="Disconnect Razorpay" onclick="disconnectGateway('razorpay')">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <?php
+                        $rzpKeyId = trim((string) ($rzpRec['api_key'] ?? ''));
+                        $rzpKeysInvalid = $rzpKeyId !== '' && !razorpay_is_valid_key_id($rzpKeyId);
+                        ?>
+                        <?php if ($rzpKeysInvalid): ?>
+                        <div class="saas-alert saas-alert-danger" style="margin-top:14px;">
+                            <span>Invalid Razorpay Key ID saved. Disconnect, then use <strong>Set Up Now</strong> with keys from Dashboard → Settings → API Keys.</span>
+                        </div>
+                        <?php endif; ?>
+                        <p style="margin:12px 0 0;font-size:13.5px;color:#334155;">Online Transaction Fees
+                            <a href="https://razorpay.com/pricing/" target="_blank" class="pay-link-learn" style="margin-left:8px;">View Razorpay's Transaction Fees</a>
+                        </p>
+                        <p style="margin:12px 0 6px;font-size:13.5px;font-weight:700;color:#0f172a;">Note:</p>
+                        <ul class="pay-note-list">
+                            <li><a href="javascript:void(0)" onclick="openWebhookModal()">Create a webhook</a> to sync payment details with OminiFlow POS. <a href="javascript:void(0)" class="pay-know-why" onclick="openWebhookModal()">Know Why ↗</a></li>
+                            <li>Razorpay also supports autocharge, and can be used for recurring payments. However, you will need to <a href="mailto:support@ominiflow.com" class="pay-know-why">contact us</a> to enable this.</li>
+                        </ul>
+                    </div>
+                    <h2 class="pay-section-title" style="margin-top:28px;">Set up Other Payment Gateways</h2>
+                    <?php else: ?>
                     <?php $rzp = $gateways['razorpay']; ?>
                     <div class="pay-card">
                         <div class="pay-card-top">
@@ -500,23 +715,25 @@ $gateways = get_payment_integrations();
                                     <span>Razorpay</span>
                                 </div>
                             </div>
-                            <?php if ($rzp['is_configured']): ?>
-                                <span class="pay-card-status-badge">
-                                    <svg width="8" height="8" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
-                                    Active (<?= strtoupper($rzp['environment']) ?>)
-                                </span>
-                            <?php endif; ?>
                         </div>
                         <p class="pay-card-desc"><?= e($rzp['description']) ?></p>
                         <div class="pay-card-actions">
-                            <?php if ($rzp['is_configured']): ?>
-                                <button type="button" class="pay-btn-manage" onclick="openGatewayModal('razorpay')">Manage Settings</button>
+                            <?php if ($razorpayOAuthReady): ?>
+                            <form method="POST" action="<?= asset('payment-integrations.php') ?>" style="display:inline;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="start_razorpay_oauth">
+                                <button type="submit" class="pay-btn-setup">Set Up Now</button>
+                            </form>
                             <?php else: ?>
-                                <button type="button" class="pay-btn-setup" onclick="openGatewayModal('razorpay')">Set Up Now</button>
+                            <button type="button" class="pay-btn-setup" onclick="openRazorpayConnectModal()">Set Up Now</button>
                             <?php endif; ?>
                             <a href="<?= e($rzp['learn_more_url']) ?>" target="_blank" class="pay-link-learn">Learn More</a>
                         </div>
+                        <?php if (!$razorpayOAuthReady): ?>
+                        <p style="margin-top:12px;font-size:12.5px;color:#64748b;line-height:1.5;">Use your keys from <a href="https://dashboard.razorpay.com/app/keys" target="_blank" rel="noopener">Razorpay Dashboard → API Keys</a>. Partner OAuth (Zoho-style login) activates automatically when enabled on OminiFlow servers.</p>
+                        <?php endif; ?>
                     </div>
+                    <?php endif; ?>
 
                     <!-- 2. Paytm PG (*Supports In-Store Payments) -->
                     <?php $paytm = $gateways['paytm']; ?>
@@ -704,14 +921,18 @@ $gateways = get_payment_integrations();
     </div>
 
     <!-- Modals for Each Payment Gateway Configuration -->
-    <?php foreach ($gateways as $code => $gw): 
+    <?php foreach ($gateways as $code => $gw):
+        if ($code === 'razorpay') {
+            continue;
+        }
         $rec = $gw['db_record'] ?? [];
-        $extra = $rec['extra_config_data'] ?? [];
+        $extra = $rec['extra_config_data'] ?? ($gw['extra_config_data'] ?? []);
+        $modalTitle = 'Configure ' . $gw['name'] . ' Integration';
     ?>
     <div class="modal-overlay" id="modal-gw-<?= $code ?>">
         <div class="modal-box">
             <div class="modal-header">
-                <div class="modal-title">Configure <?= e($gw['name']) ?> Integration</div>
+                <div class="modal-title"><?= e($modalTitle) ?></div>
                 <button type="button" class="modal-close-btn" onclick="closeGatewayModal('<?= $code ?>')">&times;</button>
             </div>
             <form method="POST" action="<?= asset('payment-integrations.php') ?>">
@@ -780,6 +1001,83 @@ $gateways = get_payment_integrations();
     </div>
     <?php endforeach; ?>
 
+    <div class="modal-overlay webhook-modal-zoho" id="modal-razorpay-connect">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div class="modal-title">Connect your Razorpay account to OminiFlow POS</div>
+                <button type="button" class="modal-close-btn" onclick="closeRazorpayConnectModal()">&times;</button>
+            </div>
+            <form method="POST" action="<?= asset('payment-integrations.php') ?>">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="connect_razorpay_merchant">
+                <div class="modal-body">
+                    <ol class="webhook-steps" style="margin-bottom:18px;">
+                        <li><span class="webhook-num">1</span><span>Log in to <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener">dashboard.razorpay.com</a> with your Razorpay account.</span></li>
+                        <li><span class="webhook-num">2</span><span>Go to <strong>Settings</strong> → <strong>API Keys</strong> (Test or Live mode).</span></li>
+                        <li><span class="webhook-num">3</span><span>Copy your <strong>Key ID</strong> (<code>rzp_test_...</code> or <code>rzp_live_...</code>) and <strong>Key Secret</strong>, then paste below.</span></li>
+                    </ol>
+                    <div style="margin-bottom:14px;">
+                        <label class="form-label required" style="display:block;margin-bottom:6px;font-weight:600;">Key ID</label>
+                        <input type="text" name="api_key" class="form-control" style="width:100%;font-family:monospace;" placeholder="rzp_test_xxxxxxxx" required autocomplete="off" value="<?= e((string)($rzpRec['api_key'] ?? '')) ?>">
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <label class="form-label required" style="display:block;margin-bottom:6px;font-weight:600;">Key Secret</label>
+                        <input type="password" name="api_secret" class="form-control" style="width:100%;" placeholder="Enter Key Secret from Razorpay dashboard" required autocomplete="new-password">
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <label class="form-label" style="display:block;margin-bottom:6px;font-weight:600;">Webhook Secret (optional)</label>
+                        <input type="text" name="webhook_secret" class="form-control" style="width:100%;" placeholder="Paste after you create webhook in Razorpay (for signature verify)">
+                    </div>
+                    <div style="padding-top:12px;border-top:1px dashed #e2e8f0;display:flex;flex-direction:column;gap:10px;">
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#1e293b;cursor:pointer;">
+                            <input type="checkbox" name="enable_in_pos" value="1" checked>
+                            <span>Enable this payment option on POS Register checkout</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#1e293b;cursor:pointer;">
+                            <input type="checkbox" name="enable_in_store" value="1" checked>
+                            <span>Enable for Online Store & Invoicing</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
+                    <button type="button" class="btn-secondary" onclick="closeRazorpayConnectModal()">Cancel</button>
+                    <button type="submit" class="pay-btn-setup">Save & Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay webhook-modal-zoho" id="modal-razorpay-webhook">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div class="modal-title">Steps to create a webhook for syncing payment details with OminiFlow POS</div>
+                <button type="button" class="modal-close-btn" onclick="closeWebhookModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <ol class="webhook-steps">
+                    <li><span class="webhook-num">1</span><span>Log in to your Razorpay dashboard at <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener">https://dashboard.razorpay.com</a></span></li>
+                    <li><span class="webhook-num">2</span><span>Go to <strong>Settings</strong> and select <strong>Webhooks</strong> tab.</span></li>
+                    <li><span class="webhook-num">3</span><span>Click <strong>Add New Webhook</strong>.</span></li>
+                    <li><span class="webhook-num">4</span><span>Copy and paste the following URL in the <strong>Webhook URL</strong> field in the pop-up.
+                        <span class="webhook-url-box" id="razorpayWebhookUrlText"><?= e($rzpWebhookUrl) ?></span>
+                        <button type="button" class="webhook-copy-btn" onclick="copyRazorpayWebhookUrl()">Copy URL</button>
+                    </span></li>
+                    <li><span class="webhook-num">5</span><span>Check the <strong>Payment Events</strong> option and check <strong>payment.authorized</strong> and <strong>payment.captured</strong> under it.</span></li>
+                    <li><span class="webhook-num">6</span><span>Click <strong>Create Webhook</strong>.</span></li>
+                </ol>
+                <?php if ($isLocalHost): ?>
+                <div class="webhook-local-hint">
+                    On localhost, Razorpay cannot reach your PC directly. Use this URL on production (<strong>pos.ominiflow.com</strong>) or expose local with a tunnel (e.g. ngrok) and paste that public URL in Razorpay instead.
+                </div>
+                <?php endif; ?>
+            </div>
+            <div class="modal-footer">
+                <p class="webhook-footer-note">Now, a webhook will be created and the payment details will be synced with OminiFlow POS. <a href="https://razorpay.com/docs/webhooks/" target="_blank" rel="noopener" class="pay-link-learn">Learn More</a></p>
+                <button type="button" class="pay-btn-setup" style="min-width:88px;" onclick="closeWebhookModal()">Okay</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Hidden Disconnect Form -->
     <form id="disconnectForm" method="POST" action="<?= asset('payment-integrations.php') ?>" style="display: none;">
         <?= csrf_field() ?>
@@ -808,6 +1106,42 @@ $gateways = get_payment_integrations();
                 document.getElementById('disconnectForm').submit();
             }
         }
+
+        function openRazorpayConnectModal() {
+            const modal = document.getElementById('modal-razorpay-connect');
+            if (modal) modal.classList.add('open');
+        }
+        function closeRazorpayConnectModal() {
+            const modal = document.getElementById('modal-razorpay-connect');
+            if (modal) modal.classList.remove('open');
+        }
+
+        function openWebhookModal() {
+            const modal = document.getElementById('modal-razorpay-webhook');
+            if (modal) modal.classList.add('open');
+        }
+        function closeWebhookModal() {
+            const modal = document.getElementById('modal-razorpay-webhook');
+            if (modal) modal.classList.remove('open');
+        }
+
+        function copyRazorpayWebhookUrl() {
+            const el = document.getElementById('razorpayWebhookUrlText');
+            const text = el ? el.textContent.trim() : '';
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(function () {
+                alert('Webhook URL copied to clipboard.');
+            }).catch(function () {
+                window.prompt('Copy this webhook URL:', text);
+            });
+        }
+
+        <?php if ($openRazorpayWebhook): ?>
+        document.addEventListener('DOMContentLoaded', openWebhookModal);
+        <?php endif; ?>
+        <?php if ($openRazorpayConnect): ?>
+        document.addEventListener('DOMContentLoaded', openRazorpayConnectModal);
+        <?php endif; ?>
 
         // Close on escape key
         document.addEventListener('keydown', function(e) {

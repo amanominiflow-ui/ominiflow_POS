@@ -791,6 +791,12 @@ $inventoryStats = get_inventory_stats();
                                                         </svg>
                                                     </a>
 
+                                                    <a href="<?= asset('barcode-print.php?product_id=' . $prod['id']) ?>" class="btn-action" title="Print barcode labels" style="color: var(--saas-slate-600);">
+                                                        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                                                        </svg>
+                                                    </a>
+
                                                     <form method="POST" action="<?= asset('products.php') ?>" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete product \'<?= e(addslashes($prod['name'])) ?>\'?');">
                                                         <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="delete">

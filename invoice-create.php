@@ -19,6 +19,11 @@ $userId = $user ? (int) $user['id'] : null;
 
 $db = get_db();
 
+// Fetch Business & Settings
+$bid = current_business_id();
+$storeSettings = get_store_settings($bid);
+$businessState = !empty($storeSettings['state']) ? $storeSettings['state'] : 'West Bengal';
+
 // Fetch Data for Dropdowns
 $customers = get_customers();
 $products = get_products();
@@ -52,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rawItems = json_decode($itemsJson, true) ?: [];
 
         $invoiceStatus = ($action === 'draft') ? 'draft' : 'paid';
-        $paymentMethod = ($invoiceStatus === 'paid') ? ($_POST['payment_method'] ?? 'cash') : 'credit';
+        $paymentMethod = ($invoiceStatus === 'paid') ? ($_POST['payment_method'] ?? 'cod') : 'credit';
 
         $invoiceData = [
             'customer_id' => $customerId,
@@ -452,8 +457,11 @@ $pageTitle = 'New Invoice';
         .z-calc-card {
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 16px;
             padding: 10px 0;
+            max-width: 520px;
+            margin-left: auto;
+            width: 100%;
         }
 
         .z-calc-row {
@@ -462,6 +470,7 @@ $pageTitle = 'New Invoice';
             justify-content: space-between;
             font-size: 13.5px;
             color: #1e293b;
+            gap: 16px;
         }
 
         .z-calc-row.grand-total-row {
@@ -480,33 +489,56 @@ $pageTitle = 'New Invoice';
         }
 
         .z-adj-tag {
-            border: 1px dashed #cbd5e1;
-            padding: 3px 8px;
+            border: 1px dashed #94a3b8;
+            padding: 5px 10px;
             border-radius: 4px;
-            font-size: 12px;
-            color: #475569;
-            background: #ffffff;
+            font-size: 12.5px;
+            color: #334155;
+            background: #f8fafc;
+            font-weight: 500;
         }
 
         /* Zoho Searchable Tax Popup */
         .z-tax-select-container {
             position: relative;
-            width: 170px;
+            width: 240px;
+            max-width: 100%;
         }
 
         .z-tax-trigger {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            height: 32px;
-            border: 1px solid #3b82f6;
+            height: 34px;
+            border: 1px solid #cbd5e1;
             border-radius: 4px;
             padding: 0 10px;
-            font-size: 13px;
+            font-size: 12.5px;
             background: #ffffff;
             cursor: pointer;
             user-select: none;
             transition: all 0.15s;
+            gap: 6px;
+            box-sizing: border-box;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .z-tax-trigger:hover,
+        .z-tax-trigger.open {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+        }
+
+        #taxSelectLabel {
+            display: inline-block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 195px;
+            font-size: 12.5px;
+            color: #0f172a;
+            line-height: 1.2;
         }
 
         .z-tax-popup {
@@ -514,11 +546,11 @@ $pageTitle = 'New Invoice';
             position: absolute;
             top: calc(100% + 4px);
             left: 0;
-            width: 250px;
+            width: 320px;
             background: #ffffff;
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            box-shadow: 0 6px 20px rgba(15, 23, 42, 0.15);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
             z-index: 1050;
             overflow: hidden;
         }
@@ -591,6 +623,91 @@ $pageTitle = 'New Invoice';
             font-size: 12.5px;
             color: #64748b;
             margin-top: 4px;
+        }
+
+        /* Zoho New Customer Modal Styles */
+        .z-cust-modal-box {
+            max-width: 820px;
+            width: 95%;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+        }
+
+        .z-cust-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #ffffff;
+        }
+
+        .z-cust-modal-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .z-cust-modal-body {
+            padding: 24px 28px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .z-cust-grid {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            row-gap: 16px;
+            column-gap: 20px;
+            align-items: center;
+        }
+
+        .z-cust-tabs-bar {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            border-bottom: 1px solid #e2e8f0;
+            margin-top: 28px;
+            margin-bottom: 24px;
+        }
+
+        .z-cust-tab-btn {
+            padding: 8px 4px 12px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #64748b;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .z-cust-tab-btn.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+        }
+
+        .z-cust-tab-pane {
+            display: none;
+        }
+
+        .z-cust-tab-pane.active {
+            display: block;
+        }
+
+        .z-cust-modal-footer {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 28px;
+            border-top: 1px solid #e2e8f0;
+            background: #ffffff;
         }
 
         /* Sticky Action Footer */
@@ -708,8 +825,9 @@ $pageTitle = 'New Invoice';
                             <!-- Customer Name -->
                             <div class="z-label">Customer Name*</div>
                             <div class="z-cust-select-wrap">
-                                <select name="customer_id" id="customerSelect" class="z-cust-select">
-                                    <option value="1">Select or add a customer</option>
+                                <select name="customer_id" id="customerSelect" class="z-cust-select" onchange="handleCustomerSelect(this.value)">
+                                    <option value="">Select or add a customer</option>
+                                    <option value="__add_new__" style="color: #2563eb; font-weight: 700; background: #eff6ff;">+ Add New Customer</option>
                                     <?php foreach ($customers as $c): ?>
                                         <option value="<?= $c['id'] ?>">
                                             <?= e($c['name']) ?> <?= !empty($c['phone']) ? '(' . e($c['phone']) . ')' : '' ?>
@@ -721,10 +839,23 @@ $pageTitle = 'New Invoice';
                                 </button>
                             </div>
 
+                            <!-- Location & Source of Supply -->
+                            <div class="z-label normal">Location</div>
+                            <div class="z-input-row" style="align-items: center; gap: 24px;">
+                                <select name="location" class="z-control" style="width: 220px;">
+                                    <option value="Head Office">Head Office</option>
+                                </select>
+                                <span style="font-size: 13px; color: #64748b;">Source of Supply: <strong style="color: #0f172a; font-weight: 600;"><?= e($businessState) ?></strong></span>
+                            </div>
+
                             <!-- Invoice # -->
                             <div class="z-label">Invoice#*</div>
-                            <div class="z-input-row">
-                                <input type="text" name="invoice_number" value="<?= e($nextInvoiceNum) ?>" class="z-control" style="width: 220px; font-weight: 600;" required>
+                            <div class="z-input-row" style="align-items: center; gap: 8px;">
+                                <select name="invoice_series" class="z-control" style="width: 200px; background: #f8fafc; font-size: 13px;">
+                                    <option value="default">Default Transaction Series</option>
+                                </select>
+                                <input type="text" name="invoice_number" value="<?= e($nextInvoiceNum) ?>" class="z-control" style="width: 160px; font-weight: 600;" required>
+                                <a href="<?= asset('settings.php') ?>" title="Configure Transaction Series" style="color: #64748b; font-size: 16px; text-decoration: none; padding: 4px;">⚙</a>
                             </div>
 
                             <!-- Order Number -->
@@ -765,9 +896,29 @@ $pageTitle = 'New Invoice';
                             </div>
 
                             <!-- Subject -->
-                            <div class="z-label normal">Subject</div>
-                            <div class="z-input-row" style="max-width: 600px;">
-                                <input type="text" name="subject" placeholder="Let your customer know what this Invoice is for" class="z-control" style="width: 100%;">
+                            <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                                <span>Subject</span>
+                                <span style="font-size: 12px; color: #94a3b8; cursor: help;" title="Let your customer know what this Invoice is for">ⓘ</span>
+                            </div>
+                            <div class="z-input-row" style="max-width: 650px;">
+                                <textarea name="subject" rows="2" placeholder="Let your customer know what this Invoice is for" class="z-control" style="width: 100%; height: 56px; padding: 8px 10px; resize: vertical;"></textarea>
+                            </div>
+
+                            <!-- Warehouse Location & Selection Type -->
+                            <div class="z-label normal">Warehouse Location</div>
+                            <div class="z-input-row" style="align-items: center; gap: 32px;">
+                                <select name="warehouse_location" class="z-control" style="width: 220px;">
+                                    <option value="Head Office">Head Office</option>
+                                </select>
+
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="z-label normal">Selection Type</span>
+                                    <select name="selection_type" class="z-control" style="width: 180px;">
+                                        <option value="multiple">Multiple Location</option>
+                                        <option value="single">Single Location</option>
+                                    </select>
+                                    <span style="font-size: 12px; color: #94a3b8; cursor: help;" title="Multiple Location allows selecting items across multiple inventory locations">ⓘ</span>
+                                </div>
                             </div>
                         </div>
 
@@ -790,11 +941,12 @@ $pageTitle = 'New Invoice';
                         <table class="z-table" id="itemsTable">
                             <thead>
                                 <tr>
-                                    <th style="width: 44%; text-align: left;">ITEM DETAILS</th>
-                                    <th style="width: 14%; text-align: right;">QUANTITY</th>
-                                    <th style="width: 15%; text-align: right;">RATE (₹)</th>
+                                    <th style="width: 38%; text-align: left;">ITEM DETAILS</th>
+                                    <th style="width: 12%; text-align: right;">QUANTITY</th>
+                                    <th style="width: 14%; text-align: right;">RATE (₹)</th>
                                     <th style="width: 14%; text-align: right;">DISCOUNT</th>
-                                    <th style="width: 13%; text-align: right;">AMOUNT (₹)</th>
+                                    <th style="width: 10%; text-align: left;">TAX ⓘ</th>
+                                    <th style="width: 12%; text-align: right;">AMOUNT (₹)</th>
                                     <th style="width: 4%; text-align: center;"></th>
                                 </tr>
                             </thead>
@@ -901,6 +1053,12 @@ $pageTitle = 'New Invoice';
                                     <span id="adjDisplay">0.00</span>
                                 </div>
 
+                                <!-- Round Off Row -->
+                                <div class="z-calc-row">
+                                    <span style="color: #475569;">Round Off</span>
+                                    <span id="roundOffDisplay" style="color: #475569;">0.00</span>
+                                </div>
+
                                 <!-- Grand Total Row -->
                                 <div class="z-calc-row grand-total-row">
                                     <span>Total ( ₹ )</span>
@@ -912,14 +1070,38 @@ $pageTitle = 'New Invoice';
                         <!-- Payment Gateways Promo Banner -->
                         <div class="z-payment-callout">
                             <div class="z-callout-title">
-                                <span>Want to get paid faster?</span>
-                                <span style="font-size: 15px;">🔴🟡</span>
-                                <span style="font-weight: 900; color: #1a1f71; letter-spacing: 0.05em;">VISA</span>
+                                <span>Select Payment Option(s) for this Invoice:</span>
+                                <span style="display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;">
+                                    <svg width="32" height="18" viewBox="0 0 36 20" fill="none"><rect width="36" height="20" rx="3" fill="#1434CB"/><path d="M14.5 14L16.2 6.5H18.3L16.6 14H14.5ZM23.4 6.7C23.0 6.5 22.4 6.4 21.6 6.4C19.7 6.4 18.3 7.4 18.3 8.8C18.3 9.9 19.3 10.5 20.1 10.9C20.9 11.3 21.2 11.6 21.2 12.0C21.2 12.6 20.5 12.9 19.8 12.9C19.0 12.9 18.5 12.7 17.9 12.4L17.5 12.2L17.2 13.9C17.7 14.1 18.6 14.3 19.6 14.3C21.7 14.3 23.1 13.3 23.1 11.7C23.1 10.8 22.5 10.1 21.2 9.5C20.4 9.1 19.9 8.8 19.9 8.3C19.9 7.9 20.4 7.6 21.3 7.6C22.0 7.6 22.6 7.7 23.0 7.9L23.4 6.7ZM27.8 6.5H26.2C25.7 6.5 25.3 6.7 25.1 7.1L22.0 14H24.2L24.6 12.8H27.3L27.6 14H29.5L27.8 6.5ZM25.2 11.3L26.1 8.8L26.6 11.3H25.2ZM12.7 6.5L10.7 11.6L10.5 10.4C10.1 9.1 8.9 7.7 7.5 7.0L9.3 14H11.5L14.8 6.5H12.7Z" fill="white"/></svg>
+                                    <svg width="26" height="18" viewBox="0 0 28 18" fill="none"><rect width="28" height="18" rx="3" fill="#222"/><circle cx="10" cy="9" r="6" fill="#EB001B"/><circle cx="18" cy="9" r="6" fill="#F79E1B" fill-opacity="0.8"/></svg>
+                                </span>
+                                <a href="<?= asset('settings.php') ?>" style="margin-left: auto; color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span>⚙ Payment Gateway</span>
+                                </a>
                             </div>
-                            <div class="z-callout-sub">
-                                Configure payment gateways and receive payments online. <a href="<?= asset('settings.php') ?>" style="color: #2563eb; text-decoration: none; font-weight: 600;">Set up Payment Gateway</a>
+                            <div style="margin-top: 14px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; background: #f8fafc; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 6px;">
+                                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: #0f172a; cursor: pointer;">
+                                    <input type="radio" name="payment_method" value="cod" checked style="accent-color: #2563eb;">
+                                    <span style="font-weight: 600;">📦 Cash on Delivery (COD)</span>
+                                </label>
+                                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: #0f172a; cursor: pointer;">
+                                    <input type="radio" name="payment_method" value="razorpay" style="accent-color: #2563eb;">
+                                    <span style="font-weight: 600;">💳 Razorpay (Online)</span>
+                                </label>
+                                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: #0f172a; cursor: pointer;">
+                                    <input type="radio" name="payment_method" value="cash" style="accent-color: #2563eb;">
+                                    <span style="font-weight: 600;">💵 Cash</span>
+                                </label>
+                                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: #0f172a; cursor: pointer;">
+                                    <input type="radio" name="payment_method" value="upi" style="accent-color: #2563eb;">
+                                    <span style="font-weight: 600;">📱 UPI / QR</span>
+                                </label>
+                                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: #0f172a; cursor: pointer;">
+                                    <input type="radio" name="payment_method" value="bank_transfer" style="accent-color: #2563eb;">
+                                    <span style="font-weight: 600;">🏦 Bank Transfer</span>
+                                </label>
                             </div>
-                            <div style="font-size: 12px; color: #94a3b8; margin-top: 18px;">
+                            <div style="font-size: 12px; color: #94a3b8; margin-top: 14px;">
                                 Additional Fields: Start adding custom fields for your invoices by going to <em>Settings ➔ Sales ➔ Invoices</em>.
                             </div>
                         </div>
@@ -954,30 +1136,262 @@ $pageTitle = 'New Invoice';
         </div>
     </div>
 
-    <!-- Quick Add Customer Modal -->
+    <!-- Zoho Exact Parity "New Customer" Modal -->
     <div class="modal-overlay" id="customerModal">
-        <div class="modal-box">
-            <div class="modal-header">
-                <div class="modal-title">Add New Customer</div>
-                <button type="button" class="modal-close-btn" onclick="closeCustomerModal()">&times;</button>
+        <div class="z-cust-modal-box">
+            <!-- Header -->
+            <div class="z-cust-modal-header">
+                <div class="z-cust-modal-title">New Customer</div>
+                <button type="button" class="modal-close-btn" onclick="closeCustomerModal()" style="font-size: 24px; color: #ef4444; background: transparent; border: 0; cursor: pointer;">&times;</button>
             </div>
-            <div style="padding: 20px 24px;">
-                <div style="margin-bottom: 14px;">
-                    <label class="form-label-zoho required" style="display: block; margin-bottom: 6px;">Customer Name</label>
-                    <input type="text" id="newCustName" class="form-control-zoho" style="width: 100%;" required>
+
+            <!-- Body -->
+            <div class="z-cust-modal-body">
+                <div class="z-cust-grid">
+                    <!-- Customer Type -->
+                    <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                        <span>Customer Type</span>
+                        <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Select whether this is a business or an individual customer">ⓘ</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #334155; cursor: pointer;">
+                            <input type="radio" name="cust_type" id="custTypeBusiness" value="Business" onchange="onCustTypeChange()">
+                            <span>Business</span>
+                        </label>
+                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #334155; cursor: pointer;">
+                            <input type="radio" name="cust_type" id="custTypeIndividual" value="Individual" checked onchange="onCustTypeChange()">
+                            <span>Individual</span>
+                        </label>
+                    </div>
+
+                    <!-- Primary Contact -->
+                    <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                        <span>Primary Contact</span>
+                        <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Primary contact person name">ⓘ</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <select id="newCustSalutation" class="z-control" style="width: 120px;">
+                            <option value="">Salutation</option>
+                            <option value="Mr.">Mr.</option>
+                            <option value="Mrs.">Mrs.</option>
+                            <option value="Ms.">Ms.</option>
+                            <option value="Miss">Miss</option>
+                            <option value="Dr.">Dr.</option>
+                        </select>
+                        <input type="text" id="newCustFirstName" placeholder="First Name" class="z-control" style="flex: 1;" oninput="autoSyncDisplayName()">
+                        <input type="text" id="newCustLastName" placeholder="Last Name" class="z-control" style="flex: 1;" oninput="autoSyncDisplayName()">
+                    </div>
+
+                    <!-- Company Name -->
+                    <div class="z-label normal">Company Name</div>
+                    <div>
+                        <input type="text" id="newCustCompany" placeholder="Company / Business Name" class="z-control" style="width: 100%; max-width: 480px;" oninput="autoSyncDisplayName()">
+                    </div>
+
+                    <!-- Display Name -->
+                    <div class="z-label" style="display: flex; align-items: center; gap: 4px;">
+                        <span>Display Name*</span>
+                        <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Name displayed on transactions and invoices">ⓘ</span>
+                    </div>
+                    <div>
+                        <input type="text" id="newCustDisplayName" placeholder="Select or type to add" class="z-control" style="width: 100%; max-width: 480px; font-weight: 600;" required>
+                    </div>
+
+                    <!-- Email Address -->
+                    <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                        <span>Email Address</span>
+                        <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Primary email address">ⓘ</span>
+                    </div>
+                    <div style="position: relative; max-width: 480px; width: 100%;">
+                        <input type="email" id="newCustEmail" placeholder="customer@example.com" class="z-control" style="width: 100%; padding-left: 36px;">
+                        <span style="position: absolute; left: 10px; top: 8px; color: #94a3b8; font-size: 14px;">✉</span>
+                    </div>
+
+                    <!-- Phone -->
+                    <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                        <span>Phone</span>
+                        <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Work phone and mobile number">ⓘ</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #fff;">
+                            <span style="padding: 0 8px; font-size: 12.5px; color: #64748b; background: #f8fafc; border-right: 1px solid #cbd5e1; line-height: 34px;">+91 ▾</span>
+                            <input type="tel" id="newCustWorkPhone" placeholder="Work Phone" style="border: 0; outline: none; padding: 0 10px; height: 34px; font-size: 13px; width: 150px;">
+                        </div>
+                        <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #fff;">
+                            <span style="padding: 0 8px; font-size: 12.5px; color: #64748b; background: #f8fafc; border-right: 1px solid #cbd5e1; line-height: 34px;">+91 ▾</span>
+                            <input type="tel" id="newCustPhone" placeholder="Mobile" style="border: 0; outline: none; padding: 0 10px; height: 34px; font-size: 13px; width: 150px;">
+                        </div>
+                    </div>
                 </div>
-                <div style="margin-bottom: 14px;">
-                    <label class="form-label-zoho" style="display: block; margin-bottom: 6px;">Phone Number</label>
-                    <input type="tel" id="newCustPhone" class="form-control-zoho" style="width: 100%;">
+
+                <!-- Tabs Header -->
+                <div class="z-cust-tabs-bar">
+                    <button type="button" class="z-cust-tab-btn active" id="tabBtnOther" onclick="switchCustTab('other')">Other Details</button>
+                    <button type="button" class="z-cust-tab-btn" id="tabBtnAddress" onclick="switchCustTab('address')">Address</button>
+                    <button type="button" class="z-cust-tab-btn" id="tabBtnCustom" onclick="switchCustTab('custom')">Custom Fields</button>
+                    <button type="button" class="z-cust-tab-btn" id="tabBtnRemarks" onclick="switchCustTab('remarks')">Remarks</button>
                 </div>
-                <div style="margin-bottom: 14px;">
-                    <label class="form-label-zoho" style="display: block; margin-bottom: 6px;">Email Address</label>
-                    <input type="email" id="newCustEmail" class="form-control-zoho" style="width: 100%;">
+
+                <!-- Tab Pane: Other Details (Screenshot 2 Parity) -->
+                <div class="z-cust-tab-pane active" id="tabPaneOther">
+                    <div class="z-cust-grid">
+                        <!-- GST Treatment -->
+                        <div class="z-label">GST Treatment*</div>
+                        <div>
+                            <select id="newCustGstTreatment" class="z-control" style="width: 100%; max-width: 480px;">
+                                <option value="">Select a GST treatment</option>
+                                <option value="Registered Business - Regular">Registered Business - Regular</option>
+                                <option value="Registered Business - Composition">Registered Business - Composition</option>
+                                <option value="Unregistered Business">Unregistered Business</option>
+                                <option value="Consumer" selected>Consumer</option>
+                                <option value="Overseas">Overseas</option>
+                                <option value="Special Economic Zone (SEZ)">Special Economic Zone (SEZ)</option>
+                                <option value="Deemed Export">Deemed Export</option>
+                            </select>
+                        </div>
+
+                        <!-- Place of Supply -->
+                        <div class="z-label">Place of Supply*</div>
+                        <div>
+                            <select id="newCustPlaceOfSupply" class="z-control" style="width: 100%; max-width: 480px;">
+                                <option value="[WB]- West Bengal" selected>[WB]- West Bengal</option>
+                                <option value="[MH]- Maharashtra">[MH]- Maharashtra</option>
+                                <option value="[DL]- Delhi">[DL]- Delhi</option>
+                                <option value="[KA]- Karnataka">[KA]- Karnataka</option>
+                                <option value="[UP]- Uttar Pradesh">[UP]- Uttar Pradesh</option>
+                                <option value="[GJ]- Gujarat">[GJ]- Gujarat</option>
+                                <option value="[TN]- Tamil Nadu">[TN]- Tamil Nadu</option>
+                                <option value="[RJ]- Rajasthan">[RJ]- Rajasthan</option>
+                                <option value="[BR]- Bihar">[BR]- Bihar</option>
+                                <option value="[MP]- Madhya Pradesh">[MP]- Madhya Pradesh</option>
+                                <option value="[AP]- Andhra Pradesh">[AP]- Andhra Pradesh</option>
+                                <option value="[TS]- Telangana">[TS]- Telangana</option>
+                                <option value="[KL]- Kerala">[KL]- Kerala</option>
+                                <option value="[PB]- Punjab">[PB]- Punjab</option>
+                                <option value="[HR]- Haryana">[HR]- Haryana</option>
+                                <option value="[OR]- Odisha">[OR]- Odisha</option>
+                                <option value="[AS]- Assam">[AS]- Assam</option>
+                                <option value="[JH]- Jharkhand">[JH]- Jharkhand</option>
+                                <option value="[UK]- Uttarakhand">[UK]- Uttarakhand</option>
+                                <option value="[HP]- Himachal Pradesh">[HP]- Himachal Pradesh</option>
+                                <option value="[JK]- Jammu and Kashmir">[JK]- Jammu and Kashmir</option>
+                                <option value="[GA]- Goa">[GA]- Goa</option>
+                                <option value="[CH]- Chandigarh">[CH]- Chandigarh</option>
+                                <option value="[PY]- Puducherry">[PY]- Puducherry</option>
+                            </select>
+                        </div>
+
+                        <!-- PAN -->
+                        <div class="z-label normal" style="display: flex; align-items: center; gap: 4px;">
+                            <span>PAN</span>
+                            <span style="color: #94a3b8; font-size: 12px; cursor: help;" title="Permanent Account Number (10 digit PAN)">ⓘ</span>
+                        </div>
+                        <div>
+                            <input type="text" id="newCustPan" placeholder="e.g. ABCDE1234F" class="z-control" style="width: 100%; max-width: 480px; text-transform: uppercase;" maxlength="10">
+                        </div>
+
+                        <!-- Tax Preference -->
+                        <div class="z-label">Tax Preference*</div>
+                        <div style="display: flex; align-items: center; gap: 20px;">
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #334155; cursor: pointer;">
+                                <input type="radio" name="tax_preference" id="taxPrefTaxable" value="Taxable" checked>
+                                <span>Taxable</span>
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #334155; cursor: pointer;">
+                                <input type="radio" name="tax_preference" id="taxPrefExempt" value="Tax Exempt">
+                                <span>Tax Exempt</span>
+                            </label>
+                        </div>
+
+                        <!-- Currency -->
+                        <div class="z-label normal">Currency</div>
+                        <div>
+                            <select id="newCustCurrency" class="z-control" style="width: 100%; max-width: 480px;">
+                                <option value="INR" selected>INR- Indian Rupee</option>
+                                <option value="USD">USD- US Dollar</option>
+                                <option value="EUR">EUR- Euro</option>
+                                <option value="GBP">GBP- British Pound</option>
+                                <option value="AED">AED- UAE Dirham</option>
+                            </select>
+                        </div>
+
+                        <!-- Payment Terms -->
+                        <div class="z-label normal">Payment Terms</div>
+                        <div>
+                            <select id="newCustPaymentTerms" class="z-control" style="width: 100%; max-width: 480px;">
+                                <option value="Due on Receipt" selected>Due on Receipt</option>
+                                <option value="Net 15">Net 15</option>
+                                <option value="Net 30">Net 30</option>
+                                <option value="Net 45">Net 45</option>
+                                <option value="Net 60">Net 60</option>
+                            </select>
+                        </div>
+
+                        <!-- Documents -->
+                        <div class="z-label normal">Documents</div>
+                        <div>
+                            <button type="button" class="z-secondary-btn" onclick="document.getElementById('custDocInput').click()">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                <span>Upload File ▾</span>
+                            </button>
+                            <input type="file" id="custDocInput" style="display: none;" multiple>
+                            <div style="font-size: 11.5px; color: #64748b; margin-top: 4px;">You can upload a maximum of 10 files, 10MB each</div>
+                        </div>
+
+                        <!-- Add more details -->
+                        <div></div>
+                        <div>
+                            <a href="javascript:void(0)" onclick="switchCustTab('address')" style="font-size: 13px; color: #2563eb; text-decoration: none; font-weight: 600;">Add more details</a>
+                        </div>
+                    </div>
                 </div>
-                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                    <button type="button" class="btn-secondary" onclick="closeCustomerModal()">Cancel</button>
-                    <button type="button" class="btn-primary" onclick="saveQuickCustomer()">Save Customer</button>
+
+                <!-- Tab Pane: Address -->
+                <div class="z-cust-tab-pane" id="tabPaneAddress">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px;">
+                        <div>
+                            <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 12px;">Billing Address</h4>
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <input type="text" id="newCustAddress" placeholder="Street Address / Building" class="z-control" style="width: 100%;">
+                                <input type="text" id="newCustCity" placeholder="City" class="z-control" style="width: 100%;">
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="text" id="newCustState" placeholder="State" class="z-control" style="flex: 1;" value="West Bengal">
+                                    <input type="text" id="newCustZip" placeholder="PIN Code" class="z-control" style="width: 110px;">
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 12px;">Shipping Address</h4>
+                            <div style="font-size: 12.5px; color: #64748b; margin-bottom: 8px;">
+                                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="checkbox" id="copyBillingAddrChk" checked>
+                                    <span>Same as Billing Address</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Tab Pane: Custom Fields -->
+                <div class="z-cust-tab-pane" id="tabPaneCustom">
+                    <div style="padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 13px; color: #64748b; text-align: center;">
+                        Add custom fields for your customers by navigating to <strong>Settings ➔ Preferences ➔ Customers</strong>.
+                    </div>
+                </div>
+
+                <!-- Tab Pane: Remarks -->
+                <div class="z-cust-tab-pane" id="tabPaneRemarks">
+                    <div>
+                        <label class="z-label normal" style="display: block; margin-bottom: 6px;">Remarks (For internal use)</label>
+                        <textarea id="newCustRemarks" rows="4" placeholder="Enter remarks about this customer" class="z-textarea"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="z-cust-modal-footer">
+                <button type="button" id="saveCustBtn" class="btn-primary" style="background: #2563eb; color: #ffffff; border: 0; padding: 8px 24px; border-radius: 4px; font-size: 13.5px; font-weight: 600; cursor: pointer;" onclick="saveQuickCustomer()">Save</button>
+                <button type="button" class="z-footer-btn-white" onclick="closeCustomerModal()">Cancel</button>
             </div>
         </div>
     </div>
@@ -1048,7 +1462,8 @@ $pageTitle = 'New Invoice';
             tr.innerHTML = `
                 <td>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="color: #94a3b8; font-size: 16px; cursor: grab;">⋮⋮</span>
+                        <span style="color: #94a3b8; font-size: 16px; cursor: grab;" title="Reorder row">⋮⋮</span>
+                        <span style="color: #94a3b8; font-size: 15px; cursor: pointer; padding: 2px;" title="Item Image">📷</span>
                         <select class="z-row-item-select" id="sel_${rowId}" onchange="onProductSelect('${rowId}')">
                             <option value="">Type or click to select an item.</option>
                             ${availableProducts.map(p => `<option value="${p.id}" ${productId && p.id === productId ? 'selected' : ''}>${escapeHtml(p.name)} [SKU: ${escapeHtml(p.sku)}] (Stock: ${p.stock})</option>`).join('')}
@@ -1071,6 +1486,15 @@ $pageTitle = 'New Invoice';
                     </div>
                 </td>
                 <td>
+                    <select class="z-control" id="tax_${rowId}" style="width: 100%; height: 34px; font-size: 12px; padding: 0 4px;" onchange="calculateTotals()">
+                        <option value="18">GST 18%</option>
+                        <option value="12">GST 12%</option>
+                        <option value="5">GST 5%</option>
+                        <option value="0">GST 0%</option>
+                        <option value="28">GST 28%</option>
+                    </select>
+                </td>
+                <td>
                     <div class="z-row-amount" id="amt_${rowId}">0.00</div>
                 </td>
                 <td style="text-align: center;">
@@ -1090,12 +1514,16 @@ $pageTitle = 'New Invoice';
         function onProductSelect(rowId) {
             var sel = document.getElementById('sel_' + rowId);
             var rateInp = document.getElementById('rate_' + rowId);
+            var taxSel = document.getElementById('tax_' + rowId);
             if (!sel || !rateInp) return;
 
             var pid = parseInt(sel.value, 10);
             var prod = availableProducts.find(p => p.id === pid);
             if (prod) {
                 rateInp.value = prod.price.toFixed(2);
+                if (taxSel && prod.tax !== undefined) {
+                    taxSel.value = String(Math.round(prod.tax));
+                }
             }
             calculateTotals();
         }
@@ -1225,6 +1653,7 @@ $pageTitle = 'New Invoice';
                 var rateInp = document.getElementById('rate_' + rowId);
                 var discInp = document.getElementById('disc_' + rowId);
                 var discTypeSel = document.getElementById('disc_type_' + rowId);
+                var taxSel = document.getElementById('tax_' + rowId);
                 var amtDisplay = document.getElementById('amt_' + rowId);
 
                 var pid = parseInt(sel ? sel.value : 0, 10);
@@ -1232,9 +1661,7 @@ $pageTitle = 'New Invoice';
                 var rate = Math.max(0, parseFloat(rateInp ? rateInp.value : 0) || 0);
                 var discVal = Math.max(0, parseFloat(discInp ? discInp.value : 0) || 0);
                 var discType = discTypeSel ? discTypeSel.value : 'percent';
-
-                var prod = availableProducts.find(p => p.id === pid);
-                var taxPercent = prod ? prod.tax : 18.0;
+                var taxPercent = taxSel ? (parseFloat(taxSel.value) || 0.0) : 18.0;
 
                 var lineBase = rate * qty;
                 var lineDisc = (discType === 'percent') ? (lineBase * (discVal / 100.0)) : Math.min(lineBase, discVal);
@@ -1281,9 +1708,16 @@ $pageTitle = 'New Invoice';
                 adjDisplay.textContent = adjVal.toFixed(2);
             }
 
-            // Grand Total Calculation
+            // Subtotal + Taxes + Adjustment
             var taxDelta = isTds ? -taxAmount : taxAmount;
-            var grandTotal = Math.max(0, subTotal + taxDelta + adjVal);
+            var rawTotal = Math.max(0, subTotal + taxDelta + adjVal);
+            var grandTotal = Math.round(rawTotal * 100) / 100;
+            var roundOff = 0.00;
+
+            var roundOffDisplay = document.getElementById('roundOffDisplay');
+            if (roundOffDisplay) {
+                roundOffDisplay.textContent = roundOff.toFixed(2);
+            }
 
             // Update Displays
             document.getElementById('subTotalDisplay').textContent = subTotal.toFixed(2);
@@ -1330,45 +1764,176 @@ $pageTitle = 'New Invoice';
         }
 
         // Quick Customer Modal
+        var previousCustomerVal = '';
+        function handleCustomerSelect(val) {
+            if (val === '__add_new__') {
+                document.getElementById('customerSelect').value = previousCustomerVal;
+                openNewCustomerModal();
+            } else {
+                previousCustomerVal = val;
+            }
+        }
+
         function openNewCustomerModal() {
             document.getElementById('customerModal').classList.add('open');
-            document.getElementById('newCustName').focus();
+            switchCustTab('other');
+            setTimeout(() => {
+                var inp = document.getElementById('newCustFirstName');
+                if (inp) inp.focus();
+            }, 50);
         }
 
         function closeCustomerModal() {
             document.getElementById('customerModal').classList.remove('open');
         }
 
-        function saveQuickCustomer() {
-            var name = document.getElementById('newCustName').value.trim();
-            var phone = document.getElementById('newCustPhone').value.trim();
-            var email = document.getElementById('newCustEmail').value.trim();
+        function switchCustTab(tabName) {
+            document.querySelectorAll('.z-cust-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.z-cust-tab-pane').forEach(pane => pane.classList.remove('active'));
 
-            if (!name) {
-                alert('Customer name is required.');
+            if (tabName === 'other') {
+                var b = document.getElementById('tabBtnOther'); if (b) b.classList.add('active');
+                var p = document.getElementById('tabPaneOther'); if (p) p.classList.add('active');
+            } else if (tabName === 'address') {
+                var b = document.getElementById('tabBtnAddress'); if (b) b.classList.add('active');
+                var p = document.getElementById('tabPaneAddress'); if (p) p.classList.add('active');
+            } else if (tabName === 'custom') {
+                var b = document.getElementById('tabBtnCustom'); if (b) b.classList.add('active');
+                var p = document.getElementById('tabPaneCustom'); if (p) p.classList.add('active');
+            } else if (tabName === 'remarks') {
+                var b = document.getElementById('tabBtnRemarks'); if (b) b.classList.add('active');
+                var p = document.getElementById('tabPaneRemarks'); if (p) p.classList.add('active');
+            }
+        }
+
+        function onCustTypeChange() {
+            var isBiz = document.getElementById('custTypeBusiness').checked;
+            var compInp = document.getElementById('newCustCompany');
+            if (compInp) {
+                compInp.placeholder = isBiz ? 'Company / Business Name *' : 'Company Name';
+            }
+            autoSyncDisplayName();
+        }
+
+        function autoSyncDisplayName() {
+            var isBiz = document.getElementById('custTypeBusiness').checked;
+            var sal = document.getElementById('newCustSalutation').value.trim();
+            var first = document.getElementById('newCustFirstName').value.trim();
+            var last = document.getElementById('newCustLastName').value.trim();
+            var comp = document.getElementById('newCustCompany').value.trim();
+            var dispInp = document.getElementById('newCustDisplayName');
+
+            if (isBiz && comp) {
+                dispInp.value = comp;
+            } else if (first || last) {
+                var fullName = (sal ? sal + ' ' : '') + first + (last ? ' ' + last : '');
+                dispInp.value = fullName.trim();
+            } else if (comp) {
+                dispInp.value = comp;
+            }
+        }
+
+        function saveQuickCustomer() {
+            var custType = document.querySelector('input[name="cust_type"]:checked') ? document.querySelector('input[name="cust_type"]:checked').value : 'Individual';
+            var salutation = document.getElementById('newCustSalutation').value.trim();
+            var firstName = document.getElementById('newCustFirstName').value.trim();
+            var lastName = document.getElementById('newCustLastName').value.trim();
+            var company = document.getElementById('newCustCompany').value.trim();
+            var displayName = document.getElementById('newCustDisplayName').value.trim();
+            var email = document.getElementById('newCustEmail').value.trim();
+            var workPhone = document.getElementById('newCustWorkPhone').value.trim();
+            var mobile = document.getElementById('newCustPhone').value.trim();
+
+            var gstTreatment = document.getElementById('newCustGstTreatment').value;
+            var placeOfSupply = document.getElementById('newCustPlaceOfSupply').value;
+            var pan = document.getElementById('newCustPan').value.trim();
+            var taxPref = document.querySelector('input[name="tax_preference"]:checked') ? document.querySelector('input[name="tax_preference"]:checked').value : 'Taxable';
+            var currency = document.getElementById('newCustCurrency').value;
+            var paymentTerms = document.getElementById('newCustPaymentTerms').value;
+
+            var street = document.getElementById('newCustAddress').value.trim();
+            var city = document.getElementById('newCustCity').value.trim();
+            var state = document.getElementById('newCustState').value.trim();
+            var zip = document.getElementById('newCustZip').value.trim();
+            var fullAddr = [street, city, state, zip].filter(Boolean).join(', ');
+
+            var remarks = document.getElementById('newCustRemarks').value.trim();
+
+            if (!displayName) {
+                alert('Display Name is required.');
+                document.getElementById('newCustDisplayName').focus();
                 return;
+            }
+
+            var saveBtn = document.getElementById('saveCustBtn');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
             }
 
             var formData = new FormData();
             formData.append('csrf_token', '<?= csrf_token() ?>');
             formData.append('action', 'save_customer');
-            formData.append('name', name);
-            formData.append('phone', phone);
+            formData.append('is_ajax', '1');
+            formData.append('customer_type', custType);
+            formData.append('salutation', salutation);
+            formData.append('first_name', firstName);
+            formData.append('last_name', lastName);
+            formData.append('company_name', company);
+            formData.append('display_name', displayName);
             formData.append('email', email);
+            formData.append('work_phone', workPhone);
+            formData.append('phone', mobile);
+            formData.append('gst_treatment', gstTreatment);
+            formData.append('place_of_supply', placeOfSupply);
+            formData.append('pan', pan);
+            formData.append('tax_preference', taxPref);
+            formData.append('currency', currency);
+            formData.append('payment_terms', paymentTerms);
+            formData.append('address', fullAddr);
+            formData.append('remarks', remarks);
 
-            fetch('<?= asset('customers.php') ?>', { method: 'POST', body: formData })
-                .then(() => {
+            fetch('<?= asset('customers.php') ?>', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' },
+                body: formData
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                }
+                if (res && res.success && res.id) {
                     var sel = document.getElementById('customerSelect');
                     var opt = document.createElement('option');
-                    opt.value = "999";
-                    opt.textContent = name + (phone ? ' (' + phone + ')' : '');
+                    opt.value = res.id;
+                    opt.textContent = res.name + (res.phone ? ' (' + res.phone + ')' : '');
                     opt.selected = true;
                     sel.appendChild(opt);
+                    sel.value = res.id;
+                    previousCustomerVal = res.id;
+
+                    if (res.payment_terms) {
+                        var termsSel = document.getElementById('termsSelect');
+                        if (termsSel) {
+                            termsSel.value = res.payment_terms;
+                            recalcDueDate();
+                        }
+                    }
+
                     closeCustomerModal();
-                })
-                .catch(() => {
-                    closeCustomerModal();
-                });
+                } else {
+                    alert((res && res.error) ? res.error : 'Could not save customer. Please check input.');
+                }
+            })
+            .catch(function(err) {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                }
+                alert('Network error while saving customer.');
+            });
         }
 
         // Barcode Scanner Modal

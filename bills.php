@@ -63,6 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $search = trim($_GET['search'] ?? '');
 $status = trim($_GET['status'] ?? '');
+$openBillId = (int) ($_GET['id'] ?? 0);
+$openBill = $openBillId > 0 ? get_purchase_bill_by_id($openBillId) : null;
 $bills = get_purchase_bills($search, $status);
 $vendors = get_vendors();
 $products = get_products();
@@ -173,6 +175,74 @@ $flashError = get_flash('error');
                     </div>
                 <?php endif; ?>
 
+                <?php if ($openBill): ?>
+                    <div class="section-card" style="margin-bottom: 24px;">
+                        <div class="section-header">
+                            <div>
+                                <h2 class="section-heading"><?= e((string) $openBill['bill_number']) ?></h2>
+                                <p class="section-subheading">
+                                    <?= e((string) $openBill['vendor_name']) ?>
+                                    · <?= e(date('d M Y', strtotime((string) $openBill['bill_date']))) ?>
+                                    · <?= e((string) ($openBill['location_name'] ?? 'Head Office')) ?>
+                                </p>
+                            </div>
+                            <a href="<?= asset('bills.php') ?>" class="btn-secondary" style="padding: 8px 14px;">Back to bills</a>
+                        </div>
+                        <div style="padding: 0 20px 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <?php if ($openBill['status'] === 'paid'): ?>
+                                <span class="badge badge-success">Paid</span>
+                            <?php elseif ($openBill['status'] === 'partially_paid'): ?>
+                                <span class="badge badge-warning">Partially paid</span>
+                            <?php elseif ($openBill['status'] === 'overdue'): ?>
+                                <span class="badge badge-danger">Overdue</span>
+                            <?php else: ?>
+                                <span class="badge badge-secondary">Unpaid</span>
+                            <?php endif; ?>
+                            <?php if (!empty($openBill['reference_number'])): ?>
+                                <span class="badge badge-secondary">Ref <?= e((string) $openBill['reference_number']) ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="saas-table">
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>SKU</th>
+                                        <th>Quantity</th>
+                                        <th>Cost</th>
+                                        <th>Tax</th>
+                                        <th>Line total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($openBill['items'] as $item): ?>
+                                        <tr>
+                                            <td><strong><?= e((string) $item['product_name']) ?></strong></td>
+                                            <td><?= e((string) ($item['product_sku'] ?? '')) ?></td>
+                                            <td><?= (int) $item['quantity'] ?></td>
+                                            <td>₹<?= number_format((float) $item['unit_cost'], 2) ?></td>
+                                            <td><?= number_format((float) $item['tax_percent'], 2) ?>%</td>
+                                            <td>₹<?= number_format((float) $item['line_total'], 2) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    <?php if (empty($openBill['items'])): ?>
+                                        <tr><td colspan="6" style="text-align:center; padding: 24px; color:#64748b;">No items on this bill.</td></tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div style="padding: 14px 20px 18px; display: flex; justify-content: flex-end; gap: 18px; flex-wrap: wrap;">
+                            <span>Amount <strong>₹<?= number_format((float) $openBill['total_amount'], 2) ?></strong></span>
+                            <span>Balance <strong>₹<?= number_format((float) $openBill['balance_due'], 2) ?></strong></span>
+                            <?php if ((float) $openBill['balance_due'] > 0): ?>
+                                <a href="<?= asset('payments-made.php?bill_id=' . (int) $openBill['id']) ?>" class="header-btn" style="padding: 8px 14px; text-decoration: none;">Pay</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php elseif ($openBillId > 0): ?>
+                    <div class="saas-alert saas-alert-danger" style="margin-bottom: 24px;">That bill was not found.</div>
+                <?php endif; ?>
+
                 <!-- Filter Toolbar -->
                 <div class="filter-card" style="padding: 16px 20px; margin-bottom: 24px;">
                     <form method="GET" action="<?= asset('bills.php') ?>" style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
@@ -227,7 +297,7 @@ $flashError = get_flash('error');
                                             <td style="font-size: 13px; color: var(--saas-slate-600);"><?= date('d M Y', strtotime($b['bill_date'])) ?></td>
                                             <td><span class="badge badge-secondary"><?= e($b['location_name'] ?? 'Head Office') ?></span></td>
                                             <td>
-                                                <strong style="font-family: monospace; color: var(--saas-primary); font-size: 13.5px;"><?= e($b['bill_number']) ?></strong>
+                                                <a href="<?= asset('bills.php?id=' . (int) $b['id']) ?>" style="font-family: monospace; color: var(--saas-primary); font-size: 13.5px; font-weight: 700; text-decoration: underline;"><?= e($b['bill_number']) ?></a>
                                             </td>
                                             <td style="font-size: 12.5px; color: #64748b;"><?= e($b['reference_number'] ?: '—') ?></td>
                                             <td><strong><?= e($b['vendor_name']) ?></strong></td>

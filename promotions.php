@@ -24,46 +24,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(APP_URL . '/promotions.php');
     } else {
         $action = $_POST['action'] ?? '';
-        $db = get_db();
+        ensure_promotions_coupons_schema();
 
         if ($action === 'create_promo') {
-            $name = trim($_POST['name'] ?? '');
-            $type = $_POST['promo_type'] ?? 'percentage';
-            $val = (float)($_POST['discount_value'] ?? 0);
-            $buy = (int)($_POST['buy_qty'] ?? 0);
-            $get = (int)($_POST['get_qty'] ?? 0);
-            $min = (float)($_POST['min_order_amount'] ?? 0);
-
-            if ($name === '') {
-                set_flash('error', 'Promotion name is required.');
+            $result = create_promotion([
+                'name' => $_POST['name'] ?? '',
+                'promo_type' => $_POST['promo_type'] ?? 'percentage',
+                'discount_value' => $_POST['discount_value'] ?? 0,
+                'buy_qty' => $_POST['buy_qty'] ?? 0,
+                'get_qty' => $_POST['get_qty'] ?? 0,
+                'min_order_amount' => $_POST['min_order_amount'] ?? 0,
+            ]);
+            if (!empty($result['success'])) {
+                set_flash('success', "Promotion '{$result['name']}' created successfully!");
             } else {
-                $stmt = $db->prepare('
-                    INSERT INTO promotions (name, promo_type, discount_value, buy_qty, get_qty, min_order_amount, status, created_at, updated_at)
-                    VALUES (:name, :type, :val, :buy, :get, :min, "active", NOW(), NOW())
-                ');
-                $stmt->execute(['name' => $name, 'type' => $type, 'val' => $val, 'buy' => $buy, 'get' => $get, 'min' => $min]);
-                set_flash('success', "Promotion '{$name}' created successfully!");
+                set_flash('error', implode(' ', $result['errors'] ?? ['Could not save promotion.']));
             }
         } elseif ($action === 'create_coupon') {
-            $code = strtoupper(trim($_POST['code'] ?? ''));
-            $type = $_POST['discount_type'] ?? 'fixed';
-            $val = (float)($_POST['discount_value'] ?? 0);
-            $min = (float)($_POST['min_order_amount'] ?? 0);
-            $limit = (int)($_POST['usage_limit'] ?? 100);
-
-            if ($code === '') {
-                set_flash('error', 'Coupon code is required.');
+            $result = create_coupon([
+                'code' => $_POST['code'] ?? '',
+                'discount_type' => $_POST['discount_type'] ?? 'fixed',
+                'discount_value' => $_POST['discount_value'] ?? 0,
+                'min_order_amount' => $_POST['min_order_amount'] ?? 0,
+                'usage_limit' => $_POST['usage_limit'] ?? 100,
+            ]);
+            if (!empty($result['success'])) {
+                set_flash('success', "Coupon '{$result['code']}' created successfully!");
             } else {
-                try {
-                    $stmt = $db->prepare('
-                        INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, usage_limit, status, created_at, updated_at)
-                        VALUES (:code, :type, :val, :min, :limit, "active", NOW(), NOW())
-                    ');
-                    $stmt->execute(['code' => $code, 'type' => $type, 'val' => $val, 'min' => $min, 'limit' => $limit]);
-                    set_flash('success', "Coupon '{$code}' created successfully!");
-                } catch (PDOException $e) {
-                    set_flash('error', "Error: Coupon code '{$code}' already exists.");
-                }
+                set_flash('error', implode(' ', $result['errors'] ?? ['Could not save coupon.']));
+            }
+        } elseif ($action === 'delete_promo') {
+            $promoId = (int) ($_POST['promotion_id'] ?? 0);
+            $result = delete_promotion($promoId);
+            if (!empty($result['success'])) {
+                set_flash('success', "Promotion '{$result['name']}' deleted.");
+            } else {
+                set_flash('error', implode(' ', $result['errors'] ?? ['Could not delete promotion.']));
+            }
+        } elseif ($action === 'delete_coupon') {
+            $couponId = (int) ($_POST['coupon_id'] ?? 0);
+            $result = delete_coupon($couponId);
+            if (!empty($result['success'])) {
+                set_flash('success', "Coupon '{$result['code']}' deleted.");
+            } else {
+                set_flash('error', implode(' ', $result['errors'] ?? ['Could not delete coupon.']));
             }
         }
         redirect(APP_URL . '/promotions.php');
@@ -134,11 +138,12 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                                         <th>Type</th>
                                         <th>Discount</th>
                                         <th>Status</th>
+                                        <th style="width: 72px; text-align: right;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($promotions)): ?>
-                                        <tr><td colspan="4" style="text-align: center; padding: 20px; color: #64748b;">No promotions configured.</td></tr>
+                                        <tr><td colspan="5" style="text-align: center; padding: 20px; color: #64748b;">No promotions configured.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($promotions as $p): ?>
                                             <tr>
@@ -147,7 +152,15 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                                                 <td style="color: #047857; font-weight: 700;">
                                                     <?= $p['promo_type'] === 'percentage' ? $p['discount_value'] . '%' : ($p['promo_type'] === 'buy_x_get_y' ? "Buy {$p['buy_qty']} Get {$p['get_qty']}" : '₹' . $p['discount_value']) ?>
                                                 </td>
-                                                <td><span class="badge badge-success">Active</span></td>
+                                                <td><span class="badge badge-success"><?= e($p['status'] ?? 'active') ?></span></td>
+                                                <td style="text-align: right;">
+                                                    <form method="POST" action="<?= asset('promotions.php') ?>" style="display: inline;" onsubmit="return confirm('Delete promotion \'<?= e(addslashes((string) $p['name'])) ?>\'? This cannot be undone.');">
+                                                        <?= csrf_field() ?>
+                                                        <input type="hidden" name="action" value="delete_promo">
+                                                        <input type="hidden" name="promotion_id" value="<?= (int) $p['id'] ?>">
+                                                        <button type="submit" class="btn-action delete" title="Delete promotion">Delete</button>
+                                                    </form>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
@@ -169,11 +182,12 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                                         <th>Discount</th>
                                         <th>Usage</th>
                                         <th>Status</th>
+                                        <th style="width: 72px; text-align: right;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($coupons)): ?>
-                                        <tr><td colspan="4" style="text-align: center; padding: 20px; color: #64748b;">No coupons active.</td></tr>
+                                        <tr><td colspan="5" style="text-align: center; padding: 20px; color: #64748b;">No coupons active.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($coupons as $c): ?>
                                             <tr>
@@ -183,6 +197,14 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                                                 </td>
                                                 <td style="font-size: 12px; color: var(--saas-slate-500);"><?= $c['usage_count'] ?> / <?= $c['usage_limit'] ?></td>
                                                 <td><span class="badge badge-success"><?= e($c['status']) ?></span></td>
+                                                <td style="text-align: right;">
+                                                    <form method="POST" action="<?= asset('promotions.php') ?>" style="display: inline;" onsubmit="return confirm('Delete coupon \'<?= e(addslashes((string) $c['code'])) ?>\'? This cannot be undone.');">
+                                                        <?= csrf_field() ?>
+                                                        <input type="hidden" name="action" value="delete_coupon">
+                                                        <input type="hidden" name="coupon_id" value="<?= (int) $c['id'] ?>">
+                                                        <button type="submit" class="btn-action delete" title="Delete coupon">Delete</button>
+                                                    </form>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
@@ -226,7 +248,7 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                 <input type="hidden" name="action" value="create_promo">
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Promotion Name *</label>
-                    <input type="text" name="name" required class="form-control" placeholder="e.g. Festival 10% Off" style="width: 100%;">
+                    <input type="text" name="name" required class="form-control" placeholder="e.g. Festival 10% Off" style="width: 100%; text-transform: none;" autocomplete="off">
                 </div>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Promotion Type</label>
@@ -264,7 +286,7 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                 <input type="hidden" name="action" value="create_coupon">
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Coupon Code *</label>
-                    <input type="text" name="code" required class="form-control" placeholder="e.g. SAVE100" style="width: 100%; text-transform: uppercase;">
+                    <input type="text" name="code" required class="form-control" placeholder="e.g. Save100" style="width: 100%; text-transform: none;" autocomplete="off" spellcheck="false">
                 </div>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 4px;">Discount Type</label>

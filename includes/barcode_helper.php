@@ -5,13 +5,15 @@
 
 declare(strict_types=1);
 
-function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6, string $barColor = '#0f172a'): string {
+/**
+ * @return array{text: string, modules: list<array{w: int, bar: bool}>, total: int}
+ */
+function generate_code128_bar_modules(string $text): array {
     $text = trim($text);
     if ($text === '') {
         $text = '100001';
     }
 
-    // Code128 Pattern Table (Patterns 0 to 106)
     $patterns = [
         '212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213',
         '221312', '231212', '112232', '122132', '112322', '122231', '113222', '123122', '123221', '223211',
@@ -28,10 +30,8 @@ function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth
 
     $startB = 104;
     $stop = 106;
-
     $values = [$startB];
     $checksum = $startB;
-
     $len = strlen($text);
     for ($i = 0; $i < $len; $i++) {
         $ascii = ord($text[$i]);
@@ -39,46 +39,48 @@ function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth
         $values[] = $val;
         $checksum += ($val * ($i + 1));
     }
-
-    $checkVal = $checksum % 103;
-    $values[] = $checkVal;
+    $values[] = $checksum % 103;
     $values[] = $stop;
 
-    // Convert values to widths string
     $patternStr = '';
     foreach ($values as $v) {
         $patternStr .= $patterns[$v] ?? '211214';
     }
-    // Termination bar
     $patternStr .= '2';
 
-    // Calculate total width
+    $modules = [];
     $totalModules = 0;
-    for ($k = 0; $k < strlen($patternStr); $k++) {
-        $totalModules += (int)$patternStr[$k];
+    $isBar = true;
+    $lenPat = strlen($patternStr);
+    for ($m = 0; $m < $lenPat; $m++) {
+        $w = (int) $patternStr[$m];
+        $modules[] = ['w' => $w, 'bar' => $isBar];
+        $totalModules += $w;
+        $isBar = !$isBar;
     }
 
+    return ['text' => $text, 'modules' => $modules, 'total' => $totalModules];
+}
+
+function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6, string $barColor = '#0f172a'): string {
+    $encoded = generate_code128_bar_modules($text);
     $quietZone = 10;
-    $svgWidth = ($totalModules + ($quietZone * 2)) * $barWidth;
-    $svgHeight = $barHeight + 16; // extra space for text
+    $svgWidth = ($encoded['total'] + ($quietZone * 2)) * $barWidth;
+    $svgHeight = $barHeight + 16;
 
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' . $svgWidth . ' ' . $svgHeight . '" width="' . $svgWidth . '" height="' . $svgHeight . '" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">';
     $svg .= '<rect width="100%" height="100%" fill="transparent"/>';
 
     $currentX = $quietZone * $barWidth;
-    $isBar = true;
-
-    for ($m = 0; $m < strlen($patternStr); $m++) {
-        $w = (int)$patternStr[$m] * $barWidth;
-        if ($isBar) {
+    foreach ($encoded['modules'] as $mod) {
+        $w = $mod['w'] * $barWidth;
+        if ($mod['bar']) {
             $svg .= '<rect x="' . number_format($currentX, 2, '.', '') . '" y="0" width="' . number_format($w, 2, '.', '') . '" height="' . $barHeight . '" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '"/>';
         }
         $currentX += $w;
-        $isBar = !$isBar;
     }
 
-    // Human readable text
-    $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '" text-anchor="middle">' . htmlspecialchars($text, ENT_QUOTES, 'UTF-8') . '</text>';
+    $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '" text-anchor="middle">' . htmlspecialchars($encoded['text'], ENT_QUOTES, 'UTF-8') . '</text>';
     $svg .= '</svg>';
 
     return $svg;
