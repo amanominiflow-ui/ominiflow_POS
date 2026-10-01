@@ -411,7 +411,7 @@ function public_store_local_url(array $business): string {
 }
 
 function is_platform_logo(?string $path): bool {
-    $path = strtolower(str_replace('\\', '/', trim((string) $path)));
+    $path = ltrim(strtolower(str_replace('\\', '/', trim((string) $path))), '/');
     if ($path === '') {
         return true;
     }
@@ -431,8 +431,34 @@ function store_logo_file_exists(?string $path): bool {
     if (!$path || is_platform_logo($path)) {
         return false;
     }
-    $full = dirname(__DIR__) . '/' . ltrim($path, '/');
-    return is_file($full);
+    $trimmed = trim((string) $path);
+    if (preg_match('#^https?://#i', $trimmed) || str_starts_with($trimmed, 'data:')) {
+        return true;
+    }
+    $normalized = str_replace('\\', '/', $trimmed);
+    $clean = ltrim(parse_url($normalized, PHP_URL_PATH) ?? $normalized, '/');
+
+    // Check relative to project root
+    $full = dirname(__DIR__) . '/' . $clean;
+    if (is_file($full)) {
+        return true;
+    }
+    // Check relative to document root
+    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+        $docFull = rtrim(str_replace('\\', '/', (string) $_SERVER['DOCUMENT_ROOT']), '/') . '/' . $clean;
+        if (is_file($docFull)) {
+            return true;
+        }
+    }
+    // Direct file path
+    if (is_file($normalized) || is_file($trimmed)) {
+        return true;
+    }
+    // Valid uploaded assets path
+    if (preg_match('#assets/uploads/#i', $clean) && preg_match('/\.(png|jpe?g|webp|ico|svg)$/i', $clean)) {
+        return true;
+    }
+    return false;
 }
 
 function normalize_hex_color(string $value, string $fallback): string {
@@ -461,7 +487,7 @@ function store_initials_from_name(string $name): string {
 }
 
 function get_storefront_dynamic_favicon_url(array $brand, string $storeName): string {
-    if (!empty($brand['favicon_path'])) {
+    if (!empty($brand['favicon_path']) && !is_platform_logo((string) $brand['favicon_path'])) {
         return asset((string) $brand['favicon_path']);
     }
     if (!empty($brand['logo_path']) && !is_platform_logo((string) $brand['logo_path'])) {
@@ -483,6 +509,55 @@ function get_storefront_dynamic_favicon_url(array $brand, string $storeName): st
          . '</svg>';
 
     return 'data:image/svg+xml;utf8,' . rawurlencode($svg);
+}
+
+function render_storefront_favicon_tags(array $brand, string $storeName): string {
+    $url = get_storefront_dynamic_favicon_url($brand, $storeName);
+
+    $isSvg = str_starts_with($url, 'data:image/svg+xml')
+        || (preg_match('/\.svg(\?.*)?$/i', $url) === 1);
+
+    if ($isSvg) {
+        $escaped = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        return '<link rel="icon" type="image/svg+xml" href="' . $escaped . '">' . "\n"
+             . '    <link rel="apple-touch-icon" href="' . $escaped . '">';
+    }
+
+    // Determine cache buster version so browsers immediately pick up new favicons
+    $version = 1;
+    $filePath = !empty($brand['favicon_path']) ? (string) $brand['favicon_path'] : (!empty($brand['logo_path']) ? (string) $brand['logo_path'] : '');
+    if ($filePath !== '') {
+        $cleanPath = ltrim(str_replace('\\', '/', parse_url($filePath, PHP_URL_PATH) ?? $filePath), '/');
+        $full = dirname(__DIR__) . '/' . $cleanPath;
+        if (is_file($full)) {
+            $version = (int) filemtime($full);
+        } elseif (!empty($brand['published_at'])) {
+            $version = (int) strtotime((string) $brand['published_at']);
+        } elseif (!empty($brand['updated_at'])) {
+            $version = (int) strtotime((string) $brand['updated_at']);
+        }
+    }
+
+    $favUrlWithVer = $url . (str_contains($url, '?') ? '&' : '?') . 'v=' . $version;
+    $favEsc = htmlspecialchars($favUrlWithVer, ENT_QUOTES, 'UTF-8');
+
+    // Determine MIME type
+    $pathOnly = strtolower(parse_url($url, PHP_URL_PATH) ?? '');
+    $mime = 'image/png';
+    if (str_ends_with($pathOnly, '.ico')) {
+        $mime = 'image/x-icon';
+    } elseif (str_ends_with($pathOnly, '.jpg') || str_ends_with($pathOnly, '.jpeg')) {
+        $mime = 'image/jpeg';
+    } elseif (str_ends_with($pathOnly, '.webp')) {
+        $mime = 'image/webp';
+    } elseif (str_ends_with($pathOnly, '.png')) {
+        $mime = 'image/png';
+    }
+    $mimeEsc = htmlspecialchars($mime, ENT_QUOTES, 'UTF-8');
+
+    return '<link rel="icon" type="' . $mimeEsc . '" href="' . $favEsc . '">' . "\n"
+         . '    <link rel="shortcut icon" type="' . $mimeEsc . '" href="' . $favEsc . '">' . "\n"
+         . '    <link rel="apple-touch-icon" href="' . $favEsc . '">';
 }
 
 function ensure_mobile_store_row(int $businessId): void {
@@ -1134,13 +1209,12 @@ function upload_mobile_store_image(int $businessId, array $file, string $kind): 
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return ['success' => false, 'error' => 'Upload failed. Try another image.'];
     }
-    $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-    $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+    $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg'];
     if ($kind === 'favicon') {
         $allowed[] = 'ico';
     }
     if (!in_array($ext, $allowed, true)) {
-        return ['success' => false, 'error' => $kind === 'favicon' ? 'Use PNG, JPG, WEBP, or ICO.' : 'Use JPG, PNG, or WEBP.'];
+        return ['success' => false, 'error' => $kind === 'favicon' ? 'Use PNG, JPG, WEBP, ICO, or SVG.' : 'Use JPG, PNG, WEBP, or SVG.'];
     }
     if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
         return ['success' => false, 'error' => 'Image must be under 5 MB.'];
