@@ -469,7 +469,7 @@ function store_logo_file_exists(?string $path): bool {
         return true;
     }
     // Valid uploaded assets path
-    if (preg_match('#assets/uploads/#i', $clean) && preg_match('/\.(png|jpe?g|webp|ico|svg)$/i', $clean)) {
+    if (preg_match('#assets/uploads/#i', $clean) && preg_match('/\.(png|jpe?g|webp|ico|cur|svg|gif|bmp|jfif|avif|tiff?|heic|heif)$/i', $clean)) {
         return true;
     }
     return false;
@@ -558,12 +558,20 @@ function render_storefront_favicon_tags(array $brand, string $storeName): string
     // Determine MIME type
     $pathOnly = strtolower(parse_url($url, PHP_URL_PATH) ?? '');
     $mime = 'image/png';
-    if (str_ends_with($pathOnly, '.ico')) {
+    if (str_ends_with($pathOnly, '.ico') || str_ends_with($pathOnly, '.cur')) {
         $mime = 'image/x-icon';
-    } elseif (str_ends_with($pathOnly, '.jpg') || str_ends_with($pathOnly, '.jpeg')) {
+    } elseif (str_ends_with($pathOnly, '.jpg') || str_ends_with($pathOnly, '.jpeg') || str_ends_with($pathOnly, '.jfif') || str_ends_with($pathOnly, '.pjpeg')) {
         $mime = 'image/jpeg';
     } elseif (str_ends_with($pathOnly, '.webp')) {
         $mime = 'image/webp';
+    } elseif (str_ends_with($pathOnly, '.gif')) {
+        $mime = 'image/gif';
+    } elseif (str_ends_with($pathOnly, '.bmp')) {
+        $mime = 'image/bmp';
+    } elseif (str_ends_with($pathOnly, '.svg')) {
+        $mime = 'image/svg+xml';
+    } elseif (str_ends_with($pathOnly, '.avif')) {
+        $mime = 'image/avif';
     } elseif (str_ends_with($pathOnly, '.png')) {
         $mime = 'image/png';
     }
@@ -1244,15 +1252,47 @@ function upload_mobile_store_image(int $businessId, array $file, string $kind): 
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return ['success' => false, 'error' => 'Upload failed. Try another image.'];
     }
-    $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg'];
-    if ($kind === 'favicon') {
-        $allowed[] = 'ico';
+    $rawExt = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+    $mimeType = strtolower((string) ($file['type'] ?? ''));
+
+    $ext = $rawExt;
+    if ($ext === 'jpeg' || $ext === 'jfif' || $ext === 'pjpeg') {
+        $ext = 'jpg';
+    } elseif ($ext === 'cur') {
+        $ext = 'ico';
+    } elseif ($ext === 'tif') {
+        $ext = 'tiff';
     }
-    if (!in_array($ext, $allowed, true)) {
-        return ['success' => false, 'error' => $kind === 'favicon' ? 'Use PNG, JPG, WEBP, ICO, or SVG.' : 'Use JPG, PNG, WEBP, or SVG.'];
+
+    if ($ext === '') {
+        if (str_contains($mimeType, 'png')) {
+            $ext = 'png';
+        } elseif (str_contains($mimeType, 'jpeg') || str_contains($mimeType, 'jpg')) {
+            $ext = 'jpg';
+        } elseif (str_contains($mimeType, 'webp')) {
+            $ext = 'webp';
+        } elseif (str_contains($mimeType, 'svg')) {
+            $ext = 'svg';
+        } elseif (str_contains($mimeType, 'icon') || str_contains($mimeType, 'ico')) {
+            $ext = 'ico';
+        } elseif (str_contains($mimeType, 'gif')) {
+            $ext = 'gif';
+        } elseif (str_contains($mimeType, 'bmp')) {
+            $ext = 'bmp';
+        } else {
+            $ext = 'png';
+        }
     }
-    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
-        return ['success' => false, 'error' => 'Image must be under 5 MB.'];
+
+    $allImageExts = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'ico', 'cur', 'gif', 'bmp', 'avif', 'tiff', 'tif', 'heic', 'heif', 'jfif', 'pjpeg'];
+    $isImage = str_starts_with($mimeType, 'image/') || in_array($ext, $allImageExts, true);
+
+    if (!$isImage) {
+        return ['success' => false, 'error' => 'Please upload a valid image file.'];
+    }
+
+    if (($file['size'] ?? 0) > 25 * 1024 * 1024) {
+        return ['success' => false, 'error' => 'Image must be under 25 MB.'];
     }
     $dir = dirname(__DIR__) . '/assets/uploads/store/' . $businessId . '/';
     if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {

@@ -652,7 +652,7 @@ function studio_cat_placeholder(): string {
                                 <?php if ($faviconPath): ?><img src="<?= e($faviconPath) ?>" alt=""><?php else: ?><span style="font-size:11px;color:#94a3b8">ICO</span><?php endif; ?>
                             </div>
                             <button type="button" class="st-link" onclick="document.getElementById('favFile').click()">Change Image</button>
-                            <input type="file" name="favicon" id="favFile" accept="image/png,image/jpeg,image/webp,image/x-icon,.ico,image/svg+xml" hidden onchange="previewFile(this,'favPreviewBox')">
+                            <input type="file" name="favicon" id="favFile" accept="image/png,image/jpeg,image/webp,image/x-icon,.ico,.svg,image/svg+xml,image/*" hidden onchange="previewFile(this,'favPreviewBox')">
                         </div>
                         <div class="st-hint">Preferred Image Size: 48 x 48 pixels</div>
 
