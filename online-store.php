@@ -324,6 +324,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
+    <?= render_storefront_favicon_tags($brand, (string) ($brand['display_name'] ?? $pageTitle)) ?>
     <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
     <style>
         .os-page { padding: 20px 28px 80px; background: #f8fafc; min-height: calc(100vh - 60px); }

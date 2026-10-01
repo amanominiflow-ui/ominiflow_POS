@@ -778,9 +778,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title><?= e($pageTitle) ?></title>
-    <link rel="icon" type="image/svg+xml" href="<?= e($favicon) ?>">
-    <link rel="alternate icon" href="<?= asset('assets/images/favicon-32x32.png') ?>">
-    <link rel="apple-touch-icon" href="<?= e($favicon) ?>">
+    <?= render_storefront_favicon_tags($brand, $pageTitle) ?>
     <link rel="stylesheet" href="<?= asset('assets/css/storefront.css') ?>?v=<?= $cssVersion ?>">
     <style>
         :root {
