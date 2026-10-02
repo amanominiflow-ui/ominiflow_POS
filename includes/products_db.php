@@ -986,11 +986,21 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         $errors['sku'] = 'A product with SKU "' . $sku . '" already exists.';
     }
 
+    // A product with only a SKU still needs a scannable code on its price label.
+    $barcodeWasBlank = $barcode === '';
+    if ($barcodeWasBlank && $sku !== '') {
+        $barcode = $sku;
+    }
+
     // Check unique Barcode within the same business
     if ($barcode !== '') {
         $existingBarcode = get_product_by_barcode($barcode, $bid);
         if ($existingBarcode && ($id === null || (int) $existingBarcode['id'] !== $id)) {
-            $errors['barcode'] = 'A product with Barcode "' . $barcode . '" already exists.';
+            if ($barcodeWasBlank) {
+                $barcode = null;
+            } else {
+                $errors['barcode'] = 'A product with Barcode "' . $barcode . '" already exists.';
+            }
         }
     } else {
         $barcode = null;
