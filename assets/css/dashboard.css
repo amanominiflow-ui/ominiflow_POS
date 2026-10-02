@@ -2222,6 +2222,24 @@ body {
     font-weight: 600;
 }
 
+.pos-promo-row {
+    align-items: center;
+    gap: 10px;
+}
+
+.pos-promo-select {
+    height: 28px;
+    max-width: 180px;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 12px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 4px;
+    background: #ffffff;
+    font-weight: 600;
+    color: var(--saas-navy-950);
+}
+
 .pos-coupon-row {
     align-items: flex-start;
 }
