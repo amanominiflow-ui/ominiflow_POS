@@ -13,11 +13,25 @@ require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/payment_options_db.php';
 require_once __DIR__ . '/includes/payment_integrations_db.php';
+require_once __DIR__ . '/includes/razorpay_oauth.php';
+require_once __DIR__ . '/includes/invoice_whatsapp.php';
+require_once __DIR__ . '/includes/outlets_db.php';
+require_once __DIR__ . '/includes/registers_db.php';
 
 require_auth();
 
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_pos_outlet') {
+    if (verify_csrf_token($_POST['csrf_token'] ?? '') && !user_pos_is_outlet_locked($user)) {
+        $openShift = get_open_register_session($userId);
+        if ((int) ($openShift['outlet_id'] ?? 0) <= 0) {
+            $_SESSION['pos_outlet_id'] = (int) ($_POST['outlet_id'] ?? 0);
+        }
+    }
+    redirect(APP_URL . '/pos.php');
+}
 
 // Handle AJAX Actions (Checkout, Hold, Resume, Add Customer)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -34,6 +48,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(APP_URL . '/pos.php');
     }
 
+    if ($action === 'send_order_invoice_whatsapp') {
+        header('Content-Type: application/json; charset=utf-8');
+        ignore_user_abort(true);
+        @set_time_limit(60);
+        $orderId = (int) ($_POST['order_id'] ?? 0);
+        if ($orderId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Order not found.']);
+            exit;
+        }
+        $phone = trim((string) ($_POST['customer_phone'] ?? ''));
+        $payStatus = strtolower(trim((string) ($_POST['payment_status'] ?? 'paid')));
+        if ($payStatus === '') {
+            $payStatus = 'paid';
+        }
+        try {
+            $res = send_order_invoice_whatsapp(current_business_id(), $orderId, $phone, [
+                'invoice_id' => (int) ($_POST['invoice_id'] ?? 0),
+                'order_number' => (string) ($_POST['order_number'] ?? ''),
+                'payment_status' => $payStatus,
+                'customer_phone' => $phone,
+            ]);
+        } catch (Throwable $e) {
+            error_log('POS async invoice WhatsApp: ' . $e->getMessage());
+            $res = ['success' => false, 'error' => 'Could not send invoice on WhatsApp.'];
+        }
+        echo json_encode($res);
+        exit;
+    }
+
     if ($action === 'checkout') {
         $cartJson = $_POST['cart_json'] ?? '[]';
         $cartItems = json_decode($cartJson, true) ?: [];
@@ -43,7 +86,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $paymentMethod = (string) ($_POST['payment_method'] ?? 'cash');
         $notes = (string) ($_POST['notes'] ?? '');
         $amountTendered = (float) ($_POST['amount_tendered'] ?? 0.00);
-        $outletId = !empty($_POST['outlet_id']) ? (int)$_POST['outlet_id'] : 1;
+        $outletId = (int) ($_POST['outlet_id'] ?? 0);
+        if ($outletId <= 0) {
+            $outletId = (int) ($_SESSION['pos_outlet_id'] ?? 0);
+        }
+        if (user_pos_is_outlet_locked($user)) {
+            $outletId = (int) ($user['outlet_id'] ?? 0);
+        } else {
+            $openShift = get_open_register_session($userId);
+            if ((int) ($openShift['outlet_id'] ?? 0) > 0) {
+                $outletId = (int) $openShift['outlet_id'];
+            }
+        }
         $clientOrderUuid = !empty($_POST['client_order_uuid']) ? (string)$_POST['client_order_uuid'] : null;
         $couponId = !empty($_POST['coupon_id']) ? (int)$_POST['coupon_id'] : null;
         $couponCode = !empty($_POST['coupon_code']) ? (string)$_POST['coupon_code'] : null;
@@ -51,11 +105,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loyaltyDiscount = !empty($_POST['loyalty_discount']) ? (float)$_POST['loyalty_discount'] : 0.00;
         $priceListId = !empty($_POST['price_list_id']) ? (int)$_POST['price_list_id'] : null;
 
+        if ($paymentMethod === 'razorpay') {
+            $rzpOrderId = trim((string) ($_POST['razorpay_order_id'] ?? ''));
+            $rzpPaymentId = trim((string) ($_POST['razorpay_payment_id'] ?? ''));
+            $rzpSignature = trim((string) ($_POST['razorpay_signature'] ?? ''));
+            $verified = $rzpOrderId !== '' && $rzpPaymentId !== '' && razorpay_verify_checkout($rzpOrderId, $rzpPaymentId, $rzpSignature);
+            if (!$verified) {
+                $fail = ['success' => false, 'errors' => ['payment' => 'Razorpay payment could not be verified. Please try again.']];
+                if (!empty($_POST['is_ajax'])) {
+                    header('Content-Type: application/json');
+                    echo json_encode($fail);
+                    exit;
+                }
+                set_flash('error', $fail['errors']['payment']);
+                redirect(APP_URL . '/pos.php');
+            }
+            $notes = trim($notes . "\nRazorpay order: {$rzpOrderId}; payment: {$rzpPaymentId}");
+        }
+
+        $paymentSplitsJson = trim((string) ($_POST['payment_splits_json'] ?? ''));
+        if ($paymentSplitsJson !== '') {
+            $paymentMethod = 'split';
+        }
+
         $result = process_pos_order(
             $cartItems, $customerId, $userId, $discountVal, $discountType, $paymentMethod,
             $notes, $amountTendered, $outletId, $clientOrderUuid, $couponId, $couponCode,
-            $loyaltyPoints, $loyaltyDiscount, $priceListId
+            $loyaltyPoints, $loyaltyDiscount, $priceListId, null, 'pos', 'delivered', null,
+            $paymentSplitsJson !== '' ? $paymentSplitsJson : null
         );
+
+        if (!empty($result['success'])) {
+            if (!empty($_POST['is_ajax'])) {
+                $result['whatsapp_invoice'] = ['pending' => true];
+            } else {
+                $result = attach_pos_invoice_whatsapp($result, current_business_id());
+            }
+        }
 
         if (!empty($_POST['is_ajax'])) {
             header('Content-Type: application/json');
@@ -64,13 +150,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($result['success']) {
-            set_flash('success', 'Order #' . $result['order_number'] . ' completed successfully! Total: ₹' . number_format($result['total_amount'], 2));
+            $wa = $result['whatsapp_invoice'] ?? [];
+            $flash = 'Order #' . $result['order_number'] . ' completed successfully! Total: ₹' . number_format($result['total_amount'], 2);
+            if (!empty($wa['success'])) {
+                $flash .= ' Invoice PDF sent to WhatsApp.';
+            }
+            set_flash('success', $flash);
             redirect(APP_URL . '/orders.php?highlight=' . $result['order_id']);
         } else {
             $msg = implode(' ', $result['errors']);
             set_flash('error', $msg);
             redirect(APP_URL . '/pos.php');
         }
+    } elseif ($action === 'create_razorpay_order') {
+        $amount = (float) ($_POST['amount'] ?? 0);
+        $amountPaise = (int) round($amount * 100);
+        if ($amountPaise < 100) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'Amount must be at least ₹1.00']);
+            exit;
+        }
+        $receipt = 'POS-' . current_business_id() . '-' . time();
+        $created = razorpay_create_order($amountPaise, $receipt, [
+            'source' => 'pos',
+            'business_id' => (string) current_business_id(),
+        ]);
+        header('Content-Type: application/json');
+        if (empty($created['success'])) {
+            echo json_encode(['success' => false, 'error' => $created['error'] ?? 'Could not start Razorpay']);
+            exit;
+        }
+        echo json_encode([
+            'success' => true,
+            'key' => razorpay_checkout_key(),
+            'order_id' => $created['order']['id'],
+            'amount' => $created['order']['amount'] ?? $amountPaise,
+            'currency' => $created['order']['currency'] ?? 'INR',
+            'name' => APP_NAME,
+        ]);
+        exit;
     } elseif ($action === 'validate_coupon') {
         require_once __DIR__ . '/includes/promotions_db.php';
         $couponCode = trim($_POST['coupon_code'] ?? '');
@@ -78,6 +196,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $res = validate_and_apply_coupon($couponCode, $subtotal);
         header('Content-Type: application/json');
         echo json_encode($res);
+        exit;
+    } elseif ($action === 'calc_cart_promotions') {
+        require_once __DIR__ . '/includes/promotions_db.php';
+        $cartJson = $_POST['cart_json'] ?? '[]';
+        $cartItems = json_decode($cartJson, true) ?: [];
+        $subtotal = (float) ($_POST['subtotal'] ?? 0.00);
+        if ($subtotal <= 0 && is_array($cartItems)) {
+            foreach ($cartItems as $item) {
+                $subtotal += (float) ($item['price'] ?? 0) * max(1, (int) ($item['quantity'] ?? 1));
+            }
+        }
+        $promoLines = [];
+        foreach ($cartItems as $item) {
+            $promoLines[] = [
+                'price' => (float) ($item['price'] ?? 0),
+                'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+            ];
+        }
+        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => true,
+            'total_discount' => (float) ($promoResult['total_discount'] ?? 0),
+            'applied_promotions' => $promoResult['applied_promotions'] ?? [],
+        ]);
         exit;
     } elseif ($action === 'hold_sale') {
         $cartJson = $_POST['cart_json'] ?? '[]';
@@ -127,16 +270,216 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('error', implode(' ', $result['errors']));
         }
         redirect(APP_URL . '/pos.php');
+    } elseif ($action === 'add_product') {
+        $respondAddProduct = static function (array $payload): void {
+            if (!empty($_POST['is_ajax'])) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            if (!empty($payload['success'])) {
+                set_flash('success', 'Product added successfully!');
+            } else {
+                $errs = $payload['errors'] ?? ['Could not add product.'];
+                set_flash('error', is_array($errs) ? implode(' ', array_values($errs)) : (string) $errs);
+            }
+            redirect(APP_URL . '/pos.php');
+        };
+
+        $file = null;
+        $wantedImage = false;
+        if (!empty($_FILES['product_image']) && ($_FILES['product_image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $wantedImage = true;
+            $imgErr = (int) ($_FILES['product_image']['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($imgErr === UPLOAD_ERR_OK) {
+                if ((int) ($_FILES['product_image']['size'] ?? 0) > 5 * 1024 * 1024) {
+                    $respondAddProduct(['success' => false, 'errors' => ['image' => 'Image must be 5MB or smaller.']]);
+                }
+                $file = $_FILES['product_image'];
+            } elseif (in_array($imgErr, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                $respondAddProduct(['success' => false, 'errors' => ['image' => 'Image is too large. Use a file under 5MB.']]);
+            } else {
+                $respondAddProduct(['success' => false, 'errors' => ['image' => 'Could not read the image. Try another JPG or PNG.']]);
+            }
+        }
+
+        $prodData = [
+            'name' => mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 191),
+            'sku' => mb_substr(trim((string) ($_POST['sku'] ?? '')), 0, 100),
+            'selling_price' => max(0, (float) ($_POST['selling_price'] ?? 0)),
+            'tax_percent' => 0,
+            'status' => 'active',
+            'initial_stock' => max(0, (int) ($_POST['initial_stock'] ?? 1)),
+            'item_kind' => 'goods',
+            'product_type' => 'simple',
+            'track_inventory' => 1,
+        ];
+
+        if ($prodData['name'] === '') {
+            $respondAddProduct(['success' => false, 'errors' => ['name' => 'Product name is required.']]);
+        }
+        if ($prodData['sku'] === '') {
+            $respondAddProduct(['success' => false, 'errors' => ['sku' => 'SKU is required.']]);
+        }
+
+        $result = ['success' => false, 'errors' => ['general' => 'Could not add product.']];
+        try {
+            $result = save_product($prodData, $file, null, $userId);
+        } catch (Throwable $e) {
+            error_log('POS add_product: ' . $e->getMessage());
+            if ($file) {
+                try {
+                    $result = save_product($prodData, null, null, $userId);
+                    if (!empty($result['success'])) {
+                        $result['image_warning'] = 'Product saved without image.';
+                    }
+                } catch (Throwable $e2) {
+                    error_log('POS add_product retry: ' . $e2->getMessage());
+                    $respondAddProduct(['success' => false, 'errors' => ['general' => 'Could not save product. Please try again.']]);
+                }
+            } else {
+                $respondAddProduct(['success' => false, 'errors' => ['general' => 'Could not save product. Please try again.']]);
+            }
+        }
+
+        if (!empty($result['success']) && !empty($result['product_id'])) {
+            $saved = get_product_by_id((int) $result['product_id']);
+            if ($saved) {
+                $result['product'] = [
+                    'id' => (int) $saved['id'],
+                    'name' => (string) $saved['name'],
+                    'sku' => (string) $saved['sku'],
+                    'barcode' => (string) ($saved['barcode'] ?? ''),
+                    'selling_price' => (float) $saved['selling_price'],
+                    'tax_percent' => (float) $saved['tax_percent'],
+                    'stock_quantity' => (int) $saved['stock_quantity'],
+                    'low_stock_threshold' => (int) $saved['low_stock_threshold'],
+                    'category_id' => $saved['category_id'] ?: 'none',
+                    'image_url' => !empty($saved['image_path']) ? asset((string) $saved['image_path']) : '',
+                ];
+                if ($wantedImage && empty($saved['image_path']) && empty($result['image_warning'])) {
+                    $result['image_warning'] = 'Product saved, but the image could not be uploaded. Check file type (JPG/PNG/WEBP) and folder permissions.';
+                }
+            }
+        }
+
+        $respondAddProduct($result ?? ['success' => false, 'errors' => ['general' => 'Could not add product.']]);
     }
 }
 
 // Load Catalog Data for Terminal
 $categories = get_categories('', 'active');
 $products = get_products('', null, 'active');
+$posVariantsByProduct = [];
+try {
+    $variantStmt = get_db()->prepare('
+        SELECT id, product_id, variant_name, attribute_values, image_path, sku, barcode, selling_price, stock_quantity
+        FROM product_variants
+        WHERE business_id = :bid AND status = "active"
+        ORDER BY id ASC
+    ');
+    $variantStmt->execute(['bid' => current_business_id()]);
+    foreach ($variantStmt->fetchAll() as $variantRow) {
+        $attrs = parse_variant_size_colour($variantRow);
+        $variantProductId = (int) $variantRow['product_id'];
+        $posVariantsByProduct[$variantProductId][] = [
+            'id' => (int) $variantRow['id'],
+            'name' => (string) $variantRow['variant_name'],
+            'image' => !empty($variantRow['image_path']) ? asset($variantRow['image_path']) : '',
+            'sku' => (string) $variantRow['sku'],
+            'barcode' => (string) ($variantRow['barcode'] ?? ''),
+            'price' => (float) $variantRow['selling_price'],
+            'stock' => (int) $variantRow['stock_quantity'],
+            'size' => $attrs['size'],
+            'colour' => $attrs['colour'],
+        ];
+    }
+} catch (Throwable $e) {
+    $posVariantsByProduct = [];
+}
 $customers = get_customers();
 $heldSales = get_held_sales();
 $paymentOptions = get_payment_options('active');
 $activeGateways = get_active_pos_payment_gateways();
+$posSplitPayMethods = [];
+foreach ($paymentOptions as $pOpt) {
+    $code = strtolower(str_replace(' ', '_', (string) ($pOpt['payment_mode'] ?? '')));
+    if ($code === '') {
+        continue;
+    }
+    $posSplitPayMethods[] = [
+        'code' => $code,
+        'label' => (string) ($pOpt['display_name'] ?? ucfirst($code)),
+    ];
+}
+if ($posSplitPayMethods === []) {
+    $posSplitPayMethods = [
+        ['code' => 'cash', 'label' => 'Cash'],
+        ['code' => 'upi', 'label' => 'UPI'],
+        ['code' => 'card', 'label' => 'Card / POS'],
+        ['code' => 'credit', 'label' => 'Credit'],
+    ];
+}
+
+// Daily Alerts: Low Stock & Unsold for a Week (7+ Days)
+$lowStockAlerts = get_pos_low_stock_alerts();
+$unsoldAlerts = get_pos_unsold_products_alerts(7);
+$totalPosAlerts = count($lowStockAlerts) + count($unsoldAlerts);
+
+$posOutlets = get_outlets('active');
+$posOpenShift = get_open_register_session($userId);
+$posLockedToStore = false;
+$posLockLabel = '';
+if (user_pos_is_outlet_locked($user)) {
+    $posOutletId = resolve_pos_outlet_id((int) ($user['outlet_id'] ?? 0));
+    $posLockedToStore = true;
+    $posLockLabel = 'Your store';
+} elseif ((int) ($posOpenShift['outlet_id'] ?? 0) > 0) {
+    $posOutletId = resolve_pos_outlet_id((int) $posOpenShift['outlet_id']);
+    $posLockedToStore = true;
+    $posLockLabel = trim((string) ($posOpenShift['register_name'] ?? 'This counter'));
+} else {
+    $posOutletId = resolve_pos_outlet_id((int) ($_SESSION['pos_outlet_id'] ?? 0));
+}
+$_SESSION['pos_outlet_id'] = $posOutletId;
+$posOutletName = '';
+foreach ($posOutlets as $posOutletRow) {
+    if ((int) $posOutletRow['id'] === $posOutletId) {
+        $posOutletName = (string) $posOutletRow['name'];
+        break;
+    }
+}
+$posWarehouseId = get_warehouse_id_for_outlet($posOutletId) ?? 0;
+$posIsolateOutletStock = pos_isolates_outlet_stock();
+$posWarehouseStockByProduct = [];
+$posLocationTracked = [];
+if ($posWarehouseId > 0) {
+    $wsStmt = get_db()->prepare('SELECT product_id, stock_quantity FROM warehouse_stock WHERE warehouse_id = :wid');
+    $wsStmt->execute(['wid' => $posWarehouseId]);
+    foreach ($wsStmt->fetchAll() as $wsRow) {
+        $posWarehouseStockByProduct[(int) $wsRow['product_id']] = (int) $wsRow['stock_quantity'];
+    }
+}
+if ($posIsolateOutletStock) {
+    $locStmt = get_db()->prepare('
+        SELECT DISTINCT ws.product_id
+        FROM warehouse_stock ws
+        INNER JOIN warehouses w ON w.id = ws.warehouse_id AND w.business_id = :bid
+    ');
+    $locStmt->execute(['bid' => current_business_id()]);
+    foreach ($locStmt->fetchAll() as $locRow) {
+        $posLocationTracked[(int) $locRow['product_id']] = true;
+    }
+    foreach ($posVariantsByProduct as $variantProductId => $variantRows) {
+        if (empty($posLocationTracked[(int) $variantProductId])) {
+            continue;
+        }
+        $storeCap = (int) ($posWarehouseStockByProduct[(int) $variantProductId] ?? 0);
+        foreach ($variantRows as $variantIndex => $variantRow) {
+            $posVariantsByProduct[$variantProductId][$variantIndex]['stock'] = min((int) $variantRow['stock'], $storeCap);
+        }
+    }
+}
 
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
@@ -153,9 +496,9 @@ $flashError = get_flash('error');
     <link rel="icon" type="image/png" sizes="16x16" href="<?= asset('assets/images/favicon-16x16.png') ?>">
     <link rel="shortcut icon" href="<?= asset('assets/images/favicon.ico') ?>">
 
-    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
+    <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>?v=<?= (int) @filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
 </head>
-<body>
+<body class="pos-page">
     <div class="app-layout">
         <!-- Sidebar Component -->
         <?php require_once __DIR__ . '/includes/sidebar.php'; ?>
@@ -190,6 +533,28 @@ $flashError = get_flash('error');
                     <div class="pos-catalog-panel">
                         <!-- Barcode & Search Controls -->
                         <div class="pos-search-barcode-row">
+                            <?php if ($posLockedToStore): ?>
+                            <div class="pos-outlet-switch" style="min-width: 200px;">
+                                <label class="form-label" style="font-size: 11px; font-weight: 700; color: var(--saas-slate-600); margin-bottom: 4px; display: block;">Billing store</label>
+                                <div class="form-control" style="background: #f8fafc; font-weight: 700;" title="This counter sells only this store's quantity">
+                                    <?= e($posOutletName !== '' ? $posOutletName : 'Store') ?>
+                                    <span style="font-weight: 500; color: #64748b;"> · <?= e($posLockLabel) ?></span>
+                                </div>
+                            </div>
+                            <?php elseif (count($posOutlets) > 0): ?>
+                            <form method="POST" action="<?= asset('pos.php') ?>" class="pos-outlet-switch" style="min-width: 200px;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="set_pos_outlet">
+                                <label class="form-label" style="font-size: 11px; font-weight: 700; color: var(--saas-slate-600); margin-bottom: 4px; display: block;">Billing store</label>
+                                <select name="outlet_id" class="form-control" onchange="this.form.submit()" title="Stock is deducted from this store's warehouse">
+                                    <?php foreach ($posOutlets as $posOutlet): ?>
+                                        <option value="<?= (int) $posOutlet['id'] ?>" <?= (int) $posOutlet['id'] === $posOutletId ? 'selected' : '' ?>>
+                                            <?= e($posOutlet['name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </form>
+                            <?php endif; ?>
                             <div class="search-input-wrap">
                                 <span class="search-icon">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,11 +585,26 @@ $flashError = get_flash('error');
                                     autofocus
                                 >
                             </div>
+
+                            <button
+                                type="button"
+                                class="pos-alerts-trigger-btn <?= $totalPosAlerts > 0 ? 'has-alerts' : '' ?>"
+                                id="openPosAlertsModalBtn"
+                                title="Daily Stock & Unsold Product Notices"
+                            >
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                <span>Alerts</span>
+                                <?php if ($totalPosAlerts > 0): ?>
+                                    <span class="pos-alert-count-badge"><?= $totalPosAlerts ?></span>
+                                <?php endif; ?>
+                            </button>
                         </div>
 
                         <!-- Category Filter Pills -->
                         <div class="pos-category-pills" id="categoryPillRow">
-                            <button type="button" class="pos-cat-pill active" data-category="all">All Products (<?= count($products) ?>)</button>
+                            <button type="button" class="pos-cat-pill active" data-category="all" id="allProductsPill">All Products (<?= count($products) ?>)</button>
                             <?php foreach ($categories as $cat): ?>
                                 <button type="button" class="pos-cat-pill" data-category="<?= $cat['id'] ?>">
                                     <?= e($cat['name']) ?>
@@ -236,7 +616,22 @@ $flashError = get_flash('error');
                         <div class="pos-product-grid" id="posProductGrid">
                             <?php foreach ($products as $prod): ?>
                                 <?php
-                                    $stock = (int) $prod['stock_quantity'];
+                                    $prodVariants = $posVariantsByProduct[(int) $prod['id']] ?? [];
+                                    $pid = (int) $prod['id'];
+                                    $sellsStoreQty = $posIsolateOutletStock && !empty($posLocationTracked[$pid]);
+                                    if ($sellsStoreQty) {
+                                        $stock = (int) ($posWarehouseStockByProduct[$pid] ?? 0);
+                                    } elseif (array_key_exists($pid, $posWarehouseStockByProduct)) {
+                                        $stock = (int) $posWarehouseStockByProduct[$pid];
+                                    } else {
+                                        $stock = (int) $prod['stock_quantity'];
+                                    }
+                                    if ($prodVariants && !$sellsStoreQty) {
+                                        $stock = 0;
+                                        foreach ($prodVariants as $prodVariant) {
+                                            $stock += (int) $prodVariant['stock'];
+                                        }
+                                    }
                                     $isOutOfStock = ($stock <= 0);
                                     $threshold = (int) $prod['low_stock_threshold'];
                                     $stockClass = 'badge-in-stock';
@@ -268,6 +663,9 @@ $flashError = get_flash('error');
                                     <?php endif; ?>
 
                                     <div class="pos-card-title"><?= e($prod['name']) ?></div>
+                                    <?php if ($prodVariants): ?>
+                                        <div class="pos-card-variant-hint">Size / colour</div>
+                                    <?php endif; ?>
 
                                     <div class="pos-card-meta">
                                         <span><?= e($prod['sku']) ?></span>
@@ -302,6 +700,13 @@ $flashError = get_flash('error');
                             </button>
                         </div>
 
+                        <button type="button" class="pos-btn-add-product" id="openAddProductBtn" title="Add a product to the catalog">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span>Add Product</span>
+                        </button>
+
                         <!-- Active Cart Items List -->
                         <div class="pos-cart-items-container" id="posCartItemsList">
                             <div class="empty-state" style="padding: 30px 10px;" id="emptyCartState">
@@ -327,6 +732,35 @@ $flashError = get_flash('error');
                                         <option value="percent">% (Rate)</option>
                                     </select>
                                 </div>
+                            </div>
+
+                            <div class="pos-summary-row pos-promo-discount-row" id="promoDiscountRow" hidden>
+                                <span>
+                                    Promotion savings
+                                    <small id="promoDiscountLabel" class="pos-promo-discount-label"></small>
+                                </span>
+                                <strong id="cartPromoDiscountText">− ₹0.00</strong>
+                            </div>
+
+                            <div class="pos-summary-row pos-coupon-row">
+                                <span>Coupon</span>
+                                <div class="pos-coupon-control" id="couponEntryWrap">
+                                    <input type="text" id="couponCodeInput" class="pos-coupon-input" placeholder="Enter code" autocomplete="off" spellcheck="false">
+                                    <button type="button" class="pos-coupon-apply-btn" id="applyCouponBtn">Apply</button>
+                                </div>
+                                <div class="pos-coupon-applied" id="couponAppliedWrap" hidden>
+                                    <span class="pos-coupon-applied-code" id="couponAppliedCode"></span>
+                                    <button type="button" class="pos-coupon-remove-btn" id="removeCouponBtn" title="Remove coupon">×</button>
+                                </div>
+                            </div>
+                            <div class="pos-summary-row pos-coupon-discount-row" id="couponDiscountRow" hidden>
+                                <span>Coupon savings</span>
+                                <strong id="cartCouponDiscountText">− ₹0.00</strong>
+                            </div>
+
+                            <div class="pos-checkout-saved-strip" id="posCheckoutSavedStrip" hidden>
+                                <span class="pos-checkout-saved-label">You saved</span>
+                                <strong id="posCheckoutSavedAmount">₹0.00</strong>
                             </div>
 
                             <div class="pos-summary-row">
@@ -390,7 +824,15 @@ $flashError = get_flash('error');
                 <input type="hidden" name="customer_id" id="hiddenCustomerId" value="1">
                 <input type="hidden" name="discount_value" id="hiddenDiscountValue" value="0">
                 <input type="hidden" name="discount_type" id="hiddenDiscountType" value="fixed">
+                <input type="hidden" name="coupon_id" id="hiddenCouponId" value="">
+                <input type="hidden" name="coupon_code" id="hiddenCouponCode" value="">
                 <input type="hidden" name="payment_method" id="hiddenPaymentMethod" value="cash">
+                <input type="hidden" name="razorpay_order_id" id="hiddenRazorpayOrderId" value="">
+                <input type="hidden" name="razorpay_payment_id" id="hiddenRazorpayPaymentId" value="">
+                <input type="hidden" name="razorpay_signature" id="hiddenRazorpaySignature" value="">
+                <input type="hidden" name="payment_splits_json" id="hiddenPaymentSplitsJson" value="">
+                <input type="hidden" name="amount_tendered" id="hiddenAmountTendered" value="">
+                <input type="hidden" name="outlet_id" id="hiddenOutletId" value="<?= (int) $posOutletId ?>">
 
                 <div class="modal-body">
                     <!-- Grand Total Banner -->
@@ -444,6 +886,18 @@ $flashError = get_flash('error');
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
+                        <div class="payment-method-card" data-method="split" title="Pay using multiple methods">
+                            <span style="font-size: 20px;">➗</span>
+                            <span>Split Payment</span>
+                        </div>
+                    </div>
+
+                    <div id="splitPaymentSection" class="pos-split-payment-section" style="display: none;">
+                        <label class="form-label" style="margin-bottom: 8px;">Split across methods <span style="color: #ef4444;">*</span></label>
+                        <p style="font-size: 12px; color: var(--saas-slate-500); margin: 0 0 10px;">Enter amounts for each method. Total must match the payable amount.</p>
+                        <div id="splitPaymentRows" class="pos-split-rows"></div>
+                        <button type="button" class="btn-secondary pos-split-add-btn" id="addSplitRowBtn" style="margin-top: 8px; padding: 6px 12px; font-size: 12px;">+ Add line</button>
+                        <div class="pos-split-remain" id="splitPaymentRemain">Remaining: ₹0.00</div>
                     </div>
 
                     <!-- Cash Payment Calculator -->
@@ -504,7 +958,7 @@ $flashError = get_flash('error');
                     <div style="text-align: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 12px;">
                         <div style="font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #111827;">OMINIFLOW POS</div>
                         <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Official Retail Sales Receipt & Tax Invoice</div>
-                        <div style="font-size: 14px; font-weight: 800; color: var(--saas-primary); margin-top: 6px;" id="receiptInvoiceNumber">INV-00000000-0000</div>
+                        <a href="<?= asset('invoice-view.php') ?>" id="receiptInvoiceNumber" target="_blank" style="display: inline-block; font-size: 14px; font-weight: 800; color: var(--saas-primary); margin-top: 6px; text-decoration: none;">INV-00000000-0000</a>
                         <div style="font-size: 11px; color: #64748b;" id="receiptOrderNumber">Order #ORD-000000</div>
                         <div style="font-size: 11px; color: #64748b;" id="receiptTimestamp">Date Time</div>
                     </div>
@@ -512,6 +966,7 @@ $flashError = get_flash('error');
                     <div style="font-size: 12px; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
                         <div>Customer: <strong id="receiptCustomerName">Walk-in Customer</strong></div>
                         <div id="receiptCustomerPhoneRow" style="display: none;">Phone: <span id="receiptCustomerPhone"></span></div>
+                        <div>Outlet: <strong id="receiptOutletName"><?= e($posOutletName) ?></strong></div>
                         <div>Cashier: <span id="receiptCashierName"><?= e($user['name'] ?? 'Cashier') ?></span></div>
                         <div>Payment Method: <strong style="text-transform: uppercase;" id="receiptPaymentMethod">CASH</strong> (Status: PAID)</div>
                     </div>
@@ -563,6 +1018,8 @@ $flashError = get_flash('error');
                         Thank you for shopping with us!
                     </div>
                 </div>
+
+                <div id="receiptWhatsAppStatus" class="no-print" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 650; line-height: 1.45;"></div>
             </div>
 
             <div class="modal-footer no-print" style="justify-content: space-between; gap: 8px; flex-wrap: wrap;">
@@ -689,15 +1146,106 @@ $flashError = get_flash('error');
         </div>
     </div>
 
+    <!-- 5. ADD PRODUCT MODAL -->
+    <div class="modal-overlay" id="addProductModal">
+        <div class="modal-box" style="max-width: 460px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Add Product</h3>
+                <button type="button" class="modal-close-btn" id="closeAddProductModal">&times;</button>
+            </div>
+            <form id="addProductForm" enctype="multipart/form-data">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="add_product">
+                <input type="hidden" name="is_ajax" value="1">
+
+                <div class="modal-body">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdNameInput" class="form-label">Product Name <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="posProdNameInput" name="name" required maxlength="191" placeholder="e.g. WEST34" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdSkuInput" class="form-label">SKU <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="posProdSkuInput" name="sku" required maxlength="100" placeholder="e.g. WEST34" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdPriceInput" class="form-label">Selling Price (₹)</label>
+                        <input type="number" id="posProdPriceInput" name="selling_price" min="0" step="0.01" value="0" class="form-control">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="posProdStockInput" class="form-label">Opening Stock</label>
+                        <input type="number" id="posProdStockInput" name="initial_stock" min="0" step="1" value="1" class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="posProdImageInput" class="form-label">Product Image</label>
+                        <input type="file" id="posProdImageInput" name="product_image" accept="image/jpeg,image/png,image/webp,image/jpg" class="form-control">
+                        <div id="posProdImagePreviewWrap" class="pos-add-prod-preview" hidden>
+                            <img id="posProdImagePreview" alt="Preview">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelAddProductModal">Cancel</button>
+                    <button type="submit" class="header-btn" id="submitAddProductBtn" style="border: 0;">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 6. POS & HOME DAILY ALERTS MODAL (LOW STOCK & 7-DAY UNSOLD PRODUCTS) -->
+    <?php require_once __DIR__ . '/includes/daily_alerts_modal.php'; ?>
+
+    <!-- Size / colour picker. The register screen stays in place; this only opens when a product has variants. -->
+    <div class="modal-overlay" id="variantPickerModal">
+        <div class="modal-box" style="max-width: 460px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="variantPickerTitle">Choose size and colour</h3>
+                <button type="button" class="modal-close-btn" id="closeVariantPicker">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="variantPickerSizeRow" style="margin-bottom: 14px;">
+                    <span class="pos-variant-label">Size</span>
+                    <div class="pos-variant-chips" id="variantPickerSizes"></div>
+                </div>
+                <div id="variantPickerColourRow" style="margin-bottom: 14px;">
+                    <span class="pos-variant-label">Colour</span>
+                    <div class="pos-variant-chips" id="variantPickerColours"></div>
+                </div>
+                <div id="variantPickerNameRow" style="margin-bottom: 14px; display: none;">
+                    <span class="pos-variant-label">Variant</span>
+                    <div class="pos-variant-chips" id="variantPickerNames"></div>
+                </div>
+                <div class="pos-variant-meta" id="variantPickerMeta">Select a size and colour.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cancelVariantPicker">Cancel</button>
+                <button type="button" class="header-btn" id="confirmVariantPicker" style="border: 0;">Add to cart</button>
+            </div>
+        </div>
+    </div>
+
     <!-- CSRF Token helper for JS -->
     <input type="hidden" id="pageCsrfToken" value="<?= csrf_token() ?>">
 
     <script src="<?= asset('assets/js/dashboard.js') ?>"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            // Cart State: Array of { product_id, name, sku, barcode, price, tax_percent, quantity, max_stock }
+            // Cart State: Array of { product_id, variant_id, name, sku, size, colour, price, tax_percent, quantity, max_stock }
             let cart = [];
             let currentCategory = 'all';
+            const posVariants = <?= json_encode($posVariantsByProduct, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?> || {};
+            let pendingVariantProduct = null;
+            let appliedCoupon = null;
+            let couponRevalidateTimer = null;
+            let autoPromoDiscount = 0;
+            let autoPromoLabel = '';
+            let promoRecalcTimer = null;
+            let summarySubtotalCache = 0;
+            let summaryTaxCache = 0;
 
             // DOM Elements
             const productGrid = document.getElementById('posProductGrid');
@@ -719,6 +1267,13 @@ $flashError = get_flash('error');
 
             // Modals
             const paymentModal = document.getElementById('checkoutPaymentModal');
+            const POS_SPLIT_PAY_METHODS = <?= json_encode($posSplitPayMethods, JSON_UNESCAPED_UNICODE) ?>;
+            const splitPaymentSection = document.getElementById('splitPaymentSection');
+            const splitPaymentRows = document.getElementById('splitPaymentRows');
+            const splitPaymentRemain = document.getElementById('splitPaymentRemain');
+            const hiddenPaymentSplitsJson = document.getElementById('hiddenPaymentSplitsJson');
+            const hiddenAmountTendered = document.getElementById('hiddenAmountTendered');
+            const addSplitRowBtn = document.getElementById('addSplitRowBtn');
             const closePaymentBtn = document.getElementById('closePaymentModal');
             const cancelPaymentBtn = document.getElementById('cancelPaymentModal');
             const checkoutForm = document.getElementById('checkoutForm');
@@ -747,18 +1302,266 @@ $flashError = get_flash('error');
             const hiddenCustomerId = document.getElementById('hiddenCustomerId');
             const hiddenDiscountValue = document.getElementById('hiddenDiscountValue');
             const hiddenDiscountType = document.getElementById('hiddenDiscountType');
+            const hiddenCouponId = document.getElementById('hiddenCouponId');
+            const hiddenCouponCode = document.getElementById('hiddenCouponCode');
+            const couponCodeInput = document.getElementById('couponCodeInput');
+            const applyCouponBtn = document.getElementById('applyCouponBtn');
+            const removeCouponBtn = document.getElementById('removeCouponBtn');
+            const couponEntryWrap = document.getElementById('couponEntryWrap');
+            const couponAppliedWrap = document.getElementById('couponAppliedWrap');
+            const couponAppliedCode = document.getElementById('couponAppliedCode');
+            const couponDiscountRow = document.getElementById('couponDiscountRow');
+            const cartCouponDiscountEl = document.getElementById('cartCouponDiscountText');
+            const promoDiscountRow = document.getElementById('promoDiscountRow');
+            const cartPromoDiscountEl = document.getElementById('cartPromoDiscountText');
+            const promoDiscountLabel = document.getElementById('promoDiscountLabel');
+            const posCheckoutSavedStrip = document.getElementById('posCheckoutSavedStrip');
+            const posCheckoutSavedAmount = document.getElementById('posCheckoutSavedAmount');
             const hiddenPaymentMethod = document.getElementById('hiddenPaymentMethod');
             const tenderedInput = document.getElementById('tenderedAmountInput');
             const changeDueVal = document.getElementById('changeDueValue');
 
+            function variantsFor(productId) {
+                return posVariants[productId] || posVariants[String(productId)] || [];
+            }
+
+            function uniqueVariantValues(list, key) {
+                const out = [];
+                list.forEach(function (row) {
+                    const val = String(row[key] || '').trim();
+                    if (val && out.indexOf(val) === -1) out.push(val);
+                });
+                return out;
+            }
+
+            function variantLabel(item) {
+                const size = String(item.size || '').trim();
+                const colour = String(item.colour || '').trim();
+                if (size || colour) {
+                    return (size ? 'Size: ' + size : '') + (size && colour ? ' · ' : '') + (colour ? 'Colour: ' + colour : '');
+                }
+                return String(item.variant_name || '').trim();
+            }
+
+            function cartLineKey(item) {
+                return String(item.product_id) + ':' + String(item.variant_id || 0);
+            }
+
+            function cartSubtotalOnly() {
+                let subtotal = 0;
+                cart.forEach(function (item) {
+                    subtotal += item.price * item.quantity;
+                });
+                return subtotal;
+            }
+
+            function manualDiscountAmount(subtotal) {
+                const discVal = Math.max(0, parseFloat(discountValInput.value) || 0);
+                const discType = discountTypeSelect.value;
+                if (discType === 'percent') {
+                    return subtotal * (Math.min(100, discVal) / 100);
+                }
+                return Math.min(subtotal, discVal);
+            }
+
+            function effectiveCouponDiscount(subtotal, manualDisc, promoDisc) {
+                if (!appliedCoupon) return 0;
+                const remaining = Math.max(0, subtotal - manualDisc - (promoDisc || 0));
+                return Math.min(remaining, parseFloat(appliedCoupon.discount_amount) || 0);
+            }
+
+            function updateCartTotalsDisplay(subtotal, taxTotal) {
+                summarySubtotalCache = subtotal;
+                summaryTaxCache = taxTotal;
+                const manualDisc = manualDiscountAmount(subtotal);
+                const promoDisc = autoPromoDiscount;
+                const couponDisc = effectiveCouponDiscount(subtotal, manualDisc, promoDisc);
+                const totalDiscount = Math.min(subtotal, manualDisc + promoDisc + couponDisc);
+                const grandTotal = Math.max(0, subtotal - totalDiscount + taxTotal);
+
+                cartSubtotalEl.textContent = '₹' + subtotal.toFixed(2);
+                cartTaxEl.textContent = '₹' + taxTotal.toFixed(2);
+
+                if (promoDiscountRow && cartPromoDiscountEl) {
+                    if (promoDisc > 0) {
+                        promoDiscountRow.hidden = false;
+                        cartPromoDiscountEl.textContent = '− ₹' + promoDisc.toFixed(2);
+                        if (promoDiscountLabel) {
+                            promoDiscountLabel.textContent = autoPromoLabel ? autoPromoLabel : '';
+                        }
+                    } else {
+                        promoDiscountRow.hidden = true;
+                        if (promoDiscountLabel) promoDiscountLabel.textContent = '';
+                    }
+                }
+
+                if (couponDiscountRow && cartCouponDiscountEl) {
+                    if (couponDisc > 0) {
+                        couponDiscountRow.hidden = false;
+                        cartCouponDiscountEl.textContent = '− ₹' + couponDisc.toFixed(2);
+                    } else {
+                        couponDiscountRow.hidden = true;
+                    }
+                }
+
+                const checkoutSave = promoDisc + couponDisc;
+                if (posCheckoutSavedStrip && posCheckoutSavedAmount) {
+                    if (checkoutSave > 0) {
+                        posCheckoutSavedStrip.hidden = false;
+                        posCheckoutSavedAmount.textContent = '₹' + checkoutSave.toFixed(2);
+                    } else {
+                        posCheckoutSavedStrip.hidden = true;
+                    }
+                }
+
+                cartGrandTotalEl.textContent = '₹' + grandTotal.toFixed(2);
+                checkoutBtnTotalEl.textContent = '₹' + grandTotal.toFixed(2);
+                checkoutBtn.disabled = false;
+            }
+
+            function scheduleAutoPromoRecalc(subtotal) {
+                if (cart.length === 0) {
+                    autoPromoDiscount = 0;
+                    autoPromoLabel = '';
+                    return;
+                }
+                if (promoRecalcTimer) clearTimeout(promoRecalcTimer);
+                promoRecalcTimer = setTimeout(function () {
+                    promoRecalcTimer = null;
+                    const formData = new FormData();
+                    formData.append('action', 'calc_cart_promotions');
+                    formData.append('csrf_token', csrfToken);
+                    formData.append('cart_json', JSON.stringify(cart));
+                    formData.append('subtotal', String(subtotal));
+                    fetch('<?= asset('pos.php') ?>', { method: 'POST', body: formData })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            autoPromoDiscount = parseFloat(data.total_discount) || 0;
+                            const promos = data.applied_promotions || [];
+                            autoPromoLabel = promos.map(function (p) { return p.name; }).filter(Boolean).join(', ');
+                            updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
+                            scheduleCouponRevalidate();
+                        })
+                        .catch(function () {
+                            autoPromoDiscount = 0;
+                            autoPromoLabel = '';
+                        });
+                }, 280);
+            }
+
+            function syncCouponHiddenFields() {
+                if (hiddenCouponId) hiddenCouponId.value = appliedCoupon ? String(appliedCoupon.coupon_id) : '';
+                if (hiddenCouponCode) hiddenCouponCode.value = appliedCoupon ? appliedCoupon.code : '';
+            }
+
+            function updateCouponUi() {
+                const hasCoupon = !!appliedCoupon;
+                if (couponEntryWrap) couponEntryWrap.hidden = hasCoupon;
+                if (couponAppliedWrap) couponAppliedWrap.hidden = !hasCoupon;
+                if (hasCoupon && couponAppliedCode) {
+                    couponAppliedCode.textContent = appliedCoupon.code;
+                }
+                syncCouponHiddenFields();
+            }
+
+            function clearAppliedCoupon() {
+                appliedCoupon = null;
+                if (couponCodeInput) couponCodeInput.value = '';
+                if (couponDiscountRow) couponDiscountRow.hidden = true;
+                updateCouponUi();
+            }
+
+            function applyCouponFromCode(code, silent) {
+                const trimmed = String(code || '').trim();
+                if (trimmed === '') {
+                    if (!silent) alert('Enter a coupon code.');
+                    return Promise.resolve(false);
+                }
+                if (cart.length === 0) {
+                    if (!silent) alert('Add items to the cart before applying a coupon.');
+                    return Promise.resolve(false);
+                }
+                const subtotal = cartSubtotalOnly();
+                if (applyCouponBtn) applyCouponBtn.disabled = true;
+                const formData = new FormData();
+                formData.append('action', 'validate_coupon');
+                formData.append('csrf_token', csrfToken);
+                formData.append('coupon_code', trimmed);
+                formData.append('subtotal', String(subtotal));
+                return fetch('<?= asset('pos.php') ?>', { method: 'POST', body: formData })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (applyCouponBtn) applyCouponBtn.disabled = false;
+                        if (!data.valid) {
+                            if (!silent) alert(data.error || 'Coupon could not be applied.');
+                            if (silent) {
+                                clearAppliedCoupon();
+                                renderCart();
+                            }
+                            return false;
+                        }
+                        appliedCoupon = {
+                            coupon_id: data.coupon_id,
+                            code: data.code,
+                            discount_amount: parseFloat(data.discount_amount) || 0
+                        };
+                        updateCouponUi();
+                        renderCart();
+                        return true;
+                    })
+                    .catch(function (err) {
+                        if (applyCouponBtn) applyCouponBtn.disabled = false;
+                        if (!silent) alert('Could not validate coupon: ' + err);
+                        return false;
+                    });
+            }
+
+            function scheduleCouponRevalidate() {
+                if (!appliedCoupon) return;
+                if (couponRevalidateTimer) clearTimeout(couponRevalidateTimer);
+                couponRevalidateTimer = setTimeout(function () {
+                    couponRevalidateTimer = null;
+                    applyCouponFromCode(appliedCoupon.code, true);
+                }, 350);
+            }
+
+            function productFromCard(card) {
+                return {
+                    product_id: parseInt(card.getAttribute('data-id'), 10),
+                    name: card.getAttribute('data-name'),
+                    sku: card.getAttribute('data-sku'),
+                    barcode: card.getAttribute('data-barcode'),
+                    price: parseFloat(card.getAttribute('data-price')),
+                    tax_percent: parseFloat(card.getAttribute('data-tax')),
+                    max_stock: parseInt(card.getAttribute('data-stock'), 10)
+                };
+            }
+
+            function lineFromVariant(base, variant) {
+                return {
+                    product_id: base.product_id,
+                    name: base.name,
+                    sku: variant.sku || base.sku,
+                    barcode: variant.barcode || base.barcode || '',
+                    price: (parseFloat(variant.price) > 0) ? parseFloat(variant.price) : base.price,
+                    tax_percent: base.tax_percent,
+                    max_stock: parseInt(variant.stock, 10) || 0,
+                    variant_id: parseInt(variant.id, 10),
+                    size: variant.size || '',
+                    colour: variant.colour || '',
+                    variant_name: variant.name || ''
+                };
+            }
+
             // 1. Add Product to Cart with Stock Validation
             function addToCart(prod) {
                 if (prod.max_stock <= 0) {
-                    alert('Item "' + prod.name + '" is out of stock and cannot be added.');
+                    const label = variantLabel(prod) ? prod.name + ' (' + variantLabel(prod) + ')' : prod.name;
+                    alert('Item "' + label + '" is out of stock and cannot be added.');
                     return;
                 }
 
-                const existingIndex = cart.findIndex(item => item.product_id === prod.product_id);
+                const existingIndex = cart.findIndex(item => cartLineKey(item) === cartLineKey(prod));
                 if (existingIndex > -1) {
                     if (cart[existingIndex].quantity < cart[existingIndex].max_stock) {
                         cart[existingIndex].quantity += 1;
@@ -769,8 +1572,12 @@ $flashError = get_flash('error');
                 } else {
                     cart.push({
                         product_id: prod.product_id,
+                        variant_id: prod.variant_id || 0,
                         name: prod.name,
                         sku: prod.sku,
+                        size: prod.size || '',
+                        colour: prod.colour || '',
+                        variant_name: prod.variant_name || '',
                         price: prod.price,
                         tax_percent: prod.tax_percent,
                         quantity: 1,
@@ -791,6 +1598,11 @@ $flashError = get_flash('error');
                     cartGrandTotalEl.textContent = '₹0.00';
                     checkoutBtnTotalEl.textContent = '₹0.00';
                     checkoutBtn.disabled = true;
+                    clearAppliedCoupon();
+                    autoPromoDiscount = 0;
+                    autoPromoLabel = '';
+                    if (promoDiscountRow) promoDiscountRow.hidden = true;
+                    if (posCheckoutSavedStrip) posCheckoutSavedStrip.hidden = true;
                     return;
                 }
 
@@ -814,6 +1626,7 @@ $flashError = get_flash('error');
                         <div class="pos-cart-item-top">
                             <div>
                                 <div class="pos-cart-item-name">${escapeHtml(item.name)}</div>
+                                ${variantLabel(item) ? '<div class="pos-cart-item-variant">' + escapeHtml(variantLabel(item)) + '</div>' : ''}
                                 <div class="pos-cart-item-sku">SKU: ${escapeHtml(item.sku)}</div>
                             </div>
                             <button type="button" class="pos-btn-remove-item" data-index="${index}" title="Remove Item">
@@ -837,24 +1650,9 @@ $flashError = get_flash('error');
                     cartItemsList.appendChild(row);
                 });
 
-                // Calculate Discount
-                const discVal = Math.max(0, parseFloat(discountValInput.value) || 0);
-                const discType = discountTypeSelect.value;
-                let discountAmount = 0;
-
-                if (discType === 'percent') {
-                    discountAmount = subtotal * (Math.min(100, discVal) / 100);
-                } else {
-                    discountAmount = Math.min(subtotal, discVal);
-                }
-
-                const grandTotal = Math.max(0, subtotal - discountAmount + taxTotal);
-
-                cartSubtotalEl.textContent = '₹' + subtotal.toFixed(2);
-                cartTaxEl.textContent = '₹' + taxTotal.toFixed(2);
-                cartGrandTotalEl.textContent = '₹' + grandTotal.toFixed(2);
-                checkoutBtnTotalEl.textContent = '₹' + grandTotal.toFixed(2);
-                checkoutBtn.disabled = false;
+                updateCartTotalsDisplay(subtotal, taxTotal);
+                scheduleAutoPromoRecalc(subtotal);
+                scheduleCouponRevalidate();
             }
 
             function escapeHtml(str) {
@@ -909,12 +1707,33 @@ $flashError = get_flash('error');
             discountValInput.addEventListener('input', renderCart);
             discountTypeSelect.addEventListener('change', renderCart);
 
+            if (applyCouponBtn) {
+                applyCouponBtn.addEventListener('click', function () {
+                    applyCouponFromCode(couponCodeInput ? couponCodeInput.value : '', false);
+                });
+            }
+            if (couponCodeInput) {
+                couponCodeInput.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyCouponFromCode(couponCodeInput.value, false);
+                    }
+                });
+            }
+            if (removeCouponBtn) {
+                removeCouponBtn.addEventListener('click', function () {
+                    clearAppliedCoupon();
+                    renderCart();
+                });
+            }
+
             // Clear Cart Button
             clearCartBtn.addEventListener('click', function () {
                 if (cart.length === 0) return;
                 if (confirm('Are you sure you want to clear all items from the cart?')) {
                     cart = [];
                     discountValInput.value = '0';
+                    clearAppliedCoupon();
                     renderCart();
                 }
             });
@@ -929,15 +1748,12 @@ $flashError = get_flash('error');
                     return;
                 }
 
-                const prod = {
-                    product_id: parseInt(card.getAttribute('data-id'), 10),
-                    name: card.getAttribute('data-name'),
-                    sku: card.getAttribute('data-sku'),
-                    barcode: card.getAttribute('data-barcode'),
-                    price: parseFloat(card.getAttribute('data-price')),
-                    tax_percent: parseFloat(card.getAttribute('data-tax')),
-                    max_stock: parseInt(card.getAttribute('data-stock'), 10)
-                };
+                const prod = productFromCard(card);
+                const vars = variantsFor(prod.product_id);
+                if (vars.length) {
+                    openVariantPicker(prod);
+                    return;
+                }
                 addToCart(prod);
             });
 
@@ -952,7 +1768,11 @@ $flashError = get_flash('error');
                     const barcode = (card.getAttribute('data-barcode') || '').toLowerCase();
                     const catId = card.getAttribute('data-category');
 
-                    const matchesSearch = (query === '' || name.includes(query) || sku.includes(query) || barcode.includes(query));
+                    const variantHit = variantsFor(card.getAttribute('data-id')).some(function (variant) {
+                        const blob = ((variant.sku || '') + ' ' + (variant.barcode || '') + ' ' + (variant.size || '') + ' ' + (variant.colour || '') + ' ' + (variant.name || '')).toLowerCase();
+                        return query !== '' && blob.includes(query);
+                    });
+                    const matchesSearch = (query === '' || name.includes(query) || sku.includes(query) || barcode.includes(query) || variantHit);
                     const matchesCategory = (currentCategory === 'all' || catId === currentCategory);
 
                     if (matchesSearch && matchesCategory) {
@@ -980,31 +1800,198 @@ $flashError = get_flash('error');
                     const code = this.value.trim();
                     if (code === '') return;
 
+                    let matchedVariant = null;
+                    let matchedProductId = 0;
+                    Object.keys(posVariants).forEach(function (pid) {
+                        (posVariants[pid] || []).forEach(function (variant) {
+                            if ((variant.barcode && variant.barcode === code) || (variant.sku && variant.sku === code)) {
+                                matchedVariant = variant;
+                                matchedProductId = parseInt(pid, 10);
+                            }
+                        });
+                    });
+
                     let foundCard = null;
                     const cards = productGrid.querySelectorAll('.pos-card');
                     cards.forEach(card => {
-                        if (card.getAttribute('data-barcode') === code || card.getAttribute('data-sku') === code) {
+                        const cardId = parseInt(card.getAttribute('data-id'), 10);
+                        if (matchedProductId && cardId === matchedProductId) {
+                            foundCard = card;
+                        } else if (!matchedVariant && (card.getAttribute('data-barcode') === code || card.getAttribute('data-sku') === code)) {
                             foundCard = card;
                         }
                     });
 
                     if (foundCard) {
-                        const prod = {
-                            product_id: parseInt(foundCard.getAttribute('data-id'), 10),
-                            name: foundCard.getAttribute('data-name'),
-                            sku: foundCard.getAttribute('data-sku'),
-                            barcode: foundCard.getAttribute('data-barcode'),
-                            price: parseFloat(foundCard.getAttribute('data-price')),
-                            tax_percent: parseFloat(foundCard.getAttribute('data-tax')),
-                            max_stock: parseInt(foundCard.getAttribute('data-stock'), 10)
-                        };
-                        addToCart(prod);
+                        const prod = productFromCard(foundCard);
+                        if (matchedVariant) {
+                            addToCart(lineFromVariant(prod, matchedVariant));
+                        } else if (variantsFor(prod.product_id).length) {
+                            openVariantPicker(prod);
+                        } else {
+                            addToCart(prod);
+                        }
                         this.value = '';
                     } else {
                         alert('No active product found matching barcode/SKU: ' + code);
                         this.value = '';
                     }
                 }
+            });
+
+            const variantModal = document.getElementById('variantPickerModal');
+            const variantTitle = document.getElementById('variantPickerTitle');
+            const variantSizeRow = document.getElementById('variantPickerSizeRow');
+            const variantColourRow = document.getElementById('variantPickerColourRow');
+            const variantNameRow = document.getElementById('variantPickerNameRow');
+            const variantSizes = document.getElementById('variantPickerSizes');
+            const variantColours = document.getElementById('variantPickerColours');
+            const variantNames = document.getElementById('variantPickerNames');
+            const variantMeta = document.getElementById('variantPickerMeta');
+            const confirmVariantBtn = document.getElementById('confirmVariantPicker');
+
+            function selectedVariantChoice() {
+                const vars = variantsFor(pendingVariantProduct ? pendingVariantProduct.product_id : 0);
+                const sizes = uniqueVariantValues(vars, 'size');
+                const colours = uniqueVariantValues(vars, 'colour');
+                if (!sizes.length && !colours.length) {
+                    const chosen = variantNames.querySelector('.pos-variant-chip.on');
+                    const id = chosen ? chosen.getAttribute('data-id') : '';
+                    return vars.find(function (row) { return String(row.id) === String(id); }) || null;
+                }
+                const sizeChip = variantSizes.querySelector('.pos-variant-chip.on');
+                const colourChip = variantColours.querySelector('.pos-variant-chip.on');
+                const size = sizeChip ? sizeChip.getAttribute('data-value') : '';
+                const colour = colourChip ? colourChip.getAttribute('data-value') : '';
+                if (sizes.length && !size) return null;
+                if (colours.length && !colour) return null;
+                return vars.find(function (row) {
+                    const sizeOk = !sizes.length || row.size === size;
+                    const colourOk = !colours.length || row.colour === colour;
+                    return sizeOk && colourOk;
+                }) || null;
+            }
+
+            function paintVariantChips(container, values, keyName) {
+                container.innerHTML = '';
+                values.forEach(function (value) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'pos-variant-chip';
+                    btn.setAttribute(keyName === 'id' ? 'data-id' : 'data-value', value.value);
+                    btn.textContent = value.label;
+                    container.appendChild(btn);
+                });
+            }
+
+            function refreshVariantPicker() {
+                const vars = variantsFor(pendingVariantProduct ? pendingVariantProduct.product_id : 0);
+                const sizes = uniqueVariantValues(vars, 'size');
+                const selectedSizeChip = variantSizes.querySelector('.pos-variant-chip.on');
+                const selectedSize = selectedSizeChip ? selectedSizeChip.getAttribute('data-value') : '';
+                variantSizes.querySelectorAll('.pos-variant-chip').forEach(function (chip) {
+                    const size = chip.getAttribute('data-value');
+                    const available = vars.some(function (row) { return row.size === size && row.stock > 0; });
+                    chip.disabled = !available;
+                    chip.classList.toggle('off', !available);
+                    if (!available) chip.classList.remove('on');
+                });
+                variantNames.querySelectorAll('.pos-variant-chip').forEach(function (chip) {
+                    const row = vars.find(function (item) { return String(item.id) === String(chip.getAttribute('data-id')); });
+                    const available = !!(row && row.stock > 0);
+                    chip.disabled = !available;
+                    chip.classList.toggle('off', !available);
+                    if (!available) chip.classList.remove('on');
+                });
+                variantColours.querySelectorAll('.pos-variant-chip').forEach(function (chip) {
+                    const colour = chip.getAttribute('data-value');
+                    const available = vars.some(function (row) {
+                        return (!sizes.length || row.size === selectedSize) && row.colour === colour && row.stock > 0;
+                    });
+                    chip.disabled = !available;
+                    chip.classList.toggle('off', !available);
+                    if (!available) chip.classList.remove('on');
+                });
+                const chosen = selectedVariantChoice();
+                if (!chosen) {
+                    variantMeta.textContent = sizes.length || uniqueVariantValues(vars, 'colour').length
+                        ? 'Select a size and colour.'
+                        : 'Select a variant.';
+                    confirmVariantBtn.disabled = true;
+                    return;
+                }
+                const price = (parseFloat(chosen.price) > 0) ? parseFloat(chosen.price) : pendingVariantProduct.price;
+                variantMeta.textContent = '₹' + price.toFixed(2) + ' · ' + chosen.stock + ' in stock' + (chosen.sku ? ' · ' + chosen.sku : '');
+                confirmVariantBtn.disabled = chosen.stock <= 0;
+            }
+
+            function openVariantPicker(prod) {
+                pendingVariantProduct = prod;
+                const vars = variantsFor(prod.product_id);
+                const sizes = uniqueVariantValues(vars, 'size');
+                const colours = uniqueVariantValues(vars, 'colour');
+                variantTitle.textContent = prod.name;
+                variantSizeRow.style.display = sizes.length ? 'block' : 'none';
+                variantColourRow.style.display = colours.length ? 'block' : 'none';
+                variantNameRow.style.display = (!sizes.length && !colours.length) ? 'block' : 'none';
+                paintVariantChips(variantSizes, sizes.map(function (value) { return { value: value, label: value }; }), 'value');
+                paintVariantChips(variantColours, colours.map(function (value) { return { value: value, label: value }; }), 'value');
+                paintVariantChips(variantNames, vars.map(function (row) {
+                    return { value: String(row.id), label: row.name || row.sku || ('Variant ' + row.id) };
+                }), 'id');
+
+                const firstSize = vars.find(function (row) { return row.stock > 0 && row.size; });
+                if (firstSize) {
+                    const chip = variantSizes.querySelector('[data-value="' + CSS.escape(firstSize.size) + '"]');
+                    if (chip) chip.classList.add('on');
+                }
+                refreshVariantPicker();
+                const firstColour = vars.find(function (row) {
+                    return row.stock > 0 && (!firstSize || row.size === firstSize.size) && row.colour;
+                });
+                if (firstColour) {
+                    const chip = variantColours.querySelector('[data-value="' + CSS.escape(firstColour.colour) + '"]');
+                    if (chip && !chip.disabled) chip.classList.add('on');
+                }
+                if (!sizes.length && !colours.length) {
+                    const inStock = vars.find(function (row) { return row.stock > 0; }) || vars[0];
+                    const chip = variantNames.querySelector('[data-id="' + inStock.id + '"]');
+                    if (chip) chip.classList.add('on');
+                }
+                refreshVariantPicker();
+                variantModal.classList.add('open');
+            }
+
+            function closeVariantPicker() {
+                pendingVariantProduct = null;
+                if (variantModal) variantModal.classList.remove('open');
+            }
+
+            [variantSizes, variantColours, variantNames].forEach(function (box) {
+                if (!box) return;
+                box.addEventListener('click', function (e) {
+                    const chip = e.target.closest('.pos-variant-chip');
+                    if (!chip || chip.disabled) return;
+                    box.querySelectorAll('.pos-variant-chip').forEach(function (el) { el.classList.remove('on'); });
+                    chip.classList.add('on');
+                    refreshVariantPicker();
+                });
+            });
+
+            document.getElementById('closeVariantPicker').addEventListener('click', closeVariantPicker);
+            document.getElementById('cancelVariantPicker').addEventListener('click', closeVariantPicker);
+            confirmVariantBtn.addEventListener('click', function () {
+                const chosen = selectedVariantChoice();
+                if (!pendingVariantProduct || !chosen) {
+                    alert('Choose a size and colour before adding this item.');
+                    return;
+                }
+                if ((parseInt(chosen.stock, 10) || 0) <= 0) {
+                    alert('That size and colour is out of stock.');
+                    return;
+                }
+                addToCart(lineFromVariant(pendingVariantProduct, chosen));
+                closeVariantPicker();
             });
 
             // 8. Open Checkout & Payment Modal
@@ -1015,13 +2002,29 @@ $flashError = get_flash('error');
                 hiddenCustomerId.value = customerSelect.value;
                 hiddenDiscountValue.value = discountValInput.value;
                 hiddenDiscountType.value = discountTypeSelect.value;
+                syncCouponHiddenFields();
 
                 modalPayableText.textContent = cartGrandTotalEl.textContent;
                 tenderedInput.value = '';
                 changeDueVal.textContent = '₹0.00';
+                const rzpOid = document.getElementById('hiddenRazorpayOrderId');
+                const rzpPid = document.getElementById('hiddenRazorpayPaymentId');
+                const rzpSig = document.getElementById('hiddenRazorpaySignature');
+                if (rzpOid) rzpOid.value = '';
+                if (rzpPid) rzpPid.value = '';
+                if (rzpSig) rzpSig.value = '';
+
+                if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                if (hiddenPaymentMethod.value === 'split') {
+                    ensureDefaultSplitRows();
+                }
 
                 paymentModal.classList.add('open');
-                tenderedInput.focus();
+                if (hiddenPaymentMethod.value === 'split') {
+                    updateSplitRemainder();
+                } else {
+                    tenderedInput.focus();
+                }
             });
 
             function closePaymentModalFn() {
@@ -1034,6 +2037,95 @@ $flashError = get_flash('error');
             const paymentMethodCards = document.querySelectorAll('.payment-method-card');
             const cashSection = document.getElementById('cashTenderSection');
 
+            function getCheckoutTotal() {
+                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
+                return parseFloat(totalStr) || 0;
+            }
+
+            function buildSplitMethodOptions(selected) {
+                return POS_SPLIT_PAY_METHODS.map(function (m) {
+                    const sel = m.code === selected ? ' selected' : '';
+                    return '<option value="' + m.code + '"' + sel + '>' + m.label + '</option>';
+                }).join('');
+            }
+
+            function addSplitPaymentRow(methodCode, amountVal) {
+                if (!splitPaymentRows) return;
+                const row = document.createElement('div');
+                row.className = 'pos-split-row';
+                row.innerHTML =
+                    '<select class="form-control pos-split-method">' + buildSplitMethodOptions(methodCode || 'cash') + '</select>' +
+                    '<input type="number" step="0.01" min="0" class="form-control pos-split-amount" placeholder="Amount ₹" value="' + (amountVal !== undefined && amountVal !== null ? amountVal : '') + '">' +
+                    '<button type="button" class="pos-split-remove" title="Remove line" aria-label="Remove">&times;</button>';
+                splitPaymentRows.appendChild(row);
+                row.querySelector('.pos-split-amount').addEventListener('input', function () {
+                    updateSplitRemainder();
+                    updateCashSectionForSplit();
+                });
+                row.querySelector('.pos-split-method').addEventListener('change', updateCashSectionForSplit);
+                row.querySelector('.pos-split-remove').addEventListener('click', function () {
+                    if (splitPaymentRows.querySelectorAll('.pos-split-row').length <= 1) return;
+                    row.remove();
+                    updateSplitRemainder();
+                    updateCashSectionForSplit();
+                });
+            }
+
+            function ensureDefaultSplitRows() {
+                if (!splitPaymentRows || splitPaymentRows.children.length > 0) return;
+                addSplitPaymentRow('cash', '');
+                addSplitPaymentRow('upi', '');
+            }
+
+            function collectSplitPayments() {
+                const rows = splitPaymentRows ? splitPaymentRows.querySelectorAll('.pos-split-row') : [];
+                const out = [];
+                rows.forEach(function (row) {
+                    const method = row.querySelector('.pos-split-method')?.value || '';
+                    const amount = parseFloat(row.querySelector('.pos-split-amount')?.value) || 0;
+                    if (method && amount > 0) {
+                        out.push({ method: method, amount: Math.round(amount * 100) / 100 });
+                    }
+                });
+                return out;
+            }
+
+            function splitCashPortion(splits) {
+                let cash = 0;
+                (splits || []).forEach(function (s) {
+                    if (s.method === 'cash') cash += s.amount;
+                });
+                return cash;
+            }
+
+            function updateSplitRemainder() {
+                if (!splitPaymentRemain) return;
+                const total = getCheckoutTotal();
+                const splits = collectSplitPayments();
+                const paid = splits.reduce(function (sum, s) { return sum + s.amount; }, 0);
+                const remain = Math.round((total - paid) * 100) / 100;
+                splitPaymentRemain.textContent = 'Remaining: ₹' + remain.toFixed(2);
+                splitPaymentRemain.classList.toggle('is-balanced', Math.abs(remain) < 0.02);
+                splitPaymentRemain.classList.toggle('is-over', remain < -0.01);
+            }
+
+            function updateCashSectionForSplit() {
+                if (hiddenPaymentMethod.value !== 'split') return;
+                const cashPart = splitCashPortion(collectSplitPayments());
+                if (cashPart > 0) {
+                    cashSection.style.display = 'block';
+                } else {
+                    cashSection.style.display = 'none';
+                }
+            }
+
+            if (addSplitRowBtn) {
+                addSplitRowBtn.addEventListener('click', function () {
+                    addSplitPaymentRow('cash', '');
+                    updateSplitRemainder();
+                });
+            }
+
             paymentMethodCards.forEach(card => {
                 card.addEventListener('click', function () {
                     paymentMethodCards.forEach(c => c.classList.remove('active'));
@@ -1041,20 +2133,34 @@ $flashError = get_flash('error');
                     const method = this.getAttribute('data-method');
                     hiddenPaymentMethod.value = method;
 
-                    if (method === 'cash') {
-                        cashSection.style.display = 'block';
+                    if (method === 'split') {
+                        if (splitPaymentSection) splitPaymentSection.style.display = 'block';
+                        ensureDefaultSplitRows();
+                        updateSplitRemainder();
+                        updateCashSectionForSplit();
+                        if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
                     } else {
-                        cashSection.style.display = 'none';
+                        if (splitPaymentSection) splitPaymentSection.style.display = 'none';
+                        if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                        if (method === 'cash') {
+                            cashSection.style.display = 'block';
+                        } else {
+                            cashSection.style.display = 'none';
+                        }
                     }
                 });
             });
 
             // Change Due Calculation
             function calculateChange() {
-                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
-                const total = parseFloat(totalStr) || 0;
+                const total = getCheckoutTotal();
                 const tendered = parseFloat(tenderedInput.value) || 0;
-                const change = Math.max(0, tendered - total);
+                let due = total;
+                if (hiddenPaymentMethod.value === 'split') {
+                    const cashPart = splitCashPortion(collectSplitPayments());
+                    if (cashPart > 0) due = cashPart;
+                }
+                const change = Math.max(0, tendered - due);
                 changeDueVal.textContent = '₹' + change.toFixed(2);
             }
             tenderedInput.addEventListener('input', calculateChange);
@@ -1080,53 +2186,133 @@ $flashError = get_flash('error');
             checkoutForm.addEventListener('submit', function (e) {
                 e.preventDefault();
 
-                const totalStr = cartGrandTotalEl.textContent.replace('₹', '').replace(/,/g, '');
-                const total = parseFloat(totalStr) || 0;
+                const total = getCheckoutTotal();
                 const method = hiddenPaymentMethod.value;
+                const formEl = this;
 
-                if (method === 'cash') {
-                    const tendered = parseFloat(tenderedInput.value) || 0;
-                    if (tendered < total) {
-                        alert('Amount received (₹' + tendered.toFixed(2) + ') is less than the payable amount (₹' + total.toFixed(2) + '). Please enter the full amount.');
-                        tenderedInput.focus();
+                const finishCheckout = function () {
+                    confirmPaymentBtn.disabled = true;
+                    confirmPaymentBtn.innerHTML = '<span>Processing Sale...</span>';
+
+                    const formData = new FormData(formEl);
+
+                    fetch('<?= asset('pos.php') ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        confirmPaymentBtn.disabled = false;
+                        confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+
+                        if (data.success) {
+                            paymentModal.classList.remove('open');
+                            showSaleCompletedModal(data);
+                        } else {
+                            alert('Checkout Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not complete sale.')));
+                        }
+                    })
+                    .catch(err => {
+                        confirmPaymentBtn.disabled = false;
+                        confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                        alert('Network/API Error: ' + err);
+                    });
+                };
+
+                if (method === 'split') {
+                    const splits = collectSplitPayments();
+                    const paid = splits.reduce(function (s, x) { return s + x.amount; }, 0);
+                    if (splits.length < 1) {
+                        alert('Add at least one payment line with an amount.');
                         return;
+                    }
+                    if (Math.abs(paid - total) > 0.02) {
+                        alert('Split amounts (₹' + paid.toFixed(2) + ') must equal the payable total (₹' + total.toFixed(2) + ').');
+                        return;
+                    }
+                    const cashPart = splitCashPortion(splits);
+                    if (cashPart > 0) {
+                        const tendered = parseFloat(tenderedInput.value) || 0;
+                        if (tendered > 0 && tendered < cashPart) {
+                            alert('Cash received (₹' + tendered.toFixed(2) + ') is less than the cash portion (₹' + cashPart.toFixed(2) + ').');
+                            tenderedInput.focus();
+                            return;
+                        }
+                    }
+                    if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = JSON.stringify(splits);
+                    if (hiddenAmountTendered) hiddenAmountTendered.value = tenderedInput.value || '';
+                } else {
+                    if (hiddenPaymentSplitsJson) hiddenPaymentSplitsJson.value = '';
+                    if (hiddenAmountTendered) hiddenAmountTendered.value = method === 'cash' ? (tenderedInput.value || '') : '';
+                    if (method === 'cash') {
+                        const tendered = parseFloat(tenderedInput.value) || 0;
+                        if (tendered < total) {
+                            alert('Amount received (₹' + tendered.toFixed(2) + ') is less than the payable amount (₹' + total.toFixed(2) + '). Please enter the full amount.');
+                            tenderedInput.focus();
+                            return;
+                        }
                     }
                 }
 
-                // Prevent double clicking
-                confirmPaymentBtn.disabled = true;
-                confirmPaymentBtn.innerHTML = '<span>Processing Sale...</span>';
+                if (method === 'split') {
+                    finishCheckout();
+                    return;
+                }
 
-                const formData = new FormData(this);
+                if (method === 'razorpay' && !document.getElementById('hiddenRazorpayPaymentId').value) {
+                    confirmPaymentBtn.disabled = true;
+                    confirmPaymentBtn.innerHTML = '<span>Opening Razorpay...</span>';
+                    const rzpForm = new FormData();
+                    rzpForm.append('csrf_token', '<?= e(csrf_token()) ?>');
+                    rzpForm.append('action', 'create_razorpay_order');
+                    rzpForm.append('amount', String(total.toFixed(2)));
+                    fetch('<?= asset('pos.php') ?>', { method: 'POST', body: rzpForm })
+                        .then(r => r.json())
+                        .then(data => {
+                            confirmPaymentBtn.disabled = false;
+                            confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                            if (!data.success) {
+                                alert(data.error || 'Could not start Razorpay checkout.');
+                                return;
+                            }
+                            if (typeof Razorpay === 'undefined') {
+                                alert('Razorpay checkout script failed to load. Please refresh and try again.');
+                                return;
+                            }
+                            const rzp = new Razorpay({
+                                key: data.key,
+                                amount: data.amount,
+                                currency: data.currency || 'INR',
+                                name: data.name || 'OminiFlow POS',
+                                description: 'POS Checkout',
+                                order_id: data.order_id,
+                                handler: function (resp) {
+                                    document.getElementById('hiddenRazorpayOrderId').value = resp.razorpay_order_id || data.order_id;
+                                    document.getElementById('hiddenRazorpayPaymentId').value = resp.razorpay_payment_id || '';
+                                    document.getElementById('hiddenRazorpaySignature').value = resp.razorpay_signature || '';
+                                    finishCheckout();
+                                },
+                                modal: {
+                                    ondismiss: function () {
+                                        confirmPaymentBtn.disabled = false;
+                                    }
+                                }
+                            });
+                            rzp.open();
+                        })
+                        .catch(err => {
+                            confirmPaymentBtn.disabled = false;
+                            confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
+                            alert('Razorpay error: ' + err);
+                        });
+                    return;
+                }
 
-                fetch('<?= asset('pos.php') ?>', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(r => r.json())
-                .then(data => {
-                    confirmPaymentBtn.disabled = false;
-                    confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
-
-                    if (data.success) {
-                        paymentModal.classList.remove('open');
-                        showSaleCompletedModal(data);
-                    } else {
-                        alert('Checkout Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not complete sale.')));
-                    }
-                })
-                .catch(err => {
-                    confirmPaymentBtn.disabled = false;
-                    confirmPaymentBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Complete Sale</span>';
-                    alert('Network/API Error: ' + err);
-                });
+                finishCheckout();
             });
 
             // 10. Display Sale Completed Modal / Receipt
             function showSaleCompletedModal(data) {
-                if (document.getElementById('receiptInvoiceNumber')) {
-                    document.getElementById('receiptInvoiceNumber').textContent = data.invoice_number || 'INV-PENDING';
-                }
                 document.getElementById('receiptOrderNumber').textContent = 'Order #' + data.order_number;
                 document.getElementById('receiptTimestamp').textContent = data.created_at;
                 document.getElementById('receiptCustomerName').textContent = data.customer_name || 'Walk-in Customer';
@@ -1141,6 +2327,10 @@ $flashError = get_flash('error');
                 }
 
                 document.getElementById('receiptCashierName').textContent = data.cashier_name || 'Cashier';
+                const receiptOutlet = document.getElementById('receiptOutletName');
+                if (receiptOutlet) {
+                    receiptOutlet.textContent = data.outlet_name || receiptOutlet.textContent || 'Outlet';
+                }
                 document.getElementById('receiptPaymentMethod').textContent = data.payment_method;
 
                 // Populate Items
@@ -1152,6 +2342,7 @@ $flashError = get_flash('error');
                     tr.innerHTML = `
                         <td style="padding: 6px 0;">
                             <div style="font-weight: 600;">${escapeHtml(it.product_name)}</div>
+                            ${variantLabel({ size: it.size || '', colour: it.colour || '' }) ? '<div style="font-size: 10px; color: #475569;">' + escapeHtml(variantLabel({ size: it.size || '', colour: it.colour || '' })) + '</div>' : ''}
                             <div style="font-size: 10px; color: #64748b;">SKU: ${escapeHtml(it.product_sku)}</div>
                         </td>
                         <td style="padding: 6px 0; text-align: center;">${it.quantity}</td>
@@ -1173,9 +2364,16 @@ $flashError = get_flash('error');
                 document.getElementById('receiptGrandTotal').textContent = '₹' + parseFloat(data.total_amount).toFixed(2);
 
                 const cashDetails = document.getElementById('receiptCashDetails');
-                if (data.payment_method === 'cash') {
-                    const tendered = parseFloat(tenderedInput.value) || parseFloat(data.total_amount);
-                    const change = Math.max(0, tendered - parseFloat(data.total_amount));
+                let cashPart = 0;
+                if (Array.isArray(data.payment_splits) && data.payment_splits.length) {
+                    data.payment_splits.forEach(function (sp) {
+                        if (sp.method === 'cash') cashPart += parseFloat(sp.amount) || 0;
+                    });
+                }
+                if (data.payment_method === 'cash' || cashPart > 0) {
+                    const tendered = parseFloat(tenderedInput.value) || cashPart || parseFloat(data.total_amount);
+                    const changeBase = cashPart > 0 ? cashPart : parseFloat(data.total_amount);
+                    const change = Math.max(0, tendered - changeBase);
                     document.getElementById('receiptReceived').textContent = '₹' + tendered.toFixed(2);
                     document.getElementById('receiptChange').textContent = '₹' + change.toFixed(2);
                     cashDetails.style.display = 'block';
@@ -1183,9 +2381,90 @@ $flashError = get_flash('error');
                     cashDetails.style.display = 'none';
                 }
 
+                const invNumber = document.getElementById('receiptInvoiceNumber');
+                const invoiceHref = data.invoice_id
+                    ? '<?= asset('invoice-view.php?id=') ?>' + data.invoice_id
+                    : (data.order_id ? '<?= asset('invoice-view.php?order_id=') ?>' + data.order_id : '');
+                if (invNumber) {
+                    invNumber.textContent = data.invoice_number || 'INV-PENDING';
+                    if (invoiceHref) {
+                        invNumber.href = invoiceHref;
+                    }
+                }
                 const invLink = document.getElementById('viewInvoiceLink');
-                if (invLink && data.invoice_id) {
-                    invLink.href = '<?= asset('invoice-view.php?id=') ?>' + data.invoice_id;
+                if (invLink && invoiceHref) {
+                    invLink.href = invoiceHref;
+                }
+
+                const waStatus = document.getElementById('receiptWhatsAppStatus');
+                const applyWhatsAppInvoiceStatus = function (wa, phoneLabel) {
+                    if (!waStatus) return;
+                    wa = wa || {};
+                    if (wa.pending) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#eff6ff';
+                        waStatus.style.color = '#1d4ed8';
+                        waStatus.style.border = '1px solid #bfdbfe';
+                        waStatus.textContent = 'Sending invoice PDF to WhatsApp…';
+                        return;
+                    }
+                    if (wa.success) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#ecfdf5';
+                        waStatus.style.color = '#047857';
+                        waStatus.style.border = '1px solid #a7f3d0';
+                        waStatus.textContent = 'Invoice PDF sent to WhatsApp' + (phoneLabel ? ' ' + phoneLabel : '') + '.';
+                    } else if (wa.skipped) {
+                        const skipErr = String(wa.error || '');
+                        const quietSkip = /disabled|already synced|payment state/i.test(skipErr);
+                        if (quietSkip) {
+                            waStatus.style.display = 'none';
+                            waStatus.textContent = '';
+                        } else {
+                            waStatus.style.display = 'block';
+                            waStatus.style.background = '#f8fafc';
+                            waStatus.style.color = '#475569';
+                            waStatus.style.border = '1px solid #e2e8f0';
+                            waStatus.textContent = phoneLabel
+                                ? ('Invoice not sent on WhatsApp: ' + (skipErr || 'skipped'))
+                                : 'Invoice not sent on WhatsApp — add a customer mobile number to auto-send the PDF.';
+                        }
+                    } else if (wa.error) {
+                        waStatus.style.display = 'block';
+                        waStatus.style.background = '#fff7ed';
+                        waStatus.style.color = '#9a3412';
+                        waStatus.style.border = '1px solid #fed7aa';
+                        waStatus.textContent = 'Sale completed. WhatsApp invoice could not be sent' + (wa.error ? ': ' + wa.error : '.');
+                    } else {
+                        waStatus.style.display = 'none';
+                        waStatus.textContent = '';
+                    }
+                };
+
+                const wa = data.whatsapp_invoice || {};
+                const phoneLabel = wa.phone || data.customer_phone || '';
+                applyWhatsAppInvoiceStatus(wa, phoneLabel);
+                if (wa.pending && data.order_id) {
+                    const waForm = new FormData();
+                    waForm.append('action', 'send_order_invoice_whatsapp');
+                    waForm.append('is_ajax', '1');
+                    waForm.append('csrf_token', csrfToken);
+                    waForm.append('order_id', String(data.order_id));
+                    waForm.append('invoice_id', String(data.invoice_id || ''));
+                    waForm.append('order_number', String(data.order_number || ''));
+                    waForm.append('payment_status', String(data.payment_status || 'paid'));
+                    waForm.append('customer_phone', String(data.customer_phone || ''));
+                    fetch('<?= asset('pos.php') ?>', { method: 'POST', body: waForm })
+                        .then(function (r) { return r.json(); })
+                        .then(function (waRes) {
+                            applyWhatsAppInvoiceStatus(waRes || {}, (waRes && waRes.phone) || phoneLabel);
+                        })
+                        .catch(function () {
+                            applyWhatsAppInvoiceStatus(
+                                { success: false, error: 'WhatsApp send may still be in progress — check the chat shortly.' },
+                                phoneLabel
+                            );
+                        });
                 }
 
                 saleCompletedModal.classList.add('open');
@@ -1208,10 +2487,55 @@ $flashError = get_flash('error');
                 });
             }
 
-            // Print Receipt Button
+            // Print only the thermal receipt (not the POS screen)
+            function printThermalReceipt() {
+                const area = document.getElementById('printableReceiptArea');
+                if (!area) return;
+
+                const prev = document.getElementById('posThermalPrintFrame');
+                if (prev) prev.remove();
+
+                const iframe = document.createElement('iframe');
+                iframe.id = 'posThermalPrintFrame';
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+                document.body.appendChild(iframe);
+
+                const doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title><style>' +
+                    '@page { size: 80mm auto; margin: 3mm; }' +
+                    'html,body{margin:0;padding:0;background:#fff;color:#000;font-family:\'Courier New\',Courier,monospace;font-size:12px;}' +
+                    '.wrap{width:72mm;max-width:72mm;margin:0 auto;}' +
+                    'table{width:100%;border-collapse:collapse;}' +
+                    '</style></head><body><div class="wrap">' + area.innerHTML + '</div></body></html>');
+                doc.close();
+
+                const runPrint = function () {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch (err) {
+                        document.body.classList.add('pos-printing');
+                        window.print();
+                        document.body.classList.remove('pos-printing');
+                    }
+                    setTimeout(function () {
+                        if (iframe.parentNode) iframe.remove();
+                    }, 1500);
+                };
+
+                if (iframe.contentWindow.document.readyState === 'complete') {
+                    setTimeout(runPrint, 50);
+                } else {
+                    iframe.onload = function () { setTimeout(runPrint, 50); };
+                }
+            }
+
             if (printReceiptBtn) {
-                printReceiptBtn.addEventListener('click', function () {
-                    window.print();
+                printReceiptBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    printThermalReceipt();
                 });
             }
 
@@ -1220,6 +2544,7 @@ $flashError = get_flash('error');
                 saleCompletedModal.classList.remove('open');
                 cart = [];
                 discountValInput.value = '0';
+                clearAppliedCoupon();
                 renderCart();
                 barcodeInput.focus();
             }
@@ -1256,6 +2581,7 @@ $flashError = get_flash('error');
                         alert('Order placed on hold successfully!');
                         cart = [];
                         discountValInput.value = '0';
+                        clearAppliedCoupon();
                         renderCart();
                         location.reload(); // Reload to update held queue count
                     } else {
@@ -1280,7 +2606,18 @@ $flashError = get_flash('error');
                         return;
                     }
 
-                    cart = cartData;
+                    const needsVariant = [];
+                    cart = (Array.isArray(cartData) ? cartData : []).filter(function (item) {
+                        const vars = variantsFor(item.product_id);
+                        if (vars.length && !item.variant_id) {
+                            needsVariant.push(item.name || 'Item');
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (needsVariant.length) {
+                        alert('Choose a size and colour again for: ' + needsVariant.join(', '));
+                    }
                     if (custId) customerSelect.value = custId;
                     renderCart();
                     heldModal.classList.remove('open');
@@ -1352,7 +2689,171 @@ $flashError = get_flash('error');
                     .catch(err => alert('Network error: ' + err));
                 });
             }
+
+            // 14. Add Product Modal (catalog only — does not change cart)
+            const addProdModal = document.getElementById('addProductModal');
+            const openAddProdBtn = document.getElementById('openAddProductBtn');
+            const closeAddProdBtn = document.getElementById('closeAddProductModal');
+            const cancelAddProdBtn = document.getElementById('cancelAddProductModal');
+            const addProdForm = document.getElementById('addProductForm');
+            const addProdImageInput = document.getElementById('posProdImageInput');
+            const addProdPreviewWrap = document.getElementById('posProdImagePreviewWrap');
+            const addProdPreview = document.getElementById('posProdImagePreview');
+            const submitAddProdBtn = document.getElementById('submitAddProductBtn');
+            const allProductsPill = document.getElementById('allProductsPill');
+
+            function resetAddProductForm() {
+                if (addProdForm) addProdForm.reset();
+                if (addProdPreview) addProdPreview.removeAttribute('src');
+                if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+            }
+
+            function prependPosProductCard(p) {
+                if (!productGrid || !p) return;
+                const stock = parseInt(p.stock_quantity, 10) || 0;
+                const threshold = parseInt(p.low_stock_threshold, 10) || 5;
+                const isOut = stock <= 0;
+                let stockClass = 'badge-in-stock';
+                let stockText = stock + ' in stock';
+                if (isOut) {
+                    stockClass = 'badge-out-of-stock';
+                    stockText = 'Out of Stock';
+                } else if (stock <= threshold) {
+                    stockClass = 'badge-low-stock';
+                    stockText = 'Low: ' + stock;
+                }
+
+                const price = parseFloat(p.selling_price) || 0;
+                const tax = parseFloat(p.tax_percent) || 0;
+                const card = document.createElement('div');
+                card.className = 'pos-card' + (isOut ? ' out-of-stock' : '');
+                card.setAttribute('data-id', String(p.id));
+                card.setAttribute('data-name', p.name || '');
+                card.setAttribute('data-sku', p.sku || '');
+                card.setAttribute('data-barcode', p.barcode || '');
+                card.setAttribute('data-price', String(price));
+                card.setAttribute('data-tax', String(tax));
+                card.setAttribute('data-stock', String(stock));
+                card.setAttribute('data-category', String(p.category_id || 'none'));
+
+                const thumb = p.image_url
+                    ? '<img src="' + escapeHtml(p.image_url) + '" alt="' + escapeHtml(p.name || '') + '" class="pos-card-thumb">'
+                    : '<div class="pos-card-thumb">📦</div>';
+
+                card.innerHTML = thumb +
+                    '<div class="pos-card-title">' + escapeHtml(p.name || '') + '</div>' +
+                    '<div class="pos-card-meta">' +
+                        '<span>' + escapeHtml(p.sku || '') + '</span>' +
+                        '<span class="badge ' + stockClass + ' pos-card-stock">' + escapeHtml(stockText) + '</span>' +
+                    '</div>' +
+                    '<div class="pos-card-price-row">' +
+                        '<span class="pos-card-price">₹' + price.toFixed(2) + '</span>' +
+                        '<span style="font-size: 11px; color: var(--saas-slate-400);">+' + tax + '% Tax</span>' +
+                    '</div>';
+
+                productGrid.insertBefore(card, productGrid.firstChild);
+
+                if (allProductsPill) {
+                    const n = productGrid.querySelectorAll('.pos-card').length;
+                    allProductsPill.textContent = 'All Products (' + n + ')';
+                }
+            }
+
+            function closeAddProductModal() {
+                if (addProdModal) addProdModal.classList.remove('open');
+            }
+
+            if (openAddProdBtn && addProdModal) {
+                openAddProdBtn.addEventListener('click', () => addProdModal.classList.add('open'));
+            }
+            if (closeAddProdBtn) closeAddProdBtn.addEventListener('click', closeAddProductModal);
+            if (cancelAddProdBtn) cancelAddProdBtn.addEventListener('click', closeAddProductModal);
+
+            if (addProdImageInput) {
+                addProdImageInput.addEventListener('change', function () {
+                    const file = this.files && this.files[0];
+                    if (!file) {
+                        if (addProdPreview) addProdPreview.removeAttribute('src');
+                        if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+                        return;
+                    }
+                    if (file.size > 5 * 1024 * 1024) {
+                        alert('Image must be 5MB or smaller.');
+                        this.value = '';
+                        if (addProdPreviewWrap) addProdPreviewWrap.hidden = true;
+                        return;
+                    }
+                    if (addProdPreview && addProdPreviewWrap) {
+                        addProdPreview.src = URL.createObjectURL(file);
+                        addProdPreviewWrap.hidden = false;
+                    }
+                });
+            }
+
+            if (addProdForm) {
+                addProdForm.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    const imgFile = addProdImageInput && addProdImageInput.files && addProdImageInput.files[0];
+                    if (imgFile && imgFile.size > 5 * 1024 * 1024) {
+                        alert('Image must be 5MB or smaller.');
+                        return;
+                    }
+                    const formData = new FormData(this);
+                    if (submitAddProdBtn) {
+                        submitAddProdBtn.disabled = true;
+                        submitAddProdBtn.textContent = 'Saving...';
+                    }
+
+                    fetch('<?= asset('pos.php') ?>', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.text().then(text => {
+                        let data;
+                        try {
+                            data = JSON.parse(text);
+                        } catch (err) {
+                            throw new Error('Session expired or server error. Please reload the page.');
+                        }
+                        return data;
+                    }))
+                    .then(data => {
+                        if (submitAddProdBtn) {
+                            submitAddProdBtn.disabled = false;
+                            submitAddProdBtn.textContent = 'Save Product';
+                        }
+                        if (data.success) {
+                            if (searchInput) searchInput.value = '';
+                            if (data.product) {
+                                prependPosProductCard(data.product);
+                            }
+                            if (allProductsPill) {
+                                allProductsPill.click();
+                            } else if (searchInput) {
+                                searchInput.dispatchEvent(new Event('input'));
+                            }
+                            closeAddProductModal();
+                            resetAddProductForm();
+                            if (data.image_warning) {
+                                alert(data.image_warning);
+                            }
+                        } else {
+                            alert('Error: ' + (data.errors ? Object.values(data.errors).join(', ') : (data.error || 'Could not add product')));
+                        }
+                    })
+                    .catch(err => {
+                        if (submitAddProdBtn) {
+                            submitAddProdBtn.disabled = false;
+                            submitAddProdBtn.textContent = 'Save Product';
+                        }
+                        alert(err && err.message ? err.message : ('Network error: ' + err));
+                    });
+                });
+            }
         });
     </script>
+    <?php if (!empty($activeGateways['razorpay'])): ?>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <?php endif; ?>
 </body>
 </html>

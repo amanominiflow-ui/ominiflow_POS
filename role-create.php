@@ -458,6 +458,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $purRows = [
                                     'vendors' => 'Vendors & Suppliers',
                                     'purchase_orders' => 'Purchase Orders',
+                                    'purchase_entry' => 'Purchase Entry (draft & lines)',
+                                    'purchase_entry_cost' => 'Purchase Entry — cost & finalize',
+                                    'inward_entry' => 'Inward Entry (count & QC)',
+                                    'inward_entry_cost' => 'Inward Entry — cost & confirm',
                                     'bills' => 'Bills',
                                     'payment_made' => 'Payment Made',
                                     'purchase_receive' => 'Purchase Receive (GRN)',

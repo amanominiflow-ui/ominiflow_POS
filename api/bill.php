@@ -127,7 +127,11 @@ try {
     $subtotal = (float) ($payload['subtotal'] ?? 0);
     $taxAmount = (float) ($payload['tax_amount'] ?? 0);
     $discountAmount = (float) ($payload['discount_amount'] ?? 0);
-    $totalAmount = (float) ($payload['total_amount'] ?? ($subtotal + $taxAmount - $discountAmount));
+    $shippingFee = (float) ($payload['shipping_fee'] ?? $payload['shipping_amount'] ?? $payload['delivery_fee'] ?? $payload['delivery_charge'] ?? $payload['shipping'] ?? 0);
+    $totalAmount = (float) ($payload['total_amount'] ?? ($subtotal + $taxAmount + $shippingFee - $discountAmount));
+    if ($shippingFee <= 0 && $totalAmount > ($subtotal + $taxAmount - $discountAmount)) {
+        $shippingFee = round($totalAmount - ($subtotal + $taxAmount - $discountAmount), 2);
+    }
     $paymentMethod = strtolower(trim((string) ($payload['payment_method'] ?? 'cash')));
     if (in_array($paymentMethod, ['cod', 'cash'], true)) {
         $paymentMethod = 'cash';
@@ -137,6 +141,9 @@ try {
     $waPaid = strtolower((string) ($payload['payment_status'] ?? '')) === 'paid';
     $paymentStatus = $waPaid ? 'paid' : 'pending';
     $notes = (string) ($payload['notes'] ?? 'WhatsApp order');
+    if ($shippingFee > 0 && !preg_match('/shipping/i', $notes)) {
+        $notes .= ($notes !== '' ? ' | ' : '') . 'Shipping: ₹' . $shippingFee;
+    }
 
     $db->beginTransaction();
 

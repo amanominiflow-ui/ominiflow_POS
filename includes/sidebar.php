@@ -5,6 +5,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/features.php';
+
 $user = current_user();
 $business = current_business();
 $userName = $user ? $user['name'] : 'Aman Prajapat';
@@ -78,8 +80,8 @@ if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', '
 
 // Active sub-groups mapping for Business tab (Single Active Group at a time)
 $inventoryPages = ['products.php', 'product-create.php', 'product-edit.php', 'categories.php', 'stock-count.php', 'inventory.php', 'outlets.php', 'transfers.php', 'barcode-print.php'];
-$salesPages = ['orders.php', 'invoices.php', 'invoice-view.php', 'invoice-create.php', 'fulfillment.php', 'returns.php', 'consignment-manifest.php'];
-$purchasesPages = ['vendors.php', 'purchases.php', 'purchase-receives.php', 'bills.php', 'payments-made.php', 'purchase-returns.php'];
+$salesPages = ['orders.php', 'invoices.php', 'invoice-view.php', 'invoice-create.php', 'fulfillment.php', 'returns.php', 'consignment-manifest.php', 'offline-billing.php'];
+$purchasesPages = ['vendors.php', 'purchases.php', 'purchase-receives.php', 'purchase-entry.php', 'inward-entry.php', 'bills.php', 'payments-made.php', 'purchase-returns.php'];
 $customersPages = ['customers.php', 'promotions.php'];
 $documentsPages = ['import-export.php', 'settings.php'];
 
@@ -334,10 +336,10 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </svg>
             </button>
 
-            <!-- Rail Navigation Tabs (Hover & Click Supported) -->
+            <!-- Rail Navigation Tabs (Click Triggered) -->
             <div class="rail-nav">
                 <!-- Business Tab -->
-                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'business' ? 'active' : '' ?>" onmouseenter="onRailHover('business')" onclick="switchRailTab('business')" id="rail-btn-business" title="Business Modules">
+                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'business' ? 'active' : '' ?>" onclick="handleRailTabClick('business')" id="rail-btn-business" title="Business Modules">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                     </svg>
@@ -345,7 +347,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </button>
 
                 <!-- Sales Channels Tab -->
-                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'channels' ? 'active' : '' ?>" onmouseenter="onRailHover('channels')" onclick="switchRailTab('channels')" id="rail-btn-channels" title="Sales Channels & POS">
+                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'channels' ? 'active' : '' ?>" onclick="handleRailTabClick('channels')" id="rail-btn-channels" title="Sales Channels & POS">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -353,12 +355,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </button>
 
                 <!-- Reports Tab -->
-                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'reports' ? 'active' : '' ?>" onmouseenter="onRailHover('reports')" onclick="switchRailTab('reports')" id="rail-btn-reports" title="Analytics & Reports">
+                <?php if (is_feature_enabled('reports_analytics')): ?>
+                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'reports' ? 'active' : '' ?>" onclick="handleRailTabClick('reports')" id="rail-btn-reports" title="Analytics & Reports">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                     </svg>
                     <span>Reports</span>
                 </button>
+                <?php endif; ?>
 
                 <!-- Quick Spotlight Search Button (Extra gap above) -->
                 <button type="button" class="rail-tab-btn" onclick="openSpotlightSearch()" title="Global Spotlight Search (/)" style="margin-top: 16px;">
@@ -372,12 +376,12 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 
         <!-- Rail Bottom Utility Icons -->
         <div class="rail-bottom">
-            <a href="<?= asset('settings.php') ?>" class="rail-icon-btn <?= $activeRailTab === 'settings' ? 'active' : '' ?>" onmouseenter="onRailHover('settings')" onclick="switchRailTab('settings')" id="rail-btn-settings" title="Settings">
+            <button type="button" class="rail-icon-btn <?= $activeRailTab === 'settings' ? 'active' : '' ?>" onclick="handleRailTabClick('settings')" id="rail-btn-settings" title="Settings">
                 <svg width="25" height="25" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
-            </a>
+            </button>
 
             <button type="button" class="rail-avatar" id="sidebarProfileTrigger" onclick="toggleSidebarProfileMenu(event)" title="<?= e($userName) ?>">
                 <?= e($initials) ?>
@@ -419,6 +423,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </a>
 
                 <!-- Inventory Group -->
+                <?php if (is_feature_enabled('inventory')): ?>
                 <div class="nav-group <?= $isInventoryOpen ? 'open' : '' ?>" id="grp-inventory">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-inventory')">
                         <div class="nav-group-title">
@@ -440,11 +445,15 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('inventory.php') ?>" class="submenu-link <?= $currentPage === 'inventory.php' ? 'active' : '' ?>">Stock Movements</a>
                         <a href="<?= asset('outlets.php') ?>" class="submenu-link <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">Outlets</a>
                         <a href="<?= asset('transfers.php') ?>" class="submenu-link <?= $currentPage === 'transfers.php' ? 'active' : '' ?>">Transfers</a>
-                        <a href="<?= asset('barcode-print.php') ?>" class="submenu-link <?= $currentPage === 'barcode-print.php' ? 'active' : '' ?>">Barcode Labels</a>
+                        <?php if (is_feature_enabled('barcode_print')): ?>
+                            <a href="<?= asset('barcode-print.php') ?>" class="submenu-link <?= $currentPage === 'barcode-print.php' ? 'active' : '' ?>">Barcode Labels</a>
+                        <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Sales Group -->
+                <?php if (is_feature_enabled('sales_invoices')): ?>
                 <div class="nav-group <?= $isSalesOpen ? 'open' : '' ?>" id="grp-sales">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-sales')">
                         <div class="nav-group-title">
@@ -465,10 +474,13 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('fulfillment.php') ?>" class="submenu-link <?= $currentPage === 'fulfillment.php' ? 'active' : '' ?>">Shipments</a>
                         <a href="<?= asset('returns.php') ?>" class="submenu-link <?= $currentPage === 'returns.php' ? 'active' : '' ?>">Returns</a>
                         <a href="<?= asset('consignment-manifest.php') ?>" class="submenu-link <?= $currentPage === 'consignment-manifest.php' ? 'active' : '' ?>">Consignment &amp; COD Label Manifest</a>
+                        <a href="<?= asset('offline-billing.php') ?>" class="submenu-link <?= $currentPage === 'offline-billing.php' ? 'active' : '' ?>">Offline Billing</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Purchases Group -->
+                <?php if (is_feature_enabled('purchases')): ?>
                 <div class="nav-group <?= $isPurchasesOpen ? 'open' : '' ?>" id="grp-purchases">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-purchases')">
                         <div class="nav-group-title">
@@ -486,14 +498,18 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <div class="nav-submenu">
                         <a href="<?= asset('vendors.php') ?>" class="submenu-link <?= $currentPage === 'vendors.php' ? 'active' : '' ?>">Vendors</a>
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link <?= $currentPage === 'purchases.php' ? 'active' : '' ?>">Purchase Orders</a>
+                        <a href="<?= asset('purchase-entry.php') ?>" class="submenu-link <?= $currentPage === 'purchase-entry.php' ? 'active' : '' ?>">Purchase Entry</a>
                         <a href="<?= asset('purchase-receives.php') ?>" class="submenu-link <?= $currentPage === 'purchase-receives.php' ? 'active' : '' ?>">Purchase Receives</a>
+                        <a href="<?= asset('inward-entry.php') ?>" class="submenu-link <?= $currentPage === 'inward-entry.php' ? 'active' : '' ?>">Inward Entry</a>
                         <a href="<?= asset('bills.php') ?>" class="submenu-link <?= $currentPage === 'bills.php' ? 'active' : '' ?>">Bills</a>
                         <a href="<?= asset('payments-made.php') ?>" class="submenu-link <?= $currentPage === 'payments-made.php' ? 'active' : '' ?>">Payments Made</a>
                         <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Vendor Credits</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Customers & Perks Group -->
+                <?php if (is_feature_enabled('promotions_crm')): ?>
                 <div class="nav-group <?= $isCustomersOpen ? 'open' : '' ?>" id="grp-customers">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-customers')">
                         <div class="nav-group-title">
@@ -513,6 +529,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('promotions.php') ?>" class="submenu-link <?= $currentPage === 'promotions.php' ? 'active' : '' ?>">Loyalty</a>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Documents & Tools -->
                 <div class="nav-group <?= $isDocumentsOpen ? 'open' : '' ?>" id="grp-docs">
@@ -545,6 +562,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
             </div>
 
             <nav class="sidebar-nav">
+                <?php if (is_feature_enabled('pos_billing')): ?>
                 <div class="drawer-section-title">POINT OF SALE</div>
 
                 <a href="<?= asset('pos.php') ?>" class="nav-item <?= $currentPage === 'pos.php' ? 'active' : '' ?>">
@@ -583,10 +601,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <div class="nav-submenu">
                         <a href="<?= asset('settings.php') ?>" class="submenu-link">Preferences</a>
                         <a href="<?= asset('payment-options.php') ?>" class="submenu-link <?= $currentPage === 'payment-options.php' ? 'active' : '' ?>">Payment Options</a>
-                        <a href="<?= asset('barcode-print.php') ?>" class="submenu-link">Print Templates</a>
+                        <?php if (is_feature_enabled('barcode_print')): ?>
+                            <a href="<?= asset('barcode-print.php') ?>" class="submenu-link">Print Templates</a>
+                        <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
+                <?php if (is_feature_enabled('online_store')): ?>
                 <div class="drawer-section-title" style="margin-top: 10px;">E-COMMERCE & ONLINE CHANNELS</div>
 
                 <a href="<?= asset('integrations-cart.php') ?>" class="nav-item <?= $currentPage === 'integrations-cart.php' ? 'active' : '' ?>">
@@ -624,7 +646,9 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Customize App</span>
                 </a>
+                <?php endif; ?>
 
+                <?php if (is_feature_enabled('multi_outlet')): ?>
                 <div class="drawer-section-title" style="margin-top: 10px;">MULTI-STORE / WAREHOUSES</div>
 
                 <a href="<?= asset('outlets.php') ?>" class="nav-item <?= $currentPage === 'outlets.php' ? 'active' : '' ?>">
@@ -644,6 +668,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Inter-Store Transfers</span>
                 </a>
+                <?php endif; ?>
             </nav>
         </div>
 
@@ -1073,6 +1098,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </div>
                     <div class="nav-submenu">
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link">Purchase Orders</a>
+                        <a href="<?= asset('purchase-entry.php') ?>" class="submenu-link">Purchase Entry</a>
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link">Bills</a>
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link">Payments Made</a>
                         <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link">Vendor Credits</a>
@@ -1148,17 +1174,41 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <!-- Bottom Plan Status Widget -->
-        <?php $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); ?>
+        <?php 
+        $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); 
+        $currBiz = function_exists('current_business') ? current_business() : null;
+        $subStatus = strtolower(trim((string)($currBiz['subscription_status'] ?? '')));
+        $planRaw = strtolower(trim((string)($currBiz['subscription_plan'] ?? '')));
+        $planLabel = 'OMINIFLOW PRO';
+        if ($planRaw !== '' && $planRaw !== 'free') {
+            $planLabel = strtoupper($planRaw) . ' PLAN';
+        } elseif ($subStatus === 'trial') {
+            $planLabel = 'TRIAL PLAN';
+        }
+        $showPaidPlan = $isPremiumPlan || $subStatus === 'trial' || ($subStatus === 'active' && $planRaw !== '' && $planRaw !== 'free');
+        if ($subStatus === 'trial') {
+            $planBadge = 'TRIAL';
+            $planBadgeBg = '#d97706';
+        } elseif ($subStatus === 'suspended') {
+            $planBadge = 'SUSPENDED';
+            $planBadgeBg = '#ef4444';
+        } elseif ($subStatus === 'inactive') {
+            $planBadge = 'INACTIVE';
+            $planBadgeBg = '#64748b';
+        } elseif ($showPaidPlan) {
+            $planBadge = 'ACTIVE';
+            $planBadgeBg = '#10b981';
+        } else {
+            $planBadge = 'LOCKED';
+            $planBadgeBg = '#f59e0b';
+        }
+        ?>
         <div class="sidebar-plan-card">
             <div class="plan-card-title">
-                <span><?= $isPremiumPlan ? 'OMINIFLOW PREMIUM' : 'FREE PLAN' ?></span>
-                <?php if ($isPremiumPlan): ?>
-                    <span style="background: #10b981; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">ACTIVE</span>
-                <?php else: ?>
-                    <span style="background: #f59e0b; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;">LOCKED</span>
-                <?php endif; ?>
+                <span><?= $showPaidPlan ? htmlspecialchars($planLabel, ENT_QUOTES, 'UTF-8') : 'FREE PLAN' ?></span>
+                <span style="background: <?= htmlspecialchars($planBadgeBg, ENT_QUOTES, 'UTF-8') ?>; color: #fff; font-size: 8.5px; padding: 2px 5px; border-radius: 4px; font-weight: 800;"><?= htmlspecialchars($planBadge, ENT_QUOTES, 'UTF-8') ?></span>
             </div>
-            <?php if (!$isPremiumPlan): ?>
+            <?php if (!$showPaidPlan): ?>
                 <a href="<?= asset('pricing.php') ?>" style="display:block;margin-top:8px;text-align:center;background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:6px 8px;border-radius:6px;text-decoration:none;">Upgrade to Premium</a>
             <?php endif; ?>
         </div>
@@ -1187,11 +1237,28 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <div class="zpd-body">
+            <?php if (function_exists('is_super_admin') && is_super_admin()): ?>
+                <div class="zpd-card" style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%) !important; color: #ffffff !important; border-left: 4px solid #6366f1;">
+                    <div style="font-size: 11px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                        👑 Super Admin Console
+                    </div>
+                    <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 10px; line-height: 1.4;">
+                        Manage all clients, 1-click logins, subscriptions &amp; feature flags.
+                    </div>
+                    <a href="<?= asset('admin/index.php') ?>" style="display: block; text-align: center; background: #4f46e5; color: #ffffff !important; padding: 7px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
+                        Open Super Admin Panel &rarr;
+                    </a>
+                </div>
+            <?php endif; ?>
+
             <div class="zpd-card">
                 <div class="zpd-card-heading">Subscription</div>
                 <div class="zpd-sub-row">
-                    <?php if ($isPremiumPlan): ?>
-                        <div class="zpd-sub-text">You're currently on our Premium plan</div>
+                    <?php if ($subStatus === 'trial'): ?>
+                        <div class="zpd-sub-text">You're currently on a Trial<?= $planRaw !== '' && $planRaw !== 'free' ? ' (' . htmlspecialchars(ucfirst($planRaw), ENT_QUOTES, 'UTF-8') . ')' : '' ?></div>
+                        <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
+                    <?php elseif ($showPaidPlan): ?>
+                        <div class="zpd-sub-text">You're currently on our <?= $planRaw !== '' && $planRaw !== 'free' ? htmlspecialchars(ucfirst($planRaw), ENT_QUOTES, 'UTF-8') : 'Premium' ?> plan</div>
                         <a href="<?= asset('pricing.php') ?>" class="zpd-btn-outline">View plan</a>
                     <?php else: ?>
                         <div class="zpd-sub-text">You're currently on our Free plan</div>
@@ -1413,9 +1480,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // SIDEBAR INTERACTIONS
 function onRailHover(tabId) {
-    switchRailTab(tabId);
+    // Disabled: tabs now work on click only
+}
+
+function handleRailTabClick(tabId) {
     var sb = document.getElementById('appSidebar');
-    if (sb) sb.classList.add('sidebar-hover-open');
+    if (!sb) return;
+
+    var isPinned = sb.classList.contains('sidebar-pinned');
+    var isOpen = sb.classList.contains('sidebar-hover-open');
+    var currentActive = sessionStorage.getItem('active_rail_tab');
+
+    // If sidebar is unpinned, clicking the currently open active tab toggles it closed
+    if (!isPinned && isOpen && currentActive === tabId) {
+        sb.classList.remove('sidebar-hover-open');
+        return;
+    }
+
+    // Switch tab
+    switchRailTab(tabId);
+
+    // If not pinned, open the drawer
+    if (!isPinned) {
+        sb.classList.add('sidebar-hover-open');
+    }
 }
 
 function switchRailTab(tabId) {
@@ -1498,9 +1586,17 @@ function filterSettingsNav(query) {
             sb.classList.remove('sidebar-pinned');
         }
 
-        // Close hover drawer when mouse leaves sidebar
-        sb.addEventListener('mouseleave', function() {
+        // Close flyout drawer when clicking outside sidebar or pressing Escape
+        document.addEventListener('click', function(e) {
             if (!sb.classList.contains('sidebar-pinned')) {
+                if (!sb.contains(e.target)) {
+                    sb.classList.remove('sidebar-hover-open');
+                }
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !sb.classList.contains('sidebar-pinned')) {
                 sb.classList.remove('sidebar-hover-open');
             }
         });
@@ -1546,22 +1642,6 @@ function filterSettingsNav(query) {
         }
     }
 
-    var profileHoverTimer = null;
-
-    function openProfileMenu() {
-        if (profileHoverTimer) clearTimeout(profileHoverTimer);
-        var menu = document.getElementById('sidebarProfileMenu');
-        if (menu) menu.classList.add('show');
-    }
-
-    function closeProfileMenuWithDelay() {
-        if (profileHoverTimer) clearTimeout(profileHoverTimer);
-        profileHoverTimer = setTimeout(function() {
-            var menu = document.getElementById('sidebarProfileMenu');
-            if (menu) menu.classList.remove('show');
-        }, 400);
-    }
-
     window.toggleSidebarProfileMenu = function(e) {
         if (e) e.stopPropagation();
         var menu = document.getElementById('sidebarProfileMenu');
@@ -1569,21 +1649,6 @@ function filterSettingsNav(query) {
             menu.classList.toggle('show');
         }
     };
-
-    document.addEventListener('DOMContentLoaded', function() {
-        var trigger = document.getElementById('sidebarProfileTrigger');
-        var menu = document.getElementById('sidebarProfileMenu');
-
-        if (trigger) {
-            trigger.addEventListener('mouseenter', openProfileMenu);
-            trigger.addEventListener('mouseleave', closeProfileMenuWithDelay);
-        }
-
-        if (menu) {
-            menu.addEventListener('mouseenter', openProfileMenu);
-            menu.addEventListener('mouseleave', closeProfileMenuWithDelay);
-        }
-    });
 
     document.addEventListener('click', function(e) {
         var menu = document.getElementById('sidebarProfileMenu');

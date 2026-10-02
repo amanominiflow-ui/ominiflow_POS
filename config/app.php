@@ -23,8 +23,28 @@ if (!defined('CLOUDWAYS_API_KEY')) define('CLOUDWAYS_API_KEY', 'cw_b5e60fe02e9af
 if (!defined('CLOUDWAYS_SERVER_ID')) define('CLOUDWAYS_SERVER_ID', 1335001);
 if (!defined('CLOUDWAYS_APP_ID')) define('CLOUDWAYS_APP_ID', 6628687);
 
+// WhatsApp Business API Configuration (OminiFlow / WPBox)
+if (!defined('OMINIFLOW_WA_API_URL')) define('OMINIFLOW_WA_API_URL', 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage');
+if (!defined('OMINIFLOW_WA_TOKEN')) define('OMINIFLOW_WA_TOKEN', '0g7QLmJysmQkew4S3y7Zs6WtzIvaAlcvCBXhaLGwc4dce4b3');
+if (!defined('OMINIFLOW_WA_COMPANY_ID')) define('OMINIFLOW_WA_COMPANY_ID', 162);
+if (!defined('OMINIFLOW_WA_TEMPLATE')) define('OMINIFLOW_WA_TEMPLATE', 'otp_ver');
+if (!defined('OMINIFLOW_WA_LANG')) define('OMINIFLOW_WA_LANG', 'en_US');
+if (!defined('OMINIFLOW_WA_PHONE_ID')) define('OMINIFLOW_WA_PHONE_ID', '789955904210534');
+if (!defined('OMINIFLOW_WA_WABA_ID')) define('OMINIFLOW_WA_WABA_ID', '826751349830054');
+
+// Razorpay OAuth & Webhook Configuration (Zoho POS Exact Parity)
+if (!defined('RAZORPAY_OAUTH_CLIENT_ID')) define('RAZORPAY_OAUTH_CLIENT_ID', getenv('RAZORPAY_OAUTH_CLIENT_ID') ?: '');
+if (!defined('RAZORPAY_OAUTH_CLIENT_SECRET')) define('RAZORPAY_OAUTH_CLIENT_SECRET', getenv('RAZORPAY_OAUTH_CLIENT_SECRET') ?: '');
+// Register these on Razorpay Partner Dashboard. Redirect URI must be:
+// https://pos.ominiflow.com/razorpay-callback.php
+if (!defined('RAZORPAY_OAUTH_REDIRECT_URI')) {
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? STORE_CNAME_TARGET;
+    define('RAZORPAY_OAUTH_REDIRECT_URI', $proto . '://' . $host . APP_URL . '/razorpay-callback.php');
+}
+
 // Session configuration
-if (session_status() === PHP_SESSION_NONE) {
+if ((!defined('OMINIFLOW_SKIP_SESSION') || !OMINIFLOW_SKIP_SESSION) && session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.use_only_cookies', '1');
     ini_set('session.cookie_samesite', 'Lax');

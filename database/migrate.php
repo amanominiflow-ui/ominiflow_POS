@@ -248,7 +248,7 @@ try {
             `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
             `payment_method` VARCHAR(50) NOT NULL DEFAULT 'cash',
             `payment_status` ENUM('paid', 'partially_paid', 'pending', 'cancelled') NOT NULL DEFAULT 'paid',
-            `order_status` ENUM('completed', 'hold', 'cancelled') NOT NULL DEFAULT 'completed',
+            `order_status` ENUM('completed', 'hold', 'cancelled', 'processing', 'pending') NOT NULL DEFAULT 'completed',
             `notes` TEXT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1239,6 +1239,11 @@ try {
     add_column_if_not_exists($pdo, 'customers', 'outstanding_receivable', "DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `credit_limit`");
     add_column_if_not_exists($pdo, 'customers', 'password', "VARCHAR(255) NULL");
 
+    add_column_if_not_exists($pdo, 'users', 'outlet_id', "INT UNSIGNED NULL");
+    add_column_if_not_exists($pdo, 'registers', 'outlet_id', "INT UNSIGNED NULL");
+    add_column_if_not_exists($pdo, 'returns', 'return_type', "VARCHAR(20) NOT NULL DEFAULT 'refund'");
+    add_column_if_not_exists($pdo, 'returns', 'exchange_total', 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00');
+    add_column_if_not_exists($pdo, 'returns', 'amount_collected', 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00');
     add_column_if_not_exists($pdo, 'orders', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'orders', 'fulfillment_status', "ENUM('pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled', 'returned') NOT NULL DEFAULT 'delivered' AFTER `order_status`");
     add_column_if_not_exists($pdo, 'orders', 'price_list_id', "INT UNSIGNED NULL AFTER `discount_type`");
@@ -1249,6 +1254,8 @@ try {
     add_column_if_not_exists($pdo, 'orders', 'client_order_uuid', "VARCHAR(100) NULL UNIQUE AFTER `notes`");
 
     add_column_if_not_exists($pdo, 'order_items', 'variant_id', "INT UNSIGNED NULL AFTER `product_id`");
+    add_column_if_not_exists($pdo, 'order_items', 'size', "VARCHAR(80) NULL AFTER `variant_id`");
+    add_column_if_not_exists($pdo, 'order_items', 'colour', "VARCHAR(80) NULL AFTER `size`");
     add_column_if_not_exists($pdo, 'order_items', 'hsn_code', "VARCHAR(50) NULL AFTER `product_sku`");
 
     // Legacy online-store lines: attach variant when product has only one active variant
@@ -1269,6 +1276,7 @@ try {
 
     add_column_if_not_exists($pdo, 'product_variants', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");
     add_column_if_not_exists($pdo, 'product_variants', 'attribute_values', "JSON NULL AFTER `variant_name`");
+    add_column_if_not_exists($pdo, 'product_variants', 'image_path', "VARCHAR(255) NULL AFTER `attribute_values`");
 
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");
@@ -1527,6 +1535,8 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_upi', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
+    $helperAddCol($pdo, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
     $helperAddCol($pdo, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
@@ -1544,6 +1554,173 @@ try {
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay', "TINYINT(1) NOT NULL DEFAULT 1");
     $helperAddCol($pdo, 'mobile_store_settings', 'home_hero_autoplay_speed', "INT NOT NULL DEFAULT 4000");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inward_entries` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 1,
+            `entry_number` VARCHAR(50) NOT NULL,
+            `warehouse_id` INT UNSIGNED NOT NULL,
+            `vendor_id` INT UNSIGNED NULL,
+            `user_id` INT UNSIGNED NULL,
+            `entry_date` DATE NOT NULL,
+            `status` ENUM('counted') NOT NULL DEFAULT 'counted',
+            `is_sellable` TINYINT(1) NOT NULL DEFAULT 0,
+            `notes` TEXT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_inward_entry_number` (`business_id`, `entry_number`),
+            INDEX `idx_inward_business` (`business_id`),
+            INDEX `idx_inward_warehouse` (`warehouse_id`),
+            INDEX `idx_inward_date` (`entry_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inward_lines` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `inward_entry_id` INT UNSIGNED NOT NULL,
+            `product_id` INT UNSIGNED NOT NULL,
+            `variant_id` INT UNSIGNED NULL,
+            `size` VARCHAR(80) NOT NULL,
+            `colour` VARCHAR(80) NOT NULL,
+            `quantity` INT UNSIGNED NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_inward_line_entry` (`inward_entry_id`),
+            INDEX `idx_inward_line_product` (`product_id`),
+            CONSTRAINT `fk_inward_line_entry` FOREIGN KEY (`inward_entry_id`) REFERENCES `inward_entries` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_entries` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `entry_number` VARCHAR(40) NOT NULL,
+            `vendor_id` INT UNSIGNED NOT NULL,
+            `supplier_invoice_no` VARCHAR(80) NULL,
+            `purchase_date` DATE NOT NULL,
+            `received_date` DATE NOT NULL,
+            `warehouse_id` INT UNSIGNED NOT NULL,
+            `notes` TEXT NULL,
+            `status` ENUM('draft','pending_cost','finalized','barcode_generated','completed') NOT NULL DEFAULT 'pending_cost',
+            `stock_posted` TINYINT(1) NOT NULL DEFAULT 0,
+            `user_id` INT UNSIGNED NULL,
+            `finalized_by` INT UNSIGNED NULL,
+            `finalized_at` DATETIME NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_number` (`business_id`, `entry_number`),
+            INDEX `idx_pe_status` (`business_id`, `status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_entry_lines` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `purchase_entry_id` INT UNSIGNED NOT NULL,
+            `line_no` INT UNSIGNED NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL,
+            `subcategory_id` INT UNSIGNED NULL,
+            `sku` VARCHAR(100) NOT NULL,
+            `colour` VARCHAR(80) NOT NULL,
+            `size_label` VARCHAR(80) NOT NULL,
+            `selling_price` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            `cost_price` DECIMAL(12,2) NULL,
+            `quantity` INT UNSIGNED NOT NULL,
+            `product_id` INT UNSIGNED NULL,
+            `variant_id` INT UNSIGNED NULL,
+            `barcode` VARCHAR(100) NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_pel_entry` (`purchase_entry_id`),
+            CONSTRAINT `fk_pel_entry` FOREIGN KEY (`purchase_entry_id`) REFERENCES `purchase_entries` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_subcategories` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL,
+            `name` VARCHAR(120) NOT NULL,
+            `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_sub` (`business_id`, `category_id`, `name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_attr_options` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `attr_type` ENUM('colour','size') NOT NULL,
+            `category_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `name` VARCHAR(80) NOT NULL,
+            `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uniq_pe_attr` (`business_id`, `attr_type`, `category_id`, `name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `purchase_sku_sequences` (
+            `business_id` INT UNSIGNED NOT NULL,
+            `prefix` VARCHAR(12) NOT NULL,
+            `next_number` INT UNSIGNED NOT NULL DEFAULT 1,
+            PRIMARY KEY (`business_id`, `prefix`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    // ==========================================
+    // Super Admin & Dynamic Feature Subscriptions
+    // ==========================================
+    add_column_if_not_exists($pdo, 'users', 'is_super_admin', 'TINYINT(1) NOT NULL DEFAULT 0');
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_status', "VARCHAR(30) NOT NULL DEFAULT 'active'");
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_plan', "VARCHAR(50) NOT NULL DEFAULT 'pro'");
+    add_column_if_not_exists($pdo, 'businesses', 'subscription_expires_at', "DATETIME NULL");
+    add_column_if_not_exists($pdo, 'businesses', 'max_outlets', "INT NOT NULL DEFAULT 5");
+    add_column_if_not_exists($pdo, 'businesses', 'max_users', "INT NOT NULL DEFAULT 10");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `system_features` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `feature_key` VARCHAR(64) NOT NULL UNIQUE,
+            `name` VARCHAR(100) NOT NULL,
+            `category` VARCHAR(50) NOT NULL DEFAULT 'General',
+            `description` VARCHAR(255) NULL,
+            `default_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `business_features` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL,
+            `feature_key` VARCHAR(64) NOT NULL,
+            `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uk_biz_feature` (`business_id`, `feature_key`),
+            INDEX `idx_biz` (`business_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    // Ensure only admin@example.com is Super Admin
+    $pdo->exec("UPDATE users SET is_super_admin = 0 WHERE email != 'admin@example.com'");
+
+    // Seed or update Super Admin credentials (admin@example.com / admin@12345)
+    $adminEmail = 'admin@example.com';
+    $adminPassword = password_hash('admin@12345', PASSWORD_DEFAULT);
+    $checkAdmin = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+    $checkAdmin->execute(['email' => $adminEmail]);
+    $adminRow = $checkAdmin->fetch(PDO::FETCH_ASSOC);
+
+    if ($adminRow) {
+        // User already exists: only ensure permissions and active status. Preserve custom password!
+        $pdo->prepare('UPDATE users SET is_super_admin = 1, status = "active", role = "admin" WHERE id = :id')
+            ->execute(['id' => $adminRow['id']]);
+    } else {
+        $firstBiz = (int)$pdo->query('SELECT id FROM businesses ORDER BY id ASC LIMIT 1')->fetchColumn() ?: 1;
+        $pdo->prepare('
+            INSERT INTO users (business_id, name, email, phone, password, role, is_super_admin, status, created_at)
+            VALUES (:bid, "Super Administrator", :email, "9999999999", :pw, "admin", 1, "active", NOW())
+        ')->execute(['bid' => $firstBiz, 'email' => $adminEmail, 'pw' => $adminPassword]);
+    }
 
     if (php_sapi_name() === 'cli') {
         echo "SUCCESS: Database `ominiflow_pos` Multi-Tenant businesses and tables migrated successfully.\n";

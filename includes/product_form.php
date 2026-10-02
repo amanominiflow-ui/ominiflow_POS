@@ -26,13 +26,40 @@ $units = ['pcs', 'box', 'dz', 'kg', 'g', 'mg', 'lb', 'ml', 'l', 'm', 'cm', 'ft',
 $salesAccounts = ['Sales', 'Other Charges', 'Shipping Charge', 'Discount'];
 $purchaseAccounts = ['Cost of Goods Sold', 'Inventory Asset', 'Freight', 'Purchase'];
 $inventoryAccounts = ['Inventory Asset', 'Finished Goods', 'Raw Materials', 'Stock in Hand'];
+
+$taxRates = is_array($taxRates ?? null) ? $taxRates : [];
+$taxSeen = [];
+$taxRatesDeduped = [];
+foreach ($taxRates as $tr) {
+    if (!is_array($tr)) {
+        continue;
+    }
+    $taxKey = strtolower((string) ($tr['type'] ?? 'gst')) . '|' . number_format((float) ($tr['rate'] ?? 0), 2, '.', '');
+    if (isset($taxSeen[$taxKey])) {
+        continue;
+    }
+    $taxSeen[$taxKey] = true;
+    $taxRatesDeduped[] = $tr;
+}
+$taxRates = $taxRatesDeduped;
+
 $gstRates = array_values(array_filter($taxRates ?? [], static fn($t) => in_array(($t['type'] ?? ''), ['gst', 'exempt'], true)));
-$igstRates = array_values(array_filter($taxRates ?? [], static fn($t) => ($t['type'] ?? '') === 'igst'));
 if (!$gstRates) {
     $gstRates = $taxRates ?? [];
 }
-if (!$igstRates) {
-    $igstRates = $taxRates ?? [];
+
+/** Inter dropdown: same % slabs as intra (IGST row when present, else same rate row). */
+$interRates = [];
+foreach ($gstRates as $g) {
+    $rate = (float) ($g['rate'] ?? 0);
+    $matched = null;
+    foreach ($taxRates as $tr) {
+        if (($tr['type'] ?? '') === 'igst' && (float) ($tr['rate'] ?? -1) === $rate) {
+            $matched = $tr;
+            break;
+        }
+    }
+    $interRates[] = $matched ?? $g;
 }
 
 $itemKind = product_form_val('item_kind', 'goods');
@@ -76,18 +103,43 @@ $defaultIntra = product_form_val('intra_tax_rate_id');
 $defaultInter = product_form_val('inter_tax_rate_id');
 if ($defaultIntra === '' && $gstRates) {
     foreach ($gstRates as $g) {
-        if ((float) $g['rate'] == 5.0) { $defaultIntra = (string) $g['id']; break; }
+        if ((float) $g['rate'] === 0.0) {
+            $defaultIntra = (string) $g['id'];
+            break;
+        }
     }
     if ($defaultIntra === '') {
         $defaultIntra = (string) $gstRates[0]['id'];
     }
 }
-if ($defaultInter === '' && $igstRates) {
-    foreach ($igstRates as $g) {
-        if ((float) $g['rate'] == 5.0) { $defaultInter = (string) $g['id']; break; }
+if ($defaultInter === '' && $interRates) {
+    foreach ($interRates as $g) {
+        if ((float) $g['rate'] === 0.0) {
+            $defaultInter = (string) $g['id'];
+            break;
+        }
     }
     if ($defaultInter === '') {
-        $defaultInter = (string) $igstRates[0]['id'];
+        $defaultInter = (string) $interRates[0]['id'];
+    }
+} elseif ($defaultInter !== '' && $interRates) {
+    $interIds = array_map(static fn($t) => (string) (int) $t['id'], $interRates);
+    if (!in_array($defaultInter, $interIds, true)) {
+        $savedRate = null;
+        foreach ($taxRates as $tr) {
+            if ((string) (int) $tr['id'] === $defaultInter) {
+                $savedRate = (float) ($tr['rate'] ?? 0);
+                break;
+            }
+        }
+        if ($savedRate !== null) {
+            foreach ($interRates as $g) {
+                if ((float) ($g['rate'] ?? -1) === $savedRate) {
+                    $defaultInter = (string) $g['id'];
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -488,10 +540,11 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             <button type="button" class="add-attr-link" id="addAttrBtn">⊕ Add more attributes</button>
 
             <div class="variant-table-wrap" id="variantTableWrap" style="<?= empty($existingVariants) ? 'display:none;' : '' ?>">
-                <div style="font-weight:700;font-size:13.5px;color:#1e293b;margin:16px 0 10px;">Variant Combinations & Pricing</div>
+                <div style="font-weight:700;font-size:13.5px;color:#1e293b;margin:16px 0 10px;">Variant Combinations, Images & Pricing</div>
                 <table class="variant-table">
                     <thead>
                         <tr>
+                            <th style="width:52px;text-align:center;">Image</th>
                             <th>Variant</th>
                             <th>SKU</th>
                             <th>Selling Price (₹)</th>
@@ -502,6 +555,25 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                     <tbody id="variantTableBody">
                         <?php foreach ($existingVariants as $vi => $ev): ?>
                         <tr data-combo="<?= e((string)($ev['attribute_values'] ?? '')) ?>">
+                            <td class="variant-img-cell">
+                                <div class="variant-img-picker">
+                                    <label class="variant-img-label" title="Upload variant image">
+                                        <input type="file" name="variant_image[<?= $vi ?>]" class="variant-img-input" accept="image/jpeg,image/png,image/webp,image/jpg" style="display:none;">
+                                        <div class="variant-img-preview <?= !empty($ev['image_path']) ? 'has-img' : '' ?>">
+                                            <?php if (!empty($ev['image_path'])): ?>
+                                                <img src="<?= asset($ev['image_path']) ?>" alt="Variant">
+                                            <?php else: ?>
+                                                <svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                            <?php endif; ?>
+                                        </div>
+                                    </label>
+                                    <input type="hidden" name="variant_image_existing[<?= $vi ?>]" class="variant-existing-img" value="<?= e((string)($ev['image_path'] ?? '')) ?>">
+                                    <input type="hidden" name="variant_image_remove[<?= $vi ?>]" class="variant-remove-img" value="0">
+                                    <?php if (!empty($ev['image_path'])): ?>
+                                        <button type="button" class="variant-img-del-btn" title="Remove image">&times;</button>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
                             <td class="variant-name-cell"><?= e((string) $ev['variant_name']) ?></td>
                             <td><input type="text" name="variant_sku[<?= $vi ?>]" value="<?= e((string) $ev['sku']) ?>" style="text-transform:uppercase"></td>
                             <td><input type="number" step="0.01" min="0" name="variant_selling_price[<?= $vi ?>]" value="<?= e((string) $ev['selling_price']) ?>" placeholder="0.00"></td>
@@ -601,7 +673,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             <div class="item-row">
                 <label class="item-label">Inter State Tax Rate</label>
                 <select class="item-select" name="inter_tax_rate_id">
-                    <?php foreach ($igstRates as $tr): ?>
+                    <?php foreach ($interRates as $tr): ?>
                         <option value="<?= (int) $tr['id'] ?>" <?= $defaultInter === (string) $tr['id'] ? 'selected' : '' ?>><?= e((string) $tr['name']) ?> (<?= e((string) $tr['rate']) ?>%)</option>
                     <?php endforeach; ?>
                 </select>
@@ -881,11 +953,18 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             var spInp = tr.querySelector('input[name^="variant_selling_price"]');
             var cpInp = tr.querySelector('input[name^="variant_cost_price"]');
             var stInp = tr.querySelector('input[name^="variant_stock"]');
+            var existImgInp = tr.querySelector('.variant-existing-img');
+            var removeImgInp = tr.querySelector('.variant-remove-img');
+            var imgPreview = tr.querySelector('.variant-img-preview img');
+
             var rowData = {
                 sku: skuInp ? skuInp.value : '',
                 selling_price: spInp ? spInp.value : '',
                 cost_price: cpInp ? cpInp.value : '',
-                stock: stInp ? stInp.value : ''
+                stock: stInp ? stInp.value : '',
+                existingImg: existImgInp ? existImgInp.value : '',
+                removeImg: removeImgInp ? removeImgInp.value : '0',
+                previewSrc: imgPreview ? imgPreview.src : ''
             };
             if (key) existingData[key] = rowData;
             if (varName) existingData['name:' + varName] = rowData;
@@ -893,6 +972,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
 
         tbody.innerHTML = '';
         var parentSku = (document.getElementById('sku') ? document.getElementById('sku').value.trim() : '') || 'SKU';
+        var imgPlaceholderSvg = '<svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
 
         combos.forEach(function (combo, i) {
             var comboKey = JSON.stringify(combo);
@@ -903,17 +983,91 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             var spVal = prev.selling_price !== undefined ? prev.selling_price : '';
             var cpVal = prev.cost_price !== undefined ? prev.cost_price : '';
             var stVal = prev.stock !== undefined ? prev.stock : '';
+            var existingImgVal = prev.existingImg || '';
+            var removeImgVal = prev.removeImg || '0';
+            var previewSrcVal = prev.previewSrc || '';
+
+            var hasImg = (previewSrcVal !== '' && removeImgVal !== '1');
+            var previewInner = hasImg ? '<img src="' + previewSrcVal + '" alt="Variant">' : imgPlaceholderSvg;
+            var delBtnHtml = hasImg ? '<button type="button" class="variant-img-del-btn" title="Remove image">&times;</button>' : '';
 
             var tr = document.createElement('tr');
             tr.setAttribute('data-combo', comboKey);
             tr.innerHTML =
+                '<td class="variant-img-cell">' +
+                    '<div class="variant-img-picker">' +
+                        '<label class="variant-img-label" title="Upload variant image">' +
+                            '<input type="file" name="variant_image[' + i + ']" class="variant-img-input" accept="image/jpeg,image/png,image/webp,image/jpg" style="display:none;">' +
+                            '<div class="variant-img-preview' + (hasImg ? ' has-img' : '') + '">' +
+                                previewInner +
+                            '</div>' +
+                        '</label>' +
+                        '<input type="hidden" name="variant_image_existing[' + i + ']" class="variant-existing-img" value="' + (hasImg ? existingImgVal : '') + '">' +
+                        '<input type="hidden" name="variant_image_remove[' + i + ']" class="variant-remove-img" value="' + removeImgVal + '">' +
+                        delBtnHtml +
+                    '</div>' +
+                '</td>' +
                 '<td class="variant-name-cell">' + varName + '</td>' +
                 '<td><input type="text" name="variant_sku[' + i + ']" value="' + skuVal + '" placeholder="' + parentSku + '-V' + (i+1) + '" style="text-transform:uppercase"></td>' +
                 '<td><input type="number" step="0.01" min="0" name="variant_selling_price[' + i + ']" value="' + spVal + '" placeholder="0.00"></td>' +
                 '<td><input type="number" step="0.01" min="0" name="variant_cost_price[' + i + ']" value="' + cpVal + '" placeholder="0.00"></td>' +
                 '<td><input type="number" min="0" name="variant_stock[' + i + ']" value="' + stVal + '" placeholder="0"></td>';
             tbody.appendChild(tr);
+            attachVariantImgHandler(tr);
         });
+    }
+
+    var imgPlaceholderSvg = '<svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
+
+    function attachVariantImgHandler(row) {
+        var fileInp = row.querySelector('.variant-img-input');
+        var preview = row.querySelector('.variant-img-preview');
+        var picker = row.querySelector('.variant-img-picker');
+        var removeInp = row.querySelector('.variant-remove-img');
+        var existingInp = row.querySelector('.variant-existing-img');
+
+        function setupDeleteBtn(btn) {
+            btn.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                if (fileInp) fileInp.value = '';
+                if (existingInp) existingInp.value = '';
+                if (removeInp) removeInp.value = '1';
+                preview.innerHTML = imgPlaceholderSvg;
+                preview.classList.remove('has-img');
+                btn.remove();
+            });
+        }
+
+        if (fileInp && preview) {
+            fileInp.addEventListener('change', function () {
+                if (this.files && this.files[0]) {
+                    var reader = new FileReader();
+                    reader.onload = function (e) {
+                        preview.innerHTML = '<img src="' + e.target.result + '" alt="Variant">';
+                        preview.classList.add('has-img');
+                        if (removeInp) removeInp.value = '0';
+
+                        var oldDel = picker.querySelector('.variant-img-del-btn');
+                        if (!oldDel) {
+                            var delBtn = document.createElement('button');
+                            delBtn.type = 'button';
+                            delBtn.className = 'variant-img-del-btn';
+                            delBtn.title = 'Remove image';
+                            delBtn.innerHTML = '&times;';
+                            setupDeleteBtn(delBtn);
+                            picker.appendChild(delBtn);
+                        }
+                    };
+                    reader.readAsDataURL(this.files[0]);
+                }
+            });
+        }
+
+        var existingDel = row.querySelector('.variant-img-del-btn');
+        if (existingDel) {
+            setupDeleteBtn(existingDel);
+        }
     }
 
     // Sync tag chips to the hidden input
@@ -999,8 +1153,9 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
         });
     }
 
-    // Initialize existing tag inputs
+    // Initialize existing tag inputs & variant image handlers
     document.querySelectorAll('.tag-input-wrap').forEach(setupTagInput);
+    document.querySelectorAll('#variantTableBody tr').forEach(attachVariantImgHandler);
 
     // Rebuild matrix when attribute name changes
     var attrsWrapEl = document.getElementById('attrsWrap');

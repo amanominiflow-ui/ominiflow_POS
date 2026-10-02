@@ -22,7 +22,6 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/storefront_db.php';
 require_once __DIR__ . '/includes/barcode_helper.php';
-require_once __DIR__ . '/includes/variants_db.php';
 
 // Session initialization
 if (session_status() === PHP_SESSION_NONE) {
@@ -87,6 +86,74 @@ $businessId = (int)($invoice['business_id'] ?? 1);
 $store = get_store_settings($businessId);
 $brand = function_exists('get_mobile_store_settings') ? get_mobile_store_settings($businessId) : [];
 $items = $invoice['items'] ?? [];
+if (!function_exists('invoice_view_enrich_items_gst')) {
+    /**
+     * Backfill HSN / tax % / line tax for older invoices (read-only; does not update DB).
+     */
+    function invoice_view_enrich_items_gst(array $items, PDO $db, int $businessId): array {
+        if ($items === []) {
+            return $items;
+        }
+        $productIds = [];
+        foreach ($items as $it) {
+            $pid = (int) ($it['product_id'] ?? 0);
+            if ($pid > 0) {
+                $productIds[$pid] = $pid;
+            }
+        }
+        $productMeta = [];
+        if ($productIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+            $params = array_merge([$businessId], array_values($productIds));
+            try {
+                $st = $db->prepare("SELECT id, hsn_code, tax_percent FROM products WHERE business_id = ? AND id IN ({$placeholders})");
+                $st->execute($params);
+                while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+                    $productMeta[(int) $row['id']] = $row;
+                }
+            } catch (Throwable $e) {
+                $productMeta = [];
+            }
+        }
+        foreach ($items as $idx => $it) {
+            $pid = (int) ($it['product_id'] ?? 0);
+            if ($pid > 0 && isset($productMeta[$pid])) {
+                $pm = $productMeta[$pid];
+                if (trim((string) ($it['hsn_code'] ?? '')) === '' && trim((string) ($pm['hsn_code'] ?? '')) !== '') {
+                    $items[$idx]['hsn_code'] = $pm['hsn_code'];
+                }
+                if ((float) ($it['tax_percent'] ?? 0) <= 0 && (float) ($pm['tax_percent'] ?? 0) > 0) {
+                    $items[$idx]['tax_percent'] = (float) $pm['tax_percent'];
+                }
+            }
+            $qty = max(1, (int) ($it['quantity'] ?? 1));
+            $unit = (float) ($it['unit_price'] ?? 0);
+            $lineTotal = (float) ($it['line_total'] ?? 0);
+            $lineTax = (float) ($it['tax_amount'] ?? 0);
+            $rate = (float) ($items[$idx]['tax_percent'] ?? 0);
+            $base = round($unit * $qty, 2);
+            if ($lineTax <= 0 && $rate > 0 && $base > 0) {
+                if ($lineTotal > $base + 0.009) {
+                    $lineTax = round($lineTotal - $base, 2);
+                } else {
+                    $lineTax = round($base * ($rate / 100), 2);
+                    if ($lineTotal <= 0) {
+                        $items[$idx]['line_total'] = round($base + $lineTax, 2);
+                    }
+                }
+                $items[$idx]['tax_amount'] = $lineTax;
+            } elseif ($lineTax <= 0 && $lineTotal > $base + 0.009 && $base > 0) {
+                $items[$idx]['tax_amount'] = round($lineTotal - $base, 2);
+                if ($rate <= 0) {
+                    $items[$idx]['tax_percent'] = round((($lineTotal - $base) / $base) * 100, 2);
+                }
+            }
+        }
+        return $items;
+    }
+}
+$items = invoice_view_enrich_items_gst($items, $db, $businessId);
+$invoice['items'] = $items;
 $isCancelled = ($invoice['invoice_status'] === 'cancelled');
 $autoPrint = isset($_GET['print']) || isset($_GET['download']);
 $isPublicView = !$isAdmin || isset($_GET['standalone']);
@@ -94,6 +161,7 @@ $requestedSize = trim((string)($_GET['size'] ?? 'default'));
 if (!in_array($requestedSize, ['default', '4x3'], true)) {
     $requestedSize = 'default';
 }
+$invPageSizeLabel = $requestedSize === '4x3' ? '4×3 in' : 'A4';
 $pageTitle = 'Invoice #' . $invoice['invoice_number'];
 
 // 1. Dynamic Store Theme Colors
@@ -219,20 +287,143 @@ $logoExists = ($storeLogo !== '');
 $storeDisplayName = !empty($store['store_name']) ? $store['store_name'] : (!empty($brand['display_name']) ? $brand['display_name'] : 'ASH COLLECTIVE');
 
 // 8. Calculations
-$subtotal = (float)$invoice['subtotal'];
+$subtotal = (float)($invoice['subtotal'] ?? 0);
 $discountAmount = (float)($invoice['discount_amount'] ?? 0);
 $taxAmount = (float)($invoice['tax_amount'] ?? 0);
 $shippingFee = (float)($invoice['shipping_fee'] ?? 0);
-$grandTotal = (float)$invoice['total_amount'];
+$grandTotal = (float)($invoice['total_amount'] ?? 0);
 
-// If subtotal is zero (e.g. legacy invoice), sum from items
-if ($subtotal <= 0 && !empty($items)) {
+// If subtotal is zero or empty (e.g. legacy invoice), sum from items
+$itemsSum = 0.0;
+if (!empty($items)) {
     foreach ($items as $it) {
-        $subtotal += (float)$it['line_total'];
+        $itemsSum += (float)($it['line_total'] ?? 0);
     }
 }
-if ($grandTotal <= 0) {
-    $grandTotal = $subtotal - $discountAmount + $shippingFee;
+$lineTaxSum = 0.0;
+$lineExTaxSum = 0.0;
+foreach ($items as $it) {
+    $lt = (float) ($it['line_total'] ?? 0);
+    $tx = (float) ($it['tax_amount'] ?? 0);
+    $qty = max(1, (int) ($it['quantity'] ?? 1));
+    $unit = (float) ($it['unit_price'] ?? 0);
+    $lineTaxSum += $tx;
+    if ($tx > 0 && $lt >= $tx) {
+        $lineExTaxSum += round($lt - $tx, 2);
+    } elseif ($unit > 0) {
+        $lineExTaxSum += round($unit * $qty, 2);
+    } elseif ($lt > 0) {
+        $lineExTaxSum += $lt;
+    }
+}
+$lineTaxSum = round($lineTaxSum, 2);
+$lineExTaxSum = round($lineExTaxSum, 2);
+
+if ($subtotal <= 0 && $itemsSum > 0) {
+    $subtotal = $itemsSum;
+}
+
+// Legacy: invoice header tax missing but lines or linked order have tax
+if ($taxAmount <= 0 && $lineTaxSum > 0) {
+    $taxAmount = $lineTaxSum;
+} elseif ($taxAmount <= 0 && !empty($invoice['order_id'])) {
+    try {
+        $stOrdTax = $db->prepare('SELECT tax_amount, subtotal, discount_amount FROM orders WHERE id = :oid AND business_id = :bid LIMIT 1');
+        $stOrdTax->execute(['oid' => (int) $invoice['order_id'], 'bid' => $businessId]);
+        $ordTaxRow = $stOrdTax->fetch(PDO::FETCH_ASSOC);
+        if ($ordTaxRow && (float) ($ordTaxRow['tax_amount'] ?? 0) > 0) {
+            $taxAmount = (float) $ordTaxRow['tax_amount'];
+            if ($subtotal <= 0 && (float) ($ordTaxRow['subtotal'] ?? 0) > 0) {
+                $subtotal = (float) $ordTaxRow['subtotal'];
+            }
+        }
+    } catch (Throwable $e) {
+        // ignore
+    }
+}
+if ($taxAmount <= 0 && $grandTotal > 0) {
+    $impliedTax = round($grandTotal - $shippingFee - ($subtotal - $discountAmount), 2);
+    if ($impliedTax > 0.009) {
+        $taxAmount = $impliedTax;
+    }
+}
+
+// When subtotal on old rows included GST, show pre-tax subtotal in "Total Amount"
+if ($lineExTaxSum > 0 && $lineTaxSum > 0) {
+    if (abs($subtotal - ($lineExTaxSum + $lineTaxSum)) < 0.06 || $subtotal > $lineExTaxSum + 0.009) {
+        $subtotal = $lineExTaxSum;
+    }
+} elseif ($lineExTaxSum > 0 && $subtotal <= 0) {
+    $subtotal = $lineExTaxSum;
+}
+
+// Check if shipping fee is in order notes or notes
+if ($shippingFee <= 0) {
+    $notes = (string)($invoice['order_notes'] ?? $invoice['notes'] ?? '');
+    if (preg_match('/(?:shipping|delivery)(?:\s*(?:fee|charge|amount))?\s*[:=]\s*₹?\s*(\d+(?:\.\d+)?)/i', $notes, $mShip)) {
+        $shippingFee = (float)$mShip[1];
+    }
+}
+
+// Reconcile shipping fee if grand total exceeds subtotal - discount + tax
+$expectedBase = round($subtotal - $discountAmount + $taxAmount, 2);
+if ($shippingFee <= 0 && $grandTotal > $expectedBase) {
+    $shippingFee = round($grandTotal - $expectedBase, 2);
+}
+
+// Ensure Grand Total is mathematically exact: Total Amount - Discount + Tax + Shipping
+$grandTotal = max(0.00, round($subtotal - $discountAmount + $taxAmount + $shippingFee, 2));
+
+// 8b. GST breakup (CGST / SGST / IGST) — use invoice columns, fallback split for legacy rows
+$taxableAmount = (float)($invoice['taxable_amount'] ?? 0);
+$cgstAmount = (float)($invoice['cgst_amount'] ?? 0);
+$sgstAmount = (float)($invoice['sgst_amount'] ?? 0);
+$igstAmount = (float)($invoice['igst_amount'] ?? 0);
+if ($taxableAmount <= 0) {
+    if ($lineExTaxSum > 0) {
+        $taxableAmount = max(0.00, round($lineExTaxSum - $discountAmount, 2));
+    } else {
+        $taxableAmount = max(0.00, round($subtotal - $discountAmount, 2));
+    }
+}
+if ($taxAmount > 0 && ($cgstAmount + $sgstAmount + $igstAmount) <= 0) {
+    if ($igstAmount > 0) {
+        // keep IGST-only if ever set without CGST/SGST
+    } else {
+        $cgstAmount = round($taxAmount / 2, 2);
+        $sgstAmount = round($taxAmount - $cgstAmount, 2);
+    }
+}
+$showGstBreakup = ($taxAmount > 0 || $cgstAmount > 0 || $sgstAmount > 0 || $igstAmount > 0 || $lineTaxSum > 0);
+
+$gstSettings = null;
+try {
+    $stGst = $db->prepare('SELECT * FROM gst_settings WHERE business_id = :bid LIMIT 1');
+    $stGst->execute(['bid' => $businessId]);
+    $gstSettings = $stGst->fetch() ?: null;
+} catch (Throwable $e) {
+    $gstSettings = null;
+}
+$sellerGstin = trim((string)($gstSettings['gstin'] ?? $store['gstin'] ?? ($brand['footer_gst_no'] ?? '')));
+
+$invoiceTaxRates = [];
+foreach ($items as $taxIt) {
+    $tp = (float)($taxIt['tax_percent'] ?? 0);
+    if ($tp > 0) {
+        $invoiceTaxRates[(string) $tp] = $tp;
+    }
+}
+$cgstRateLabel = '';
+$sgstRateLabel = '';
+$igstRateLabel = '';
+if (count($invoiceTaxRates) === 1) {
+    $fullRate = (float) array_values($invoiceTaxRates)[0];
+    $halfRate = round($fullRate / 2, 2);
+    $cgstRateLabel = '@ ' . rtrim(rtrim(number_format($halfRate, 2, '.', ''), '0'), '.') . '%';
+    $sgstRateLabel = $cgstRateLabel;
+} elseif ($igstAmount > 0 && count($invoiceTaxRates) === 1) {
+    $fullRate = (float) array_values($invoiceTaxRates)[0];
+    $igstRateLabel = '@ ' . rtrim(rtrim(number_format($fullRate, 2, '.', ''), '0'), '.') . '%';
 }
 
 // 9. Variant Extraction Helper (Size & Colour)
@@ -243,6 +434,15 @@ if (!function_exists('extract_item_attributes')) {
         $pName = trim((string)$it['product_name']);
         $pSku = trim((string)($it['product_sku'] ?? ''));
 
+        $storedSize = trim((string)($it['size'] ?? ''));
+        $storedColour = trim((string)($it['colour'] ?? $it['color'] ?? ''));
+        if ($storedSize !== '' && $storedSize !== '-') {
+            $size = $storedSize;
+        }
+        if ($storedColour !== '' && $storedColour !== '-') {
+            $colour = $storedColour;
+        }
+
         // Check variant_id in database if available
         $variantId = (int)($it['variant_id'] ?? 0);
         if ($variantId > 0) {
@@ -250,10 +450,27 @@ if (!function_exists('extract_item_attributes')) {
                 $stV = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid LIMIT 1');
                 $stV->execute(['vid' => $variantId]);
                 $vRow = $stV->fetch();
-                if ($vRow && function_exists('parse_variant_size_and_colour')) {
-                    $parsed = parse_variant_size_and_colour($vRow);
-                    $size = $parsed['size'];
-                    $colour = $parsed['colour'];
+                if ($vRow) {
+                    $av = json_decode((string)$vRow['attribute_values'], true);
+                    if (is_array($av)) {
+                        foreach ($av as $k => $v) {
+                            $kLow = strtolower((string)$k);
+                            if ($size === '-' && in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
+                                $size = trim((string)$v);
+                            }
+                            if ($colour === '-' && in_array($kLow, ['color', 'colour', 'shade'], true)) {
+                                $colour = trim((string)$v);
+                            }
+                        }
+                    }
+                    if ($size === '-' || $colour === '-') {
+                        $vn = (string)$vRow['variant_name'];
+                        if (str_contains($vn, '/')) {
+                            $parts = explode('/', $vn);
+                            if ($size === '-' && isset($parts[0])) $size = trim($parts[0]);
+                            if ($colour === '-' && isset($parts[1])) $colour = trim($parts[1]);
+                        }
+                    }
                 }
             } catch (Exception $e) {}
         }
@@ -276,6 +493,31 @@ if (!function_exists('extract_item_attributes')) {
         return ['size' => $size, 'colour' => $colour];
     }
 }
+
+if (!function_exists('resolve_item_hsn')) {
+    function resolve_item_hsn(array $it, PDO $db, array &$productHsnCache): string {
+        $hsn = strtoupper(trim((string)($it['hsn_code'] ?? '')));
+        if ($hsn !== '') {
+            return $hsn;
+        }
+        $pid = (int)($it['product_id'] ?? 0);
+        if ($pid <= 0) {
+            return '-';
+        }
+        if (!array_key_exists($pid, $productHsnCache)) {
+            try {
+                $st = $db->prepare('SELECT hsn_code FROM products WHERE id = :id LIMIT 1');
+                $st->execute(['id' => $pid]);
+                $productHsnCache[$pid] = strtoupper(trim((string)($st->fetchColumn() ?: '')));
+            } catch (Throwable $e) {
+                $productHsnCache[$pid] = '';
+            }
+        }
+        return $productHsnCache[$pid] !== '' ? $productHsnCache[$pid] : '-';
+    }
+}
+
+$productHsnCache = [];
 
 // 10. Barcode SVG Generation
 $barcodeSvg = generate_code128_svg($rawOrderNum, 36, 1.4, $storeThemeColor);
@@ -323,6 +565,32 @@ if (!function_exists('format_invoice_whatsapp_phone')) {
     }
 }
 $formattedWhatsAppPhone = format_invoice_whatsapp_phone($rawWhatsApp);
+
+// 12. Dynamic Page Pagination & Item Chunking
+$totalItemsCount = count($items);
+$itemChunks = [];
+
+if ($requestedSize === '4x3') {
+    // 4x3 card: 2 items fit on single card with header and footer.
+    // When > 2 items (e.g. 6 items), paginate 3 items per card so card never exceeds 3 inches!
+    if ($totalItemsCount <= 2) {
+        $itemChunks = [$items];
+    } else {
+        $itemChunks = array_chunk($items, 3);
+    }
+} else {
+    // Default A4 size: Fits up to 8 items on single card, or 8 items per page on multi-page
+    if ($totalItemsCount <= 8) {
+        $itemChunks = [$items];
+    } else {
+        $itemChunks = array_chunk($items, 8);
+    }
+}
+
+if (empty($itemChunks)) {
+    $itemChunks = [[]];
+}
+$totalPages = count($itemChunks);
 
 // Public invoice verification URL for QR code
 $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&standalone=1';
@@ -432,6 +700,14 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
             position: relative;
             background-clip: padding-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .inv-card + .inv-card {
+            margin-top: 28px;
+        }
+        body.size-4x3 .inv-card + .inv-card {
+            margin-top: 16px;
         }
 
         /* Cancellation Watermark */
@@ -465,6 +741,8 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             justify-content: center;
             text-align: center;
             padding-right: 12px;
+            min-width: 0;
+            overflow: hidden;
         }
         .inv-brand-img {
             max-height: 98px;
@@ -482,10 +760,31 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             font-size: 16.5px;
             font-weight: 900;
             color: var(--inv-theme);
-            letter-spacing: 0.14em;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             line-height: 1.25;
             text-align: center;
+            width: 100%;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .inv-page-size-label {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            z-index: 12;
+            margin: 0;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #0f172a;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            line-height: 1.2;
         }
 
         /* Middle Column: Invoice Title & Meta */
@@ -567,6 +866,64 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             grid-template-columns: 72px 12px 1fr;
         }
 
+        /* Page Badge & Continuation Styles */
+        .inv-page-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 750;
+            color: var(--inv-theme);
+            background: var(--inv-theme-tint);
+            border: 1px solid rgba(var(--inv-theme-rgb), 0.3);
+            border-radius: 12px;
+            padding: 2px 8px;
+            letter-spacing: 0.04em;
+        }
+        .inv-continue-note {
+            text-align: right;
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--inv-theme);
+            font-style: italic;
+            padding: 12px 4px 6px;
+        }
+        .inv-mini-top-grid {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1.5px solid var(--inv-theme);
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+        .inv-mini-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .inv-mini-brand-img {
+            max-height: 48px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        .inv-mini-peacock {
+            width: 44px;
+            height: 44px;
+            color: var(--inv-theme);
+        }
+        .inv-mini-title {
+            font-size: 14px;
+            font-weight: 900;
+            color: var(--inv-theme);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .inv-mini-meta {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #334155;
+            text-align: right;
+            line-height: 1.45;
+        }
+
         /* PRODUCTS TABLE */
         .inv-table-wrap {
             width: 100%;
@@ -625,6 +982,20 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             text-align: right;
             padding-right: 14px;
             font-weight: 600;
+        }
+        .inv-products-table tbody td.col-hsn {
+            text-align: center;
+            font-weight: 600;
+            font-size: 10.5px;
+            letter-spacing: 0.02em;
+        }
+        .inv-products-table tbody td.col-gst {
+            text-align: center;
+            font-weight: 600;
+        }
+        .inv-products-table th.col-hsn,
+        .inv-products-table th.col-gst {
+            text-align: center;
         }
 
         /* SUMMARY CALCULATION BOX (Right Aligned Below Table) */
@@ -788,8 +1159,8 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             border-radius: 14px;
         }
         body.size-4x3 .inv-top-grid {
-            grid-template-columns: 125px 1fr 1.05fr;
-            gap: 12px;
+            grid-template-columns: minmax(0, 108px) minmax(0, 1.15fr) minmax(0, 1.25fr);
+            gap: 10px;
             margin-bottom: 12px;
         }
         body.size-4x3 .inv-brand-peacock-icon {
@@ -798,13 +1169,32 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 4px;
         }
         body.size-4x3 .inv-brand-img {
-            max-height: 56px;
-            max-width: 115px;
+            max-height: 52px;
+            max-width: 96px;
             margin-bottom: 4px;
         }
+        body.size-4x3 .inv-brand-col {
+            min-width: 0;
+            max-width: 108px;
+            overflow: hidden;
+            padding-right: 6px;
+        }
         body.size-4x3 .inv-brand-title {
-            font-size: 11px;
-            font-weight: 900;
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1.15;
+            width: 100%;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            hyphens: auto;
+        }
+        body.size-4x3 .inv-page-size-label {
+            top: 8px;
+            left: 10px;
+            font-size: 7px;
+            padding: 2px 5px;
         }
         body.size-4x3 .inv-meta-col {
             padding-left: 0;
@@ -848,7 +1238,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 12px;
         }
         body.size-4x3 .inv-summary-box {
-            width: 210px;
+            width: 230px;
             padding: 8px 12px;
             gap: 3px;
         }
@@ -890,7 +1280,12 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             margin-bottom: 1px;
         }
         body.size-4x3 .inv-love-brand {
-            font-size: 8.5px;
+            font-size: 7px;
+            letter-spacing: 0.04em;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            line-height: 1.15;
         }
         body.size-4x3 .inv-footer-help {
             gap: 8px;
@@ -914,9 +1309,13 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 
         /* PRINT MEDIA STYLES FOR CRISP OUTPUT */
         @media print {
-            .no-print, .inv-action-bar, .app-sidebar, .app-header, button, a.inv-btn {
+            .no-print, .inv-action-bar, .app-sidebar, .app-header, button, a.inv-btn,
+            .modal-overlay, .spotlight-overlay {
                 display: none !important;
                 visibility: hidden !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
             }
             html, body {
                 background: #ffffff !important;
@@ -924,15 +1323,26 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
             .app-layout, .app-main, .dashboard-content {
                 display: block !important;
+                position: static !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 background: transparent !important;
                 width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
             }
             .inv-card {
                 border: 2.5px solid var(--inv-theme) !important;
@@ -941,10 +1351,16 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 padding: 24px 28px !important;
                 margin: 0 auto !important;
                 max-width: 100% !important;
-                page-break-inside: avoid;
-                break-inside: avoid;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-after: always !important;
+                break-after: page !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+            }
+            .inv-card:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
             }
             .inv-products-table thead {
                 background: var(--inv-theme) !important;
@@ -958,55 +1374,214 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 print-color-adjust: exact !important;
             }
 
-            /* 4x3 Compact Print Rules */
+            /*
+             * 4x3 print: Chrome collapses CSS Grid `fr` columns and word-break
+             * wraps customer text character-by-character. Use flex + fixed
+             * widths so print matches the on-screen card, one page, no overflow.
+             */
+            html:has(body.size-4x3) {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                height: auto !important;
+                overflow: hidden !important;
+            }
+            body.size-4x3 {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                height: auto !important;
+                overflow: hidden !important;
+            }
+            body.size-4x3 .app-layout,
+            body.size-4x3 .app-main,
+            body.size-4x3 .dashboard-content {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                height: auto !important;
+                overflow: hidden !important;
+            }
             body.size-4x3 .inv-card {
-                width: 3.85in !important;
-                max-width: 3.85in !important;
-                padding: 8px 10px !important;
-                border-radius: 10px !important;
-                margin: 0 auto !important;
-                border: 2px solid var(--inv-theme) !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: 3in !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
+                padding: 0.08in 0.1in !important;
+                border-radius: 8px !important;
+                margin: 0 !important;
+                border: 1.75pt solid var(--inv-theme) !important;
+                box-sizing: border-box !important;
+                page: card4x3;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-after: always !important;
+                break-after: page !important;
+            }
+            body.size-4x3 .inv-card:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
             }
             body.size-4x3 .inv-top-grid {
-                grid-template-columns: 85px 1.15fr 1.25fr !important;
-                gap: 8px !important;
-                margin-bottom: 8px !important;
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                align-items: flex-start !important;
+                width: 100% !important;
+                gap: 6px !important;
+                margin-bottom: 6px !important;
+                grid-template-columns: none !important;
             }
-            body.size-4x3 .inv-main-heading { font-size: 15px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-thank-you { font-size: 7.5px !important; margin-bottom: 4px !important; }
-            body.size-4x3 .inv-brand-peacock-icon { width: 38px !important; height: 38px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-brand-img { max-height: 38px !important; max-width: 85px !important; }
-            body.size-4x3 .inv-brand-title { font-size: 9px !important; }
-            body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 8px !important; gap: 1px !important; }
-            body.size-4x3 .inv-row-kv { grid-template-columns: 65px 6px 1fr !important; }
-            body.size-4x3 .inv-cust-heading { font-size: 10px !important; margin-bottom: 4px !important; }
-            body.size-4x3 .inv-cust-col .inv-row-kv { grid-template-columns: 50px 6px 1fr !important; }
-            body.size-4x3 .inv-table-wrap { margin-bottom: 8px !important; border-width: 1px !important; }
-            body.size-4x3 .inv-products-table th, 
-            body.size-4x3 .inv-products-table tbody td { padding: 3px 4px !important; font-size: 8px !important; border-width: 1px !important; }
-            body.size-4x3 .inv-summary-container { margin-bottom: 8px !important; }
-            body.size-4x3 .inv-summary-box { width: 160px !important; padding: 5px 8px !important; gap: 2px !important; border-radius: 6px !important; }
-            body.size-4x3 .inv-summary-row { font-size: 8px !important; grid-template-columns: 70px 8px 1fr !important; }
-            body.size-4x3 .inv-summary-row.grand-total-row { font-size: 9.5px !important; padding-top: 3px !important; margin-top: 2px !important; }
-            body.size-4x3 .inv-footer-grid { gap: 6px !important; padding-top: 4px !important; }
-            body.size-4x3 .inv-barcode-title { font-size: 8px !important; margin-bottom: 1px !important; }
-            body.size-4x3 .inv-barcode-svg-wrap { max-width: 115px !important; }
-            body.size-4x3 .inv-barcode-svg-wrap svg { height: 26px !important; }
-            body.size-4x3 .inv-love-script { font-size: 13px !important; }
-            body.size-4x3 .inv-love-heart { font-size: 8px !important; margin-bottom: 2px !important; }
-            body.size-4x3 .inv-love-brand { font-size: 8px !important; }
-            body.size-4x3 .inv-qr-box { width: 40px !important; height: 40px !important; }
-            body.size-4x3 .inv-qr-box canvas, body.size-4x3 .inv-qr-box img { width: 40px !important; height: 40px !important; }
-            body.size-4x3 .inv-help-text { font-size: 7.5px !important; line-height: 1.15 !important; }
-            body.size-4x3 .inv-help-title { font-size: 8px !important; }
+            body.size-4x3 .inv-brand-col {
+                flex: 0 0 20% !important;
+                width: 20% !important;
+                min-width: 0 !important;
+                max-width: 22% !important;
+                padding-right: 4px !important;
+                justify-content: flex-start !important;
+                align-self: flex-start !important;
+                overflow: hidden !important;
+            }
+            body.size-4x3 .inv-meta-col {
+                flex: 1 1 38% !important;
+                min-width: 0 !important;
+                width: auto !important;
+                padding-left: 0 !important;
+                padding-right: 6px !important;
+            }
+            body.size-4x3 .inv-cust-col {
+                flex: 1 1 40% !important;
+                min-width: 0 !important;
+                width: auto !important;
+                padding-left: 8px !important;
+                border-left: 1px solid var(--inv-theme) !important;
+            }
+            body.size-4x3 .inv-row-kv {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: flex-start !important;
+                gap: 3px !important;
+                grid-template-columns: none !important;
+            }
+            body.size-4x3 .inv-row-kv .lbl {
+                flex: 0 0 62px !important;
+                width: 62px !important;
+                white-space: nowrap !important;
+            }
+            body.size-4x3 .inv-row-kv .sep {
+                flex: 0 0 6px !important;
+                width: 6px !important;
+            }
+            body.size-4x3 .inv-row-kv .val {
+                flex: 1 1 auto !important;
+                min-width: 0 !important;
+                word-break: normal !important;
+                overflow-wrap: break-word !important;
+                white-space: normal !important;
+            }
+            body.size-4x3 .inv-cust-col .inv-row-kv .lbl {
+                flex-basis: 48px !important;
+                width: 48px !important;
+            }
+            body.size-4x3 .inv-mini-top-grid {
+                padding-bottom: 4px !important;
+                margin-bottom: 6px !important;
+            }
+            body.size-4x3 .inv-mini-brand-img {
+                max-height: 28px !important;
+                max-width: 60px !important;
+            }
+            body.size-4x3 .inv-mini-peacock {
+                width: 26px !important;
+                height: 26px !important;
+            }
+            body.size-4x3 .inv-mini-title {
+                font-size: 10px !important;
+            }
+            body.size-4x3 .inv-mini-meta {
+                font-size: 8px !important;
+            }
+            body.size-4x3 .inv-continue-note {
+                font-size: 8px !important;
+                padding: 4px 2px 2px !important;
+            }
+            body.size-4x3 .inv-main-heading { font-size: 14px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-thank-you {
+                font-size: 6.5px !important;
+                margin-bottom: 3px !important;
+                white-space: normal !important;
+                letter-spacing: 0.02em !important;
+            }
+            body.size-4x3 .inv-brand-peacock-icon { width: 36px !important; height: 36px !important; margin-bottom: 2px !important; }
+            body.size-4x3 .inv-brand-img { max-height: 36px !important; max-width: 72px !important; }
+            body.size-4x3 .inv-brand-title {
+                font-size: 6.5px !important;
+                font-weight: 800 !important;
+                letter-spacing: 0.01em !important;
+                line-height: 1.15 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-wrap: anywhere !important;
+                word-break: break-word !important;
+            }
+            body.size-4x3 .inv-meta-list, body.size-4x3 .inv-cust-list { font-size: 7.5px !important; gap: 1px !important; }
+            body.size-4x3 .inv-cust-heading { font-size: 9.5px !important; margin-bottom: 3px !important; }
+            body.size-4x3 .inv-table-wrap { margin-bottom: 5px !important; border-width: 1px !important; overflow: hidden !important; }
+            body.size-4x3 .inv-products-table { table-layout: fixed !important; width: 100% !important; }
+            body.size-4x3 .inv-products-table th,
+            body.size-4x3 .inv-products-table tbody td { padding: 2px 3px !important; font-size: 7.5px !important; border-width: 1px !important; }
+            body.size-4x3 .inv-summary-container { margin-bottom: 5px !important; }
+            body.size-4x3 .inv-summary-box { width: 1.55in !important; padding: 4px 6px !important; gap: 1px !important; border-radius: 5px !important; }
+            body.size-4x3 .inv-summary-row {
+                display: flex !important;
+                font-size: 7.5px !important;
+                grid-template-columns: none !important;
+                gap: 4px !important;
+            }
+            body.size-4x3 .inv-summary-row .s-label { flex: 0 0 70px !important; }
+            body.size-4x3 .inv-summary-row .s-sep { flex: 0 0 6px !important; }
+            body.size-4x3 .inv-summary-row .s-val { flex: 1 1 auto !important; }
+            body.size-4x3 .inv-summary-row.grand-total-row { font-size: 9px !important; padding-top: 2px !important; margin-top: 1px !important; }
+            body.size-4x3 .inv-footer-grid {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+                gap: 4px !important;
+                padding-top: 2px !important;
+                grid-template-columns: none !important;
+            }
+            body.size-4x3 .inv-footer-barcode { flex: 1 1 0 !important; min-width: 0 !important; }
+            body.size-4x3 .inv-footer-love { flex: 0 0 auto !important; min-height: 42px !important; padding: 2px 6px !important; }
+            body.size-4x3 .inv-footer-help { flex: 1 1 0 !important; min-width: 0 !important; gap: 6px !important; padding-left: 4px !important; }
+            body.size-4x3 .inv-barcode-title { font-size: 7px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-barcode-svg-wrap { max-width: 1.2in !important; }
+            body.size-4x3 .inv-barcode-svg-wrap svg { height: 22px !important; }
+            body.size-4x3 .inv-love-script { font-size: 12px !important; }
+            body.size-4x3 .inv-love-heart { font-size: 7px !important; margin-bottom: 1px !important; }
+            body.size-4x3 .inv-love-brand {
+                font-size: 6.5px !important;
+                letter-spacing: 0.02em !important;
+                max-width: 100% !important;
+                overflow-wrap: anywhere !important;
+                word-break: break-word !important;
+            }
+            body.size-4x3 .inv-qr-box { width: 36px !important; height: 36px !important; }
+            body.size-4x3 .inv-qr-box canvas, body.size-4x3 .inv-qr-box img { width: 36px !important; height: 36px !important; }
+            body.size-4x3 .inv-help-text { font-size: 7px !important; line-height: 1.15 !important; }
+            body.size-4x3 .inv-help-title { font-size: 7.5px !important; }
         }
     </style>
 
     <style id="dynamicPageSizeStyle">
         <?php if ($requestedSize === '4x3'): ?>
-            @media print { @page { size: 4in 3in; margin: 2mm 2mm; } }
+            @page { size: 4in 3in; margin: 0; }
+            @page card4x3 { size: 4in 3in; margin: 0; }
+            @media print { @page { size: 4in 3in; margin: 0; } }
         <?php else: ?>
-            @media print { @page { size: A4 portrait; margin: 8mm 8mm; } }
+            @page { size: A4 portrait; margin: 8mm; }
+            @media print { @page { size: A4 portrait; margin: 8mm; } }
         <?php endif; ?>
     </style>
 </head>
@@ -1054,7 +1629,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             </div>
 
             <!-- Print Button -->
-            <button type="button" class="inv-btn inv-btn-primary" onclick="window.print();">
+            <button type="button" class="inv-btn inv-btn-primary" onclick="printInvoiceCard();">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
                 <span>Print / Save PDF</span>
             </button>
@@ -1073,140 +1648,196 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         </div>
     </div>
 
-    <!-- MAIN BRANDED INVOICE CARD -->
-    <div class="inv-card">
+    <!-- MULTI-PAGE CHUNKED INVOICE CARDS -->
+    <?php 
+    $globalItemIdx = 1;
+    foreach ($itemChunks as $pageIdx => $chunkItems): 
+        $pageNumber = $pageIdx + 1;
+        $isFirstPage = ($pageIdx === 0);
+        $isLastPage = ($pageIdx === $totalPages - 1);
+    ?>
+    <div class="inv-card <?= !$isFirstPage ? 'inv-card-continue' : '' ?>">
+        <?php if ($isFirstPage): ?>
+            <div class="inv-page-size-label" id="invPageSizeLabel" aria-live="polite"><?= e($invPageSizeLabel) ?></div>
+        <?php endif; ?>
         <?php if ($isCancelled): ?>
             <div class="inv-watermark">CANCELLED</div>
         <?php endif; ?>
 
-        <!-- TOP SECTION: Brand (Left) | Invoice Details (Center) | Customer Details (Right) -->
-        <div class="inv-top-grid">
-            <!-- Left: Brand Logo / Peacock Vector -->
-            <div class="inv-brand-col">
-                <?php if ($logoExists): ?>
-                    <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-brand-img">
-                <?php else: ?>
-                    <svg class="inv-brand-peacock-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Stylized Peacock Plume -->
-                        <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
-                        <!-- Crown 3 dots with stalks -->
-                        <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
-                        <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
-                        <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
-                        <line x1="50" y1="11" x2="50" y2="14" stroke="currentColor" stroke-width="1.2"/>
-                        <line x1="44" y1="12.5" x2="47" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
-                        <line x1="56" y1="12.5" x2="53" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
-                        <!-- Plume outer accent dots -->
-                        <circle cx="34" cy="21" r="1.4" fill="currentColor"/>
-                        <circle cx="66" cy="21" r="1.4" fill="currentColor"/>
-                        <circle cx="26" cy="31" r="1.4" fill="currentColor"/>
-                        <circle cx="74" cy="31" r="1.4" fill="currentColor"/>
-                        <circle cx="25" cy="44" r="1.4" fill="currentColor"/>
-                        <circle cx="75" cy="44" r="1.4" fill="currentColor"/>
-                        <!-- Peacock graceful curved neck & head cutout (white) -->
-                        <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
-                        <!-- Eye dot -->
-                        <circle cx="54.5" cy="25.5" r="0.8" fill="currentColor"/>
-                    </svg>
-                <?php endif; ?>
-                <div class="inv-brand-title"><?= e($storeDisplayName) ?></div>
-            </div>
-
-            <!-- Middle: Invoice Heading & Meta -->
-            <div class="inv-meta-col">
-                <h1 class="inv-main-heading">INVOICE</h1>
-                <div class="inv-thank-you">
-                    <span>THANK YOU FOR SHOPPING WITH US</span>
-                    <span class="heart-icon">♥</span>
+        <?php if ($isFirstPage): ?>
+            <!-- TOP SECTION: Brand (Left) | Invoice Details (Center) | Customer Details (Right) -->
+            <div class="inv-top-grid">
+                <!-- Left: Brand Logo / Peacock Vector -->
+                <div class="inv-brand-col">
+                    <?php if ($logoExists): ?>
+                        <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-brand-img">
+                    <?php else: ?>
+                        <svg class="inv-brand-peacock-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Stylized Peacock Plume -->
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
+                            <!-- Crown 3 dots with stalks -->
+                            <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
+                            <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
+                            <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
+                            <line x1="50" y1="11" x2="50" y2="14" stroke="currentColor" stroke-width="1.2"/>
+                            <line x1="44" y1="12.5" x2="47" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
+                            <line x1="56" y1="12.5" x2="53" y2="15.5" stroke="currentColor" stroke-width="1.2"/>
+                            <!-- Plume outer accent dots -->
+                            <circle cx="34" cy="21" r="1.4" fill="currentColor"/>
+                            <circle cx="66" cy="21" r="1.4" fill="currentColor"/>
+                            <circle cx="26" cy="31" r="1.4" fill="currentColor"/>
+                            <circle cx="74" cy="31" r="1.4" fill="currentColor"/>
+                            <circle cx="25" cy="44" r="1.4" fill="currentColor"/>
+                            <circle cx="75" cy="44" r="1.4" fill="currentColor"/>
+                            <!-- Peacock graceful curved neck & head cutout (white) -->
+                            <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
+                            <!-- Eye dot -->
+                            <circle cx="54.5" cy="25.5" r="0.8" fill="currentColor"/>
+                        </svg>
+                    <?php endif; ?>
+                    <div class="inv-brand-title"><?= e($storeDisplayName) ?></div>
                 </div>
 
-                <div class="inv-meta-list">
-                    <div class="inv-row-kv">
-                        <span class="lbl">Order No</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($displayOrderNo) ?></span>
+                <!-- Middle: Invoice Heading & Meta -->
+                <div class="inv-meta-col">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <h1 class="inv-main-heading">INVOICE</h1>
+                        <?php if ($totalPages > 1): ?>
+                            <span class="inv-page-badge">Page <?= $pageNumber ?> of <?= $totalPages ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Order Date</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($invoiceDateStr) ?></span>
+                    <div class="inv-thank-you">
+                        <span>THANK YOU FOR SHOPPING WITH US</span>
+                        <span class="heart-icon">♥</span>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Invoice No</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($displayInvoiceNo) ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Payment Mode</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($paymentModeStr) ?></span>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Right: Customer Details -->
-            <div class="inv-cust-col">
-                <h3 class="inv-cust-heading">Customer Details</h3>
-                <div class="inv-cust-list">
-                    <div class="inv-row-kv">
-                        <span class="lbl">Name</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custName) ?></span>
+                    <div class="inv-meta-list">
+                        <div class="inv-row-kv">
+                            <span class="lbl">Order No</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($displayOrderNo) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Order Date</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($invoiceDateStr) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Invoice No</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($displayInvoiceNo) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Payment Mode</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($paymentModeStr) ?></span>
+                        </div>
+                        <?php if ($sellerGstin !== ''): ?>
+                        <div class="inv-row-kv">
+                            <span class="lbl">GSTIN</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($sellerGstin) ?></span>
+                        </div>
+                        <?php endif; ?>
                     </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Phone</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custPhone ?: 'N/A') ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Address</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custAddress) ?></span>
-                    </div>
-                    <div class="inv-row-kv">
-                        <span class="lbl">Pin Code</span>
-                        <span class="sep">:</span>
-                        <span class="val"><?= e($custPincode) ?></span>
+                </div>
+
+                <!-- Right: Customer Details -->
+                <div class="inv-cust-col">
+                    <h3 class="inv-cust-heading">Customer Details</h3>
+                    <div class="inv-cust-list">
+                        <div class="inv-row-kv">
+                            <span class="lbl">Name</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custName) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Phone</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custPhone ?: 'N/A') ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Address</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custAddress) ?></span>
+                        </div>
+                        <div class="inv-row-kv">
+                            <span class="lbl">Pin Code</span>
+                            <span class="sep">:</span>
+                            <span class="val"><?= e($custPincode) ?></span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        <?php else: ?>
+            <!-- MINI TOP HEADER (Continuation Page) -->
+            <div class="inv-mini-top-grid">
+                <div class="inv-mini-brand">
+                    <?php if ($logoExists): ?>
+                        <img src="<?= asset($storeLogo) ?>" alt="<?= e($storeDisplayName) ?>" class="inv-mini-brand-img">
+                    <?php else: ?>
+                        <svg class="inv-mini-peacock" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M50 14C53.8 14 57.3 15.8 59.5 18.7C62.5 17.2 66.2 17.5 69 19.5C71.8 21.5 73.2 25 72.7 28.4C75.7 29.8 77.8 32.8 77.8 36.2C77.8 38.6 76.8 40.8 75 42.4C77.7 44.8 78.6 48.4 77.3 51.8C76.1 55.2 72.9 57.4 69.3 57.4C68.9 57.4 68.5 57.3 68.1 57.2C66.6 60.8 63.1 63.2 59 63.2C57.2 63.2 55.5 62.6 54.1 61.6C52.2 63.5 49.4 64.5 46.6 64.2C41.7 63.7 37.9 59.8 37.6 54.9C34.6 54.3 32.2 52.1 31.2 49.2C30.1 45.9 31.1 42.3 33.8 40C32.2 38.4 31.4 36.1 31.7 33.7C32.2 30.2 34.6 27.4 38 26.3C38 22.8 40.2 19.6 43.5 18.3C45.5 15.4 47.7 14 50 14Z" fill="currentColor"/>
+                            <circle cx="50" cy="9" r="2.2" fill="currentColor"/>
+                            <circle cx="44" cy="11" r="1.8" fill="currentColor"/>
+                            <circle cx="56" cy="11" r="1.8" fill="currentColor"/>
+                            <path d="M48.5 28C48.5 25.2 50.8 23 53.6 23C54.8 23 55.9 23.4 56.7 24.2L58.9 24.6C59.5 24.6 59.8 25.2 59.4 25.6L57.4 27.2C57.6 27.8 57.8 28.4 57.8 29C57.8 31.8 55.4 33.8 53.4 35.8C51.4 37.8 50.2 40.2 50.2 43.4C50.2 47.4 53.4 50.6 57.4 50.6C59 50.6 60.2 50.2 61.4 49.4C59.8 51.8 56.6 53.4 53 53.4C47 53.4 42.2 48.6 42.2 42.6C42.2 37.4 45 33.4 47.4 30.6C48.2 29.8 48.5 29 48.5 28Z" fill="#ffffff"/>
+                        </svg>
+                    <?php endif; ?>
+                    <div>
+                        <div class="inv-mini-title"><?= e($storeDisplayName) ?></div>
+                        <div style="font-size: 11px; font-weight: 700; color: #64748b;">INVOICE #<?= e($displayInvoiceNo) ?> (Cont.)</div>
+                    </div>
+                </div>
+                <div class="inv-mini-meta">
+                    <div><strong>Customer:</strong> <?= e($custName) ?></div>
+                    <div><strong>Date:</strong> <?= e($invoiceDateStr) ?></div>
+                    <div style="margin-top: 2px;"><span class="inv-page-badge">Page <?= $pageNumber ?> of <?= $totalPages ?></span></div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- PRODUCTS TABLE -->
         <div class="inv-table-wrap">
             <table class="inv-products-table">
                 <thead>
                     <tr>
-                        <th style="width: 7%;">No.</th>
-                        <th class="col-name" style="width: 38%;">Product Name</th>
-                        <th style="width: 11%;">Size</th>
-                        <th style="width: 14%;">Colour</th>
-                        <th style="width: 8%;">Qty</th>
-                        <th style="width: 11%; text-align: right; padding-right: 16px;">Price (₹)</th>
+                        <th style="width: 5%;">No.</th>
+                        <th class="col-name" style="width: 24%;">Product Name</th>
+                        <th class="col-hsn" style="width: 9%;">HSN</th>
+                        <th style="width: 8%;">Size</th>
+                        <th style="width: 10%;">Colour</th>
+                        <th style="width: 6%;">Qty</th>
+                        <th style="width: 10%; text-align: right; padding-right: 12px;">Rate (₹)</th>
+                        <th class="col-gst" style="width: 7%;">GST %</th>
                         <th style="width: 11%; text-align: right; padding-right: 16px;">Total (₹)</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (empty($items)): ?>
+                    <?php if (empty($chunkItems)): ?>
                         <tr>
-                            <td colspan="7" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this invoice.</td>
+                            <td colspan="9" style="padding: 24px; text-align: center; color: #64748b;">No items listed on this page.</td>
                         </tr>
                     <?php else: ?>
                         <?php 
-                        $rowIdx = 1;
-                        foreach ($items as $it): 
+                        foreach ($chunkItems as $it): 
                             $attrs = extract_item_attributes($it, $db);
                             $uPrice = (float)$it['unit_price'];
                             $qty = (int)$it['quantity'];
                             $lTotal = (float)$it['line_total'];
+                            $lineHsn = resolve_item_hsn($it, $db, $productHsnCache);
+                            $lineTaxPct = (float)($it['tax_percent'] ?? 0);
+                            $lineTaxDisplay = $lineTaxPct > 0 ? rtrim(rtrim(number_format($lineTaxPct, 2, '.', ''), '0'), '.') . '%' : '-';
                         ?>
                             <tr>
-                                <td><?= $rowIdx++ ?></td>
+                                <td><?= $globalItemIdx++ ?></td>
                                 <td class="col-name"><?= e($it['product_name']) ?></td>
+                                <td class="col-hsn"><?= e($lineHsn) ?></td>
                                 <td><?= e($attrs['size']) ?></td>
                                 <td><?= e($attrs['colour']) ?></td>
                                 <td style="font-weight: 600;"><?= $qty ?></td>
                                 <td class="col-price"><?= format_inv_money($uPrice) ?></td>
+                                <td class="col-gst"><?= e($lineTaxDisplay) ?></td>
                                 <td class="col-total"><?= format_inv_money($lTotal) ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -1215,65 +1846,108 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             </table>
         </div>
 
-        <!-- FINANCIAL SUMMARY BOX (Right Aligned Below Table) -->
-        <div class="inv-summary-container">
-            <div class="inv-summary-box">
-                <div class="inv-summary-row">
-                    <span class="s-label">Total Amount</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($subtotal) ?></span>
-                </div>
-                <div class="inv-summary-row">
-                    <span class="s-label">Discount</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
-                </div>
-                <div class="inv-summary-row">
-                    <span class="s-label">Shipping</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($shippingFee) ?></span>
-                </div>
-                <div class="inv-summary-row grand-total-row">
-                    <span class="s-label">Grand Total</span>
-                    <span class="s-sep">:</span>
-                    <span class="s-val">₹ <?= format_inv_money($grandTotal) ?></span>
+        <?php if (!$isLastPage): ?>
+            <!-- Continuation Note -->
+            <div class="inv-continue-note">
+                Continued on Page <?= $pageNumber + 1 ?> &rarr;
+            </div>
+        <?php else: ?>
+            <!-- FINANCIAL SUMMARY BOX (Right Aligned Below Table) -->
+            <div class="inv-summary-container">
+                <div class="inv-summary-box">
+                    <div class="inv-summary-row">
+                        <span class="s-label">Total Amount</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($subtotal) ?></span>
+                    </div>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Discount</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
+                    </div>
+                    <?php if ($showGstBreakup): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Taxable Value</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($taxableAmount) ?></span>
+                    </div>
+                    <?php if ($cgstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">CGST <?= e($cgstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($cgstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($sgstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">SGST <?= e($sgstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($sgstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($igstAmount > 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">IGST <?= e($igstRateLabel) ?></span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($igstAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($taxAmount > 0 && $cgstAmount <= 0 && $sgstAmount <= 0 && $igstAmount <= 0): ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Total Tax (GST)</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($taxAmount) ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                    <div class="inv-summary-row">
+                        <span class="s-label">Shipping</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($shippingFee) ?></span>
+                    </div>
+                    <div class="inv-summary-row grand-total-row">
+                        <span class="s-label">Grand Total</span>
+                        <span class="s-sep">:</span>
+                        <span class="s-val">₹ <?= format_inv_money($grandTotal) ?></span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- FOOTER SECTION: Barcode (Left) | Packed with love (Center) | QR Code & Help (Right) -->
-        <div class="inv-footer-grid">
-            <!-- Left: Order No Barcode -->
-            <div class="inv-footer-barcode">
-                <div class="inv-barcode-title">Order No: <?= e($displayOrderNo) ?></div>
-                <div class="inv-barcode-svg-wrap">
-                    <?= $barcodeSvg ?>
+            <!-- FOOTER SECTION: Barcode (Left) | Packed with love (Center) | QR Code & Help (Right) -->
+            <div class="inv-footer-grid">
+                <!-- Left: Order No Barcode -->
+                <div class="inv-footer-barcode">
+                    <div class="inv-barcode-title">Order No: <?= e($displayOrderNo) ?></div>
+                    <div class="inv-barcode-svg-wrap">
+                        <?= $barcodeSvg ?>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Center: Packed with love signature -->
-            <div class="inv-footer-love">
-                <div class="inv-love-script">Packed with love</div>
-                <div class="inv-love-heart">♥</div>
-                <div class="inv-love-brand"><?= e($storeDisplayName) ?></div>
-            </div>
+                <!-- Center: Packed with love signature -->
+                <div class="inv-footer-love">
+                    <div class="inv-love-script">Packed with love</div>
+                    <div class="inv-love-heart">♥</div>
+                    <div class="inv-love-brand"><?= e($storeDisplayName) ?></div>
+                </div>
 
-            <!-- Right: Dynamic QR Code & WhatsApp Help Info -->
-            <div class="inv-footer-help">
-                <div class="inv-qr-box" id="invQrContainer" title="Scan to verify invoice">
-                    <!-- QR Code dynamically injected via qrcode.min.js with clean fallback -->
-                    <noscript>
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($invoiceVerifyUrl) ?>" alt="QR Code" style="width:100%;height:100%;">
-                    </noscript>
-                </div>
-                <div class="inv-help-text">
-                    <div class="inv-help-title">Need help?</div>
-                    <div class="inv-help-sub">WhatsApp us at</div>
-                    <div class="inv-help-phone"><?= e($formattedWhatsAppPhone) ?></div>
+                <!-- Right: Dynamic QR Code & WhatsApp Help Info -->
+                <div class="inv-footer-help">
+                    <div class="inv-qr-box invQrTarget" title="Scan to verify invoice">
+                        <!-- QR Code dynamically injected via qrcode.min.js with clean fallback -->
+                        <noscript>
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($invoiceVerifyUrl) ?>" alt="QR Code" style="width:100%;height:100%;">
+                        </noscript>
+                    </div>
+                    <div class="inv-help-text">
+                        <div class="inv-help-title">Need help?</div>
+                        <div class="inv-help-sub">WhatsApp us at</div>
+                        <div class="inv-help-phone"><?= e($formattedWhatsAppPhone) ?></div>
+                    </div>
                 </div>
             </div>
-        </div>
+        <?php endif; ?>
     </div>
+    <?php endforeach; ?>
 
 <?php if ($isAdmin && !$isPublicView): ?>
             </main>
@@ -1318,17 +1992,50 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 
 <script>
     function renderQrCode(dim = 68) {
-        const qrContainer = document.getElementById('invQrContainer');
-        if (qrContainer && typeof QRCode !== 'undefined') {
-            qrContainer.innerHTML = '';
-            new QRCode(qrContainer, {
-                text: '<?= addslashes($invoiceVerifyUrl) ?>',
-                width: dim,
-                height: dim,
-                colorDark: '<?= addslashes($storeThemeColor) ?>',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.M
+        const qrContainers = document.querySelectorAll('.invQrTarget');
+        if (qrContainers && typeof QRCode !== 'undefined') {
+            qrContainers.forEach(function(qrContainer) {
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: '<?= addslashes($invoiceVerifyUrl) ?>',
+                    width: dim,
+                    height: dim,
+                    colorDark: '<?= addslashes($storeThemeColor) ?>',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
             });
+        }
+    }
+
+    function printInvoiceCard() {
+        const select = document.getElementById('invPageSizeSelect');
+        const size = select ? select.value : 'default';
+        const params = new URLSearchParams(window.location.search);
+        const alreadyStandalone = params.get('standalone') === '1' || params.has('print');
+
+        if (size === '4x3' && !alreadyStandalone) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('size', '4x3');
+            url.searchParams.set('standalone', '1');
+            url.searchParams.set('print', '1');
+            const popup = window.open(url.toString(), 'invoicePrint4x3', 'width=920,height=720');
+            if (!popup) {
+                window.print();
+            }
+            return;
+        }
+        window.print();
+    }
+
+    function invPageSizeDisplayLabel(size) {
+        return size === '4x3' ? '4×3 in' : 'A4';
+    }
+
+    function updateInvoicePageSizeLabel(size) {
+        const el = document.getElementById('invPageSizeLabel');
+        if (el) {
+            el.textContent = invPageSizeDisplayLabel(size);
         }
     }
 
@@ -1339,6 +2046,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         }
         const select = document.getElementById('invPageSizeSelect');
         if (select) select.value = size;
+        updateInvoicePageSizeLabel(size);
 
         // Update URL query parameter without full reload
         const url = new URL(window.location.href);
@@ -1357,20 +2065,21 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             document.head.appendChild(dynStyle);
         }
         if (size === '4x3') {
-            dynStyle.innerHTML = '@media print { @page { size: 4in 3in; margin: 2mm 2mm; } }';
+            dynStyle.innerHTML = '@page { size: 4in 3in; margin: 0; } @page card4x3 { size: 4in 3in; margin: 0; } @media print { @page { size: 4in 3in; margin: 0; } }';
             renderQrCode(44);
         } else {
-            dynStyle.innerHTML = '@media print { @page { size: A4 portrait; margin: 8mm 8mm; } }';
+            dynStyle.innerHTML = '@page { size: A4 portrait; margin: 8mm; } @media print { @page { size: A4 portrait; margin: 8mm; } }';
             renderQrCode(68);
         }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
         const initialSize = '<?= $requestedSize ?>';
+        updateInvoicePageSizeLabel(initialSize);
         renderQrCode(initialSize === '4x3' ? 44 : 68);
 
         <?php if ($autoPrint): ?>
-            setTimeout(() => window.print(), 350);
+            setTimeout(() => window.print(), <?= $requestedSize === '4x3' ? 500 : 350 ?>);
         <?php endif; ?>
 
         const cancelModal = document.getElementById('cancelInvoiceModal');

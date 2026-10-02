@@ -71,12 +71,6 @@ function ensure_online_store_schema(): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
-    try {
-        $db->exec("ALTER TABLE `businesses` ADD UNIQUE INDEX `uq_businesses_store_slug` (`store_slug`)");
-    } catch (PDOException $e) {
-        // Index already exists
-    }
-
     seed_missing_store_slugs();
 
     add_schema_column_if_missing($db, 'mobile_store_settings', 'favicon_path', "VARCHAR(255) NULL");
@@ -103,6 +97,24 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'privacy_policy', "MEDIUMTEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_us_text', "TEXT NULL");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'contact_whatsapp', "VARCHAR(50) NULL");
+
+    // Dynamic WhatsApp Business API Settings per Business (no shared platform defaults)
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_api_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_token', "TEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_company_id', "INT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_name', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_template_lang', "VARCHAR(20) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_phone_number_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_waba_id', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_payload', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_enable_storefront_otp', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_auto_send_invoices', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_curl_raw', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_curl_raw', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_curl_payload', "MEDIUMTEXT NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_api_url', "VARCHAR(500) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_template_name', "VARCHAR(100) NULL");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'wa_invoice_template_lang', "VARCHAR(20) NULL");
 
     // Visual Builder / Home Layout Components
     add_schema_column_if_missing($db, 'mobile_store_settings', 'category_section_name', "VARCHAR(191) NOT NULL DEFAULT 'All Categories'");
@@ -157,7 +169,9 @@ function ensure_online_store_schema(): void {
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_card', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_netbanking', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_store_pickup_payment', "TINYINT(1) NOT NULL DEFAULT 1");
+    add_schema_column_if_missing($db, 'mobile_store_settings', 'enable_razorpay', "TINYINT(1) NOT NULL DEFAULT 1");
     add_schema_column_if_missing($db, 'mobile_store_settings', 'upi_id', "VARCHAR(100) NULL");
+
     add_schema_column_if_missing($db, 'mobile_store_settings', 'payment_instructions', "TEXT NULL");
 
     // Footer Customization & Legal Pages
@@ -411,7 +425,7 @@ function public_store_local_url(array $business): string {
 }
 
 function is_platform_logo(?string $path): bool {
-    $path = strtolower(str_replace('\\', '/', trim((string) $path)));
+    $path = ltrim(strtolower(str_replace('\\', '/', trim((string) $path))), '/');
     if ($path === '') {
         return true;
     }
@@ -431,8 +445,34 @@ function store_logo_file_exists(?string $path): bool {
     if (!$path || is_platform_logo($path)) {
         return false;
     }
-    $full = dirname(__DIR__) . '/' . ltrim($path, '/');
-    return is_file($full);
+    $trimmed = trim((string) $path);
+    if (preg_match('#^https?://#i', $trimmed) || str_starts_with($trimmed, 'data:')) {
+        return true;
+    }
+    $normalized = str_replace('\\', '/', $trimmed);
+    $clean = ltrim(parse_url($normalized, PHP_URL_PATH) ?? $normalized, '/');
+
+    // Check relative to project root
+    $full = dirname(__DIR__) . '/' . $clean;
+    if (is_file($full)) {
+        return true;
+    }
+    // Check relative to document root
+    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+        $docFull = rtrim(str_replace('\\', '/', (string) $_SERVER['DOCUMENT_ROOT']), '/') . '/' . $clean;
+        if (is_file($docFull)) {
+            return true;
+        }
+    }
+    // Direct file path
+    if (is_file($normalized) || is_file($trimmed)) {
+        return true;
+    }
+    // Valid uploaded assets path
+    if (preg_match('#assets/uploads/#i', $clean) && preg_match('/\.(png|jpe?g|webp|ico|cur|svg|gif|bmp|jfif|avif|tiff?|heic|heif)$/i', $clean)) {
+        return true;
+    }
+    return false;
 }
 
 function normalize_hex_color(string $value, string $fallback): string {
@@ -461,7 +501,7 @@ function store_initials_from_name(string $name): string {
 }
 
 function get_storefront_dynamic_favicon_url(array $brand, string $storeName): string {
-    if (!empty($brand['favicon_path'])) {
+    if (!empty($brand['favicon_path']) && !is_platform_logo((string) $brand['favicon_path'])) {
         return asset((string) $brand['favicon_path']);
     }
     if (!empty($brand['logo_path']) && !is_platform_logo((string) $brand['logo_path'])) {
@@ -483,6 +523,63 @@ function get_storefront_dynamic_favicon_url(array $brand, string $storeName): st
          . '</svg>';
 
     return 'data:image/svg+xml;utf8,' . rawurlencode($svg);
+}
+
+function render_storefront_favicon_tags(array $brand, string $storeName): string {
+    $url = get_storefront_dynamic_favicon_url($brand, $storeName);
+
+    $isSvg = str_starts_with($url, 'data:image/svg+xml')
+        || (preg_match('/\.svg(\?.*)?$/i', $url) === 1);
+
+    if ($isSvg) {
+        $escaped = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        return '<link rel="icon" type="image/svg+xml" href="' . $escaped . '">' . "\n"
+             . '    <link rel="apple-touch-icon" href="' . $escaped . '">';
+    }
+
+    // Determine cache buster version so browsers immediately pick up new favicons
+    $version = 1;
+    $filePath = !empty($brand['favicon_path']) ? (string) $brand['favicon_path'] : (!empty($brand['logo_path']) ? (string) $brand['logo_path'] : '');
+    if ($filePath !== '') {
+        $cleanPath = ltrim(str_replace('\\', '/', parse_url($filePath, PHP_URL_PATH) ?? $filePath), '/');
+        $full = dirname(__DIR__) . '/' . $cleanPath;
+        if (is_file($full)) {
+            $version = (int) filemtime($full);
+        } elseif (!empty($brand['published_at'])) {
+            $version = (int) strtotime((string) $brand['published_at']);
+        } elseif (!empty($brand['updated_at'])) {
+            $version = (int) strtotime((string) $brand['updated_at']);
+        }
+    }
+
+    $favUrlWithVer = $url . (str_contains($url, '?') ? '&' : '?') . 'v=' . $version;
+    $favEsc = htmlspecialchars($favUrlWithVer, ENT_QUOTES, 'UTF-8');
+
+    // Determine MIME type
+    $pathOnly = strtolower(parse_url($url, PHP_URL_PATH) ?? '');
+    $mime = 'image/png';
+    if (str_ends_with($pathOnly, '.ico') || str_ends_with($pathOnly, '.cur')) {
+        $mime = 'image/x-icon';
+    } elseif (str_ends_with($pathOnly, '.jpg') || str_ends_with($pathOnly, '.jpeg') || str_ends_with($pathOnly, '.jfif') || str_ends_with($pathOnly, '.pjpeg')) {
+        $mime = 'image/jpeg';
+    } elseif (str_ends_with($pathOnly, '.webp')) {
+        $mime = 'image/webp';
+    } elseif (str_ends_with($pathOnly, '.gif')) {
+        $mime = 'image/gif';
+    } elseif (str_ends_with($pathOnly, '.bmp')) {
+        $mime = 'image/bmp';
+    } elseif (str_ends_with($pathOnly, '.svg')) {
+        $mime = 'image/svg+xml';
+    } elseif (str_ends_with($pathOnly, '.avif')) {
+        $mime = 'image/avif';
+    } elseif (str_ends_with($pathOnly, '.png')) {
+        $mime = 'image/png';
+    }
+    $mimeEsc = htmlspecialchars($mime, ENT_QUOTES, 'UTF-8');
+
+    return '<link rel="icon" type="' . $mimeEsc . '" href="' . $favEsc . '">' . "\n"
+         . '    <link rel="shortcut icon" type="' . $mimeEsc . '" href="' . $favEsc . '">' . "\n"
+         . '    <link rel="apple-touch-icon" href="' . $favEsc . '">';
 }
 
 function ensure_mobile_store_row(int $businessId): void {
@@ -646,6 +743,7 @@ function get_mobile_store_settings(int $businessId): array {
         'enable_card' => (int) ($row['enable_card'] ?? 1) === 1,
         'enable_netbanking' => (int) ($row['enable_netbanking'] ?? 1) === 1,
         'enable_store_pickup_payment' => (int) ($row['enable_store_pickup_payment'] ?? 1) === 1,
+        'enable_razorpay' => (int) ($row['enable_razorpay'] ?? 1) === 1,
         'upi_id' => (string) ($row['upi_id'] ?? ''),
         'payment_instructions' => (string) ($row['payment_instructions'] ?? ''),
 
@@ -684,6 +782,24 @@ function get_mobile_store_settings(int $businessId): array {
         'home_hero_banner_link_5' => (string) ($row['home_hero_banner_link_5'] ?? ''),
         'home_hero_autoplay' => (int) ($row['home_hero_autoplay'] ?? 1) === 1,
         'home_hero_autoplay_speed' => (int) ($row['home_hero_autoplay_speed'] ?? 4000),
+
+        // Dynamic WhatsApp Business API Settings per Business
+        'wa_api_url' => (string) ($row['wa_api_url'] ?? ''),
+        'wa_token' => (string) ($row['wa_token'] ?? ''),
+        'wa_company_id' => !empty($row['wa_company_id']) ? (int) $row['wa_company_id'] : null,
+        'wa_template_name' => (string) ($row['wa_template_name'] ?? ''),
+        'wa_template_lang' => (string) ($row['wa_template_lang'] ?? ''),
+        'wa_phone_number_id' => (string) ($row['wa_phone_number_id'] ?? ''),
+        'wa_waba_id' => (string) ($row['wa_waba_id'] ?? ''),
+        'wa_curl_payload' => (string) ($row['wa_curl_payload'] ?? ''),
+        'wa_enable_storefront_otp' => (int) ($row['wa_enable_storefront_otp'] ?? 1) === 1,
+        'wa_auto_send_invoices' => (int) ($row['wa_auto_send_invoices'] ?? 1) === 1,
+        'wa_curl_raw' => (string) ($row['wa_curl_raw'] ?? ''),
+        'wa_invoice_curl_raw' => (string) ($row['wa_invoice_curl_raw'] ?? ''),
+        'wa_invoice_curl_payload' => (string) ($row['wa_invoice_curl_payload'] ?? ''),
+        'wa_invoice_api_url' => (string) ($row['wa_invoice_api_url'] ?? ''),
+        'wa_invoice_template_name' => (string) ($row['wa_invoice_template_name'] ?? ''),
+        'wa_invoice_template_lang' => (string) ($row['wa_invoice_template_lang'] ?? ''),
     ];
 }
 
@@ -919,6 +1035,7 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
             enable_card = :ecard,
             enable_netbanking = :enet,
             enable_store_pickup_payment = :epick,
+            enable_razorpay = :erzp,
             upi_id = :upiid,
             payment_instructions = :pinst,
             footer_bg_color = :fbg,
@@ -1041,6 +1158,7 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
         'ecard' => array_key_exists('enable_card', $data) ? (!empty($data['enable_card']) ? 1 : 0) : ($current['enable_card'] ? 1 : 0),
         'enet' => array_key_exists('enable_netbanking', $data) ? (!empty($data['enable_netbanking']) ? 1 : 0) : ($current['enable_netbanking'] ? 1 : 0),
         'epick' => array_key_exists('enable_store_pickup_payment', $data) ? (!empty($data['enable_store_pickup_payment']) ? 1 : 0) : ($current['enable_store_pickup_payment'] ? 1 : 0),
+        'erzp' => array_key_exists('enable_razorpay', $data) ? (!empty($data['enable_razorpay']) ? 1 : 0) : ($current['enable_razorpay'] ? 1 : 0),
         'upiid' => array_key_exists('upi_id', $data) ? trim((string)$data['upi_id']) : ($current['upi_id'] ?? null),
         'pinst' => array_key_exists('payment_instructions', $data) ? trim((string)$data['payment_instructions']) : ($current['payment_instructions'] ?? null),
         'fbg' => normalize_hex_color((string)($data['footer_bg_color'] ?? $current['footer_bg_color'] ?? '#ea580c'), '#ea580c'),
@@ -1134,16 +1252,47 @@ function upload_mobile_store_image(int $businessId, array $file, string $kind): 
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return ['success' => false, 'error' => 'Upload failed. Try another image.'];
     }
-    $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-    $allowed = ['jpg', 'jpeg', 'png', 'webp'];
-    if ($kind === 'favicon') {
-        $allowed[] = 'ico';
+    $rawExt = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+    $mimeType = strtolower((string) ($file['type'] ?? ''));
+
+    $ext = $rawExt;
+    if ($ext === 'jpeg' || $ext === 'jfif' || $ext === 'pjpeg') {
+        $ext = 'jpg';
+    } elseif ($ext === 'cur') {
+        $ext = 'ico';
+    } elseif ($ext === 'tif') {
+        $ext = 'tiff';
     }
-    if (!in_array($ext, $allowed, true)) {
-        return ['success' => false, 'error' => $kind === 'favicon' ? 'Use PNG, JPG, WEBP, or ICO.' : 'Use JPG, PNG, or WEBP.'];
+
+    if ($ext === '') {
+        if (str_contains($mimeType, 'png')) {
+            $ext = 'png';
+        } elseif (str_contains($mimeType, 'jpeg') || str_contains($mimeType, 'jpg')) {
+            $ext = 'jpg';
+        } elseif (str_contains($mimeType, 'webp')) {
+            $ext = 'webp';
+        } elseif (str_contains($mimeType, 'svg')) {
+            $ext = 'svg';
+        } elseif (str_contains($mimeType, 'icon') || str_contains($mimeType, 'ico')) {
+            $ext = 'ico';
+        } elseif (str_contains($mimeType, 'gif')) {
+            $ext = 'gif';
+        } elseif (str_contains($mimeType, 'bmp')) {
+            $ext = 'bmp';
+        } else {
+            $ext = 'png';
+        }
     }
-    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
-        return ['success' => false, 'error' => 'Image must be under 5 MB.'];
+
+    $allImageExts = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'ico', 'cur', 'gif', 'bmp', 'avif', 'tiff', 'tif', 'heic', 'heif', 'jfif', 'pjpeg'];
+    $isImage = str_starts_with($mimeType, 'image/') || in_array($ext, $allImageExts, true);
+
+    if (!$isImage) {
+        return ['success' => false, 'error' => 'Please upload a valid image file.'];
+    }
+
+    if (($file['size'] ?? 0) > 25 * 1024 * 1024) {
+        return ['success' => false, 'error' => 'Image must be under 25 MB.'];
     }
     $dir = dirname(__DIR__) . '/assets/uploads/store/' . $businessId . '/';
     if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
@@ -1398,35 +1547,123 @@ function storefront_cart_key(int $businessId): string {
     return 'storefront_cart_' . $businessId;
 }
 
-function storefront_cart_line_key(int $productId, int $variantId = 0): string {
-    return $variantId > 0 ? ($productId . ':' . $variantId) : (string) $productId;
+function storefront_cart_storage_key(int $productId, int $variantId = 0): string {
+    return $variantId > 0 ? ($productId . ':v' . $variantId) : (string) $productId;
 }
 
-function storefront_parse_cart_line_key(string|int $key): array {
-    $s = (string) $key;
-    if (str_contains($s, ':')) {
-        $parts = explode(':', $s, 2);
-        return [
-            'product_id' => (int) ($parts[0] ?? 0),
-            'variant_id' => (int) ($parts[1] ?? 0),
+function storefront_parse_cart_storage_key(string $key): array {
+    if (preg_match('/^(\d+):v(\d+)$/', $key, $m)) {
+        return ['product_id' => (int) $m[1], 'variant_id' => (int) $m[2]];
+    }
+    return ['product_id' => (int) $key, 'variant_id' => 0];
+}
+
+function storefront_load_product_variants(int $productId, int $businessId): array {
+    if (!function_exists('get_product_variants')) {
+        return [];
+    }
+    $rows = get_product_variants($productId, $businessId);
+    $active = [];
+    foreach ($rows as $row) {
+        if (($row['status'] ?? 'active') !== 'active') {
+            continue;
+        }
+        $active[] = $row;
+    }
+    return $active;
+}
+
+function storefront_variant_ui_rows(array $variants): array {
+    $out = [];
+    foreach ($variants as $v) {
+        $attrs = parse_variant_size_colour($v);
+        $imgUrl = !empty($v['image_path']) ? asset((string) $v['image_path']) : '';
+        $out[] = [
+            'id' => (int) ($v['id'] ?? 0),
+            'name' => (string) ($v['variant_name'] ?? ''),
+            'sku' => (string) ($v['sku'] ?? ''),
+            'image' => $imgUrl,
+            'price' => (float) ($v['selling_price'] ?? 0),
+            'stock' => (int) ($v['stock_quantity'] ?? 0),
+            'size' => (string) ($attrs['size'] ?? ''),
+            'colour' => (string) ($attrs['colour'] ?? ''),
         ];
     }
-    return ['product_id' => (int) $s, 'variant_id' => 0];
+    return $out;
 }
 
-function storefront_get_active_variant(int $productId, int $variantId, int $businessId): ?array {
-    if ($variantId <= 0) {
-        return null;
+function storefront_product_is_in_stock(array $product, array $variants = []): bool {
+    if ($variants) {
+        foreach ($variants as $v) {
+            if ((int) ($v['stock_quantity'] ?? 0) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
-    $db = get_db();
-    $stmt = $db->prepare('
-        SELECT * FROM product_variants
-        WHERE id = :vid AND product_id = :pid AND business_id = :bid AND status = "active"
-        LIMIT 1
-    ');
-    $stmt->execute(['vid' => $variantId, 'pid' => $productId, 'bid' => $businessId]);
-    $row = $stmt->fetch();
-    return $row ?: null;
+    return (int) ($product['stock_quantity'] ?? 0) > 0;
+}
+
+function storefront_resolve_sale_line(int $businessId, int $productId, int $variantId = 0): array {
+    $product = get_product_by_id($productId, $businessId);
+    if (!$product || ($product['status'] ?? '') !== 'active') {
+        return ['success' => false, 'error' => 'This item is not available.'];
+    }
+
+    $variants = storefront_load_product_variants($productId, $businessId);
+    if ($variants) {
+        if ($variantId <= 0) {
+            return ['success' => false, 'error' => 'Choose a size and colour before continuing.'];
+        }
+        $chosen = null;
+        foreach ($variants as $v) {
+            if ((int) ($v['id'] ?? 0) === $variantId) {
+                $chosen = $v;
+                break;
+            }
+        }
+        if (!$chosen) {
+            return ['success' => false, 'error' => 'The selected size or colour is not available.'];
+        }
+        $stock = (int) ($chosen['stock_quantity'] ?? 0);
+        if ($stock <= 0) {
+            return ['success' => false, 'error' => 'This size and colour is out of stock.'];
+        }
+        $unit = (float) ($chosen['selling_price'] ?? 0);
+        if ($unit <= 0) {
+            $unit = (float) ($product['selling_price'] ?? 0);
+        }
+        $attrs = parse_variant_size_colour($chosen);
+        return [
+            'success' => true,
+            'product' => $product,
+            'variant' => $chosen,
+            'variant_id' => $variantId,
+            'stock' => $stock,
+            'unit_price' => $unit,
+            'mrp' => (float) ($product['mrp'] ?? 0),
+            'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+            'size' => (string) ($attrs['size'] ?? ''),
+            'colour' => (string) ($attrs['colour'] ?? ''),
+        ];
+    }
+
+    $stock = (int) ($product['stock_quantity'] ?? 0);
+    if ($stock <= 0) {
+        return ['success' => false, 'error' => 'This item is out of stock.'];
+    }
+    return [
+        'success' => true,
+        'product' => $product,
+        'variant' => null,
+        'variant_id' => 0,
+        'stock' => $stock,
+        'unit_price' => (float) ($product['selling_price'] ?? 0),
+        'mrp' => (float) ($product['mrp'] ?? 0),
+        'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+        'size' => '',
+        'colour' => '',
+    ];
 }
 
 function get_storefront_cart(int $businessId): array {
@@ -1441,57 +1678,42 @@ function save_storefront_cart(int $businessId, array $cart): void {
 
 function add_to_storefront_cart(int $businessId, int $productId, int $qty = 1, int $variantId = 0): array {
     $qty = max(1, $qty);
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
-        return ['success' => false, 'error' => 'This item is not available.'];
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        return ['success' => false, 'error' => $resolved['error'] ?? 'Could not add item.'];
     }
-
-    $variant = storefront_get_active_variant($productId, $variantId, $businessId);
-    if ($variantId > 0 && !$variant) {
-        return ['success' => false, 'error' => 'The selected size or colour is no longer available.'];
-    }
-
-    $stock = $variant ? (int) ($variant['stock_quantity'] ?? 0) : (int) ($product['stock_quantity'] ?? 0);
-    $lineKey = storefront_cart_line_key($productId, $variant ? (int) $variant['id'] : 0);
+    $stock = (int) ($resolved['stock'] ?? 0);
+    $cartKey = storefront_cart_storage_key($productId, (int) ($resolved['variant_id'] ?? 0));
     $cart = get_storefront_cart($businessId);
-    $current = (int) ($cart[$lineKey] ?? 0);
+    $current = (int) ($cart[$cartKey] ?? 0);
     $next = $current + $qty;
-    if ($stock <= 0) {
-        return ['success' => false, 'error' => 'This item is out of stock.'];
-    }
     if ($next > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
-    $cart[$lineKey] = $next;
+    $cart[$cartKey] = $next;
     save_storefront_cart($businessId, $cart);
     return ['success' => true, 'qty' => $next];
 }
 
 function update_storefront_cart_qty(int $businessId, int $productId, int $qty, int $variantId = 0): array {
-    $lineKey = storefront_cart_line_key($productId, $variantId);
+    $cartKey = storefront_cart_storage_key($productId, $variantId);
     $cart = get_storefront_cart($businessId);
     if ($qty <= 0) {
-        unset($cart[$lineKey]);
+        unset($cart[$cartKey]);
         save_storefront_cart($businessId, $cart);
         return ['success' => true];
     }
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product) {
-        unset($cart[$lineKey]);
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        unset($cart[$cartKey]);
         save_storefront_cart($businessId, $cart);
-        return ['success' => false, 'error' => 'Item removed because it is no longer available.'];
+        return ['success' => false, 'error' => $resolved['error'] ?? 'Item removed because it is no longer available.'];
     }
-    $variant = storefront_get_active_variant($productId, $variantId, $businessId);
-    if ($variantId > 0 && !$variant) {
-        unset($cart[$lineKey]);
-        save_storefront_cart($businessId, $cart);
-        return ['success' => false, 'error' => 'Item removed because the selected variant is no longer available.'];
-    }
-    $stock = $variant ? (int) ($variant['stock_quantity'] ?? 0) : (int) ($product['stock_quantity'] ?? 0);
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
-    $cart[$lineKey] = $qty;
+    $cart[$cartKey] = $qty;
     save_storefront_cart($businessId, $cart);
     return ['success' => true];
 }
@@ -1514,35 +1736,32 @@ function hydrate_storefront_cart(int $businessId): array {
     $clean = [];
 
     foreach ($raw as $cartKey => $qty) {
-        $parsed = storefront_parse_cart_line_key($cartKey);
-        $pid = (int) ($parsed['product_id'] ?? 0);
-        $vid = (int) ($parsed['variant_id'] ?? 0);
-        $product = get_product_by_id($pid, $businessId);
+        $parsed = storefront_parse_cart_storage_key((string) $cartKey);
+        $productId = (int) ($parsed['product_id'] ?? 0);
+        $variantId = (int) ($parsed['variant_id'] ?? 0);
         $qty = (int) $qty;
-        if (!$product || ($product['status'] ?? '') !== 'active' || $qty <= 0) {
+        if ($productId <= 0 || $qty <= 0) {
             $changed = true;
             continue;
         }
-        $variant = storefront_get_active_variant($pid, $vid, $businessId);
-        if ($vid > 0 && !$variant) {
+        $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+        if (empty($resolved['success'])) {
             $changed = true;
             continue;
         }
-        $stock = $variant ? (int) ($variant['stock_quantity'] ?? 0) : (int) ($product['stock_quantity'] ?? 0);
-        if ($stock <= 0) {
-            $changed = true;
-            continue;
-        }
+        $product = $resolved['product'];
+        $stock = (int) ($resolved['stock'] ?? 0);
         if ($qty > $stock) {
             $qty = $stock;
             $changed = true;
         }
-        $unit = (float) $product['selling_price'];
-        if ($variant && (float) ($variant['selling_price'] ?? 0) > 0) {
-            $unit = (float) $variant['selling_price'];
+        if ($qty <= 0) {
+            $changed = true;
+            continue;
         }
-        $mrp = (float) ($product['mrp'] ?? 0);
-        $taxPct = (float) $product['tax_percent'];
+        $unit = (float) ($resolved['unit_price'] ?? 0);
+        $mrp = (float) ($resolved['mrp'] ?? 0);
+        $taxPct = (float) ($resolved['tax_percent'] ?? 0);
         $line = $unit * $qty;
         $lineTax = round($line * ($taxPct / 100), 2);
         $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
@@ -1550,13 +1769,14 @@ function hydrate_storefront_cart(int $businessId): array {
         $subtotal += $line;
         $tax += $lineTax;
         $totalSavings += $lineSavings;
-        $lineKey = storefront_cart_line_key($pid, $variant ? (int) $variant['id'] : 0);
-        $clean[$lineKey] = $qty;
+        $clean[storefront_cart_storage_key($productId, $variantId)] = $qty;
         $lines[] = [
             'product' => $product,
-            'variant_id' => $variant ? (int) $variant['id'] : null,
-            'variant_label' => $variant ? trim((string) ($variant['variant_name'] ?? '')) : '',
             'qty' => $qty,
+            'variant_id' => $variantId > 0 ? $variantId : null,
+            'size' => (string) ($resolved['size'] ?? ''),
+            'colour' => (string) ($resolved['colour'] ?? ''),
+            'stock' => $stock,
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
@@ -1595,21 +1815,18 @@ function clear_storefront_buynow(int $businessId): void {
 
 function set_storefront_buynow(int $businessId, int $productId, int $qty = 1, int $variantId = 0): array {
     $qty = max(1, $qty);
-    $product = get_product_by_id($productId, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
-        return ['success' => false, 'error' => 'This item is not available.'];
+    $resolved = storefront_resolve_sale_line($businessId, $productId, $variantId);
+    if (empty($resolved['success'])) {
+        return ['success' => false, 'error' => $resolved['error'] ?? 'This item is not available.'];
     }
-    $stock = (int) ($product['stock_quantity'] ?? 0);
-    if ($stock <= 0) {
-        return ['success' => false, 'error' => 'This item is out of stock.'];
-    }
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
-        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock.'];
+        return ['success' => false, 'error' => 'Only ' . $stock . ' unit(s) left in stock for this size and colour.'];
     }
     $_SESSION[storefront_buynow_key($businessId)] = [
         'product_id' => $productId,
         'qty' => $qty,
-        'variant_id' => $variantId > 0 ? $variantId : null,
+        'variant_id' => !empty($resolved['variant_id']) ? (int) $resolved['variant_id'] : null,
     ];
     return ['success' => true];
 }
@@ -1629,8 +1846,9 @@ function hydrate_storefront_buynow(int $businessId): array {
         ];
     }
 
-    $product = get_product_by_id($pid, $businessId);
-    if (!$product || ($product['status'] ?? '') !== 'active') {
+    $variantId = (int) ($bn['variant_id'] ?? 0);
+    $resolved = storefront_resolve_sale_line($businessId, $pid, $variantId);
+    if (empty($resolved['success'])) {
         clear_storefront_buynow($businessId);
         return [
             'lines' => [],
@@ -1641,26 +1859,12 @@ function hydrate_storefront_buynow(int $businessId): array {
             'count' => 0,
         ];
     }
-
-    $stock = (int) ($product['stock_quantity'] ?? 0);
-    if ($stock <= 0) {
-        clear_storefront_buynow($businessId);
-        return [
-            'lines' => [],
-            'subtotal' => 0.0,
-            'tax' => 0.0,
-            'total' => 0.0,
-            'total_savings' => 0.0,
-            'count' => 0,
-        ];
-    }
+    $product = $resolved['product'];
+    $stock = (int) ($resolved['stock'] ?? 0);
     if ($qty > $stock) {
         $qty = $stock;
     }
-
-    $vid = (int) ($bn['variant_id'] ?? 0);
-    $variant = storefront_get_active_variant($pid, $vid, $businessId);
-    if ($vid > 0 && !$variant) {
+    if ($qty <= 0) {
         clear_storefront_buynow($businessId);
         return [
             'lines' => [],
@@ -1671,30 +1875,10 @@ function hydrate_storefront_buynow(int $businessId): array {
             'count' => 0,
         ];
     }
-    if ($variant) {
-        $vStock = (int) ($variant['stock_quantity'] ?? 0);
-        if ($vStock <= 0) {
-            clear_storefront_buynow($businessId);
-            return [
-                'lines' => [],
-                'subtotal' => 0.0,
-                'tax' => 0.0,
-                'total' => 0.0,
-                'total_savings' => 0.0,
-                'count' => 0,
-            ];
-        }
-        if ($qty > $vStock) {
-            $qty = $vStock;
-        }
-    }
 
-    $unit = (float) $product['selling_price'];
-    if ($variant && (float) ($variant['selling_price'] ?? 0) > 0) {
-        $unit = (float) $variant['selling_price'];
-    }
-    $mrp = (float) ($product['mrp'] ?? 0);
-    $taxPct = (float) ($product['tax_percent'] ?? 0);
+    $unit = (float) ($resolved['unit_price'] ?? 0);
+    $mrp = (float) ($resolved['mrp'] ?? 0);
+    $taxPct = (float) ($resolved['tax_percent'] ?? 0);
     $line = $unit * $qty;
     $lineTax = round($line * ($taxPct / 100), 2);
     $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
@@ -1702,9 +1886,11 @@ function hydrate_storefront_buynow(int $businessId): array {
     return [
         'lines' => [[
             'product' => $product,
-            'variant_id' => $variant ? (int) $variant['id'] : null,
-            'variant_label' => $variant ? trim((string) ($variant['variant_name'] ?? '')) : '',
             'qty' => $qty,
+            'variant_id' => $variantId > 0 ? $variantId : null,
+            'size' => (string) ($resolved['size'] ?? ''),
+            'colour' => (string) ($resolved['colour'] ?? ''),
+            'stock' => $stock,
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
@@ -1899,8 +2085,40 @@ function get_storefront_customer_invoices(int $businessId, int $customerId): arr
     }
 }
 
+function storefront_store_auth_key(int $businessId): string {
+    return 'storefront_store_authenticated_' . $businessId;
+}
+
+function storefront_mark_store_authenticated(int $businessId): void {
+    $_SESSION[storefront_store_auth_key($businessId)] = 1;
+}
+
+function storefront_clear_store_authenticated(int $businessId): void {
+    unset($_SESSION[storefront_store_auth_key($businessId)]);
+}
+
+function storefront_is_store_authenticated(int $businessId): bool {
+    if (!empty($_SESSION[storefront_store_auth_key($businessId)])) {
+        return true;
+    }
+    $shopper = get_storefront_shopper($businessId);
+    if (!$shopper || empty($shopper['id'])) {
+        return false;
+    }
+    if (!function_exists('get_customer_by_id')) {
+        return false;
+    }
+    $cust = get_customer_by_id((int) $shopper['id'], $businessId);
+    if ($cust && !empty($cust['password'])) {
+        storefront_mark_store_authenticated($businessId);
+        return true;
+    }
+    return false;
+}
+
 function clear_storefront_shopper(int $businessId): void {
     unset($_SESSION[storefront_shopper_key($businessId)]);
+    storefront_clear_store_authenticated($businessId);
 }
 
 function clean_customer_phone(string $phone): string {
@@ -1972,7 +2190,1064 @@ function login_storefront_shopper(int $businessId, string $identifier, string $p
         return ['success' => false, 'error' => 'Incorrect password. Try again or reset password.'];
     }
     set_storefront_shopper($businessId, $cust);
+    storefront_mark_store_authenticated($businessId);
     return ['success' => true];
+}
+
+function format_storefront_whatsapp_phone(string $phone): string {
+    $digits = preg_replace('/\D+/', '', $phone) ?? '';
+    if (strlen($digits) === 10) {
+        return '91' . $digits;
+    }
+    if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+        return '91' . substr($digits, 1);
+    }
+    if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+        return $digits;
+    }
+    return $digits;
+}
+
+function ominiflow_master_wa_token(): string {
+    return defined('OMINIFLOW_WA_TOKEN') ? trim((string) OMINIFLOW_WA_TOKEN) : '';
+}
+
+function is_store_own_whatsapp_token(string $token): bool {
+    $token = trim($token);
+    if ($token === '') {
+        return false;
+    }
+    $master = ominiflow_master_wa_token();
+    return $master === '' || $token !== $master;
+}
+
+function parse_whatsapp_curl_command(string $raw): array {
+    $out = [
+        'wa_api_url' => '',
+        'wa_token' => '',
+        'wa_company_id' => 0,
+        'wa_template_name' => '',
+        'wa_template_lang' => '',
+        'wa_phone_number_id' => '',
+        'wa_waba_id' => '',
+        'payload' => null,
+    ];
+    $raw = html_entity_decode(trim($raw), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if ($raw === '') {
+        return $out;
+    }
+
+    if (preg_match_all('/https?:\/\/[^\s\'"\\\\]+/i', $raw, $urlMatches)) {
+        $candidates = [];
+        foreach ($urlMatches[0] as $url) {
+            $clean = rtrim((string) $url, '\'",\\');
+            if ($clean === '' || preg_match('/invoice-pdf\.php|\.pdf($|\?)/i', $clean)) {
+                continue;
+            }
+            $candidates[] = $clean;
+        }
+        $preferred = '';
+        foreach ($candidates as $url) {
+            if (stripos($url, 'sendtemplatemessage') !== false || stripos($url, 'graph.facebook.com') !== false) {
+                $preferred = $url;
+                break;
+            }
+        }
+        if ($preferred === '') {
+            foreach ($candidates as $url) {
+                if (stripos($url, '/api/wpbox') !== false) {
+                    $preferred = $url;
+                    break;
+                }
+            }
+        }
+        $out['wa_api_url'] = $preferred !== '' ? $preferred : (string) ($candidates[0] ?? rtrim((string) ($urlMatches[0][0] ?? ''), '\'",\\'));
+    }
+
+    if (
+        preg_match('/(?:Authorization:\s*Bearer\s+|Bearer\s+)(\S{15,})/i', $raw, $m)
+        || preg_match('/-H\s*[\'"]token:\s*([^\'"]+)/i', $raw, $m)
+        || preg_match('/["\'](?:token|access_token)["\']\s*:\s*["\']([^"\']+)["\']/i', $raw, $m)
+    ) {
+        $out['wa_token'] = trim($m[1], " \t\n\r\0\x0B,\\");
+    }
+
+    if (preg_match('/["\']?company_id["\']?\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)) {
+        $out['wa_company_id'] = (int) $m[1];
+    }
+
+    if (
+        preg_match('/["\']template_name["\']\s*:\s*["\']([a-zA-Z0-9_-]+)/i', $raw, $m)
+        || preg_match('/"template"\s*:\s*\{[^}]*"name"\s*:\s*"([a-zA-Z0-9_-]+)"/s', $raw, $m)
+    ) {
+        $out['wa_template_name'] = trim($m[1]);
+    }
+
+    if (
+        preg_match('/["\'](?:template_language|template_lang)["\']\s*:\s*["\']([a-zA-Z0-9_-]+)/i', $raw, $m)
+        || preg_match('/"language"\s*:\s*\{[^}]*"code"\s*:\s*"([a-zA-Z0-9_-]+)"/s', $raw, $m)
+    ) {
+        $out['wa_template_lang'] = trim($m[1]);
+    }
+
+    if (
+        preg_match('/["\'](?:phone_number_id|wa_phone_number_id)["\']\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)
+        || preg_match('/graph\.facebook\.com\/v\d+\.\d+\/([0-9]{10,})\/messages/i', $raw, $m)
+    ) {
+        $out['wa_phone_number_id'] = trim($m[1]);
+    }
+
+    if (preg_match('/["\'](?:waba_id|wa_waba_id)["\']\s*[:=]\s*["\']?([0-9]+)/i', $raw, $m)) {
+        $out['wa_waba_id'] = trim($m[1]);
+    }
+
+    $jsonStr = null;
+    if (preg_match('/(?:--data-raw|--data|-d)\s+[\'"](\{.*\})[\'"]/s', $raw, $m)) {
+        $jsonStr = $m[1];
+    } elseif (preg_match('/(\{.*\})/s', $raw, $m)) {
+        $jsonStr = $m[1];
+    }
+
+    if (is_string($jsonStr) && $jsonStr !== '') {
+        $jsonStr = str_replace(["\\\n", "\\r\\n"], "\n", $jsonStr);
+        $parsed = json_decode($jsonStr, true);
+        if (!is_array($parsed)) {
+            $parsed = json_decode(stripslashes($jsonStr), true);
+        }
+        if (is_array($parsed)) {
+            $out['payload'] = $parsed;
+            if (!empty($parsed['token'])) {
+                $out['wa_token'] = trim((string) $parsed['token']);
+            } elseif ($out['wa_token'] === '' && !empty($parsed['access_token'])) {
+                $out['wa_token'] = trim((string) $parsed['access_token']);
+            }
+            if (empty($out['wa_company_id']) && !empty($parsed['company_id'])) {
+                $out['wa_company_id'] = (int) $parsed['company_id'];
+            }
+            if ($out['wa_template_name'] === '' && !empty($parsed['template_name'])) {
+                $out['wa_template_name'] = trim((string) $parsed['template_name']);
+            }
+            if ($out['wa_template_lang'] === '' && !empty($parsed['template_language'])) {
+                $out['wa_template_lang'] = trim((string) $parsed['template_language']);
+            }
+            $tmpl = $parsed['template'] ?? null;
+            if (is_array($tmpl)) {
+                if ($out['wa_template_name'] === '' && !empty($tmpl['name'])) {
+                    $out['wa_template_name'] = trim((string) $tmpl['name']);
+                }
+                $lang = $tmpl['language'] ?? null;
+                if ($out['wa_template_lang'] === '' && is_array($lang) && !empty($lang['code'])) {
+                    $out['wa_template_lang'] = trim((string) $lang['code']);
+                } elseif ($out['wa_template_lang'] === '' && is_string($lang) && $lang !== '') {
+                    $out['wa_template_lang'] = trim($lang);
+                }
+            } elseif ($out['wa_template_name'] === '' && is_string($tmpl) && $tmpl !== '') {
+                $out['wa_template_name'] = trim($tmpl);
+            }
+            if ($out['wa_phone_number_id'] === '' && !empty($parsed['phone_number_id'])) {
+                $out['wa_phone_number_id'] = trim((string) $parsed['phone_number_id']);
+            }
+            if ($out['wa_waba_id'] === '' && !empty($parsed['waba_id'])) {
+                $out['wa_waba_id'] = trim((string) $parsed['waba_id']);
+            }
+        }
+    }
+
+    return $out;
+}
+
+function inject_otp_into_wa_payload(array $payload, string $phone, string $otp): array {
+    $payload['phone'] = $phone;
+    if (isset($payload['to']) || isset($payload['messaging_product'])) {
+        $payload['to'] = $phone;
+    }
+
+    $walk = static function (&$node) use (&$walk, $otp): void {
+        if (!is_array($node)) {
+            return;
+        }
+        if (isset($node['coupon_code'])) {
+            $node['coupon_code'] = $otp;
+        }
+        if (array_key_exists('text', $node) && is_string($node['text'])) {
+            $val = trim($node['text']);
+            if ($val === ''
+                || preg_match('/^\d{4,8}$/', $val)
+                || preg_match('/\{\{\s*(1|otp|code)\s*\}\}/i', $val)
+                || strcasecmp($val, 'otp') === 0
+                || strcasecmp($val, '123456') === 0
+            ) {
+                $node['text'] = $otp;
+            }
+        }
+        foreach ($node as &$child) {
+            if (is_array($child)) {
+                $walk($child);
+            }
+        }
+        unset($child);
+    };
+
+    $walk($payload);
+
+    // OTP / authentication templates: force every template parameter to the live code.
+    $templateName = strtolower((string) (
+        $payload['template']['name'] ?? $payload['template_name'] ?? ''
+    ));
+    if ($templateName !== '' && (str_contains($templateName, 'otp') || str_contains($templateName, 'auth'))) {
+        $force = static function (&$node) use (&$force, $otp): void {
+            if (!is_array($node)) {
+                return;
+            }
+            if (isset($node['coupon_code'])) {
+                $node['coupon_code'] = $otp;
+            }
+            if (array_key_exists('text', $node) && is_string($node['text']) && isset($node['type']) && $node['type'] === 'text') {
+                $node['text'] = $otp;
+            }
+            foreach ($node as &$child) {
+                if (is_array($child)) {
+                    $force($child);
+                }
+            }
+            unset($child);
+        };
+        if (isset($payload['template']['components']) && is_array($payload['template']['components'])) {
+            $force($payload['template']['components']);
+        }
+        if (isset($payload['components']) && is_array($payload['components'])) {
+            $force($payload['components']);
+        }
+    }
+
+    return $payload;
+}
+
+function inject_invoice_into_wa_payload(
+    array $payload,
+    string $phone,
+    string $pdfUrl,
+    string $invNum,
+    string $filename,
+    string $caption
+): array {
+    $payload['phone'] = $phone;
+    if (isset($payload['to']) || isset($payload['messaging_product'])) {
+        $payload['to'] = $phone;
+    }
+
+    $replaceIfUrl = static function (&$value) use ($pdfUrl): void {
+        if (!is_string($value)) {
+            return;
+        }
+        $val = trim($value);
+        if ($val === '' || preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+            $value = $pdfUrl;
+        }
+    };
+    foreach (['document_url', 'media_url', 'document_link', 'file', 'file_url', 'header_params'] as $urlKey) {
+        if (array_key_exists($urlKey, $payload)) {
+            $replaceIfUrl($payload[$urlKey]);
+        }
+    }
+    foreach (['link', 'url'] as $urlKey) {
+        if (array_key_exists($urlKey, $payload) && is_string($payload[$urlKey])) {
+            $replaceIfUrl($payload[$urlKey]);
+        }
+    }
+    if (isset($payload['filename'])) {
+        $payload['filename'] = $filename;
+    }
+    if (isset($payload['caption']) && is_string($payload['caption'])) {
+        $payload['caption'] = $caption;
+    }
+    if (isset($payload['params']) && is_string($payload['params'])) {
+        $parts = array_map('trim', explode(',', $payload['params']));
+        if ($parts !== []) {
+            $parts[0] = $invNum;
+            foreach ($parts as $i => $part) {
+                if (preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf')) {
+                    $parts[$i] = $pdfUrl;
+                }
+            }
+            $payload['params'] = implode(',', $parts);
+        }
+    }
+    if (isset($payload['body_params']) && is_array($payload['body_params'])) {
+        foreach ($payload['body_params'] as $i => $part) {
+            if (!is_string($part)) {
+                continue;
+            }
+            if ($i === 0 || preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf')) {
+                $payload['body_params'][$i] = (preg_match('#^https?://#i', $part) || str_ends_with(strtolower($part), '.pdf'))
+                    ? $pdfUrl
+                    : $invNum;
+            }
+        }
+    }
+
+    $bodyIndex = 0;
+    $walk = static function (&$node) use (&$walk, &$bodyIndex, $pdfUrl, $invNum, $filename, $caption): void {
+        if (!is_array($node)) {
+            return;
+        }
+
+        if (isset($node['document']) && is_array($node['document'])) {
+            $node['document']['link'] = $pdfUrl;
+            if (array_key_exists('url', $node['document'])) {
+                $node['document']['url'] = $pdfUrl;
+            }
+            $node['document']['filename'] = $filename;
+        }
+
+        $type = strtolower((string) ($node['type'] ?? ''));
+        if ($type === 'document') {
+            if (array_key_exists('link', $node)) {
+                $node['link'] = $pdfUrl;
+            }
+            if (array_key_exists('url', $node)) {
+                $node['url'] = $pdfUrl;
+            }
+            if (array_key_exists('filename', $node)) {
+                $node['filename'] = $filename;
+            }
+        }
+        if (array_key_exists('document_url', $node)) {
+            $node['document_url'] = $pdfUrl;
+        }
+        if (array_key_exists('media_url', $node)) {
+            $node['media_url'] = $pdfUrl;
+        }
+        if (array_key_exists('file', $node) && is_string($node['file'])) {
+            $val = trim($node['file']);
+            if ($val === '' || preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+                $node['file'] = $pdfUrl;
+            }
+        }
+
+        if (array_key_exists('text', $node) && is_string($node['text'])) {
+            $val = trim($node['text']);
+            $isPlaceholder = $val === ''
+                || preg_match('/\{\{/', $val)
+                || preg_match('#^https?://#i', $val)
+                || preg_match('/INV[-_0-9]/i', $val)
+                || str_ends_with(strtolower($val), '.pdf')
+                || in_array(strtolower($val), ['invoice', 'invoice_number', 'order', 'pdf', 'document', 'filename'], true);
+            if ($isPlaceholder) {
+                if (preg_match('#^https?://#i', $val) || str_ends_with(strtolower($val), '.pdf')) {
+                    $node['text'] = $pdfUrl;
+                } elseif ($bodyIndex === 0) {
+                    $node['text'] = $invNum;
+                    $bodyIndex++;
+                } else {
+                    $node['text'] = substr($caption, 0, 60);
+                    $bodyIndex++;
+                }
+            }
+        }
+
+        foreach ($node as &$child) {
+            if (is_array($child)) {
+                $walk($child);
+            }
+        }
+        unset($child);
+    };
+    $walk($payload);
+
+    $payload['header_params'] = $pdfUrl;
+    $payload['document_url'] = $pdfUrl;
+    $payload['file'] = $pdfUrl;
+    $payload['file_url'] = $pdfUrl;
+    $payload['media_url'] = $pdfUrl;
+    $payload['filename'] = $filename;
+    $payload['header_type'] = 'document';
+
+    $headerComponent = [
+        'type' => 'header',
+        'parameters' => [[
+            'type' => 'document',
+            'document' => [
+                'link' => $pdfUrl,
+                'filename' => $filename,
+            ],
+        ]],
+    ];
+    $bodyComponent = [
+        'type' => 'body',
+        'parameters' => [['type' => 'text', 'text' => $invNum]],
+    ];
+    $mergeHeader = static function (array $components) use ($headerComponent): array {
+        $hasHeader = false;
+        foreach ($components as $i => $comp) {
+            if (!is_array($comp)) {
+                continue;
+            }
+            if (strtolower((string) ($comp['type'] ?? '')) === 'header') {
+                $components[$i] = $headerComponent;
+                $hasHeader = true;
+            }
+        }
+        if (!$hasHeader) {
+            array_unshift($components, $headerComponent);
+        }
+        return $components;
+    };
+    if (isset($payload['template']['components']) && is_array($payload['template']['components'])) {
+        $payload['template']['components'] = $mergeHeader($payload['template']['components']);
+    }
+    if (isset($payload['components']) && is_array($payload['components'])) {
+        $payload['components'] = $mergeHeader($payload['components']);
+    } elseif (!isset($payload['template']['components'])) {
+        $payload['components'] = [$headerComponent, $bodyComponent];
+    }
+    if (empty($payload['params']) || !is_string($payload['params'])) {
+        $payload['params'] = $invNum;
+    }
+
+    return $payload;
+}
+
+function wa_gateway_response_is_success($raw, int $httpCode): bool {
+    if ($httpCode > 0 && ($httpCode < 200 || $httpCode >= 300)) {
+        return false;
+    }
+    $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+    if (!is_array($decoded)) {
+        return $httpCode >= 200 && $httpCode < 300 && is_string($raw) && trim($raw) !== '';
+    }
+    if (!empty($decoded['error'])) {
+        return false;
+    }
+    $status = strtolower((string) ($decoded['status'] ?? ''));
+    if (in_array($status, ['error', 'failed', 'fail'], true)) {
+        return false;
+    }
+    if (!empty($decoded['success']) || !empty($decoded['message_id']) || !empty($decoded['messages']) || !empty($decoded['whatsapp_message_id'])) {
+        return true;
+    }
+    if (in_array($status, ['success', 'ok', 'sent'], true)) {
+        return true;
+    }
+    $msg = strtolower((string) ($decoded['message'] ?? ''));
+    if ($msg !== '' && (str_contains($msg, 'sent') || str_contains($msg, 'success') || str_contains($msg, 'queued'))) {
+        return true;
+    }
+    return false;
+}
+
+function wa_gateway_error_message($raw, int $httpCode): string {
+    $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+    if (is_array($decoded)) {
+        if (is_array($decoded['error'] ?? null) && !empty($decoded['error']['message'])) {
+            return (string) $decoded['error']['message'];
+        }
+        if (!empty($decoded['error']) && is_string($decoded['error'])) {
+            return $decoded['error'];
+        }
+        if (!empty($decoded['message'])) {
+            return (string) $decoded['message'];
+        }
+    }
+    if ($httpCode === 0) {
+        $hint = is_string($raw) ? trim($raw) : '';
+        if ($hint !== '' && strlen($hint) < 180 && !str_starts_with($hint, '{')) {
+            return 'WhatsApp gateway did not respond (' . $hint . ').';
+        }
+        return 'WhatsApp gateway did not respond.';
+    }
+    return 'WhatsApp gateway returned HTTP ' . $httpCode . '.';
+}
+
+function wa_error_is_missing_route(string $error): bool {
+    $error = strtolower($error);
+    return str_contains($error, 'could not be found')
+        || (str_contains($error, 'route') && str_contains($error, 'not found'));
+}
+
+function wa_error_is_timeout(string $error): bool {
+    $error = strtolower($error);
+    return str_contains($error, 'timed out')
+        || str_contains($error, 'timeout')
+        || str_contains($error, '0 bytes received');
+}
+
+function whatsapp_template_api_url(string $apiUrl): string {
+    $apiUrl = trim($apiUrl);
+    if ($apiUrl !== '' && stripos($apiUrl, 'sendtemplatemessage') !== false) {
+        return $apiUrl;
+    }
+    if (preg_match('#^(https?://[^/]+/api/wpbox)#i', $apiUrl, $m)) {
+        return $m[1] . '/sendtemplatemessage';
+    }
+    return 'https://whatsapp.ominiflow.com/api/wpbox/sendtemplatemessage';
+}
+function whatsapp_outbound_api_urls(string $apiUrl): array {
+    $apiUrl = trim($apiUrl);
+    if ($apiUrl === '') {
+        return [];
+    }
+
+    $urls = [];
+    $add = static function (string $url) use (&$urls): void {
+        $url = trim($url);
+        if ($url === '') {
+            return;
+        }
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+        $leaf = strtolower((string) basename($path));
+        // Laravel 404s these mixed-case aliases.
+        if (in_array($leaf, ['sendmessage', 'sendmedia', 'send', 'send-message'], true)
+            && $leaf !== basename($path)
+        ) {
+            return;
+        }
+        if (!in_array($url, $urls, true)) {
+            $urls[] = $url;
+        }
+    };
+
+    $add($apiUrl);
+
+    $wpboxBase = '';
+    if (preg_match('#^(https?://[^/]+/api/wpbox)#i', $apiUrl, $m)) {
+        $wpboxBase = $m[1];
+    } elseif (stripos($apiUrl, 'whatsapp.ominiflow.com') !== false) {
+        $wpboxBase = 'https://whatsapp.ominiflow.com/api/wpbox';
+    }
+
+    if ($wpboxBase !== '') {
+        $add($wpboxBase . '/sendmessage');
+        $add($wpboxBase . '/sendmedia');
+    } elseif (stripos($apiUrl, 'sendtemplatemessage') !== false) {
+        $add(str_ireplace('sendtemplatemessage', 'sendmessage', $apiUrl));
+        $add(str_ireplace('sendtemplatemessage', 'sendmedia', $apiUrl));
+    } elseif (stripos($apiUrl, 'send-template-message') !== false) {
+        $add(str_ireplace('send-template-message', 'send-message', $apiUrl));
+    }
+
+    return $urls;
+}
+
+function upload_whatsapp_meta_document(string $phoneNumberId, string $token, string $filePath, string $version = 'v21.0'): ?string {
+    $phoneNumberId = trim($phoneNumberId);
+    $token = trim($token);
+    if ($phoneNumberId === '' || $token === '' || !is_readable($filePath)) {
+        return null;
+    }
+    $uploadUrl = 'https://graph.facebook.com/' . $version . '/' . rawurlencode($phoneNumberId) . '/media';
+    $mime = 'application/pdf';
+    $postFields = [
+        'messaging_product' => 'whatsapp',
+        'type' => $mime,
+        'file' => new CURLFile($filePath, $mime, basename($filePath)),
+    ];
+    $ch = curl_init($uploadUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $postFields,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+        ],
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+    $responseRaw = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($responseRaw === false || $httpCode < 200 || $httpCode >= 300) {
+        return null;
+    }
+    $decoded = json_decode((string) $responseRaw, true);
+    $id = is_array($decoded) ? trim((string) ($decoded['id'] ?? '')) : '';
+    return $id !== '' ? $id : null;
+}
+
+function post_whatsapp_json(string $apiUrl, string $token, array $payload, int $timeoutSeconds = 15): array {
+    $ch = curl_init($apiUrl);
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json',
+    ];
+    if ($token !== '') {
+        $isWpbox = stripos($apiUrl, '/api/wpbox') !== false || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+        if (!$isWpbox) {
+            $headers[] = 'Authorization: Bearer ' . $token;
+        }
+        $headers[] = 'token: ' . $token;
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_CONNECTTIMEOUT => min(5, $timeoutSeconds),
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+    $responseRaw = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+    if ($responseRaw === false) {
+        $responseRaw = $curlErr !== '' ? $curlErr : null;
+    }
+    return [
+        'raw' => $responseRaw,
+        'http_code' => $httpCode,
+        'success' => wa_gateway_response_is_success($responseRaw, $httpCode),
+    ];
+}
+
+/**
+ * Resolve WhatsApp API credentials saved for THIS business only.
+ * Never falls back to the platform/client master token or company 162.
+ */
+function get_business_whatsapp_gateway(int $businessId): array {
+    $empty = [
+        'configured' => false,
+        'api_url' => '',
+        'token' => '',
+        'company_id' => 0,
+        'template' => 'otp_ver',
+        'lang' => 'en_US',
+        'phone_number_id' => '',
+        'waba_id' => '',
+        'is_meta_graph' => false,
+        'error' => 'WhatsApp API is not connected for this store. Paste this store\'s cURL and token in Settings → WhatsApp.',
+    ];
+
+    if ($businessId <= 0) {
+        return $empty;
+    }
+
+    $brand = get_mobile_store_settings($businessId);
+    $token = trim((string) ($brand['wa_token'] ?? ''));
+    $apiUrl = trim((string) ($brand['wa_api_url'] ?? ''));
+    $phoneId = trim((string) ($brand['wa_phone_number_id'] ?? ''));
+    $companyId = !empty($brand['wa_company_id']) ? (int) $brand['wa_company_id'] : 0;
+    $template = trim((string) ($brand['wa_template_name'] ?? ''));
+    $lang = trim((string) ($brand['wa_template_lang'] ?? ''));
+    $wabaId = trim((string) ($brand['wa_waba_id'] ?? ''));
+
+    $isMasterUrl = $apiUrl === '' || stripos($apiUrl, 'whatsapp.ominiflow.com') !== false;
+    $master = ominiflow_master_wa_token();
+    $usingSharedWpbox = $master !== ''
+        && $token === $master
+        && $companyId > 0
+        && $isMasterUrl;
+    if (!is_store_own_whatsapp_token($token) && !$usingSharedWpbox) {
+        return $empty;
+    }
+
+    $isGraphUrl = stripos($apiUrl, 'graph.facebook.com') !== false;
+    if ($isGraphUrl && preg_match('/PHONE_NUMBER_ID|PHONE_N([^0-9]|$)/i', $apiUrl)) {
+        $apiUrl = '';
+        $isGraphUrl = false;
+    }
+    $looksLikeMetaToken = str_starts_with($token, 'EAA');
+
+    if ($phoneId !== '' && ($isGraphUrl || $apiUrl === '' || ($isMasterUrl && $looksLikeMetaToken))) {
+        $version = 'v21.0';
+        if (preg_match('#graph\.facebook\.com/(v\d+\.\d+)/#i', $apiUrl, $m)) {
+            $version = $m[1];
+        }
+        $apiUrl = 'https://graph.facebook.com/' . $version . '/' . $phoneId . '/messages';
+        $isGraphUrl = true;
+    }
+
+    if ($apiUrl === '' && $token !== '') {
+        $apiUrl = defined('OMINIFLOW_WA_API_URL') ? trim((string) OMINIFLOW_WA_API_URL) : '';
+    }
+
+    if ($apiUrl === '') {
+        $empty['error'] = 'WhatsApp API URL is missing for this store. Paste the store cURL in Settings → WhatsApp and save.';
+        return $empty;
+    }
+
+    return [
+        'configured' => true,
+        'api_url' => $apiUrl,
+        'token' => $token,
+        'company_id' => $companyId,
+        'template' => $template !== '' ? $template : 'otp_ver',
+        'lang' => $lang !== '' ? $lang : 'en_US',
+        'phone_number_id' => $phoneId,
+        'waba_id' => $wabaId,
+        'is_meta_graph' => $isGraphUrl || stripos($apiUrl, 'graph.facebook.com') !== false,
+        'error' => '',
+    ];
+}
+
+function send_storefront_otp_whatsapp(string $phone, string $otp, string $storeName, int $businessId = 0): array {
+    $waPhone = format_storefront_whatsapp_phone($phone);
+    if (strlen($waPhone) < 10) {
+        return ['success' => false, 'api_success' => false, 'error' => 'Please enter a valid WhatsApp mobile number (minimum 10 digits).'];
+    }
+
+    $gateway = get_business_whatsapp_gateway($businessId);
+    if (empty($gateway['configured'])) {
+        return [
+            'success' => false,
+            'api_success' => false,
+            'phone' => $waPhone,
+            'otp' => $otp,
+            'http_code' => 0,
+            'response' => null,
+            'error' => (string) ($gateway['error'] ?? 'WhatsApp API is not connected for this store.'),
+        ];
+    }
+
+    $apiUrl = (string) $gateway['api_url'];
+    $token = (string) $gateway['token'];
+    $companyId = (int) $gateway['company_id'];
+    $template = (string) $gateway['template'];
+    $lang = (string) $gateway['lang'];
+    $phoneNumberId = trim((string) ($gateway['phone_number_id'] ?? ''));
+    $isMetaGraph = !empty($gateway['is_meta_graph']);
+
+    $brand = get_mobile_store_settings($businessId);
+    $storedPayloadRaw = trim((string) ($brand['wa_curl_payload'] ?? ''));
+    if ($storedPayloadRaw === '') {
+        $storedPayloadRaw = trim((string) ($brand['wa_curl_raw'] ?? ''));
+    }
+
+    $_SESSION['sf_last_wa_otp'] = [
+        'phone' => $waPhone,
+        'raw_phone' => $phone,
+        'otp' => $otp,
+        'time' => time(),
+    ];
+
+    $responseRaw = null;
+    $httpCode = 0;
+    $apiSuccess = false;
+    $curlError = '';
+
+    if ($token === '' && $storedPayloadRaw === '') {
+        return [
+            'success' => false,
+            'api_success' => false,
+            'phone' => $waPhone,
+            'otp' => $otp,
+            'http_code' => 0,
+            'response' => null,
+            'error' => 'WhatsApp API token is missing. Paste your cURL on WhatsApp settings and save.',
+        ];
+    }
+
+    if ($isMetaGraph && $phoneNumberId !== '' && !preg_match('/\/\d{10,}\/messages/', $apiUrl)) {
+        $apiUrl = 'https://graph.facebook.com/v21.0/' . rawurlencode($phoneNumberId) . '/messages';
+    }
+
+    $candidatePayloads = [];
+
+    if ($storedPayloadRaw !== '') {
+        $stored = json_decode($storedPayloadRaw, true);
+        if (!is_array($stored)) {
+            $parsedCurl = parse_whatsapp_curl_command($storedPayloadRaw);
+            $stored = is_array($parsedCurl['payload'] ?? null) ? $parsedCurl['payload'] : null;
+        }
+        if (is_array($stored)) {
+            if ($token === '' && !empty($stored['token'])) {
+                $token = (string) $stored['token'];
+            }
+            $candidatePayloads[] = inject_otp_into_wa_payload($stored, $waPhone, $otp);
+        }
+    }
+
+    $compBodyOnly = [[
+        'type' => 'body',
+        'parameters' => [['type' => 'text', 'text' => (string) $otp]],
+    ]];
+    $compCopyCodeCoupon = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'copy_code', 'index' => '0', 'parameters' => [['type' => 'coupon_code', 'coupon_code' => (string) $otp]]],
+    ];
+    $compCopyCodeButton = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'copy_code', 'index' => '0', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+    ];
+    $compUrlButton = [
+        ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+        ['type' => 'button', 'sub_type' => 'url', 'index' => '0', 'parameters' => [['type' => 'text', 'text' => (string) $otp]]],
+    ];
+
+    $isOtpTemplate = str_contains(strtolower($template), 'otp') || str_contains(strtolower($template), 'auth');
+    $componentsOrder = $isOtpTemplate
+        ? [$compCopyCodeCoupon, $compUrlButton, $compCopyCodeButton, $compBodyOnly]
+        : [$compBodyOnly, $compCopyCodeCoupon, $compCopyCodeButton, $compUrlButton];
+
+    $languagesToTry = array_values(array_unique(array_filter([
+        $lang,
+        ($lang === 'en_US' ? 'en' : ($lang === 'en' ? 'en_US' : null)),
+    ])));
+
+    foreach ($languagesToTry as $l) {
+        foreach ($componentsOrder as $comp) {
+            if ($isMetaGraph) {
+                $candidatePayloads[] = [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $waPhone,
+                    'type' => 'template',
+                    'template' => [
+                        'name' => $template,
+                        'language' => ['code' => $l],
+                        'components' => $comp,
+                    ],
+                ];
+            } else {
+                $nested = [
+                    'token' => $token,
+                    'phone' => $waPhone,
+                    'template' => [
+                        'name' => $template,
+                        'language' => ['code' => $l],
+                        'components' => $comp,
+                    ],
+                ];
+                if ($companyId > 0) {
+                    $nested['company_id'] = $companyId;
+                }
+                $candidatePayloads[] = $nested;
+                $candidatePayloads[] = [
+                    'token' => $token,
+                    'phone' => $waPhone,
+                    'company_id' => $companyId,
+                    'template_name' => $template,
+                    'template_language' => $l,
+                    'components' => $comp,
+                ];
+            }
+        }
+    }
+
+    foreach ($candidatePayloads as $payload) {
+        $sendToken = $token !== '' ? $token : (string) ($payload['token'] ?? '');
+        try {
+            $posted = post_whatsapp_json($apiUrl, $sendToken, $payload);
+            $responseRaw = $posted['raw'];
+            $httpCode = $posted['http_code'];
+            if (!empty($posted['success'])) {
+                $apiSuccess = true;
+                break;
+            }
+        } catch (Throwable $e) {
+            error_log('Storefront WhatsApp OTP error: ' . $e->getMessage());
+            $responseRaw = $e->getMessage();
+            $curlError = $e->getMessage();
+        }
+    }
+
+    $error = null;
+    if (!$apiSuccess) {
+        $error = wa_gateway_error_message($responseRaw, $httpCode);
+        if ($error === 'WhatsApp gateway did not respond.' || str_starts_with($error, 'WhatsApp gateway returned HTTP')) {
+            $error = 'Could not send OTP from this store\'s WhatsApp API. ' . $error;
+        }
+        if ($curlError !== '') {
+            $error .= ' ' . $curlError;
+        } elseif (is_string($responseRaw) && $responseRaw !== '') {
+            $decodedErr = json_decode($responseRaw, true);
+            if (is_array($decodedErr)) {
+                $msg = $decodedErr['error']['message'] ?? $decodedErr['message'] ?? $decodedErr['error'] ?? null;
+                if (is_string($msg) && $msg !== '') {
+                    $error .= ' ' . $msg;
+                }
+            }
+        }
+    }
+
+    return [
+        'success' => $apiSuccess,
+        'api_success' => $apiSuccess,
+        'phone' => $waPhone,
+        'otp' => $otp,
+        'http_code' => $httpCode,
+        'response' => $responseRaw,
+        'error' => $apiSuccess ? null : $error,
+        'api_url' => $apiUrl,
+        'template' => $template,
+    ];
+}
+
+function verify_storefront_whatsapp_otp(int $businessId, string $phone, string $enteredOtp, string $name = '', string $email = ''): array {
+    $waPhone = format_storefront_whatsapp_phone($phone);
+    $cleanEntered = trim($enteredOtp);
+
+    if ($cleanEntered === '') {
+        return ['success' => false, 'error' => 'Please enter the 6-digit OTP verification code.'];
+    }
+
+    $otpSession = $_SESSION['sf_wa_otp_data'] ?? null;
+    if (!$otpSession || empty($otpSession['otp'])) {
+        return ['success' => false, 'error' => 'No active OTP verification session found. Please request a new OTP code.'];
+    }
+
+    if (time() > (int)($otpSession['expires_at'] ?? 0)) {
+        unset($_SESSION['sf_wa_otp_data']);
+        return ['success' => false, 'error' => 'The OTP code has expired. Please request a new one.'];
+    }
+
+    $attempts = (int)($otpSession['attempts'] ?? 0);
+    if ($attempts >= 5) {
+        unset($_SESSION['sf_wa_otp_data']);
+        return ['success' => false, 'error' => 'Too many incorrect attempts. Please request a new OTP code.'];
+    }
+
+    $expectedPhone = (string)($otpSession['phone'] ?? '');
+    if ($expectedPhone !== $waPhone && clean_customer_phone($expectedPhone) !== clean_customer_phone($phone)) {
+        return ['success' => false, 'error' => 'Mobile number mismatch. Please enter OTP for the requested number.'];
+    }
+
+    $expectedOtp = (string)$otpSession['otp'];
+    if ($cleanEntered !== $expectedOtp) {
+        $_SESSION['sf_wa_otp_data']['attempts'] = $attempts + 1;
+        $remaining = 5 - ($attempts + 1);
+        return [
+            'success' => false,
+            'error' => 'Invalid OTP code. ' . ($remaining > 0 ? "You have {$remaining} attempt(s) left." : 'Please request a new code.')
+        ];
+    }
+
+    // OTP verified successfully
+    unset($_SESSION['sf_wa_otp_data']);
+
+    $fullName = trim($name !== '' ? $name : ($otpSession['name'] ?? ''));
+    if ($fullName === '') {
+        $fullName = 'Shopper ' . substr($waPhone, -4);
+    }
+    $cleanPhone = clean_customer_phone($phone);
+
+    // Check if customer already exists by phone or email
+    $cust = find_store_customer_by_phone($businessId, $cleanPhone);
+    if (!$cust && $email !== '') {
+        $cust = find_store_customer_by_email($businessId, $email);
+    }
+
+    $db = get_db();
+    if ($cust) {
+        $db->prepare('UPDATE customers SET name = COALESCE(NULLIF(:name, ""), name), phone = COALESCE(NULLIF(:phone, ""), phone), updated_at = NOW() WHERE id = :id AND business_id = :bid')
+            ->execute([
+                'name' => $fullName,
+                'phone' => $cleanPhone,
+                'id' => (int)$cust['id'],
+                'bid' => $businessId,
+            ]);
+        $cust['name'] = $fullName ?: $cust['name'];
+        $cust['phone'] = $cleanPhone ?: $cust['phone'];
+        set_storefront_shopper($businessId, $cust);
+        storefront_mark_store_authenticated($businessId);
+        return ['success' => true, 'customer' => $cust, 'is_new' => false];
+    }
+
+    // Register new customer in database
+    $res = save_customer([
+        'name' => $fullName,
+        'phone' => $cleanPhone,
+        'email' => $email,
+        'address' => '',
+    ], $businessId);
+
+    if (empty($res['success']) || empty($res['customer_id'])) {
+        $err = $res['errors'] ?? [];
+        $msg = is_array($err) ? implode(' ', $err) : 'Could not create account.';
+        return ['success' => false, 'error' => $msg];
+    }
+
+    $newCust = [
+        'id' => (int)$res['customer_id'],
+        'name' => $fullName,
+        'phone' => $cleanPhone,
+        'email' => $email,
+    ];
+    set_storefront_shopper($businessId, $newCust);
+    storefront_mark_store_authenticated($businessId);
+    return ['success' => true, 'customer' => $newCust, 'is_new' => true];
+}
+
+function save_business_whatsapp_settings(int $businessId, array $data): bool {
+    ensure_online_store_schema();
+    $db = get_db();
+    get_mobile_store_settings($businessId);
+
+    $setOtpCreds = array_key_exists('wa_api_url', $data)
+        || array_key_exists('wa_token', $data)
+        || array_key_exists('wa_company_id', $data)
+        || array_key_exists('wa_template_name', $data)
+        || array_key_exists('wa_template_lang', $data)
+        || array_key_exists('wa_phone_number_id', $data)
+        || array_key_exists('wa_waba_id', $data);
+    $setOtpEnable = array_key_exists('wa_enable_storefront_otp', $data);
+    $setAutoInv = array_key_exists('wa_auto_send_invoices', $data);
+    $setCurl = array_key_exists('wa_curl_raw', $data);
+    $setInvCurl = array_key_exists('wa_invoice_curl_raw', $data);
+
+    $setParts = ['updated_at = NOW()'];
+    $params = ['bid' => $businessId];
+
+    if ($setOtpCreds) {
+        $companyId = isset($data['wa_company_id']) && $data['wa_company_id'] !== '' && (int) $data['wa_company_id'] > 0
+            ? (int) $data['wa_company_id']
+            : null;
+        $setParts[] = 'wa_api_url = :wa_url';
+        $setParts[] = 'wa_token = :wa_token';
+        $setParts[] = 'wa_company_id = :wa_company_id';
+        $setParts[] = 'wa_template_name = :wa_template_name';
+        $setParts[] = 'wa_template_lang = :wa_template_lang';
+        $setParts[] = 'wa_phone_number_id = :wa_phone_number_id';
+        $setParts[] = 'wa_waba_id = :wa_waba_id';
+        $params['wa_url'] = isset($data['wa_api_url']) && trim((string) $data['wa_api_url']) !== '' ? trim((string) $data['wa_api_url']) : null;
+        $params['wa_token'] = isset($data['wa_token']) && trim((string) $data['wa_token']) !== '' ? trim((string) $data['wa_token']) : null;
+        $params['wa_company_id'] = $companyId;
+        $params['wa_template_name'] = isset($data['wa_template_name']) && trim((string) $data['wa_template_name']) !== '' ? trim((string) $data['wa_template_name']) : null;
+        $params['wa_template_lang'] = isset($data['wa_template_lang']) && trim((string) $data['wa_template_lang']) !== '' ? trim((string) $data['wa_template_lang']) : null;
+        $params['wa_phone_number_id'] = isset($data['wa_phone_number_id']) && trim((string) $data['wa_phone_number_id']) !== '' ? trim((string) $data['wa_phone_number_id']) : null;
+        $params['wa_waba_id'] = isset($data['wa_waba_id']) && trim((string) $data['wa_waba_id']) !== '' ? trim((string) $data['wa_waba_id']) : null;
+    }
+    if ($setOtpEnable) {
+        $setParts[] = 'wa_enable_storefront_otp = :wa_otp';
+        $params['wa_otp'] = !empty($data['wa_enable_storefront_otp']) ? 1 : 0;
+    }
+    if ($setAutoInv) {
+        $setParts[] = 'wa_auto_send_invoices = :wa_auto_inv';
+        $params['wa_auto_inv'] = !empty($data['wa_auto_send_invoices']) ? 1 : 0;
+    }
+    if ($setCurl) {
+        $setParts[] = 'wa_curl_raw = :wa_curl_raw';
+        $params['wa_curl_raw'] = trim((string) $data['wa_curl_raw']) !== '' ? trim((string) $data['wa_curl_raw']) : null;
+    }
+    if ($setInvCurl) {
+        $setParts[] = 'wa_invoice_curl_raw = :wa_inv_curl';
+        $setParts[] = 'wa_invoice_curl_payload = :wa_inv_payload';
+        $setParts[] = 'wa_invoice_api_url = :wa_inv_url';
+        $setParts[] = 'wa_invoice_template_name = :wa_inv_tmpl';
+        $setParts[] = 'wa_invoice_template_lang = :wa_inv_lang';
+        $params['wa_inv_curl'] = trim((string) $data['wa_invoice_curl_raw']) !== '' ? trim((string) $data['wa_invoice_curl_raw']) : null;
+        $payloadRaw = trim((string) ($data['wa_invoice_curl_payload'] ?? ''));
+        $params['wa_inv_payload'] = $payloadRaw !== '' ? $payloadRaw : null;
+        $params['wa_inv_url'] = isset($data['wa_invoice_api_url']) && trim((string) $data['wa_invoice_api_url']) !== ''
+            ? trim((string) $data['wa_invoice_api_url'])
+            : null;
+        $params['wa_inv_tmpl'] = isset($data['wa_invoice_template_name']) && trim((string) $data['wa_invoice_template_name']) !== ''
+            ? trim((string) $data['wa_invoice_template_name'])
+            : null;
+        $params['wa_inv_lang'] = isset($data['wa_invoice_template_lang']) && trim((string) $data['wa_invoice_template_lang']) !== ''
+            ? trim((string) $data['wa_invoice_template_lang'])
+            : null;
+    }
+
+    $sql = '
+        UPDATE mobile_store_settings
+        SET ' . implode(",\n            ", $setParts) . '
+        WHERE business_id = :bid
+    ';
+    $stmt = $db->prepare($sql);
+    return $stmt->execute($params);
 }
 
 function send_storefront_otp_sms(string $phone, string $otp, string $storeName): bool {
@@ -2116,6 +3391,7 @@ function register_storefront_shopper(int $businessId, array $data): array {
         $existing['email'] = $email;
         if ($phone !== '') $existing['phone'] = $phone;
         set_storefront_shopper($businessId, $existing);
+        storefront_mark_store_authenticated($businessId);
         return ['success' => true];
     }
 
@@ -2142,6 +3418,7 @@ function register_storefront_shopper(int $businessId, array $data): array {
         'phone' => $phone,
         'email' => $email,
     ]);
+    storefront_mark_store_authenticated($businessId);
     return ['success' => true];
 }
 
@@ -2245,9 +3522,230 @@ function find_or_create_store_customer(int $businessId, array $data): array {
     ], $businessId);
 }
 
+function get_storefront_checkout_payment_methods(int $businessId, array $brandSettings): array {
+    require_once __DIR__ . '/payment_integrations_db.php';
+    require_once __DIR__ . '/razorpay_oauth.php';
+
+    $razorpayGatewayReady = !empty(get_active_store_payment_gateways($businessId)['razorpay'])
+        && razorpay_checkout_key($businessId) !== '';
+    $razorpayOnline = !empty($brandSettings['enable_razorpay']) && $razorpayGatewayReady;
+
+    $methods = [];
+    if (!empty($brandSettings['enable_cod'])) {
+        $methods['cod'] = [
+            'name' => 'Pay on Delivery (COD)',
+            'label' => 'Pay on Delivery',
+            'desc' => 'Pay with cash or UPI upon delivery',
+            'icon' => '💵',
+            'online' => false,
+        ];
+    }
+    if ($razorpayOnline) {
+        $methods['razorpay'] = [
+            'name' => 'Pay Online (Razorpay)',
+            'label' => 'Razorpay',
+            'desc' => 'UPI, cards, netbanking & wallets — secure checkout',
+            'icon' => '⚡',
+            'online' => true,
+        ];
+        if (!empty($brandSettings['enable_upi'])) {
+            $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
+            if (!empty($brandSettings['upi_id'])) {
+                $upiSub .= ' (' . $brandSettings['upi_id'] . ')';
+            }
+            $methods['upi'] = [
+                'name' => 'Pay with UPI',
+                'label' => 'Pay with UPI',
+                'desc' => $upiSub,
+                'icon' => '📱',
+                'online' => true,
+            ];
+        }
+        if (!empty($brandSettings['enable_card'])) {
+            $methods['card'] = [
+                'name' => 'Credit / Debit Card',
+                'label' => 'Card Payment',
+                'desc' => 'Visa, MasterCard, RuPay',
+                'icon' => '💳',
+                'online' => true,
+            ];
+        }
+        if (!empty($brandSettings['enable_netbanking'])) {
+            $methods['netbanking'] = [
+                'name' => 'Net Banking / Direct Bank Transfer',
+                'label' => 'Bank Transfer',
+                'desc' => 'Direct bank transfer / NEFT / IMPS',
+                'icon' => '🏦',
+                'online' => true,
+            ];
+        }
+    }
+    if (!empty($brandSettings['enable_store_pickup_payment'])) {
+        $methods['pickup'] = [
+            'name' => 'Pay at Store / Pickup',
+            'label' => 'Pay at Store',
+            'desc' => 'Collect & pay directly at counter',
+            'icon' => '🏪',
+            'online' => false,
+        ];
+    }
+    if ($methods === []) {
+        $methods['cod'] = [
+            'name' => 'Pay on Delivery (COD)',
+            'label' => 'Pay on Delivery',
+            'desc' => 'Pay with cash or UPI upon delivery',
+            'icon' => '💵',
+            'online' => false,
+        ];
+    }
+    return $methods;
+}
+
+function storefront_checkout_is_buynow(int $businessId, array $post = []): bool {
+    if (!empty($post['buy_now']) || (string) ($post['checkout_mode'] ?? '') === 'buynow') {
+        return true;
+    }
+    if (!empty($_GET['buynow'])) {
+        $bn = hydrate_storefront_buynow($businessId);
+        if (!empty($bn['lines'])) {
+            return true;
+        }
+    }
+    $raw = get_storefront_buynow($businessId);
+    if (!empty($raw['product_id'])) {
+        $cart = hydrate_storefront_cart($businessId);
+        if (empty($cart['lines'])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function storefront_ensure_guest_shopper(int $businessId, array $checkoutFields): array {
+    $phone = trim((string) ($checkoutFields['phone'] ?? ''));
+    $name = trim((string) ($checkoutFields['name'] ?? ''));
+    if ($name === '') {
+        $name = 'Guest Customer';
+    }
+    if ($phone === '') {
+        return ['success' => false, 'errors' => ['phone' => 'Add your mobile number in the delivery address to continue as guest.']];
+    }
+    $cRes = find_or_create_store_customer($businessId, [
+        'name' => $name,
+        'phone' => $phone,
+        'email' => (string) ($checkoutFields['email'] ?? ''),
+        'address' => (string) ($checkoutFields['address'] ?? ''),
+    ]);
+    if (empty($cRes['success'])) {
+        return ['success' => false, 'errors' => $cRes['errors'] ?? ['general' => 'Could not save guest details.']];
+    }
+    $shopper = [
+        'id' => (int) $cRes['customer_id'],
+        'name' => $name,
+        'phone' => $phone,
+        'email' => (string) ($checkoutFields['email'] ?? ''),
+        'address' => (string) ($checkoutFields['address'] ?? ''),
+        'is_guest' => true,
+    ];
+    return ['success' => true, 'shopper' => $shopper];
+}
+
+function storefront_applied_coupon_session_key(int $businessId): string {
+    return 'sf_applied_coupon_' . $businessId;
+}
+
+function get_storefront_applied_coupon(int $businessId): ?array {
+    $row = $_SESSION[storefront_applied_coupon_session_key($businessId)] ?? null;
+    return is_array($row) ? $row : null;
+}
+
+function set_storefront_applied_coupon(int $businessId, array $coupon): void {
+    $_SESSION[storefront_applied_coupon_session_key($businessId)] = [
+        'coupon_id' => (int) ($coupon['coupon_id'] ?? 0),
+        'code' => strtoupper(trim((string) ($coupon['code'] ?? ''))),
+    ];
+}
+
+function clear_storefront_applied_coupon(int $businessId): void {
+    unset($_SESSION[storefront_applied_coupon_session_key($businessId)]);
+}
+
+/**
+ * Apply active store promotions + session coupon to hydrated cart/buynow totals.
+ */
+function storefront_apply_checkout_discounts(int $businessId, array $hydrated): array {
+    if (empty($hydrated['lines'])) {
+        return $hydrated;
+    }
+
+    require_once __DIR__ . '/promotions_db.php';
+    ensure_promotions_coupons_schema();
+
+    $subtotal = (float) ($hydrated['subtotal'] ?? 0);
+    $tax = (float) ($hydrated['tax'] ?? 0);
+    $promoLines = [];
+    foreach ($hydrated['lines'] as $line) {
+        $promoLines[] = [
+            'price' => (float) ($line['unit_price'] ?? 0),
+            'quantity' => max(1, (int) ($line['qty'] ?? 1)),
+        ];
+    }
+
+    $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, $businessId);
+    $promoDiscount = (float) ($promoResult['total_discount'] ?? 0);
+
+    $couponDiscount = 0.0;
+    $couponId = null;
+    $couponCode = null;
+    $applied = get_storefront_applied_coupon($businessId);
+    if ($applied && !empty($applied['code'])) {
+        $couponRes = validate_and_apply_coupon((string) $applied['code'], $subtotal, $businessId);
+        if (!empty($couponRes['valid'])) {
+            $couponId = (int) $couponRes['coupon_id'];
+            $couponCode = (string) $couponRes['code'];
+            $remaining = max(0.0, $subtotal - $promoDiscount);
+            $couponDiscount = min($remaining, (float) ($couponRes['discount_amount'] ?? 0));
+        } else {
+            clear_storefront_applied_coupon($businessId);
+        }
+    }
+
+    $checkoutDiscount = min($subtotal, $promoDiscount + $couponDiscount);
+    $total = max(0.0, round($subtotal - $checkoutDiscount + $tax, 2));
+
+    $hydrated['promo_discount'] = round($promoDiscount, 2);
+    $hydrated['coupon_discount'] = round($couponDiscount, 2);
+    $hydrated['checkout_discount'] = round($checkoutDiscount, 2);
+    $hydrated['applied_coupon_id'] = $couponId;
+    $hydrated['applied_coupon_code'] = $couponCode;
+    $hydrated['applied_promotions'] = $promoResult['applied_promotions'] ?? [];
+    $hydrated['total'] = $total;
+
+    return $hydrated;
+}
+
+function storefront_checkout_totals_payload(array $enriched): array {
+    return [
+        'subtotal' => (float) ($enriched['subtotal'] ?? 0),
+        'tax' => (float) ($enriched['tax'] ?? 0),
+        'total' => (float) ($enriched['total'] ?? 0),
+        'promo_discount' => (float) ($enriched['promo_discount'] ?? 0),
+        'coupon_discount' => (float) ($enriched['coupon_discount'] ?? 0),
+        'applied_coupon_id' => (int) ($enriched['applied_coupon_id'] ?? 0),
+        'applied_coupon_code' => (string) ($enriched['applied_coupon_code'] ?? ''),
+    ];
+}
+
 function place_online_store_order(int $businessId, array $checkout): array {
-    $isBuyNow = !empty($checkout['buy_now']);
+    $isBuyNow = !empty($checkout['buy_now']) || storefront_checkout_is_buynow($businessId, $checkout);
     $hydrated = $isBuyNow ? hydrate_storefront_buynow($businessId) : hydrate_storefront_cart($businessId);
+    if (empty($hydrated['lines']) && !$isBuyNow) {
+        $bnFallback = hydrate_storefront_buynow($businessId);
+        if (!empty($bnFallback['lines'])) {
+            $isBuyNow = true;
+            $hydrated = $bnFallback;
+        }
+    }
     if (empty($hydrated['lines'])) {
         return ['success' => false, 'errors' => ['cart' => $isBuyNow ? 'This item is no longer available.' : 'Your cart is empty.']];
     }
@@ -2258,24 +3756,61 @@ function place_online_store_order(int $businessId, array $checkout): array {
     }
 
     $brandSettings = get_mobile_store_settings($businessId);
-    $allowedMethods = [];
-    if (!empty($brandSettings['enable_cod'])) $allowedMethods[] = 'cod';
-    if (!empty($brandSettings['enable_upi'])) $allowedMethods[] = 'upi';
-    if (!empty($brandSettings['enable_card'])) $allowedMethods[] = 'card';
-    if (!empty($brandSettings['enable_netbanking'])) $allowedMethods[] = 'netbanking';
-    if (!empty($brandSettings['enable_store_pickup_payment'])) $allowedMethods[] = 'pickup';
-
-    if (empty($allowedMethods)) {
-        $allowedMethods = ['cod'];
-    }
+    $methodOptions = get_storefront_checkout_payment_methods($businessId, $brandSettings);
+    $allowedMethods = array_keys($methodOptions);
 
     $rawMethod = (string) ($checkout['payment_method'] ?? '');
     $method = in_array($rawMethod, $allowedMethods, true) ? $rawMethod : $allowedMethods[0];
-    $paymentStatus = in_array($method, ['cod', 'pickup'], true) ? 'pending' : 'paid';
-    $notesParts = [
-        'Online Store order',
-        'Payment: ' . strtoupper($method),
-    ];
+
+    require_once __DIR__ . '/payment_integrations_db.php';
+    require_once __DIR__ . '/razorpay_oauth.php';
+    $storeGateways = get_active_store_payment_gateways($businessId);
+    $razorpayOnline = !empty($brandSettings['enable_razorpay'])
+        && !empty($storeGateways['razorpay'])
+        && razorpay_checkout_key($businessId) !== '';
+    $onlinePrepaidMethods = ['upi', 'card', 'netbanking', 'razorpay'];
+
+    $paymentStatus = 'pending';
+    $orderPaymentMethod = $method;
+
+    if (in_array($method, $onlinePrepaidMethods, true)) {
+        if (!$razorpayOnline) {
+            return [
+                'success' => false,
+                'errors' => ['payment' => 'Online payment is not set up for this store. Choose Cash on Delivery or contact the store.'],
+            ];
+        }
+        $rzpOrderId = trim((string) ($checkout['razorpay_order_id'] ?? ''));
+        $rzpPaymentId = trim((string) ($checkout['razorpay_payment_id'] ?? ''));
+        $rzpSignature = trim((string) ($checkout['razorpay_signature'] ?? ''));
+        $verified = $rzpOrderId !== '' && $rzpPaymentId !== ''
+            && razorpay_verify_checkout($rzpOrderId, $rzpPaymentId, $rzpSignature, $businessId);
+        if (!$verified) {
+            return [
+                'success' => false,
+                'errors' => ['payment' => 'Payment was not completed. Please try again or choose Cash on Delivery.'],
+            ];
+        }
+        $paymentStatus = 'paid';
+        $orderPaymentMethod = 'razorpay';
+        $notesParts = [
+            'Online Store order',
+            'Payment: RAZORPAY (' . strtoupper($rawMethod) . ')',
+            'Razorpay order: ' . $rzpOrderId,
+            'Razorpay payment: ' . $rzpPaymentId,
+        ];
+    } elseif (in_array($method, ['cod', 'pickup'], true)) {
+        $notesParts = [
+            'Online Store order',
+            'Payment: ' . strtoupper($method),
+        ];
+    } else {
+        $notesParts = [
+            'Online Store order',
+            'Payment: ' . strtoupper($method),
+        ];
+    }
+
     if (!empty($checkout['notes'])) {
         $notesParts[] = trim((string) $checkout['notes']);
     }
@@ -2284,9 +3819,22 @@ function place_online_store_order(int $businessId, array $checkout): array {
     foreach ($hydrated['lines'] as $line) {
         $cartItems[] = [
             'product_id' => (int) $line['product']['id'],
-            'quantity' => (int) $line['qty'],
             'variant_id' => !empty($line['variant_id']) ? (int) $line['variant_id'] : null,
+            'size' => (string) ($line['size'] ?? ''),
+            'colour' => (string) ($line['colour'] ?? ''),
+            'price' => (float) ($line['unit_price'] ?? 0),
+            'quantity' => (int) $line['qty'],
         ];
+    }
+
+    $couponId = !empty($checkout['coupon_id']) ? (int) $checkout['coupon_id'] : null;
+    $couponCode = !empty($checkout['coupon_code']) ? trim((string) $checkout['coupon_code']) : null;
+    if ($couponCode === null || $couponCode === '') {
+        $sessionCoupon = get_storefront_applied_coupon($businessId);
+        if ($sessionCoupon && !empty($sessionCoupon['code'])) {
+            $couponId = (int) ($sessionCoupon['coupon_id'] ?? 0) ?: null;
+            $couponCode = (string) $sessionCoupon['code'];
+        }
     }
 
     $result = process_pos_order(
@@ -2295,13 +3843,13 @@ function place_online_store_order(int $businessId, array $checkout): array {
         null,
         0.00,
         'fixed',
-        $method,
+        $orderPaymentMethod,
         implode(' | ', $notesParts),
         0.00,
         1,
         null,
-        null,
-        null,
+        $couponId,
+        $couponCode,
         0,
         0.00,
         null,
@@ -2312,6 +3860,16 @@ function place_online_store_order(int $businessId, array $checkout): array {
     );
 
     if (!empty($result['success'])) {
+        clear_storefront_applied_coupon($businessId);
+        $orderId = (int) ($result['order_id'] ?? 0);
+        if ($orderId > 0 && empty($result['invoice_id'])) {
+            $invGen = bill_generate_pos($orderId);
+            if (!empty($invGen['invoice']['id'])) {
+                $result['invoice_id'] = (int) $invGen['invoice']['id'];
+                $result['invoice_number'] = (string) ($invGen['invoice']['invoice_number'] ?? '');
+            }
+        }
+
         if ($isBuyNow) {
             clear_storefront_buynow($businessId);
         } else {
@@ -2323,44 +3881,64 @@ function place_online_store_order(int $businessId, array $checkout): array {
 
 function get_storefront_order_details(int $businessId, string $orderIdentifier, ?int $customerId = null): ?array {
     $db = get_db();
+    $cleanId = trim($orderIdentifier);
+    if ($cleanId === '') {
+        return null;
+    }
+
     $sql = '
         SELECT o.*, 
                c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address,
                inv.id AS invoice_id, inv.invoice_number
         FROM orders o
-        LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
-        LEFT JOIN invoices inv ON inv.order_id = o.id AND inv.business_id = :bid_inv
+        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN invoices inv ON inv.order_id = o.id
         WHERE o.business_id = :bid AND (o.order_number = :num OR CAST(o.id AS CHAR) = :num_id)
+        ORDER BY o.id DESC
+        LIMIT 1
     ';
     $params = [
         'bid' => $businessId,
-        'bid_c' => $businessId,
-        'bid_inv' => $businessId,
-        'num' => trim($orderIdentifier),
-        'num_id' => trim($orderIdentifier),
+        'num' => $cleanId,
+        'num_id' => $cleanId,
     ];
-    if ($customerId !== null && $customerId > 0) {
-        $sql .= ' AND o.customer_id = :cid';
-        $params['cid'] = $customerId;
-    }
-    $sql .= ' LIMIT 1';
-
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
     $order = $stmt->fetch();
+
+    if (!$order) {
+        // Fallback by order_number across business scope in case slug resolution differed
+        $stmtFb = $db->prepare('
+            SELECT o.*, 
+                   c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address,
+                   inv.id AS invoice_id, inv.invoice_number
+            FROM orders o
+            LEFT JOIN customers c ON c.id = o.customer_id
+            LEFT JOIN invoices inv ON inv.order_id = o.id
+            WHERE o.order_number = :num OR CAST(o.id AS CHAR) = :num_id
+            ORDER BY o.id DESC
+            LIMIT 1
+        ');
+        $stmtFb->execute(['num' => $cleanId, 'num_id' => $cleanId]);
+        $order = $stmtFb->fetch();
+    }
+
     if (!$order) {
         return null;
+    }
+
+    if (empty($order['invoice_number']) && !empty($_GET['invoice'])) {
+        $order['invoice_number'] = trim((string) $_GET['invoice']);
     }
 
     $stmtItems = $db->prepare('
         SELECT oi.*, p.image_path, p.description, p.product_type, p.sku AS p_sku
         FROM order_items oi
-        LEFT JOIN products p ON p.id = oi.product_id AND p.business_id = :bid
+        LEFT JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id = :order_id
         ORDER BY oi.id ASC
     ');
     $stmtItems->execute([
-        'bid' => $businessId,
         'order_id' => (int) $order['id'],
     ]);
     $order['items'] = $stmtItems->fetchAll() ?: [];
@@ -2396,16 +3974,21 @@ function get_storefront_order_details(int $businessId, string $orderIdentifier, 
         $order['payment_status_badge'] = 'unpaid';
     }
 
-    // Normalised order status badge
-    $os = strtolower((string)($order['order_status'] ?? 'pending'));
-    $order['order_status_label'] = ucfirst($os ?: 'Pending');
+    // Normalised order status badge (online store: prefer fulfillment state)
+    $fs = strtolower((string) ($order['fulfillment_status'] ?? ''));
+    $os = strtolower((string) ($order['order_status'] ?? 'pending'));
+    if ($fs !== '' && $fs !== 'delivered') {
+        $order['order_status_label'] = ucfirst(str_replace('_', ' ', $fs));
+    } else {
+        $order['order_status_label'] = ucfirst($os ?: 'Pending');
+    }
 
     return $order;
 }
 
 function cancel_storefront_order(int $businessId, int $orderId, ?int $customerId = null): array {
     $db = get_db();
-    $sql = 'SELECT id, order_status FROM orders WHERE id = :id AND business_id = :bid';
+    $sql = 'SELECT id, order_status, fulfillment_status FROM orders WHERE id = :id AND business_id = :bid';
     $params = ['id' => $orderId, 'bid' => $businessId];
     if ($customerId !== null && $customerId > 0) {
         $sql .= ' AND customer_id = :cid';
@@ -2417,19 +4000,29 @@ function cancel_storefront_order(int $businessId, int $orderId, ?int $customerId
     if (!$ord) {
         return ['success' => false, 'message' => 'Order not found.'];
     }
-    $status = strtolower((string)($ord['order_status'] ?? ''));
-    if (!in_array($status, ['pending', 'new', 'placed', 'processing'], true)) {
+    $status = strtolower((string) ($ord['order_status'] ?? ''));
+    $fulfillment = strtolower((string) ($ord['fulfillment_status'] ?? 'delivered'));
+    if ($status === 'cancelled' || $fulfillment === 'cancelled') {
+        return ['success' => false, 'message' => 'This order is already cancelled.'];
+    }
+    $canCancel = in_array($status, ['pending', 'new', 'placed', 'processing', 'hold'], true)
+        || in_array($fulfillment, ['pending', 'confirmed', 'packed', 'ready_for_pickup', 'shipped'], true);
+    if (!$canCancel) {
         return ['success' => false, 'message' => 'This order cannot be cancelled anymore.'];
     }
 
-    $update = $db->prepare('UPDATE orders SET order_status = "cancelled", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+    $update = $db->prepare('
+        UPDATE orders
+        SET order_status = "cancelled", fulfillment_status = "cancelled", updated_at = NOW()
+        WHERE id = :id AND business_id = :bid
+    ');
     $update->execute(['id' => $orderId, 'bid' => $businessId]);
     return ['success' => true, 'message' => 'Your order has been cancelled successfully.'];
 }
 
 function reorder_storefront_order(int $businessId, int $orderId): array {
     $db = get_db();
-    $stmt = $db->prepare('SELECT product_id, variant_id, quantity FROM order_items WHERE order_id = :oid');
+    $stmt = $db->prepare('SELECT product_id, quantity FROM order_items WHERE order_id = :oid');
     $stmt->execute(['oid' => $orderId]);
     $items = $stmt->fetchAll() ?: [];
     if (!$items) {
@@ -2439,10 +4032,8 @@ function reorder_storefront_order(int $businessId, int $orderId): array {
     $cart = get_storefront_cart($businessId);
     foreach ($items as $it) {
         $pid = (int) $it['product_id'];
-        $vid = (int) ($it['variant_id'] ?? 0);
         $qty = max(1, (int) $it['quantity']);
-        $lineKey = storefront_cart_line_key($pid, $vid);
-        $cart[$lineKey] = ($cart[$lineKey] ?? 0) + $qty;
+        $cart[$pid] = ($cart[$pid] ?? 0) + $qty;
     }
     save_storefront_cart($businessId, $cart);
     return ['success' => true, 'count' => storefront_cart_count($businessId)];
@@ -2471,9 +4062,9 @@ if (!function_exists('storefront_get_all_product_images')) {
 
 if (!function_exists('storefront_parse_product_display_info')) {
     function storefront_parse_product_display_info(array $p, int $businessId): array {
-        $isVariable = (($p['product_type'] ?? '') === 'variable');
-        $variants = ($isVariable && function_exists('get_product_variants')) ? get_product_variants((int) $p['id'], $businessId) : [];
+        $variants = storefront_load_product_variants((int) ($p['id'] ?? 0), $businessId);
         $varCount = count($variants);
+        $isVariable = $varCount > 0 || (($p['product_type'] ?? '') === 'variable');
         
         $attrText = '';
         $mrp = (float) ($p['mrp'] ?? 0);
@@ -2527,6 +4118,7 @@ if (!function_exists('storefront_parse_product_display_info')) {
 
         return [
             'variants' => $variants,
+            'variant_ui' => storefront_variant_ui_rows($variants),
             'variant_count' => $varCount,
             'variantCount' => $varCount,
             'attr_text' => $attrText,
@@ -2534,6 +4126,7 @@ if (!function_exists('storefront_parse_product_display_info')) {
             'selling_price' => $sellingPrice,
             'mrp' => $mrp,
             'discount_percent' => $discountPercent,
+            'in_stock' => storefront_product_is_in_stock($p, $variants),
         ];
     }
 }
