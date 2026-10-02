@@ -128,11 +128,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $paymentMethod = 'split';
         }
 
+        $promotionId = isset($_POST['promotion_id']) ? (int) $_POST['promotion_id'] : 0;
+
         $result = process_pos_order(
             $cartItems, $customerId, $userId, $discountVal, $discountType, $paymentMethod,
             $notes, $amountTendered, $outletId, $clientOrderUuid, $couponId, $couponCode,
             $loyaltyPoints, $loyaltyDiscount, $priceListId, null, 'pos', 'delivered', null,
-            $paymentSplitsJson !== '' ? $paymentSplitsJson : null
+            $paymentSplitsJson !== '' ? $paymentSplitsJson : null,
+            $promotionId
         );
 
         if (!empty($result['success'])) {
@@ -214,7 +217,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
             ];
         }
-        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal);
+        $promotionId = isset($_POST['promotion_id']) ? (int) $_POST['promotion_id'] : 0;
+        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, null, $promotionId);
         header('Content-Type: application/json');
         echo json_encode([
             'success' => true,
@@ -399,6 +403,24 @@ try {
 }
 $customers = get_customers();
 $heldSales = get_held_sales();
+require_once __DIR__ . '/includes/promotions_db.php';
+$posPromotions = [];
+try {
+    $promoToday = date('Y-m-d');
+    foreach (get_promotions('active') as $promoRow) {
+        $promoStart = (string) ($promoRow['start_date'] ?? '');
+        $promoEnd = (string) ($promoRow['end_date'] ?? '');
+        if ($promoStart !== '' && $promoStart > $promoToday) {
+            continue;
+        }
+        if ($promoEnd !== '' && $promoEnd < $promoToday) {
+            continue;
+        }
+        $posPromotions[] = $promoRow;
+    }
+} catch (Throwable $e) {
+    $posPromotions = [];
+}
 $paymentOptions = get_payment_options('active');
 $activeGateways = get_active_pos_payment_gateways();
 $posSplitPayMethods = [];
@@ -734,6 +756,26 @@ $flashError = get_flash('error');
                                 </div>
                             </div>
 
+                            <?php if (!empty($posPromotions)): ?>
+                            <div class="pos-summary-row pos-promo-row">
+                                <span>Promotion</span>
+                                <select id="posPromoSelect" class="pos-promo-select" title="Apply a specific promotion">
+                                    <option value="0">None</option>
+                                    <?php foreach ($posPromotions as $promoOpt): ?>
+                                        <?php
+                                            $promoType = (string) ($promoOpt['promo_type'] ?? '');
+                                            if ($promoType === 'percentage') {
+                                                $promoHint = rtrim(rtrim(number_format((float) ($promoOpt['discount_value'] ?? 0), 2), '0'), '.') . '%';
+                                            } elseif ($promoType === 'buy_x_get_y') {
+                                                $promoHint = 'Buy ' . (int) ($promoOpt['buy_qty'] ?? 0) . ' Get ' . (int) ($promoOpt['get_qty'] ?? 0);
+                                            } else {
+                                                $promoHint = '₹' . number_format((float) ($promoOpt['discount_value'] ?? 0), 2);
+                                            }
+                                        ?>
+                                        <option value="<?= (int) $promoOpt['id'] ?>"><?= e((string) $promoOpt['name']) ?> — <?= e($promoHint) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                             <div class="pos-summary-row pos-promo-discount-row" id="promoDiscountRow" hidden>
                                 <span>
                                     Promotion savings
@@ -741,6 +783,7 @@ $flashError = get_flash('error');
                                 </span>
                                 <strong id="cartPromoDiscountText">− ₹0.00</strong>
                             </div>
+                            <?php endif; ?>
 
                             <div class="pos-summary-row pos-coupon-row">
                                 <span>Coupon</span>
@@ -826,6 +869,7 @@ $flashError = get_flash('error');
                 <input type="hidden" name="discount_type" id="hiddenDiscountType" value="fixed">
                 <input type="hidden" name="coupon_id" id="hiddenCouponId" value="">
                 <input type="hidden" name="coupon_code" id="hiddenCouponCode" value="">
+                <input type="hidden" name="promotion_id" id="hiddenPromotionId" value="0">
                 <input type="hidden" name="payment_method" id="hiddenPaymentMethod" value="cash">
                 <input type="hidden" name="razorpay_order_id" id="hiddenRazorpayOrderId" value="">
                 <input type="hidden" name="razorpay_payment_id" id="hiddenRazorpayPaymentId" value="">
@@ -1304,6 +1348,8 @@ $flashError = get_flash('error');
             const hiddenDiscountType = document.getElementById('hiddenDiscountType');
             const hiddenCouponId = document.getElementById('hiddenCouponId');
             const hiddenCouponCode = document.getElementById('hiddenCouponCode');
+            const hiddenPromotionId = document.getElementById('hiddenPromotionId');
+            const posPromoSelect = document.getElementById('posPromoSelect');
             const couponCodeInput = document.getElementById('couponCodeInput');
             const applyCouponBtn = document.getElementById('applyCouponBtn');
             const removeCouponBtn = document.getElementById('removeCouponBtn');
@@ -1419,10 +1465,20 @@ $flashError = get_flash('error');
                 checkoutBtn.disabled = false;
             }
 
+            function selectedPromotionId() {
+                return posPromoSelect ? (parseInt(posPromoSelect.value, 10) || 0) : 0;
+            }
+
+            function syncPromotionHiddenField() {
+                if (hiddenPromotionId) hiddenPromotionId.value = String(selectedPromotionId());
+            }
+
             function scheduleAutoPromoRecalc(subtotal) {
-                if (cart.length === 0) {
+                syncPromotionHiddenField();
+                if (cart.length === 0 || selectedPromotionId() <= 0) {
                     autoPromoDiscount = 0;
                     autoPromoLabel = '';
+                    updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
                     return;
                 }
                 if (promoRecalcTimer) clearTimeout(promoRecalcTimer);
@@ -1433,6 +1489,7 @@ $flashError = get_flash('error');
                     formData.append('csrf_token', csrfToken);
                     formData.append('cart_json', JSON.stringify(cart));
                     formData.append('subtotal', String(subtotal));
+                    formData.append('promotion_id', String(selectedPromotionId()));
                     fetch('<?= asset('pos.php') ?>', { method: 'POST', body: formData })
                         .then(function (r) { return r.json(); })
                         .then(function (data) {
@@ -1445,6 +1502,7 @@ $flashError = get_flash('error');
                         .catch(function () {
                             autoPromoDiscount = 0;
                             autoPromoLabel = '';
+                            updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
                         });
                 }, 280);
             }
@@ -1469,6 +1527,14 @@ $flashError = get_flash('error');
                 if (couponCodeInput) couponCodeInput.value = '';
                 if (couponDiscountRow) couponDiscountRow.hidden = true;
                 updateCouponUi();
+            }
+
+            function resetSelectedPromotion() {
+                if (posPromoSelect) posPromoSelect.value = '0';
+                autoPromoDiscount = 0;
+                autoPromoLabel = '';
+                syncPromotionHiddenField();
+                if (promoDiscountRow) promoDiscountRow.hidden = true;
             }
 
             function applyCouponFromCode(code, silent) {
@@ -1601,6 +1667,7 @@ $flashError = get_flash('error');
                     clearAppliedCoupon();
                     autoPromoDiscount = 0;
                     autoPromoLabel = '';
+                    syncPromotionHiddenField();
                     if (promoDiscountRow) promoDiscountRow.hidden = true;
                     if (posCheckoutSavedStrip) posCheckoutSavedStrip.hidden = true;
                     return;
@@ -1726,6 +1793,18 @@ $flashError = get_flash('error');
                     renderCart();
                 });
             }
+            if (posPromoSelect) {
+                posPromoSelect.addEventListener('change', function () {
+                    autoPromoDiscount = 0;
+                    autoPromoLabel = '';
+                    syncPromotionHiddenField();
+                    updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
+                    if (cart.length > 0) {
+                        scheduleAutoPromoRecalc(cartSubtotalOnly());
+                        scheduleCouponRevalidate();
+                    }
+                });
+            }
 
             // Clear Cart Button
             clearCartBtn.addEventListener('click', function () {
@@ -1734,6 +1813,7 @@ $flashError = get_flash('error');
                     cart = [];
                     discountValInput.value = '0';
                     clearAppliedCoupon();
+                    resetSelectedPromotion();
                     renderCart();
                 }
             });
@@ -2003,6 +2083,7 @@ $flashError = get_flash('error');
                 hiddenDiscountValue.value = discountValInput.value;
                 hiddenDiscountType.value = discountTypeSelect.value;
                 syncCouponHiddenFields();
+                syncPromotionHiddenField();
 
                 modalPayableText.textContent = cartGrandTotalEl.textContent;
                 tenderedInput.value = '';
@@ -2545,6 +2626,7 @@ $flashError = get_flash('error');
                 cart = [];
                 discountValInput.value = '0';
                 clearAppliedCoupon();
+                resetSelectedPromotion();
                 renderCart();
                 barcodeInput.focus();
             }
@@ -2582,6 +2664,7 @@ $flashError = get_flash('error');
                         cart = [];
                         discountValInput.value = '0';
                         clearAppliedCoupon();
+                        resetSelectedPromotion();
                         renderCart();
                         location.reload(); // Reload to update held queue count
                     } else {

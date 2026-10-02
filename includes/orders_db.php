@@ -778,7 +778,8 @@ function process_pos_order(
     string $salesChannel = 'pos',
     string $fulfillmentStatus = 'delivered',
     ?string $overridePaymentStatus = null,
-    ?string $paymentSplitsJson = null
+    ?string $paymentSplitsJson = null,
+    ?int $promotionId = null
 ): array {
     ensure_orders_invoices_schema();
     require_once __DIR__ . '/promotions_db.php';
@@ -988,7 +989,7 @@ function process_pos_order(
                 'quantity' => max(1, (int) ($row['quantity'] ?? 1)),
             ];
         }
-        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, $bid);
+        $promoResult = calculate_promotions_for_cart($promoLines, $subtotal, $bid, $promotionId);
         $autoPromoDiscount = (float) ($promoResult['total_discount'] ?? 0);
         if ($autoPromoDiscount > 0) {
             $discountAmount += min($subtotal - $discountAmount, $autoPromoDiscount);

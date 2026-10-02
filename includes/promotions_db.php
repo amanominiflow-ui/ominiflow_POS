@@ -233,10 +233,16 @@ function get_promotions(string $status = '', ?int $businessId = null): array {
     return $stmt->fetchAll();
 }
 
-function calculate_promotions_for_cart(array $cartItems, float $subtotal, ?int $businessId = null): array {
+function calculate_promotions_for_cart(array $cartItems, float $subtotal, ?int $businessId = null, ?int $promotionId = null): array {
     ensure_promotions_coupons_schema();
     $db = get_db();
     $bid = promotions_business_id($businessId);
+    if ($promotionId !== null && $promotionId <= 0) {
+        return [
+            'total_discount' => 0.00,
+            'applied_promotions' => [],
+        ];
+    }
     $today = date('Y-m-d');
     $stmt = $db->prepare('
         SELECT * FROM promotions 
@@ -248,6 +254,11 @@ function calculate_promotions_for_cart(array $cartItems, float $subtotal, ?int $
     ');
     $stmt->execute(['bid' => $bid, 'd1' => $today, 'd2' => $today]);
     $activePromos = $stmt->fetchAll();
+    if ($promotionId !== null) {
+        $activePromos = array_values(array_filter($activePromos, static function ($promo) use ($promotionId) {
+            return (int) ($promo['id'] ?? 0) === $promotionId;
+        }));
+    }
 
     $totalPromoDiscount = 0.00;
     $appliedPromos = [];
