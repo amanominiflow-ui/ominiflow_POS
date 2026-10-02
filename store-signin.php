@@ -82,7 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pendingKey = 'sf_pending_cart_' . $bid;
                 $pending = $_SESSION[$pendingKey] ?? null;
                 if ($pending && !empty($pending['product_id'])) {
-                    add_to_storefront_cart($bid, (int) $pending['product_id'], (int) ($pending['qty'] ?? 1));
+                    add_to_storefront_cart(
+                        $bid,
+                        (int) $pending['product_id'],
+                        (int) ($pending['qty'] ?? 1),
+                        (int) ($pending['variant_id'] ?? 0)
+                    );
                     unset($_SESSION[$pendingKey]);
                 }
 
@@ -127,7 +132,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pendingKey = 'sf_pending_cart_' . $bid;
                     $pending = $_SESSION[$pendingKey] ?? null;
                     if ($pending && !empty($pending['product_id'])) {
-                        add_to_storefront_cart($bid, (int) $pending['product_id'], (int) ($pending['qty'] ?? 1));
+                        add_to_storefront_cart(
+                        $bid,
+                        (int) $pending['product_id'],
+                        (int) ($pending['qty'] ?? 1),
+                        (int) ($pending['variant_id'] ?? 0)
+                    );
                         unset($_SESSION[$pendingKey]);
                     }
 

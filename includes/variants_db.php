@@ -22,6 +22,61 @@ if (!function_exists('get_product_variants')) {
     }
 }
 
+if (!function_exists('parse_variant_size_and_colour')) {
+    /**
+     * Resolve size/colour from a product_variants row (attribute JSON + variant_name fallbacks).
+     *
+     * @return array{size: string, colour: string}
+     */
+    function parse_variant_size_and_colour(array $variantRow): array {
+        $size = '-';
+        $colour = '-';
+        $sizeToken = '/^(XXXL|XXL|2XL|3XL|4XL|XL|XS|S|M|L|Free Size|Regular)$/i';
+
+        $av = json_decode((string) ($variantRow['attribute_values'] ?? ''), true);
+        if (is_array($av)) {
+            foreach ($av as $k => $v) {
+                $kLow = strtolower(trim((string) $k));
+                $val = trim((string) $v);
+                if ($val === '') {
+                    continue;
+                }
+                if (str_contains($kLow, 'size') || str_contains($kLow, 'fit')) {
+                    $size = $val;
+                } elseif (str_contains($kLow, 'colour') || str_contains($kLow, 'color') || str_contains($kLow, 'shade')) {
+                    $colour = $val;
+                }
+            }
+        }
+
+        $vn = trim((string) ($variantRow['variant_name'] ?? ''));
+        if ($vn !== '') {
+            if (str_contains($vn, '/')) {
+                $parts = array_values(array_filter(array_map('trim', explode('/', $vn)), static fn ($p) => $p !== ''));
+                foreach ($parts as $part) {
+                    if ($size === '-' && preg_match($sizeToken, $part)) {
+                        $size = strtoupper($part);
+                    } elseif ($colour === '-' && !preg_match($sizeToken, $part)) {
+                        $colour = ucfirst(strtolower($part));
+                    }
+                }
+                if ($size === '-' && isset($parts[1]) && preg_match($sizeToken, $parts[1])) {
+                    $size = strtoupper($parts[1]);
+                }
+                if ($colour === '-' && isset($parts[0]) && !preg_match($sizeToken, $parts[0])) {
+                    $colour = ucfirst(strtolower($parts[0]));
+                }
+            } elseif ($size === '-' && preg_match($sizeToken, $vn)) {
+                $size = strtoupper($vn);
+            } elseif ($colour === '-' && !preg_match($sizeToken, $vn)) {
+                $colour = ucfirst(strtolower($vn));
+            }
+        }
+
+        return ['size' => $size !== '' ? $size : '-', 'colour' => $colour !== '' ? $colour : '-'];
+    }
+}
+
 function save_product_variant(int $productId, array $data, ?int $variantId = null, ?int $businessId = null): array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
