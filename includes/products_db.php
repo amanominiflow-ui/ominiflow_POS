@@ -368,11 +368,19 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
         return $oldPath;
     }
 
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
+    $mime = '';
+    if (function_exists('finfo_open')) {
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $mime = (string) @finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+        }
+    }
+    if ($mime === '' && function_exists('mime_content_type')) {
+        $mime = (string) @mime_content_type($file['tmp_name']);
+    }
 
-    if (!in_array($mime, $allowedMimes, true)) {
+    if ($mime === '' || !in_array($mime, $allowedMimes, true)) {
         return $oldPath;
     }
 
@@ -383,7 +391,10 @@ function handle_product_image_upload(?array $file, ?string $oldPath = null): ?st
 
     $uploadDir = __DIR__ . '/../assets/uploads/products/';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+        @mkdir($uploadDir, 0755, true);
+    }
+    if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        return $oldPath;
     }
 
     $newFileName = 'prod_' . bin2hex(random_bytes(8)) . '_' . time() . '.' . $ext;
@@ -431,6 +442,76 @@ function handle_product_video_upload(?array $file, ?string $oldPath = null): ?st
             @unlink(__DIR__ . '/../' . ltrim($oldPath, '/'));
         }
         return 'assets/uploads/products/videos/' . $newFileName;
+    }
+
+    return $oldPath;
+}
+
+function handle_variant_image_upload(int $index, ?string $oldPath = null): ?string {
+    if (empty($_FILES['variant_image']['name'][$index])) {
+        return $oldPath;
+    }
+
+    $err = $_FILES['variant_image']['error'][$index] ?? UPLOAD_ERR_NO_FILE;
+    if ($err !== UPLOAD_ERR_OK) {
+        return $oldPath;
+    }
+
+    $file = [
+        'name' => $_FILES['variant_image']['name'][$index],
+        'type' => $_FILES['variant_image']['type'][$index] ?? '',
+        'tmp_name' => $_FILES['variant_image']['tmp_name'][$index] ?? '',
+        'error' => $err,
+        'size' => $_FILES['variant_image']['size'][$index] ?? 0,
+    ];
+
+    $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+
+    $fileInfo = pathinfo($file['name']);
+    $ext = strtolower($fileInfo['extension'] ?? '');
+
+    if (!in_array($ext, $allowedExts, true)) {
+        return $oldPath;
+    }
+
+    $mime = '';
+    if (function_exists('finfo_open')) {
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $mime = (string) @finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+        }
+    }
+    if ($mime === '' && function_exists('mime_content_type')) {
+        $mime = (string) @mime_content_type($file['tmp_name']);
+    }
+
+    if ($mime === '' || !in_array($mime, $allowedMimes, true)) {
+        return $oldPath;
+    }
+
+    // Max 5MB
+    if ($file['size'] > 5 * 1024 * 1024) {
+        return $oldPath;
+    }
+
+    $uploadDir = __DIR__ . '/../assets/uploads/products/variants/';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0755, true);
+    }
+    if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        return $oldPath;
+    }
+
+    $newFileName = 'var_' . bin2hex(random_bytes(8)) . '_' . time() . '.' . $ext;
+    $targetPath = $uploadDir . $newFileName;
+
+    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        if ($oldPath && file_exists(__DIR__ . '/../' . ltrim($oldPath, '/'))) {
+            @unlink(__DIR__ . '/../' . ltrim($oldPath, '/'));
+        }
+        return 'assets/uploads/products/variants/' . $newFileName;
     }
 
     return $oldPath;
@@ -567,6 +648,7 @@ function ensure_product_item_schema(): void {
             `product_id` INT UNSIGNED NOT NULL,
             `variant_name` VARCHAR(191) NOT NULL,
             `attribute_values` JSON NULL,
+            `image_path` VARCHAR(255) NULL,
             `sku` VARCHAR(100) NOT NULL,
             `barcode` VARCHAR(100) NULL,
             `cost_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
@@ -581,7 +663,11 @@ function ensure_product_item_schema(): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     } catch (PDOException $e) { /* table may exist */ }
     // Add columns to product_variants if missing
-    foreach (['business_id' => "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`", 'attribute_values' => "JSON NULL AFTER `variant_name`"] as $vc => $vd) {
+    foreach ([
+        'business_id' => "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`",
+        'attribute_values' => "JSON NULL AFTER `variant_name`",
+        'image_path' => "VARCHAR(255) NULL AFTER `attribute_values`"
+    ] as $vc => $vd) {
         try {
             $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'product_variants' AND COLUMN_NAME = :col");
             $stmt->execute(['db' => DB_NAME, 'col' => $vc]);
@@ -1087,6 +1173,16 @@ function delete_product(int $id, ?int $businessId = null): array {
         @unlink(__DIR__ . '/../' . ltrim($prod['image_path'], '/'));
     }
 
+    try {
+        $varImages = $db->prepare('SELECT image_path FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+        $varImages->execute(['pid' => $id, 'bid' => $bid]);
+        foreach ($varImages->fetchAll() as $vi) {
+            if (!empty($vi['image_path']) && file_exists(__DIR__ . '/../' . ltrim($vi['image_path'], '/'))) {
+                @unlink(__DIR__ . '/../' . ltrim($vi['image_path'], '/'));
+            }
+        }
+    } catch (PDOException $e) {}
+
     $stmt = $db->prepare('DELETE FROM products WHERE id = :id AND business_id = :biz_id');
     $stmt->execute(['id' => $id, 'biz_id' => $bid]);
 
@@ -1218,6 +1314,8 @@ function save_product_variants_from_attributes(int $productId, array $attributes
     $postedSelling = $_POST['variant_selling_price'] ?? [];
     $postedCost = $_POST['variant_cost_price'] ?? [];
     $postedStock = $_POST['variant_stock'] ?? [];
+    $postedExistingImages = $_POST['variant_image_existing'] ?? [];
+    $postedRemoveImages = $_POST['variant_image_remove'] ?? [];
 
     $totalVariantStock = 0;
     $firstVariantPrice = null;
@@ -1236,8 +1334,18 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : (float) $ev['selling_price'];
             $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : (float) $ev['cost_price'];
             $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : (int) $ev['stock_quantity'];
-            $db->prepare('UPDATE product_variants SET variant_name = :vn, sku = :sku, selling_price = :sp, cost_price = :cp, stock_quantity = :stk, updated_at = NOW() WHERE id = :id')
-                ->execute(['vn' => $variantName, 'sku' => $sku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk, 'id' => (int) $ev['id']]);
+
+            $oldImg = !empty($postedExistingImages[$ci]) ? trim((string) $postedExistingImages[$ci]) : ($ev['image_path'] ?? null);
+            if (!empty($postedRemoveImages[$ci])) {
+                if ($oldImg && file_exists(__DIR__ . '/../' . ltrim($oldImg, '/'))) {
+                    @unlink(__DIR__ . '/../' . ltrim($oldImg, '/'));
+                }
+                $oldImg = null;
+            }
+            $imgPath = handle_variant_image_upload($ci, $oldImg);
+
+            $db->prepare('UPDATE product_variants SET variant_name = :vn, sku = :sku, selling_price = :sp, cost_price = :cp, stock_quantity = :stk, image_path = :img, updated_at = NOW() WHERE id = :id')
+                ->execute(['vn' => $variantName, 'sku' => $sku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk, 'img' => $imgPath, 'id' => (int) $ev['id']]);
             $totalVariantStock += $stk;
             if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
             if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
@@ -1250,8 +1358,15 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : 0.00;
             $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : 0.00;
             $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : 0;
-            $db->prepare('INSERT INTO product_variants (business_id, product_id, variant_name, attribute_values, sku, selling_price, cost_price, stock_quantity) VALUES (:bid, :pid, :vn, :av, :sku, :sp, :cp, :stk)')
-                ->execute(['bid' => $bid, 'pid' => $productId, 'vn' => $variantName, 'av' => $attrJson, 'sku' => $baseSku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk]);
+
+            $oldImg = !empty($postedExistingImages[$ci]) ? trim((string) $postedExistingImages[$ci]) : null;
+            if (!empty($postedRemoveImages[$ci])) {
+                $oldImg = null;
+            }
+            $imgPath = handle_variant_image_upload($ci, $oldImg);
+
+            $db->prepare('INSERT INTO product_variants (business_id, product_id, variant_name, attribute_values, image_path, sku, selling_price, cost_price, stock_quantity) VALUES (:bid, :pid, :vn, :av, :img, :sku, :sp, :cp, :stk)')
+                ->execute(['bid' => $bid, 'pid' => $productId, 'vn' => $variantName, 'av' => $attrJson, 'img' => $imgPath, 'sku' => $baseSku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk]);
             $totalVariantStock += $stk;
             if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
             if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
@@ -1260,15 +1375,25 @@ function save_product_variants_from_attributes(int $productId, array $attributes
 
     // Delete variants that no longer match any combo
     if (!empty($usedKeys)) {
-        $allVariants = $db->prepare('SELECT id, attribute_values FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+        $allVariants = $db->prepare('SELECT id, attribute_values, image_path FROM product_variants WHERE product_id = :pid AND business_id = :bid');
         $allVariants->execute(['pid' => $productId, 'bid' => $bid]);
         foreach ($allVariants->fetchAll() as $v) {
             if (!in_array($v['attribute_values'], $usedKeys, true)) {
+                if (!empty($v['image_path']) && file_exists(__DIR__ . '/../' . ltrim($v['image_path'], '/'))) {
+                    @unlink(__DIR__ . '/../' . ltrim($v['image_path'], '/'));
+                }
                 $db->prepare('DELETE FROM product_variants WHERE id = :id')->execute(['id' => (int) $v['id']]);
             }
         }
     } else {
         // No combos, delete all variants
+        $allVariants = $db->prepare('SELECT id, image_path FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+        $allVariants->execute(['pid' => $productId, 'bid' => $bid]);
+        foreach ($allVariants->fetchAll() as $v) {
+            if (!empty($v['image_path']) && file_exists(__DIR__ . '/../' . ltrim($v['image_path'], '/'))) {
+                @unlink(__DIR__ . '/../' . ltrim($v['image_path'], '/'));
+            }
+        }
         $db->prepare('DELETE FROM product_variants WHERE product_id = :pid AND business_id = :bid')
             ->execute(['pid' => $productId, 'bid' => $bid]);
     }
@@ -1452,3 +1577,84 @@ function get_inventory_stats(?int $businessId = null): array {
         'out_of_stock_count' => (int) ($stats['out_of_stock_count'] ?? 0),
     ];
 }
+
+/**
+ * Fetch products with low or depleted stock for POS Daily Alerts.
+ */
+function get_pos_low_stock_alerts(?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $stmt = $db->prepare('
+        SELECT 
+            p.id,
+            p.name,
+            p.sku,
+            p.barcode,
+            p.stock_quantity,
+            p.low_stock_threshold,
+            p.selling_price,
+            p.image_path,
+            c.name AS category_name
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_cat
+        WHERE p.business_id = :biz_id 
+          AND p.status = "active"
+          AND p.stock_quantity <= p.low_stock_threshold
+        ORDER BY p.stock_quantity ASC, p.name ASC
+    ');
+    $stmt->execute(['biz_id' => $bid, 'biz_cat' => $bid]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Fetch active products with stock on hand that have NOT been bought in the past $days days.
+ */
+function get_pos_unsold_products_alerts(int $days = 7, ?int $businessId = null): array {
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+    $days = max(1, $days);
+
+    $stmt = $db->prepare("
+        SELECT 
+            p.id,
+            p.name,
+            p.sku,
+            p.barcode,
+            p.stock_quantity,
+            p.low_stock_threshold,
+            p.selling_price,
+            p.image_path,
+            p.created_at AS product_created_at,
+            c.name AS category_name,
+            MAX(o.created_at) AS last_sold_at,
+            DATEDIFF(NOW(), COALESCE(MAX(o.created_at), p.created_at)) AS days_inactive,
+            (SELECT COALESCE(SUM(oi2.quantity), 0)
+             FROM order_items oi2
+             JOIN orders o2 ON o2.id = oi2.order_id
+             WHERE oi2.product_id = p.id
+               AND o2.business_id = :bid_sub
+               AND o2.order_status != 'cancelled'
+               AND o2.created_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
+            ) AS sold_in_period
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_cat
+        LEFT JOIN order_items oi ON oi.product_id = p.id
+        LEFT JOIN orders o ON o.id = oi.order_id AND o.business_id = :biz_order AND o.order_status != 'cancelled'
+        WHERE p.business_id = :biz_id
+          AND p.status = 'active'
+          AND p.stock_quantity > 0
+        GROUP BY p.id
+        HAVING sold_in_period = 0
+        ORDER BY days_inactive DESC, p.stock_quantity DESC
+        LIMIT 50
+    ");
+    $stmt->execute([
+        'biz_id' => $bid,
+        'biz_cat' => $bid,
+        'biz_order' => $bid,
+        'bid_sub' => $bid,
+    ]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+

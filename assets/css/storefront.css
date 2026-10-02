@@ -1753,6 +1753,87 @@ body.ms-cart-lock {
     margin-bottom: 12px;
 }
 
+.ms-cd-coupon-box {
+    margin: 12px 0 4px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+
+.ms-cd-coupon-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.ms-cd-coupon-row {
+    display: flex;
+    gap: 8px;
+}
+
+.ms-cd-coupon-input {
+    flex: 1;
+    min-width: 0;
+    height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.ms-cd-coupon-apply {
+    height: 38px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ms-cd-coupon-applied {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    font-size: 12px;
+    color: #047857;
+    font-weight: 600;
+}
+
+.ms-cd-coupon-applied strong {
+    color: #065f46;
+}
+
+.ms-cd-coupon-remove {
+    border: 0;
+    background: transparent;
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ms-cd-coupon-error {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #dc2626;
+    font-weight: 600;
+}
+
 .ms-cd-row {
     display: flex;
     justify-content: space-between;
@@ -1784,6 +1865,187 @@ body.ms-cart-lock {
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.ms-cd-checkout-save-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ms-cd-checkout-save-badge strong {
+    font-size: 12px;
+    font-weight: 800;
+    color: #065f46;
+}
+
+.ms-cd-signin-required {
+    margin: 14px 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+}
+
+.ms-cd-signin-required-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #1e40af;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+
+.ms-cd-signin-required-text strong {
+    font-size: 13px;
+    color: #1d4ed8;
+}
+
+.ms-cd-signin-required-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ms-cd-signin-required-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff !important;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+
+.ms-cd-signin-required-btn--outline {
+    background: #ffffff;
+    color: #1d4ed8 !important;
+    border-color: #93c5fd;
+}
+
+.ms-cd-signin-required--sticky {
+    flex-shrink: 0;
+    margin: 0;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 1px solid #bfdbfe;
+}
+
+.ms-cd-signin-required-link {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+a.ms-cd-checkout-btn-signin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    text-align: center;
+}
+
+.ms-cd-guest-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0f172a !important;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ms-cd-foot-auth {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-end;
+}
+
+.ms-cd-foot-auth .ms-cd-checkout-btn {
+    min-width: 0;
+    flex: 1 1 calc(50% - 3px);
+    padding: 10px 10px;
+    font-size: 12.5px;
+}
+
+.ms-cd-foot-auth .ms-cd-checkout-btn:last-child {
+    flex: 1 1 100%;
+}
+
+.ms-cd-place-order-wide {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+}
+
+.ms-cd-foot--checkout-auth {
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.ms-cd-foot--checkout-auth .ms-cd-foot-left {
+    flex: 1 1 100%;
+    margin-bottom: 4px;
+}
+
+.ms-cd-foot-guest-active {
+    flex: 1;
+}
+
+.ms-cd-checkout-btn-outline {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ms-cd-guest-active-hint {
+    font-size: 12px;
+    color: #047857;
+    font-weight: 600;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.ms-cd-guest-cancel {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: underline;
 }
 
 /* Order Summary Deliver To section inside Drawer (Screenshot 2) */
@@ -2594,6 +2856,53 @@ body.sf-auth-body {
     align-items: center;
     gap: 10px;
 }
+.ms-checkout-auth-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ms-checkout-auth-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-decoration: none;
+    text-align: center;
+    cursor: pointer;
+    box-sizing: border-box;
+    border: none;
+    font-family: inherit;
+}
+
+.ms-checkout-auth-btn-primary {
+    background: var(--ms-header, #083d30);
+    color: #ffffff !important;
+}
+
+.ms-checkout-auth-btn-outline {
+    background: #ffffff;
+    color: var(--ms-header, #083d30) !important;
+    border: 1px solid #cbd5e1;
+}
+
+.ms-checkout-auth-btn-guest {
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe;
+}
+
+.ms-checkout-auth-btn-cancel {
+    background: transparent;
+    color: #64748b !important;
+    font-weight: 600;
+    padding: 8px;
+}
+
 .ms-confirm-btn-cancel {
     background: #ffffff;
     border: 1px solid #cbd5e1;

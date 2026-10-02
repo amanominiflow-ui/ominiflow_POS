@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/premium_db.php';
 require_once __DIR__ . '/includes/products_db.php';
 require_once __DIR__ . '/includes/orders_db.php';
+require_once __DIR__ . '/includes/owner_dashboard_db.php';
 
 require_auth();
 
@@ -25,7 +26,29 @@ $inventoryStats = get_inventory_stats();
 $salesStats = get_sales_stats();
 $recentMovements = get_inventory_movements(null, 5);
 
-$activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'dashboard';
+// Daily Alerts: Low Stock & Unsold for a Week (7+ Days)
+$lowStockAlerts = get_pos_low_stock_alerts();
+$unsoldAlerts = get_pos_unsold_products_alerts(7);
+$totalHomeAlerts = count($lowStockAlerts) + count($unsoldAlerts);
+
+$showOwnerPanel = owner_dashboard_can_view();
+$ownerSnap = null;
+if ($showOwnerPanel) {
+    try {
+        $ownerSnap = owner_dashboard_snapshot();
+    } catch (Throwable $e) {
+        error_log('owner_dashboard_snapshot: ' . $e->getMessage());
+        $ownerSnap = owner_dashboard_empty_snapshot();
+    }
+}
+
+$tabParam = (string) ($_GET['tab'] ?? 'dashboard');
+$activeTab = 'dashboard';
+if ($tabParam === 'getting-started') {
+    $activeTab = 'getting-started';
+} elseif ($tabParam === 'owner' && $showOwnerPanel) {
+    $activeTab = 'owner';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -412,6 +435,52 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
             font-weight: 600;
             text-decoration: none;
         }
+
+        /* Owner control panel (additive tab — does not alter existing dashboard cards) */
+        .od-panel { margin-bottom: 24px; }
+        .od-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+        .od-title { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
+        .od-sub { font-size: 13px; color: #64748b; margin: 0; max-width: 520px; }
+        .od-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+        .od-pill { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #f1f5f9; color: #334155; text-decoration: none; border: 1px solid #e2e8f0; }
+        .od-pill:hover { background: #e2e8f0; }
+        .od-alerts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .od-alert { font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 8px; text-decoration: none; color: inherit; }
+        .od-alert-warn { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+        .od-alert-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .od-alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .od-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .od-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+        .od-kpi-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+        .od-kpi-val { display: block; font-size: 22px; font-weight: 800; color: #0f172a; margin-top: 4px; }
+        .od-kpi-meta { font-size: 12px; color: #64748b; margin-top: 4px; display: block; }
+        .od-kpi-meta a { color: #2563eb; font-weight: 600; text-decoration: none; }
+        .od-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+        .od-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+        .od-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
+        .od-card-muted { background: #f8fafc; }
+        .od-card-title { font-size: 14px; font-weight: 800; color: #0f172a; margin: 0 0 12px; }
+        .od-muted { font-weight: 600; color: #94a3b8; font-size: 12px; }
+        .od-empty { font-size: 13px; color: #64748b; margin: 0; }
+        .od-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .od-table th { text-align: left; font-size: 10px; text-transform: uppercase; color: #64748b; padding: 6px 8px 6px 0; border-bottom: 1px solid #f1f5f9; }
+        .od-table td { padding: 8px 8px 8px 0; border-bottom: 1px solid #f8fafc; color: #334155; }
+        .od-foot { margin: 10px 0 0; font-size: 12px; }
+        .od-foot a { color: #2563eb; font-weight: 600; text-decoration: none; }
+        .od-bar-list { list-style: none; margin: 0; padding: 0; }
+        .od-bar-list li { margin-bottom: 10px; }
+        .od-bar-row { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; color: #334155; }
+        .od-bar-track { height: 6px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+        .od-bar-fill { height: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); border-radius: 4px; }
+        .od-simple-list { list-style: none; margin: 0; padding: 0; }
+        .od-simple-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        @media (max-width: 1024px) {
+            .od-kpi-grid, .od-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .od-grid-2 { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .od-kpi-grid, .od-grid-3 { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -432,6 +501,11 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                 <button type="button" class="zoho-tab-item <?= $activeTab === 'getting-started' ? 'active' : '' ?>" id="tabBtnGettingStarted" onclick="switchHomeTab('getting-started')">
                     Getting Started
                 </button>
+                <?php if ($showOwnerPanel): ?>
+                <button type="button" class="zoho-tab-item <?= $activeTab === 'owner' ? 'active' : '' ?>" id="tabBtnOwner" onclick="switchHomeTab('owner')">
+                    Owner Control
+                </button>
+                <?php endif; ?>
             </div>
 
             <!-- Tab View 1: Main POS Dashboard Content -->
@@ -466,6 +540,35 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                             </a>
                         </div>
                     </section>
+
+                    <!-- Daily Inventory & Sales Alerts Banner -->
+                    <?php if ($totalHomeAlerts > 0): ?>
+                    <section class="pos-home-alert-banner-v2" aria-label="Daily Inventory Alerts">
+                        <div class="phab-left">
+                            <div class="phab-icon">&#x1F514;</div>
+                            <div>
+                                <div class="phab-text-title">Daily Inventory &amp; Sales Notices</div>
+                                <div class="phab-text-desc">
+                                    <?php if (count($lowStockAlerts) > 0 && count($unsoldAlerts) > 0): ?>
+                                        <strong><?= count($lowStockAlerts) ?> product(s)</strong> low on stock &mdash; <strong><?= count($unsoldAlerts) ?> product(s)</strong> not sold in 7 days.
+                                    <?php elseif (count($lowStockAlerts) > 0): ?>
+                                        <strong><?= count($lowStockAlerts) ?> product(s)</strong> are at or below their reorder threshold.
+                                    <?php else: ?>
+                                        <strong><?= count($unsoldAlerts) ?> product(s)</strong> have had zero sales in the past week.
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="phab-right">
+                            <button type="button" class="phab-btn" id="openHomeAlertsBannerBtn">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                View Alerts
+                            </button>
+                        </div>
+                    </section>
+                    <?php endif; ?>
 
                     <!-- Metric / KPI Cards Grid (Sales, Orders, Products, Customers) -->
                     <section class="kpi-grid" aria-label="POS KPI Overview">
@@ -649,6 +752,14 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                     </section>
                 </main>
             </div>
+
+            <?php if ($showOwnerPanel): ?>
+            <div id="viewOwner" class="main-tab-content <?= $activeTab === 'owner' ? 'active' : '' ?>">
+                <main class="dashboard-content">
+                    <?php require __DIR__ . '/includes/owner_dashboard_panel.php'; ?>
+                </main>
+            </div>
+            <?php endif; ?>
 
             <!-- Tab View 2: Zoho POS Getting Started Checklist Onboarding View -->
             <div id="viewGettingStarted" class="main-tab-content <?= $activeTab === 'getting-started' ? 'active' : '' ?>">
@@ -932,6 +1043,10 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
                 document.getElementById('tabBtnGettingStarted').classList.add('active');
                 document.getElementById('viewGettingStarted').classList.add('active');
                 history.pushState(null, '', '?tab=getting-started');
+            } else if (tabName === 'owner' && document.getElementById('tabBtnOwner')) {
+                document.getElementById('tabBtnOwner').classList.add('active');
+                document.getElementById('viewOwner').classList.add('active');
+                history.pushState(null, '', '?tab=owner');
             } else {
                 document.getElementById('tabBtnDashboard').classList.add('active');
                 document.getElementById('viewDashboard').classList.add('active');
@@ -961,5 +1076,6 @@ $activeTab = ($_GET['tab'] ?? '') === 'getting-started' ? 'getting-started' : 'd
             }
         }
     </script>
+    <?php require_once __DIR__ . '/includes/daily_alerts_modal.php'; ?>
 </body>
 </html>

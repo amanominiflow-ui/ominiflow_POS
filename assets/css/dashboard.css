@@ -313,7 +313,6 @@ body {
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
 }
 
-.app-sidebar:not(.sidebar-pinned):hover .sidebar-drawer,
 .app-sidebar.sidebar-hover-open .sidebar-drawer {
     transform: translateX(0);
     opacity: 1;
@@ -617,7 +616,7 @@ body {
 
 /* Header Styles */
 .app-header {
-    height: 70px;
+    height: 76px;
     background: #ffffff;
     border-bottom: 1px solid var(--saas-border);
     display: flex;
@@ -647,10 +646,11 @@ body {
 }
 
 .header-brand-logo {
-    height: 32px;
+    height: 54px;
     width: auto;
-    max-width: 140px;
+    max-width: 260px;
     object-fit: contain;
+    object-position: left center;
     border-radius: 4px;
 }
 
@@ -1577,6 +1577,40 @@ body {
     border-radius: 0 0 var(--saas-radius-lg) var(--saas-radius-lg);
 }
 
+/* Checkout dialog only: keep Back to Cart / Complete Sale on screen when the window is short. */
+#checkoutPaymentModal.modal-overlay.open {
+    overflow-y: auto;
+    align-items: flex-start;
+}
+
+#checkoutPaymentModal .modal-box {
+    margin-top: auto;
+    margin-bottom: auto;
+    max-height: calc(100dvh - 40px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#checkoutPaymentModal form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+#checkoutPaymentModal .modal-header,
+#checkoutPaymentModal .modal-footer {
+    flex-shrink: 0;
+}
+
+#checkoutPaymentModal .modal-body {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
 /* Tabs */
 .tab-row {
     display: flex;
@@ -1717,7 +1751,7 @@ body {
 
 .pos-search-barcode-row {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: 1.4fr 1fr auto;
     gap: 12px;
 }
 
@@ -1906,6 +1940,43 @@ body {
     border-color: var(--saas-primary-light);
 }
 
+.pos-btn-add-product {
+    width: 100%;
+    height: 38px;
+    border-radius: var(--saas-radius-md);
+    background: var(--saas-primary-soft);
+    border: 1px dashed var(--saas-primary-light);
+    color: var(--saas-primary);
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: var(--saas-transition);
+}
+
+.pos-btn-add-product:hover {
+    background: var(--saas-primary);
+    color: #fff;
+    border-style: solid;
+    border-color: var(--saas-primary);
+}
+
+.pos-add-prod-preview {
+    margin-top: 10px;
+}
+
+.pos-add-prod-preview img {
+    width: 88px;
+    height: 88px;
+    object-fit: cover;
+    border-radius: var(--saas-radius-md);
+    border: 1px solid var(--saas-border-light);
+}
+
 .pos-cart-items-container {
     max-height: calc(100vh - 470px);
     min-height: 180px;
@@ -1949,6 +2020,64 @@ body {
     font-size: 11px;
     color: var(--saas-slate-400);
     font-family: monospace;
+}
+
+.pos-cart-item-variant {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--saas-navy-900);
+    margin-top: 2px;
+}
+
+.pos-card-variant-hint {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--saas-primary);
+    margin-top: -4px;
+}
+
+.pos-variant-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--saas-navy-950);
+    margin-bottom: 8px;
+}
+
+.pos-variant-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pos-variant-chip {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #0f172a;
+}
+
+.pos-variant-chip.on {
+    background: var(--saas-primary);
+    border-color: var(--saas-primary);
+    color: #fff;
+}
+
+.pos-variant-chip.off,
+.pos-variant-chip:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pos-variant-meta {
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #334155;
 }
 
 .pos-btn-remove-item {
@@ -2093,6 +2222,117 @@ body {
     font-weight: 600;
 }
 
+.pos-coupon-row {
+    align-items: flex-start;
+}
+
+.pos-coupon-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.pos-coupon-input {
+    flex: 1;
+    min-width: 0;
+    max-width: 120px;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.pos-coupon-apply-btn {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid var(--saas-primary-light);
+    border-radius: 4px;
+    background: var(--saas-primary-soft);
+    color: var(--saas-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pos-coupon-apply-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.pos-coupon-applied {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+    flex: 1;
+}
+
+.pos-coupon-applied-code {
+    font-size: 12px;
+    font-weight: 700;
+    color: #065f46;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    padding: 3px 8px;
+}
+
+.pos-coupon-remove-btn {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--saas-slate-600);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.pos-coupon-discount-row strong {
+    color: #047857;
+}
+
+.pos-promo-discount-row strong {
+    color: #047857;
+}
+
+.pos-promo-discount-label {
+    display: block;
+    font-weight: 500;
+    font-size: 11px;
+    color: var(--saas-slate-500);
+    margin-top: 2px;
+}
+
+.pos-checkout-saved-strip {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: 6px 0 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pos-checkout-saved-strip strong {
+    font-size: 14px;
+    font-weight: 800;
+    color: #065f46;
+}
+
 /* POS Action Buttons Row */
 .pos-actions-grid {
     display: grid;
@@ -2192,6 +2432,54 @@ body {
     border-color: var(--saas-primary);
     background: var(--saas-primary-soft);
     color: var(--saas-primary);
+}
+
+.pos-split-payment-section {
+    margin-bottom: 14px;
+    padding: 12px;
+    border-radius: var(--saas-radius-md);
+    border: 1px dashed var(--saas-border-light);
+    background: #f8fafc;
+}
+
+.pos-split-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pos-split-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 32px;
+    gap: 8px;
+    align-items: center;
+}
+
+.pos-split-remove {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--saas-border-light);
+    border-radius: 8px;
+    background: #fff;
+    color: #64748b;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.pos-split-remain {
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #b45309;
+}
+
+.pos-split-remain.is-balanced {
+    color: #047857;
+}
+
+.pos-split-remain.is-over {
+    color: #b91c1c;
 }
 
 .quick-cash-row {
@@ -2501,7 +2789,6 @@ body {
 ========================================================================= */
 @media print {
     @page {
-        size: auto;
         margin: 10mm;
     }
 
@@ -2594,6 +2881,7 @@ body {
     /* POS 80mm / 58mm Thermal Receipt Print */
     #printableReceiptArea {
         display: block !important;
+        visibility: visible !important;
         width: 78mm !important;
         max-width: 78mm !important;
         margin: 0 auto !important;
@@ -2601,6 +2889,47 @@ body {
         background: #ffffff !important;
         color: #000000 !important;
         font-family: 'Courier New', Courier, monospace !important;
+    }
+
+    /* POS register: print the receipt, not the catalog/cart UI */
+    body.pos-page .pos-container,
+    body.pos-page .saas-alert,
+    body.pos-page #checkoutPaymentModal,
+    body.pos-page #addCustomerModal,
+    body.pos-page #addProductModal,
+    body.pos-page #heldSalesModal {
+        display: none !important;
+        visibility: hidden !important;
+    }
+
+    body.pos-page #saleCompletedModal.modal-overlay {
+        display: block !important;
+        visibility: visible !important;
+        position: static !important;
+        inset: auto !important;
+        width: 100% !important;
+        height: auto !important;
+        background: none !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        z-index: auto !important;
+    }
+
+    body.pos-page #saleCompletedModal .modal-box {
+        display: block !important;
+        visibility: visible !important;
+        box-shadow: none !important;
+        border: none !important;
+        max-width: none !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+    }
+
+    body.pos-page #saleCompletedModal .modal-body {
+        display: block !important;
+        padding: 0 !important;
     }
 }
 
@@ -3053,6 +3382,152 @@ body {
     display: flex;
     gap: 6px;
 }
+
+/* =========================================================================
+   POS DAILY INVENTORY & UNSOLD SALES ALERTS
+   ========================================================================= */
+
+.pos-alerts-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 14px;
+    height: 42px;
+    background: #ffffff;
+    border: 1px solid var(--saas-border);
+    border-radius: var(--saas-radius);
+    color: var(--saas-slate-700);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.pos-alerts-trigger-btn:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: var(--saas-navy-950);
+}
+
+.pos-alerts-trigger-btn.has-alerts {
+    border-color: #fdba74;
+    background: #fffaf0;
+    color: #c2410c;
+}
+
+.pos-alerts-trigger-btn.has-alerts:hover {
+    background: #fff7ed;
+    border-color: #fb923c;
+}
+
+.pos-alert-count-badge {
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    line-height: 1;
+}
+
+.pos-alert-count-badge.badge-warn {
+    background: #f59e0b;
+}
+
+.pos-alert-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--saas-border-light);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.pos-alert-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--saas-slate-600);
+    background: #f1f5f9;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pos-alert-tab-btn:hover {
+    background: #e2e8f0;
+    color: var(--saas-slate-800);
+}
+
+.pos-alert-tab-btn.active {
+    background: #ffffff;
+    color: var(--saas-primary);
+    border-color: var(--saas-border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.pos-alert-item-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--saas-border-light);
+    background: #ffffff;
+    margin-bottom: 9px;
+    transition: all 0.15s ease;
+}
+
+.pos-alert-item-card:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.pos-alert-item-card.is-out-of-stock {
+    border-left: 4px solid #ef4444;
+    background: #fffdfd;
+}
+
+.pos-alert-item-card.is-low-stock {
+    border-left: 4px solid #f59e0b;
+    background: #fffefb;
+}
+
+.pos-alert-item-card.is-unsold {
+    border-left: 4px solid #6366f1;
+    background: #fafaff;
+}
+
+.pos-alert-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.pos-alert-banner.info {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+}
+
+.pos-alert-banner.warn {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
 
 
 
