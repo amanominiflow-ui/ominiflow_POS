@@ -106,9 +106,10 @@ if (!$storeBiz) {
         if ($action === 'add_to_cart') {
             $pid = (int) ($_POST['product_id'] ?? 0);
             $qty = max(1, (int) ($_POST['qty'] ?? 1));
+            $vid = (int) ($_POST['variant_id'] ?? 0);
             $back = (string) ($_POST['redirect_page'] ?? 'home');
 
-            $res = add_to_storefront_cart($bid, $pid, $qty);
+            $res = add_to_storefront_cart($bid, $pid, $qty, $vid);
 
             $isAjax = !empty($_POST['ajax']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
             if ($isAjax) {
@@ -176,7 +177,12 @@ if (!$storeBiz) {
         }
 
         if ($action === 'update_cart') {
-            $res = update_storefront_cart_qty($bid, (int) ($_POST['product_id'] ?? 0), (int) ($_POST['qty'] ?? 0));
+            $res = update_storefront_cart_qty(
+                $bid,
+                (int) ($_POST['product_id'] ?? 0),
+                (int) ($_POST['qty'] ?? 0),
+                (int) ($_POST['variant_id'] ?? 0)
+            );
             if (empty($res['success']) && !empty($res['error'])) {
                 set_flash('error', $res['error']);
             }
@@ -2939,6 +2945,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_cart">
                                         <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                        <?php if (!empty($line['variant_id'])): ?>
+                                            <input type="hidden" name="variant_id" value="<?= (int) $line['variant_id'] ?>">
+                                        <?php endif; ?>
                                         <input class="ms-input" style="width:70px;margin:0" type="number" name="qty" min="0" value="<?= (int) $line['qty'] ?>">
                                         <button class="ms-btn-ghost" type="submit" style="padding:6px 10px;font-size:12px">Update</button>
                                     </form>
@@ -3880,11 +3889,21 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <?php foreach ($cdLines as $line):
                         $p = $line['product'];
                         $pid = (int) $p['id'];
+                        $lineVid = (int) ($line['variant_id'] ?? 0);
                         $qty = (int) $line['qty'];
                         $stock = (int) ($p['stock_quantity'] ?? 0);
+                        if ($lineVid > 0 && function_exists('storefront_get_active_variant')) {
+                            $lineVar = storefront_get_active_variant($pid, $lineVid, $bid);
+                            if ($lineVar) {
+                                $stock = (int) ($lineVar['stock_quantity'] ?? $stock);
+                            }
+                        }
                         $img = sf_product_image($p['image_path'] ?? null);
-                        $dispInfo = storefront_parse_product_display_info($p, $bid);
-                        $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        $pAttr = trim((string) ($line['variant_label'] ?? ''));
+                        if ($pAttr === '') {
+                            $dispInfo = storefront_parse_product_display_info($p, $bid);
+                            $pAttr = $dispInfo['attrText'] ?: trim((string)($p['sales_description'] ?? $p['description'] ?? ''));
+                        }
                         $unitPrice = (float) $line['unit_price'];
                         $lineMrp = (float) ($line['mrp'] ?? $p['mrp'] ?? 0);
                         $lineSaving = ($lineMrp > $unitPrice) ? ($lineMrp - $unitPrice) : 0;
@@ -3913,6 +3932,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <?php if ($lineVid > 0): ?>
+                                        <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
+                                    <?php endif; ?>
                                     <input type="hidden" name="qty" value="0">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -3926,6 +3948,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <?php if ($lineVid > 0): ?>
+                                        <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
+                                    <?php endif; ?>
                                     <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
@@ -3938,6 +3963,9 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="update_cart">
                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                    <?php if ($lineVid > 0): ?>
+                                        <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
+                                    <?php endif; ?>
                                     <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
