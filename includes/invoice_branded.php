@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/orders_db.php';
 require_once __DIR__ . '/barcode_helper.php';
 
 /**
@@ -316,55 +317,8 @@ function invoice_branded_logo_relative(array $brand, array $store): string {
  * @return array{size: string, colour: string}
  */
 function invoice_branded_item_attributes(array $it, $db = null): array {
-    $size = trim((string) ($it['size'] ?? ''));
-    $colour = trim((string) ($it['colour'] ?? $it['color'] ?? ''));
-    if ($size === '') {
-        $size = '-';
-    }
-    if ($colour === '') {
-        $colour = '-';
-    }
-    $pName = trim((string) ($it['product_name'] ?? $it['name'] ?? ''));
-    $pSku = trim((string) ($it['product_sku'] ?? ''));
-    $variantId = (int) ($it['variant_id'] ?? 0);
-
-    if ($db instanceof PDO && $variantId > 0 && ($size === '-' || $colour === '-')) {
-        try {
-            $stV = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid LIMIT 1');
-            $stV->execute(['vid' => $variantId]);
-            $vRow = $stV->fetch();
-            if (is_array($vRow)) {
-                $av = json_decode((string) $vRow['attribute_values'], true);
-                if (is_array($av)) {
-                    foreach ($av as $k => $v) {
-                        $kLow = strtolower((string) $k);
-                        if ($size === '-' && in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
-                            $size = trim((string) $v);
-                        }
-                        if ($colour === '-' && in_array($kLow, ['color', 'colour', 'shade'], true)) {
-                            $colour = trim((string) $v);
-                        }
-                    }
-                }
-            }
-        } catch (Throwable $e) {
-            // keep parsed fallbacks
-        }
-    }
-
-    if ($size === '-') {
-        if (preg_match('/\b(XXXL|XXL|2XL|3XL|4XL|XL|XS|S|M|L|Free Size|Regular)\b/i', $pName . ' ' . $pSku, $mSize)) {
-            $size = strtoupper($mSize[1]);
-        }
-    }
-    if ($colour === '-') {
-        $colorsList = 'Pink|Green|Blue|Red|Black|White|Yellow|Orange|Purple|Navy|Grey|Gray|Maroon|Teal|Beige|Brown|Peach|Lavender|Olive|Mint|Cyan|Gold|Silver';
-        if (preg_match('/\b(' . $colorsList . ')\b/i', $pName . ' ' . $pSku, $mCol)) {
-            $colour = ucfirst(strtolower($mCol[1]));
-        }
-    }
-
-    return ['size' => $size !== '' ? $size : '-', 'colour' => $colour !== '' ? $colour : '-'];
+    $pdo = $db instanceof PDO ? $db : null;
+    return resolve_order_item_size_colour($it, $pdo);
 }
 
 function invoice_branded_http_get(string $url, int $timeout = 5): ?string {

@@ -3178,6 +3178,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_cart">
                                         <input type="hidden" name="product_id" value="<?= (int) $p['id'] ?>">
+                                        <input type="hidden" name="variant_id" value="<?= (int) ($line['variant_id'] ?? 0) ?>">
                                         <input class="ms-input" style="width:70px;margin:0" type="number" name="qty" min="0" value="<?= (int) $line['qty'] ?>">
                                         <button class="ms-btn-ghost" type="submit" style="padding:6px 10px;font-size:12px">Update</button>
                                     </form>

@@ -429,68 +429,7 @@ if (count($invoiceTaxRates) === 1) {
 // 9. Variant Extraction Helper (Size & Colour)
 if (!function_exists('extract_item_attributes')) {
     function extract_item_attributes(array $it, PDO $db): array {
-        $size = '-';
-        $colour = '-';
-        $pName = trim((string)$it['product_name']);
-        $pSku = trim((string)($it['product_sku'] ?? ''));
-
-        $storedSize = trim((string)($it['size'] ?? ''));
-        $storedColour = trim((string)($it['colour'] ?? $it['color'] ?? ''));
-        if ($storedSize !== '' && $storedSize !== '-') {
-            $size = $storedSize;
-        }
-        if ($storedColour !== '' && $storedColour !== '-') {
-            $colour = $storedColour;
-        }
-
-        // Check variant_id in database if available
-        $variantId = (int)($it['variant_id'] ?? 0);
-        if ($variantId > 0) {
-            try {
-                $stV = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid LIMIT 1');
-                $stV->execute(['vid' => $variantId]);
-                $vRow = $stV->fetch();
-                if ($vRow) {
-                    $av = json_decode((string)$vRow['attribute_values'], true);
-                    if (is_array($av)) {
-                        foreach ($av as $k => $v) {
-                            $kLow = strtolower((string)$k);
-                            if ($size === '-' && in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
-                                $size = trim((string)$v);
-                            }
-                            if ($colour === '-' && in_array($kLow, ['color', 'colour', 'shade'], true)) {
-                                $colour = trim((string)$v);
-                            }
-                        }
-                    }
-                    if ($size === '-' || $colour === '-') {
-                        $vn = (string)$vRow['variant_name'];
-                        if (str_contains($vn, '/')) {
-                            $parts = explode('/', $vn);
-                            if ($size === '-' && isset($parts[0])) $size = trim($parts[0]);
-                            if ($colour === '-' && isset($parts[1])) $colour = trim($parts[1]);
-                        }
-                    }
-                }
-            } catch (Exception $e) {}
-        }
-
-        // Fallback: Parse common sizes from product name / sku
-        if ($size === '-') {
-            if (preg_match('/\b(XXXL|XXL|2XL|3XL|4XL|XL|XS|S|M|L|Free Size|Regular)\b/i', $pName . ' ' . $pSku, $mSize)) {
-                $size = strtoupper($mSize[1]);
-            }
-        }
-
-        // Fallback: Parse common colours from product name / sku
-        if ($colour === '-') {
-            $colorsList = 'Pink|Green|Blue|Red|Black|White|Yellow|Orange|Purple|Navy|Grey|Gray|Maroon|Teal|Beige|Brown|Peach|Lavender|Olive|Mint|Cyan|Gold|Silver';
-            if (preg_match('/\b(' . $colorsList . ')\b/i', $pName . ' ' . $pSku, $mCol)) {
-                $colour = ucfirst(strtolower($mCol[1]));
-            }
-        }
-
-        return ['size' => $size, 'colour' => $colour];
+        return resolve_order_item_size_colour($it, $db);
     }
 }
 

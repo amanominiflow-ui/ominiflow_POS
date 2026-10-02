@@ -10,12 +10,54 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/products_db.php';
 
+function order_item_value_looks_like_size(string $value): bool {
+    $v = trim($value);
+    if ($v === '') {
+        return false;
+    }
+    return (bool) preg_match('/^(XXXL|XXL|2XL|3XL|4XL|XL|XS|S|M|L|Free Size|Regular|\d{1,2}(?:\.\d)?)$/i', $v);
+}
+
+/**
+ * Assign a free-text variant token to size or colour using common garment patterns.
+ */
+function order_item_assign_variant_token(string $token, string &$size, string &$colour): void {
+    $token = trim($token);
+    if ($token === '') {
+        return;
+    }
+    if ($size !== '' && strcasecmp($size, $token) === 0) {
+        return;
+    }
+    if ($colour !== '' && strcasecmp($colour, $token) === 0) {
+        return;
+    }
+    if (preg_match('/^size\s*[:=]\s*(.+)$/i', $token, $m)) {
+        if ($size === '') {
+            $size = trim($m[1]);
+        }
+        return;
+    }
+    if (preg_match('/^colou?r\s*[:=]\s*(.+)$/i', $token, $m)) {
+        if ($colour === '') {
+            $colour = trim($m[1]);
+        }
+        return;
+    }
+    if ($size === '' && order_item_value_looks_like_size($token)) {
+        $size = $token;
+        return;
+    }
+    if ($colour === '') {
+        $colour = $token;
+    }
+}
+
 function parse_variant_size_colour(array $variant): array {
     $size = '';
     $colour = '';
     $av = json_decode((string) ($variant['attribute_values'] ?? ''), true);
-    $parsedAttrs = is_array($av) && $av !== [];
-    if ($parsedAttrs) {
+    if (is_array($av) && $av !== []) {
         foreach ($av as $k => $v) {
             $kLow = strtolower(trim((string) $k));
             $val = trim((string) $v);
@@ -26,28 +68,85 @@ function parse_variant_size_colour(array $variant): array {
                 $size = $val;
             } elseif (in_array($kLow, ['color', 'colour', 'shade', 'rang'], true)) {
                 $colour = $val;
-            } elseif ($colour === '' && count($av) === 1) {
-                $colour = $val;
-            } elseif ($size === '' && count($av) >= 2) {
-                $size = $val;
             }
+        }
+        if ($size === '' && $colour === '' && count($av) === 2) {
+            foreach ($av as $v) {
+                order_item_assign_variant_token(trim((string) $v), $size, $colour);
+            }
+        }
+        if ($size === '' && $colour === '' && count($av) === 1) {
+            $onlyVal = trim((string) reset($av));
+            order_item_assign_variant_token($onlyVal, $size, $colour);
         }
     }
     $vn = trim((string) ($variant['variant_name'] ?? ''));
-    if (($size === '' && $colour === '') && $vn !== '') {
+    if ($vn !== '' && ($size === '' || $colour === '')) {
         if (str_contains($vn, '/')) {
-            $parts = array_map('trim', explode('/', $vn, 2));
-            if ($size === '' && isset($parts[0])) {
-                $size = $parts[0];
-            }
-            if ($colour === '' && isset($parts[1])) {
-                $colour = $parts[1];
+            $parts = array_map('trim', preg_split('#\s*/\s*#', $vn) ?: []);
+            foreach ($parts as $part) {
+                order_item_assign_variant_token($part, $size, $colour);
             }
         } else {
-            $colour = $vn;
+            order_item_assign_variant_token($vn, $size, $colour);
         }
     }
     return ['size' => $size, 'colour' => $colour];
+}
+
+/**
+ * Resolve size and colour for an order/invoice line (stored values, variant row, then name/SKU hints).
+ *
+ * @return array{size: string, colour: string}
+ */
+function resolve_order_item_size_colour(array $it, ?PDO $db = null): array {
+    $size = trim((string) ($it['size'] ?? ''));
+    $colour = trim((string) ($it['colour'] ?? $it['color'] ?? ''));
+    if ($size === '-') {
+        $size = '';
+    }
+    if ($colour === '-') {
+        $colour = '';
+    }
+    $pName = trim((string) ($it['product_name'] ?? $it['name'] ?? ''));
+    $pSku = trim((string) ($it['product_sku'] ?? $it['sku'] ?? ''));
+
+    $variantId = (int) ($it['variant_id'] ?? 0);
+    if ($db instanceof PDO && $variantId > 0 && ($size === '' || $colour === '')) {
+        try {
+            $stV = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid LIMIT 1');
+            $stV->execute(['vid' => $variantId]);
+            $vRow = $stV->fetch(PDO::FETCH_ASSOC);
+            if (is_array($vRow)) {
+                $attrs = parse_variant_size_colour($vRow);
+                if ($size === '' && $attrs['size'] !== '') {
+                    $size = $attrs['size'];
+                }
+                if ($colour === '' && $attrs['colour'] !== '') {
+                    $colour = $attrs['colour'];
+                }
+            }
+        } catch (Throwable $e) {
+            // Non-fatal: fall back to name/SKU parsing below.
+        }
+    }
+
+    if ($size === '') {
+        if (preg_match('/\b(XXXL|XXL|2XL|3XL|4XL|XL|XS|S|M|L|Free Size|Regular)\b/i', $pName . ' ' . $pSku, $mSize)) {
+            $size = strtoupper($mSize[1]);
+        }
+    }
+    if ($colour === '') {
+        $colorsList = 'Pink|Green|Blue|Red|Black|White|Yellow|Orange|Purple|Navy|Grey|Gray|Maroon|Teal|Beige|Brown|Peach|Lavender|Olive|Mint|Cyan|Gold|Silver';
+        if (preg_match('/\b(' . $colorsList . ')\b/i', $pName . ' ' . $pSku, $mCol)) {
+            $colour = ucfirst(strtolower($mCol[1]));
+        }
+    }
+
+    return [
+        'size' => $size !== '' ? $size : '-',
+        'colour' => $colour !== '' ? $colour : '-',
+    ];
 }
 
 function ensure_orders_invoices_schema(): void {
