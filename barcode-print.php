@@ -41,7 +41,13 @@ if (!$targetProduct && !empty($products[0])) {
     $selectedPid = (int)$targetProduct['id'];
 }
 
-$hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? '')) !== '';
+$storedBarcode = $targetProduct ? trim((string) ($targetProduct['barcode'] ?? '')) : '';
+$productSku = $targetProduct ? trim((string) ($targetProduct['sku'] ?? '')) : '';
+// Products are often created with only a SKU. Code128 can encode that SKU,
+// and the register already matches a scan against SKU or barcode.
+$labelCode = $storedBarcode !== '' ? $storedBarcode : $productSku;
+$hasBarcode = $labelCode !== '';
+$barcodeFromSku = $hasBarcode && $storedBarcode === '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -201,7 +207,7 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                         <?php if ($inwardId > 0): ?>
                             <p class="page-subtitle">Warehouse labels for a confirmed purchase. Confirming cost does not release these barcodes.</p>
                         <?php else: ?>
-                            <p class="page-subtitle">Print labels from barcodes you set on each product. A warehouse label is released only after the purchase is confirmed.</p>
+                            <p class="page-subtitle">Print price labels for any product. If no UPC or EAN is saved, the label uses the product SKU so it can still be scanned at the register.</p>
                         <?php endif; ?>
                     </div>
                     <?php if ($inwardId > 0 && !empty($inwardPrint['success'])): ?>
@@ -336,7 +342,7 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                 <!-- Barcode Sheet Preview -->
                 <?php if ($targetProduct): ?>
                     <?php
-                    $barcodeValue = trim((string) ($targetProduct['barcode'] ?? ''));
+                    $barcodeValue = $labelCode;
                     $barcodeSvg = $hasBarcode
                         ? generate_code128_svg($barcodeValue, $labelSize === 'compact' ? 28 : ($labelSize === 'large' ? 44 : 36), $labelSize === 'compact' ? 1.2 : 1.5)
                         : '';
@@ -345,9 +351,9 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                         <?php if (!$hasBarcode): ?>
                             <div class="section-card no-print" style="text-align: center; padding: 40px 24px; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
                                 <div style="font-size: 32px; margin-bottom: 10px;">📦</div>
-                                <h3 style="font-size: 16px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 8px;">No barcode on this product</h3>
+                                <h3 style="font-size: 16px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 8px;">No barcode or SKU on this product</h3>
                                 <p style="font-size: 13.5px; color: #64748b; max-width: 480px; margin: 0 auto 16px;">
-                                    Enter a UPC, EAN, or custom barcode on the product record, then return here to print labels. Goods receive and purchase orders do not assign barcodes automatically.
+                                    Add a SKU, UPC, or EAN on the product record, then return here to print labels.
                                 </p>
                                 <a href="<?= asset('product-edit.php?id=' . (int) $targetProduct['id']) ?>" class="header-btn" style="display: inline-flex; padding: 10px 20px; text-decoration: none;">
                                     Edit product barcode
@@ -362,7 +368,7 @@ $hasBarcode = $targetProduct && trim((string) ($targetProduct['barcode'] ?? ''))
                                 </div>
                                 <div>
                                     <div style="font-size: 15px; font-weight: 700; color: var(--saas-navy-950);"><?= e($targetProduct['name']) ?></div>
-                                    <div style="font-size: 12px; color: var(--saas-slate-500); font-family: monospace;">SKU: <?= e($targetProduct['sku']) ?> &bull; Barcode: <?= e($barcodeValue) ?> &bull; Current Stock: <?= (int)$targetProduct['stock_quantity'] ?> units</div>
+                                    <div style="font-size: 12px; color: var(--saas-slate-500); font-family: monospace;">SKU: <?= e($targetProduct['sku']) ?> &bull; Barcode: <?= e($barcodeValue) ?><?= $barcodeFromSku ? ' (using SKU)' : '' ?> &bull; Current Stock: <?= (int)$targetProduct['stock_quantity'] ?> units</div>
                                 </div>
                             </div>
                             <div style="font-size: 13px; font-weight: 700; color: var(--saas-navy-950);">
