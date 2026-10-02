@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/orders_db.php';
 require_once __DIR__ . '/../includes/organization_ids.php';
 
 try {
@@ -178,12 +179,13 @@ try {
         // optional column
     }
 
+    ensure_orders_invoices_schema();
     $stmtItem = $db->prepare('
         INSERT INTO order_items (
-            order_id, product_id, variant_id, product_name, product_sku, hsn_code, unit_price,
+            order_id, product_id, variant_id, size, colour, product_name, product_sku, hsn_code, unit_price,
             quantity, tax_percent, tax_amount, discount_amount, line_total, created_at
         ) VALUES (
-            :order_id, :product_id, :variant_id, :product_name, :product_sku, :hsn_code, :unit_price,
+            :order_id, :product_id, :variant_id, :size, :colour, :product_name, :product_sku, :hsn_code, :unit_price,
             :quantity, :tax_percent, :tax_amount, :discount_amount, :line_total, NOW()
         )
     ');
@@ -194,14 +196,38 @@ try {
         }
         $qty = max(1, (int) ($item['quantity'] ?? 1));
         $posProductId = (int) ($item['pos_product_id'] ?? 0);
+        $posVariantId = (int) ($item['pos_variant_id'] ?? 0);
         $unitPrice = (float) ($item['unit_price'] ?? 0);
         $lineTax = (float) ($item['tax_amount'] ?? 0);
         $lineTotal = (float) ($item['line_total'] ?? (($unitPrice * $qty) + $lineTax));
 
+        $lineSize = trim((string) ($item['size'] ?? ''));
+        $lineColour = trim((string) ($item['colour'] ?? $item['color'] ?? ''));
+        if ($posVariantId > 0 && ($lineSize === '' || $lineColour === '')) {
+            try {
+                $vStmt = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid AND business_id = :bid LIMIT 1');
+                $vStmt->execute(['vid' => $posVariantId, 'bid' => $businessId]);
+                $vRow = $vStmt->fetch(PDO::FETCH_ASSOC);
+                if (is_array($vRow)) {
+                    $attrs = parse_variant_size_colour($vRow);
+                    if ($lineSize === '') {
+                        $lineSize = $attrs['size'];
+                    }
+                    if ($lineColour === '') {
+                        $lineColour = $attrs['colour'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                // keep payload values
+            }
+        }
+
         $stmtItem->execute([
             'order_id' => $posOrderId,
             'product_id' => $posProductId > 0 ? $posProductId : null,
-            'variant_id' => (int) ($item['pos_variant_id'] ?? 0) ?: null,
+            'variant_id' => $posVariantId > 0 ? $posVariantId : null,
+            'size' => $lineSize !== '' ? $lineSize : null,
+            'colour' => $lineColour !== '' ? $lineColour : null,
             'product_name' => (string) ($item['name'] ?? 'Item'),
             'product_sku' => (string) ($item['sku'] ?? ''),
             'hsn_code' => (string) ($item['hsn_code'] ?? '') ?: null,
