@@ -1251,22 +1251,6 @@ try {
     add_column_if_not_exists($pdo, 'order_items', 'variant_id', "INT UNSIGNED NULL AFTER `product_id`");
     add_column_if_not_exists($pdo, 'order_items', 'hsn_code', "VARCHAR(50) NULL AFTER `product_sku`");
 
-    // Legacy online-store lines: attach variant when product has only one active variant
-    try {
-        $pdo->exec("
-            UPDATE order_items oi
-            INNER JOIN (
-                SELECT product_id, MIN(id) AS only_variant_id, COUNT(*) AS cnt
-                FROM product_variants
-                WHERE status = 'active'
-                GROUP BY product_id
-                HAVING cnt = 1
-            ) sv ON sv.product_id = oi.product_id
-            SET oi.variant_id = sv.only_variant_id
-            WHERE oi.variant_id IS NULL
-        ");
-    } catch (Exception $ign) {}
-
     add_column_if_not_exists($pdo, 'product_variants', 'business_id', "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`");
     add_column_if_not_exists($pdo, 'product_variants', 'attribute_values', "JSON NULL AFTER `variant_name`");
 

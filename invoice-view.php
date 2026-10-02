@@ -22,7 +22,6 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/storefront_db.php';
 require_once __DIR__ . '/includes/barcode_helper.php';
-require_once __DIR__ . '/includes/variants_db.php';
 
 // Session initialization
 if (session_status() === PHP_SESSION_NONE) {
@@ -250,10 +249,27 @@ if (!function_exists('extract_item_attributes')) {
                 $stV = $db->prepare('SELECT variant_name, attribute_values FROM product_variants WHERE id = :vid LIMIT 1');
                 $stV->execute(['vid' => $variantId]);
                 $vRow = $stV->fetch();
-                if ($vRow && function_exists('parse_variant_size_and_colour')) {
-                    $parsed = parse_variant_size_and_colour($vRow);
-                    $size = $parsed['size'];
-                    $colour = $parsed['colour'];
+                if ($vRow) {
+                    $av = json_decode((string)$vRow['attribute_values'], true);
+                    if (is_array($av)) {
+                        foreach ($av as $k => $v) {
+                            $kLow = strtolower((string)$k);
+                            if (in_array($kLow, ['size', 'sizes', 'size / fits'], true)) {
+                                $size = trim((string)$v);
+                            }
+                            if (in_array($kLow, ['color', 'colour', 'shade'], true)) {
+                                $colour = trim((string)$v);
+                            }
+                        }
+                    }
+                    if ($size === '-' || $colour === '-') {
+                        $vn = (string)$vRow['variant_name'];
+                        if (str_contains($vn, '/')) {
+                            $parts = explode('/', $vn);
+                            if ($size === '-' && isset($parts[0])) $size = trim($parts[0]);
+                            if ($colour === '-' && isset($parts[1])) $colour = trim($parts[1]);
+                        }
+                    }
                 }
             } catch (Exception $e) {}
         }
