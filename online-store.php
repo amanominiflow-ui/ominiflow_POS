@@ -35,12 +35,149 @@ function os_tab_url(string $tab): string {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string) ($_POST['action'] ?? '');
+    $isAjax = in_array($action, ['toggle_payment_option', 'save_razorpay_keys'], true);
+
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'Invalid session token. Please refresh the page.']);
+            exit;
+        }
         set_flash('error', 'Invalid session token. Please refresh.');
         redirect(os_tab_url($tab));
     }
 
-    $action = (string) ($_POST['action'] ?? '');
+    // Dynamic AJAX toggle for payment options and store preferences (no page reload / redirect)
+    if ($action === 'toggle_payment_option') {
+        header('Content-Type: application/json');
+        $key = trim((string) ($_POST['key'] ?? ''));
+        $val = !empty($_POST['value']);
+
+        $labelMap = [
+            'enable_cod' => 'Cash on Delivery (COD)',
+            'enable_razorpay' => 'Razorpay (Online Checkout)',
+            'enable_upi' => 'UPI Payments',
+            'enable_card' => 'Credit & Debit Cards',
+            'enable_netbanking' => 'Net Banking / Direct Transfer',
+            'enable_store_pickup_payment' => 'Pay at Store (Pickup)',
+            'hide_out_of_stock' => 'Hide Out of Stock',
+            'allow_custom_quantity' => 'Custom Quantity',
+            'display_stock_count' => 'Stock Count Display',
+            'display_low_stock_below_10' => 'Low Stock Warning',
+            'hide_product_price' => 'Hide Product Price',
+            'show_image_disclaimer' => 'Image Disclaimer',
+            'enable_billing_address' => 'Billing Address',
+            'enable_delivery' => 'Delivery',
+            'enable_pickup' => 'Store Pickup',
+            'store_published' => 'Store Status',
+        ];
+
+        if (!isset($labelMap[$key])) {
+            echo json_encode(['success' => false, 'error' => 'Invalid preference option: ' . $key]);
+            exit;
+        }
+
+        if ($key === 'store_published') {
+            set_store_published($bid, $val);
+            echo json_encode([
+                'success' => true,
+                'key' => $key,
+                'value' => $val ? 1 : 0,
+                'message' => $val ? 'Store is now Open (Accepting customer orders)' : 'Store is now Closed (Orders paused)',
+                'business_id' => $bid,
+            ]);
+            exit;
+        }
+
+        require_once __DIR__ . '/includes/storefront_db.php';
+        require_once __DIR__ . '/includes/payment_integrations_db.php';
+        require_once __DIR__ . '/includes/razorpay_oauth.php';
+
+        $ok = set_mobile_store_payment_toggle($bid, $key, $val);
+        if (!$ok) {
+            echo json_encode(['success' => false, 'error' => 'Could not save setting to database.']);
+            exit;
+        }
+
+        $razorpayReady = false;
+        $needsKeys = false;
+        if ($key === 'enable_razorpay') {
+            $db = get_db();
+            ensure_payment_integrations_table($db);
+            $stmt = $db->prepare("UPDATE payment_integrations SET enable_in_store = :val, updated_at = NOW() WHERE business_id = :bid AND gateway_code = 'razorpay'");
+            $stmt->execute(['val' => $val ? 1 : 0, 'bid' => $bid]);
+
+            $activeGateways = get_active_store_payment_gateways($bid);
+            $razorpayKey = razorpay_checkout_key($bid);
+            $razorpayReady = !empty($activeGateways['razorpay']) && $razorpayKey !== '';
+            $needsKeys = ($val && !$razorpayReady);
+        }
+
+        $label = $labelMap[$key];
+        $msg = $val ? ($label . ' enabled') : ($label . ' disabled');
+        if ($needsKeys) {
+            $msg = 'Razorpay enabled. Please enter your Key ID & Secret to activate online checkout.';
+        }
+
+        echo json_encode([
+            'success' => true,
+            'key' => $key,
+            'value' => $val ? 1 : 0,
+            'message' => $msg,
+            'razorpay_ready' => $razorpayReady,
+            'needs_keys' => $needsKeys,
+            'business_id' => $bid,
+        ]);
+        exit;
+    }
+
+    // Dynamic AJAX endpoint to save Razorpay API keys directly from Store Preferences (no page redirect)
+    if ($action === 'save_razorpay_keys') {
+        header('Content-Type: application/json');
+        $apiKey = trim((string) ($_POST['api_key'] ?? ''));
+        $apiSecret = trim((string) ($_POST['api_secret'] ?? ''));
+
+        if ($apiKey === '') {
+            echo json_encode(['success' => false, 'error' => 'Please enter Razorpay Key ID (starts with rzp_test_ or rzp_live_).']);
+            exit;
+        }
+        if (!str_starts_with($apiKey, 'rzp_test_') && !str_starts_with($apiKey, 'rzp_live_')) {
+            echo json_encode(['success' => false, 'error' => 'Invalid Key ID format. Razorpay Key ID must start with rzp_test_ or rzp_live_.']);
+            exit;
+        }
+
+        require_once __DIR__ . '/includes/payment_integrations_db.php';
+        require_once __DIR__ . '/includes/storefront_db.php';
+
+        $env = str_starts_with($apiKey, 'rzp_live_') ? 'live' : 'test';
+        $saveRes = save_payment_integration([
+            'gateway_code' => 'razorpay',
+            'api_key' => $apiKey,
+            'api_secret' => $apiSecret ?: null,
+            'environment' => $env,
+            'enable_in_pos' => 1,
+            'enable_in_store' => 1,
+            'status' => 'connected',
+        ], $bid);
+
+        if (empty($saveRes['success'])) {
+            echo json_encode(['success' => false, 'error' => $saveRes['error'] ?? 'Could not save Razorpay integration.']);
+            exit;
+        }
+
+        set_mobile_store_payment_toggle($bid, 'enable_razorpay', true);
+
+        $maskedKey = substr($apiKey, 0, 8) . '...' . substr($apiKey, -4);
+        echo json_encode([
+            'success' => true,
+            'message' => 'Razorpay connected and online store checkout activated successfully!',
+            'api_key_masked' => $maskedKey,
+            'business_id' => $bid,
+        ]);
+        exit;
+    }
+
     $backTab = (string) ($_POST['tab'] ?? $tab);
     if (!in_array($backTab, ['overview', 'preferences', 'domain', 'customize', 'branding'], true)) {
         $backTab = 'overview';
@@ -230,8 +367,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             publish_mobile_store($bid);
             set_flash('success', 'Website published with your branding.');
         } else {
-            if ($action === 'save_preferences' && isset($_POST['store_status_submitted'])) {
-                set_store_published($bid, !empty($_POST['store_published']));
+            if ($action === 'save_preferences') {
+                if (isset($_POST['store_status_submitted'])) {
+                    set_store_published($bid, !empty($_POST['store_published']));
+                }
+                // Sync Razorpay payment integration state for $bid
+                require_once __DIR__ . '/includes/payment_integrations_db.php';
+                $rzpInStore = !empty($_POST['enable_razorpay']) ? 1 : 0;
+                $rzpKeyInput = trim((string) ($_POST['rzp_api_key'] ?? ''));
+                $rzpSecretInput = trim((string) ($_POST['rzp_api_secret'] ?? ''));
+                if ($rzpKeyInput !== '') {
+                    $env = str_starts_with($rzpKeyInput, 'rzp_live_') ? 'live' : 'test';
+                    save_payment_integration([
+                        'gateway_code' => 'razorpay',
+                        'api_key' => $rzpKeyInput,
+                        'api_secret' => $rzpSecretInput ?: null,
+                        'environment' => $env,
+                        'enable_in_pos' => 1,
+                        'enable_in_store' => $rzpInStore,
+                        'status' => 'connected',
+                    ], $bid);
+                } else {
+                    $db = get_db();
+                    ensure_payment_integrations_table($db);
+                    $db->prepare("UPDATE payment_integrations SET enable_in_store = :val, updated_at = NOW() WHERE business_id = :bid AND gateway_code = 'razorpay'")->execute(['val' => $rzpInStore, 'bid' => $bid]);
+                }
             }
             set_flash('success', 'Store customization saved. Open the website to see it.');
         }
@@ -273,8 +433,13 @@ $business = get_business_store($bid);
 $brand = get_mobile_store_settings($bid);
 require_once __DIR__ . '/includes/payment_integrations_db.php';
 require_once __DIR__ . '/includes/razorpay_oauth.php';
-$storeRazorpayConfigured = !empty(get_active_store_payment_gateways($bid)['razorpay'])
-    && razorpay_checkout_key($bid) !== '';
+$rzpInteg = get_payment_integration_by_code('razorpay', $bid);
+$rzpDbRecord = $rzpInteg['db_record'] ?? [];
+$rzpApiKeyCurrent = trim((string) ($rzpDbRecord['api_key'] ?? ''));
+$rzpApiSecretCurrent = trim((string) ($rzpDbRecord['api_secret'] ?? ''));
+$rzpKeyMasked = $rzpApiKeyCurrent !== '' ? (substr($rzpApiKeyCurrent, 0, 8) . '...' . substr($rzpApiKeyCurrent, -4)) : '';
+$storeRazorpayConfigured = ($rzpApiKeyCurrent !== '' && in_array($rzpInteg['status'] ?? '', ['connected', 'active'], true) && !empty($rzpInteg['enable_in_store']));
+
 $domains = get_store_custom_domains($bid);
 $localUrl = $business ? public_store_local_url($business) : app_absolute_url('store.php');
 $slug = (string) ($business['store_slug'] ?? '');
@@ -1696,15 +1861,15 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                             <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
                                 <div>
                                     <div style="display:flex;align-items:center;gap:8px;">
-                                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<?= $published ? '#16a34a' : '#dc2626' ?>;"></span>
-                                        <span style="font-size:15px;font-weight:700;color:#0f172a;">Store Status: <?= $published ? 'Open (Accepting Customer Orders)' : 'Closed (Orders Paused)' ?></span>
+                                        <span id="storeStatusDot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<?= $published ? '#16a34a' : '#dc2626' ?>;"></span>
+                                        <span id="storeStatusTitle" style="font-size:15px;font-weight:700;color:#0f172a;">Store Status: <?= $published ? 'Open (Accepting Customer Orders)' : 'Closed (Orders Paused)' ?></span>
                                     </div>
-                                    <div style="font-size:13px;color:#64748b;margin-top:4px;">
+                                    <div id="storeStatusDesc" style="font-size:13px;color:#64748b;margin-top:4px;">
                                         <?= $published ? 'Your online store is live and open for customers to browse and place orders.' : 'Your online store is currently closed. Toggle the switch to open it whenever you are ready.' ?>
                                     </div>
                                 </div>
                                 <label class="pref-switch" title="Toggle store open / closed">
-                                    <input type="checkbox" name="store_published" value="1" <?= $published ? 'checked' : '' ?>>
+                                    <input type="checkbox" name="store_published" value="1" data-pref-toggle="store_published" <?= $published ? 'checked' : '' ?>>
                                     <span class="pref-slider"></span>
                                 </label>
                             </div>
@@ -1723,27 +1888,27 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <div class="pref-section">
                             <div class="pref-sec-heading">Items</div>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="hide_out_of_stock" value="1" <?= !empty($brand['hide_out_of_stock']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="hide_out_of_stock" value="1" data-pref-toggle="hide_out_of_stock" <?= !empty($brand['hide_out_of_stock']) ? 'checked' : '' ?>>
                                 <span>Hide out of stock items</span>
                             </label>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="allow_custom_quantity" value="1" <?= !empty($brand['allow_custom_quantity']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="allow_custom_quantity" value="1" data-pref-toggle="allow_custom_quantity" <?= !empty($brand['allow_custom_quantity']) ? 'checked' : '' ?>>
                                 <span>Allow customers to enter the item quantity</span>
                             </label>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="display_stock_count" value="1" <?= !empty($brand['display_stock_count']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="display_stock_count" value="1" data-pref-toggle="display_stock_count" <?= !empty($brand['display_stock_count']) ? 'checked' : '' ?>>
                                 <span>Display available stock count</span>
                             </label>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="display_low_stock_below_10" value="1" <?= !empty($brand['display_low_stock_below_10']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="display_low_stock_below_10" value="1" data-pref-toggle="display_low_stock_below_10" <?= !empty($brand['display_low_stock_below_10']) ? 'checked' : '' ?>>
                                 <span>Display stock count when the available quantity falls below 10</span>
                             </label>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="hide_product_price" value="1" <?= !empty($brand['hide_product_price']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="hide_product_price" value="1" data-pref-toggle="hide_product_price" <?= !empty($brand['hide_product_price']) ? 'checked' : '' ?>>
                                 <span>Hide product price details</span>
                             </label>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="show_image_disclaimer" value="1" <?= !empty($brand['show_image_disclaimer']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="show_image_disclaimer" value="1" data-pref-toggle="show_image_disclaimer" <?= !empty($brand['show_image_disclaimer']) ? 'checked' : '' ?>>
                                 <span>Show product image disclaimer content</span>
                             </label>
                         </div>
@@ -1752,7 +1917,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <div class="pref-section">
                             <div class="pref-sec-heading">Orders</div>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="enable_billing_address" value="1" <?= !empty($brand['enable_billing_address']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="enable_billing_address" value="1" data-pref-toggle="enable_billing_address" <?= !empty($brand['enable_billing_address']) ? 'checked' : '' ?>>
                                 <span>Enable billing address for orders</span>
                             </label>
                         </div>
@@ -1761,7 +1926,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <div class="pref-section">
                             <div class="pref-sec-heading">Fulfilment</div>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="enable_delivery" value="1" <?= !empty($brand['enable_delivery']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="enable_delivery" value="1" data-pref-toggle="enable_delivery" <?= !empty($brand['enable_delivery']) ? 'checked' : '' ?>>
                                 <span>Enable delivery</span>
                             </label>
                             <div class="pref-sub-row">
@@ -1772,7 +1937,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                 </div>
                             </div>
                             <label class="pref-check-item">
-                                <input type="checkbox" name="enable_pickup" value="1" <?= !empty($brand['enable_pickup']) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="enable_pickup" value="1" data-pref-toggle="enable_pickup" <?= !empty($brand['enable_pickup']) ? 'checked' : '' ?>>
                                 <span>Enable pickup</span>
                             </label>
                         </div>
@@ -1780,7 +1945,7 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                         <!-- Payment Methods & Settings Section -->
                         <div class="pref-section">
                             <div class="pref-sec-heading" style="margin-bottom:4px">Payment Methods & Settings</div>
-                            <div class="pref-help-sub">Choose which payment options are active and available for customers during checkout on your online store.</div>
+                            <div class="pref-help-sub">Choose which payment options are active and available for customers during checkout on your online store. Toggles save dynamically.</div>
 
                             <div class="pref-pay-grid">
                                 <!-- COD -->
@@ -1792,30 +1957,77 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                             <div class="pref-pay-desc">Customers pay with cash or UPI upon delivery</div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_cod" value="1" <?= !empty($brand['enable_cod']) ? 'checked' : '' ?>>
+                                    <label class="pref-switch" title="Toggle Cash on Delivery">
+                                        <input type="checkbox" name="enable_cod" value="1" data-pref-toggle="enable_cod" <?= !empty($brand['enable_cod']) ? 'checked' : '' ?>>
                                         <span class="pref-slider"></span>
                                     </label>
                                 </div>
 
-                                <!-- Razorpay -->
-                                <div class="pref-pay-card">
-                                    <div class="pref-pay-left">
-                                        <div class="pref-pay-icon" style="font-weight:800;font-size:13px;color:#0f172a;min-width:36px;text-align:center;">RZP</div>
-                                        <div>
-                                            <div class="pref-pay-name">Razorpay (Online Checkout)</div>
-                                            <div class="pref-pay-desc">
-                                                Secure UPI, cards &amp; netbanking via Razorpay on your storefront.
-                                                <?php if (!$storeRazorpayConfigured): ?>
-                                                    <span style="display:block;color:#b45309;margin-top:4px;">Connect Razorpay in <a href="<?= e(APP_URL . '/payment-integrations.php') ?>" style="color:#2563eb;font-weight:600;">Payment Integrations</a> first (Online Store enabled).</span>
-                                                <?php endif; ?>
+                                <!-- Razorpay (Online Checkout) -->
+                                <div class="pref-pay-card" style="flex-direction:column;align-items:stretch;gap:12px;">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+                                        <div class="pref-pay-left">
+                                            <div class="pref-pay-icon" style="font-weight:800;font-size:13px;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;min-width:40px;text-align:center;">RZP</div>
+                                            <div>
+                                                <div class="pref-pay-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                                    <span>Razorpay (Online Checkout)</span>
+                                                    <span id="rzpBadgeStatus" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;<?= $storeRazorpayConfigured ? 'background:#dcfce7;color:#15803d;' : 'background:#fef3c7;color:#b45309;' ?>">
+                                                        <?= $storeRazorpayConfigured ? '● Connected' : '○ Keys Required' ?>
+                                                    </span>
+                                                </div>
+                                                <div class="pref-pay-desc">
+                                                    Accept UPI, debit/credit cards, and netbanking via Razorpay on your storefront.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <label class="pref-switch" title="Toggle Razorpay online checkout">
+                                            <input type="checkbox" name="enable_razorpay" value="1" data-pref-toggle="enable_razorpay" id="chk_enable_razorpay" <?= !empty($brand['enable_razorpay']) ? 'checked' : '' ?>>
+                                            <span class="pref-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- Inline Razorpay Credentials Panel -->
+                                    <div id="rzpInlineConfigBox" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;margin-top:2px;">
+                                        <div id="rzpConnectedStatusRow" style="<?= $storeRazorpayConfigured ? 'display:flex;' : 'display:none;' ?>align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                                            <div style="font-size:12.5px;color:#334155;">
+                                                <span style="font-weight:700;color:#16a34a;">✓ Razorpay Gateway Connected</span>
+                                                <span id="rzpMaskedKeyLabel" style="color:#64748b;margin-left:6px;font-family:monospace;font-size:11.5px;">(Key: <?= e($rzpKeyMasked) ?>)</span>
+                                            </div>
+                                            <div style="display:flex;gap:8px;align-items:center;">
+                                                <button type="button" onclick="toggleRzpKeyEdit(true)" style="background:#ffffff;border:1px solid #cbd5e1;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600;color:#334155;cursor:pointer;">Change Keys</button>
+                                                <a href="<?= e(APP_URL . '/payment-integrations.php') ?>" style="font-size:12px;color:#2563eb;text-decoration:none;font-weight:600;">Integration Hub ↗</a>
+                                            </div>
+                                        </div>
+
+                                        <div id="rzpEditKeysForm" style="<?= $storeRazorpayConfigured ? 'display:none;margin-top:8px;' : 'display:block;' ?>">
+                                            <div style="font-size:12.5px;color:#475569;font-weight:600;margin-bottom:8px;">
+                                                <?= $storeRazorpayConfigured ? 'Update Razorpay API Credentials' : 'Connect Razorpay API Credentials for this Store:' ?>
+                                            </div>
+                                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px;margin-bottom:8px;">
+                                                <div>
+                                                    <label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;">Razorpay Key ID</label>
+                                                    <input type="text" id="pref_rzp_key" name="rzp_api_key" value="<?= e($rzpApiKeyCurrent) ?>" placeholder="rzp_test_... or rzp_live_..." class="pref-field-input" style="font-family:monospace;font-size:12px;padding:6px 9px;">
+                                                </div>
+                                                <div>
+                                                    <label style="display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;">Razorpay Key Secret</label>
+                                                    <input type="password" id="pref_rzp_secret" name="rzp_api_secret" value="<?= e($rzpApiSecretCurrent) ?>" placeholder="••••••••••••••••" class="pref-field-input" style="font-family:monospace;font-size:12px;padding:6px 9px;">
+                                                </div>
+                                            </div>
+                                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                                                <span style="font-size:11.5px;color:#64748b;">
+                                                    From <a href="https://dashboard.razorpay.com/#/access/api-keys" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;">Razorpay Dashboard → Settings → API Keys</a>.
+                                                </span>
+                                                <div style="display:flex;gap:6px;">
+                                                    <?php if ($storeRazorpayConfigured): ?>
+                                                        <button type="button" onclick="toggleRzpKeyEdit(false)" style="padding:5px 10px;font-size:12px;background:#ffffff;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;color:#64748b;">Cancel</button>
+                                                    <?php endif; ?>
+                                                    <button type="button" onclick="saveInlineRazorpayKeys()" id="btnSaveRzpKeysInline" style="padding:5px 14px;font-size:12px;background:#10b981;color:#ffffff;border:none;border-radius:5px;font-weight:700;cursor:pointer;">
+                                                        Save &amp; Connect
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_razorpay" value="1" <?= !empty($brand['enable_razorpay']) ? 'checked' : '' ?>>
-                                        <span class="pref-slider"></span>
-                                    </label>
                                 </div>
 
                                 <!-- UPI -->
@@ -1824,11 +2036,11 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                         <div class="pref-pay-icon">📱</div>
                                         <div>
                                             <div class="pref-pay-name">UPI Payments</div>
-                                            <div class="pref-pay-desc">Google Pay, PhonePe, Paytm, BHIM (via Razorpay when enabled above)</div>
+                                            <div class="pref-pay-desc">Google Pay, PhonePe, Paytm, BHIM (online via Razorpay, or direct UPI)</div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_upi" value="1" <?= !empty($brand['enable_upi']) ? 'checked' : '' ?>>
+                                    <label class="pref-switch" title="Toggle UPI Payments">
+                                        <input type="checkbox" name="enable_upi" value="1" data-pref-toggle="enable_upi" <?= !empty($brand['enable_upi']) ? 'checked' : '' ?>>
                                         <span class="pref-slider"></span>
                                     </label>
                                 </div>
@@ -1839,11 +2051,11 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                         <div class="pref-pay-icon">💳</div>
                                         <div>
                                             <div class="pref-pay-name">Credit & Debit Cards</div>
-                                            <div class="pref-pay-desc">Visa, MasterCard, RuPay card payments</div>
+                                            <div class="pref-pay-desc">Visa, MasterCard, RuPay card payments (processed via Razorpay)</div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_card" value="1" <?= !empty($brand['enable_card']) ? 'checked' : '' ?>>
+                                    <label class="pref-switch" title="Toggle Card Payments">
+                                        <input type="checkbox" name="enable_card" value="1" data-pref-toggle="enable_card" <?= !empty($brand['enable_card']) ? 'checked' : '' ?>>
                                         <span class="pref-slider"></span>
                                     </label>
                                 </div>
@@ -1854,11 +2066,11 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                         <div class="pref-pay-icon">🏦</div>
                                         <div>
                                             <div class="pref-pay-name">Net Banking / Direct Bank Transfer</div>
-                                            <div class="pref-pay-desc">Direct bank account NEFT / IMPS / RTGS transfer</div>
+                                            <div class="pref-pay-desc">Direct bank account NEFT / IMPS / RTGS transfer or via Razorpay</div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_netbanking" value="1" <?= !empty($brand['enable_netbanking']) ? 'checked' : '' ?>>
+                                    <label class="pref-switch" title="Toggle Net Banking">
+                                        <input type="checkbox" name="enable_netbanking" value="1" data-pref-toggle="enable_netbanking" <?= !empty($brand['enable_netbanking']) ? 'checked' : '' ?>>
                                         <span class="pref-slider"></span>
                                     </label>
                                 </div>
@@ -1872,8 +2084,8 @@ if (in_array($tab, ['customize', 'branding'], true)) {
                                             <div class="pref-pay-desc">Allow customers to place order online and pay cash at counter</div>
                                         </div>
                                     </div>
-                                    <label class="pref-switch">
-                                        <input type="checkbox" name="enable_store_pickup_payment" value="1" <?= !empty($brand['enable_store_pickup_payment']) ? 'checked' : '' ?>>
+                                    <label class="pref-switch" title="Toggle Pay at Store">
+                                        <input type="checkbox" name="enable_store_pickup_payment" value="1" data-pref-toggle="enable_store_pickup_payment" <?= !empty($brand['enable_store_pickup_payment']) ? 'checked' : '' ?>>
                                         <span class="pref-slider"></span>
                                     </label>
                                 </div>
@@ -2563,6 +2775,179 @@ function printPoster() {
     const menu = document.getElementById('qrDownloadMenu');
     if (menu) menu.classList.remove('show');
     window.print();
+}
+
+// Floating Toast Notification System
+function showPrefToast(msg, type) {
+    type = type || 'success';
+    var toast = document.getElementById('prefLiveToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'prefLiveToast';
+        toast.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:999999;padding:12px 20px;border-radius:8px;font-size:13.5px;font-weight:600;box-shadow:0 10px 25px -5px rgba(0,0,0,0.2),0 8px 10px -6px rgba(0,0,0,0.1);display:flex;align-items:center;gap:10px;transition:opacity 0.25s ease,transform 0.25s ease;transform:translateY(10px);opacity:0;pointer-events:none;';
+        document.body.appendChild(toast);
+    }
+    if (type === 'success') {
+        toast.style.background = '#0f172a';
+        toast.style.color = '#ffffff';
+        toast.style.border = '1px solid #334155';
+    } else {
+        toast.style.background = '#ef4444';
+        toast.style.color = '#ffffff';
+        toast.style.border = '1px solid #b91c1c';
+    }
+    toast.innerHTML = (type === 'success' ? '✓ ' : '✕ ') + msg;
+    toast.style.transform = 'translateY(0)';
+    toast.style.opacity = '1';
+
+    if (window._prefToastTimer) clearTimeout(window._prefToastTimer);
+    window._prefToastTimer = setTimeout(function() {
+        toast.style.transform = 'translateY(10px)';
+        toast.style.opacity = '0';
+    }, 3500);
+}
+
+// Instant Asynchronous Toggle for Store Preferences & Payment Options (No Page Reload / Redirect)
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleSwitches = document.querySelectorAll('input[data-pref-toggle]');
+    toggleSwitches.forEach(function(chk) {
+        chk.addEventListener('change', function(e) {
+            var key = chk.getAttribute('data-pref-toggle');
+            var isChecked = chk.checked;
+            var csrfTokenEl = document.querySelector('input[name="csrf_token"]');
+            var csrf = csrfTokenEl ? csrfTokenEl.value : '';
+
+            var fd = new FormData();
+            fd.append('action', 'toggle_payment_option');
+            fd.append('key', key);
+            fd.append('value', isChecked ? '1' : '0');
+            fd.append('csrf_token', csrf);
+
+            chk.disabled = true;
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: fd
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                chk.disabled = false;
+                if (!data.success) {
+                    chk.checked = !isChecked; // Revert switch on error
+                    showPrefToast(data.error || 'Failed to update setting.', 'error');
+                    return;
+                }
+                showPrefToast(data.message || 'Setting updated successfully', 'success');
+
+                // Special handling for Razorpay toggle
+                if (key === 'enable_razorpay') {
+                    if (data.needs_keys) {
+                        toggleRzpKeyEdit(true);
+                        var keyInput = document.getElementById('pref_rzp_key');
+                        if (keyInput) keyInput.focus();
+                    }
+                }
+
+                // Special handling for Store Status toggle
+                if (key === 'store_published') {
+                    var dot = document.getElementById('storeStatusDot');
+                    var title = document.getElementById('storeStatusTitle');
+                    var desc = document.getElementById('storeStatusDesc');
+                    if (dot) dot.style.background = isChecked ? '#16a34a' : '#dc2626';
+                    if (title) title.textContent = 'Store Status: ' + (isChecked ? 'Open (Accepting Customer Orders)' : 'Closed (Orders Paused)');
+                    if (desc) desc.textContent = isChecked ? 'Your online store is live and open for customers to browse and place orders.' : 'Your online store is currently closed. Toggle the switch to open it whenever you are ready.';
+                }
+            })
+            .catch(function(err) {
+                chk.disabled = false;
+                chk.checked = !isChecked; // Revert
+                showPrefToast('Network error while saving setting. Please try again.', 'error');
+            });
+        });
+    });
+});
+
+function toggleRzpKeyEdit(show) {
+    var editView = document.getElementById('rzpEditKeysForm');
+    var connectedRow = document.getElementById('rzpConnectedStatusRow');
+    if (editView) editView.style.display = show ? 'block' : 'none';
+    if (connectedRow && !show) connectedRow.style.display = 'flex';
+}
+
+function saveInlineRazorpayKeys() {
+    var keyInput = document.getElementById('pref_rzp_key');
+    var secretInput = document.getElementById('pref_rzp_secret');
+    var btn = document.getElementById('btnSaveRzpKeysInline');
+    var apiKey = keyInput ? keyInput.value.trim() : '';
+    var apiSecret = secretInput ? secretInput.value.trim() : '';
+
+    if (!apiKey) {
+        alert('Please enter your Razorpay Key ID (rzp_test_... or rzp_live_...).');
+        if (keyInput) keyInput.focus();
+        return;
+    }
+    if (!apiKey.startsWith('rzp_test_') && !apiKey.startsWith('rzp_live_')) {
+        alert('Razorpay Key ID must start with rzp_test_ or rzp_live_.');
+        if (keyInput) keyInput.focus();
+        return;
+    }
+
+    var csrfTokenEl = document.querySelector('input[name="csrf_token"]');
+    var csrf = csrfTokenEl ? csrfTokenEl.value : '';
+
+    var fd = new FormData();
+    fd.append('action', 'save_razorpay_keys');
+    fd.append('api_key', apiKey);
+    fd.append('api_secret', apiSecret);
+    fd.append('csrf_token', csrf);
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Connecting...';
+    }
+
+    fetch(window.location.href, {
+        method: 'POST',
+        body: fd
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Save & Connect';
+        }
+        if (!data.success) {
+            alert(data.error || 'Could not connect Razorpay.');
+            return;
+        }
+
+        // Update UI
+        showPrefToast(data.message || 'Razorpay connected successfully!', 'success');
+        var chk = document.getElementById('chk_enable_razorpay');
+        if (chk) chk.checked = true;
+
+        var badge = document.getElementById('rzpBadgeStatus');
+        if (badge) {
+            badge.textContent = '● Connected';
+            badge.style.background = '#dcfce7';
+            badge.style.color = '#15803d';
+        }
+
+        var maskedLabel = document.getElementById('rzpMaskedKeyLabel');
+        if (maskedLabel) maskedLabel.textContent = '(Key: ' + data.api_key_masked + ')';
+
+        var editView = document.getElementById('rzpEditKeysForm');
+        var connectedRow = document.getElementById('rzpConnectedStatusRow');
+        if (editView) editView.style.display = 'none';
+        if (connectedRow) connectedRow.style.display = 'flex';
+    })
+    .catch(function(err) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Save & Connect';
+        }
+        alert('Network error while saving Razorpay keys. Please try again.');
+    });
 }
 </script>
 </body>

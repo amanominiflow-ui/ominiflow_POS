@@ -413,10 +413,12 @@ if (!$storeBiz) {
             $isBuyNowCheckout = storefront_checkout_is_buynow($bid, $_POST);
             $shopper = get_storefront_shopper($bid);
             $checkoutAsGuest = !empty($_POST['checkout_as_guest']);
-            if (!$shopper && $checkoutAsGuest) {
+            $postPhone = trim((string) ($_POST['phone'] ?? ''));
+
+            if (!$shopper && ($checkoutAsGuest || $postPhone !== '')) {
                 $guestRes = storefront_ensure_guest_shopper($bid, [
                     'name' => (string) ($_POST['name'] ?? ''),
-                    'phone' => (string) ($_POST['phone'] ?? ''),
+                    'phone' => $postPhone,
                     'email' => (string) ($_POST['email'] ?? ''),
                     'address' => (string) ($_POST['address'] ?? ''),
                 ]);
@@ -432,7 +434,7 @@ if (!$storeBiz) {
                 }
             }
             if (!$shopper) {
-                set_flash('warning', 'Sign in to your account or choose Continue as Guest to place the order.');
+                set_flash('warning', 'Please enter your phone number to place your order.');
                 redirect(public_store_signin_url($storeBiz, ['return' => $isBuyNowCheckout ? 'buynow' : 'checkout']));
             }
             try {
@@ -5608,7 +5610,8 @@ var msStoreCheckout = {
     customerLoggedIn: <?= !empty($storeCustomerLoggedIn) ? 'true' : 'false' ?>,
     signinUrl: <?= json_encode($drawerSigninUrl ?? ($storeCheckoutSigninUrl ?? '')) ?>,
     signupUrl: <?= json_encode($drawerSignupUrl ?? ($storeCheckoutSignupUrl ?? '')) ?>,
-    guestMode: false
+    guestMode: false,
+    paymentMethods: <?= json_encode($storePaymentMethods) ?>
 };
 
 function storeCheckoutGuestField(scope) {
@@ -5617,8 +5620,15 @@ function storeCheckoutGuestField(scope) {
 }
 
 function isGuestCheckoutForm(form) {
-    var h = form ? form.querySelector('[name="checkout_as_guest"]') : null;
-    return !!(h && String(h.value) === '1');
+    if (!form) return false;
+    var h = form.querySelector('[name="checkout_as_guest"]');
+    if (h && String(h.value) === '1') return true;
+    var phoneInput = form.querySelector('[name="phone"]');
+    if (phoneInput && phoneInput.value.replace(/\D/g, '').length >= 10) {
+        if (h) h.value = '1';
+        return true;
+    }
+    return false;
 }
 
 function checkoutFormScope(form) {
@@ -5824,6 +5834,11 @@ function removeStoreCouponCode() {
 }
 
 function storefrontPaymentNeedsRazorpay(method) {
+    if (!msStoreCheckout.razorpayActive) return false;
+    var pm = msStoreCheckout.paymentMethods && msStoreCheckout.paymentMethods[method];
+    if (pm && typeof pm.online !== 'undefined') {
+        return !!pm.online;
+    }
     return ['upi', 'card', 'netbanking', 'razorpay'].indexOf(method) >= 0;
 }
 
@@ -6285,7 +6300,7 @@ document.addEventListener('DOMContentLoaded', function () {
 })();
 <?php endif; ?>
 </script>
-<?php if (!empty($storeRazorpayActive)): ?>
+<?php if (!empty($storeRazorpayActive) || (!empty($bid) && razorpay_checkout_key($bid) !== '')): ?>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <?php endif; ?>
 </body>
