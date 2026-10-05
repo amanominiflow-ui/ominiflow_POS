@@ -1209,6 +1209,43 @@ function save_mobile_store_settings(int $businessId, array $data, array $files =
     return ['success' => true];
 }
 
+/**
+ * Update a single mobile store preference or payment toggle for any business dynamically.
+ */
+function set_mobile_store_payment_toggle(int $businessId, string $key, bool $enabled): bool {
+    ensure_mobile_store_row($businessId);
+    $validColumns = [
+        'enable_cod',
+        'enable_razorpay',
+        'enable_upi',
+        'enable_card',
+        'enable_netbanking',
+        'enable_store_pickup_payment',
+        'hide_out_of_stock',
+        'allow_custom_quantity',
+        'display_stock_count',
+        'display_low_stock_below_10',
+        'hide_product_price',
+        'show_image_disclaimer',
+        'enable_billing_address',
+        'enable_delivery',
+        'enable_pickup',
+    ];
+    if (!in_array($key, $validColumns, true)) {
+        return false;
+    }
+    $db = get_db();
+    $val = $enabled ? 1 : 0;
+    try {
+        $stmt = $db->prepare("UPDATE mobile_store_settings SET `{$key}` = :val, updated_at = NOW() WHERE business_id = :bid");
+        return $stmt->execute(['val' => $val, 'bid' => $businessId]);
+    } catch (Throwable $e) {
+        error_log('set_mobile_store_payment_toggle error: ' . $e->getMessage());
+        return false;
+    }
+}
+
+
 function subscribe_storefront_newsletter(int $businessId, string $email): array {
     $email = trim(filter_var($email, FILTER_SANITIZE_EMAIL));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -3526,11 +3563,14 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
     require_once __DIR__ . '/payment_integrations_db.php';
     require_once __DIR__ . '/razorpay_oauth.php';
 
-    $razorpayGatewayReady = !empty(get_active_store_payment_gateways($businessId)['razorpay'])
-        && razorpay_checkout_key($businessId) !== '';
+    $storeGateways = get_active_store_payment_gateways($businessId);
+    $razorpayKey = razorpay_checkout_key($businessId);
+    $razorpayGatewayReady = !empty($storeGateways['razorpay']) && $razorpayKey !== '';
     $razorpayOnline = !empty($brandSettings['enable_razorpay']) && $razorpayGatewayReady;
 
     $methods = [];
+
+    // Cash on Delivery
     if (!empty($brandSettings['enable_cod'])) {
         $methods['cod'] = [
             'name' => 'Pay on Delivery (COD)',
@@ -3540,7 +3580,9 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
             'online' => false,
         ];
     }
-    if ($razorpayOnline) {
+
+    // Razorpay (Master Online Gateway)
+    if (!empty($brandSettings['enable_razorpay']) && $razorpayGatewayReady) {
         $methods['razorpay'] = [
             'name' => 'Pay Online (Razorpay)',
             'label' => 'Razorpay',
@@ -3548,38 +3590,55 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
             'icon' => '⚡',
             'online' => true,
         ];
-        if (!empty($brandSettings['enable_upi'])) {
-            $upiSub = 'Google Pay, PhonePe, Paytm, BHIM';
-            if (!empty($brandSettings['upi_id'])) {
-                $upiSub .= ' (' . $brandSettings['upi_id'] . ')';
-            }
+    }
+
+    // UPI Payments
+    if (!empty($brandSettings['enable_upi'])) {
+        $upiSub = !empty($brandSettings['upi_id']) ? (' (' . $brandSettings['upi_id'] . ')') : '';
+        if ($razorpayOnline) {
             $methods['upi'] = [
                 'name' => 'Pay with UPI',
                 'label' => 'Pay with UPI',
-                'desc' => $upiSub,
+                'desc' => 'Google Pay, PhonePe, Paytm, BHIM' . $upiSub,
                 'icon' => '📱',
                 'online' => true,
             ];
+        } else {
+            $methods['upi'] = [
+                'name' => 'Pay with UPI (Direct)',
+                'label' => 'Pay with UPI',
+                'desc' => !empty($brandSettings['upi_id']) ? ('Pay to UPI ID: ' . $brandSettings['upi_id']) : 'Scan or pay via UPI app upon delivery/order',
+                'icon' => '📱',
+                'online' => false,
+            ];
         }
-        if (!empty($brandSettings['enable_card'])) {
+    }
+
+    // Credit & Debit Cards
+    if (!empty($brandSettings['enable_card'])) {
+        if ($razorpayOnline) {
             $methods['card'] = [
                 'name' => 'Credit / Debit Card',
                 'label' => 'Card Payment',
-                'desc' => 'Visa, MasterCard, RuPay',
+                'desc' => 'Visa, MasterCard, RuPay card payment',
                 'icon' => '💳',
                 'online' => true,
             ];
         }
-        if (!empty($brandSettings['enable_netbanking'])) {
-            $methods['netbanking'] = [
-                'name' => 'Net Banking / Direct Bank Transfer',
-                'label' => 'Bank Transfer',
-                'desc' => 'Direct bank transfer / NEFT / IMPS',
-                'icon' => '🏦',
-                'online' => true,
-            ];
-        }
     }
+
+    // Net Banking
+    if (!empty($brandSettings['enable_netbanking'])) {
+        $methods['netbanking'] = [
+            'name' => 'Net Banking / Direct Bank Transfer',
+            'label' => 'Bank Transfer',
+            'desc' => $razorpayOnline ? 'All Indian banks supported via Razorpay' : 'Direct bank transfer / NEFT / IMPS',
+            'icon' => '🏦',
+            'online' => $razorpayOnline,
+        ];
+    }
+
+    // Pay at Store / Pickup
     if (!empty($brandSettings['enable_store_pickup_payment'])) {
         $methods['pickup'] = [
             'name' => 'Pay at Store / Pickup',
@@ -3589,6 +3648,8 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
             'online' => false,
         ];
     }
+
+    // Fallback if no payment options are enabled by merchant
     if ($methods === []) {
         $methods['cod'] = [
             'name' => 'Pay on Delivery (COD)',
@@ -3598,6 +3659,7 @@ function get_storefront_checkout_payment_methods(int $businessId, array $brandSe
             'online' => false,
         ];
     }
+
     return $methods;
 }
 
@@ -3765,15 +3827,17 @@ function place_online_store_order(int $businessId, array $checkout): array {
     require_once __DIR__ . '/payment_integrations_db.php';
     require_once __DIR__ . '/razorpay_oauth.php';
     $storeGateways = get_active_store_payment_gateways($businessId);
+    $razorpayKey = razorpay_checkout_key($businessId);
     $razorpayOnline = !empty($brandSettings['enable_razorpay'])
         && !empty($storeGateways['razorpay'])
-        && razorpay_checkout_key($businessId) !== '';
-    $onlinePrepaidMethods = ['upi', 'card', 'netbanking', 'razorpay'];
+        && $razorpayKey !== '';
+
+    $isMethodOnline = !empty($methodOptions[$method]['online']);
 
     $paymentStatus = 'pending';
     $orderPaymentMethod = $method;
 
-    if (in_array($method, $onlinePrepaidMethods, true)) {
+    if ($isMethodOnline) {
         if (!$razorpayOnline) {
             return [
                 'success' => false,
@@ -3799,16 +3863,14 @@ function place_online_store_order(int $businessId, array $checkout): array {
             'Razorpay order: ' . $rzpOrderId,
             'Razorpay payment: ' . $rzpPaymentId,
         ];
-    } elseif (in_array($method, ['cod', 'pickup'], true)) {
-        $notesParts = [
-            'Online Store order',
-            'Payment: ' . strtoupper($method),
-        ];
     } else {
         $notesParts = [
             'Online Store order',
             'Payment: ' . strtoupper($method),
         ];
+        if ($method === 'upi' && !empty($brandSettings['upi_id'])) {
+            $notesParts[] = 'Store UPI ID: ' . $brandSettings['upi_id'];
+        }
     }
 
     if (!empty($checkout['notes'])) {
