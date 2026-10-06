@@ -187,7 +187,15 @@ if (!$storeBiz) {
             }
 
             set_flash(!empty($res['success']) ? 'success' : 'error', !empty($res['success']) ? 'Added to cart.' : ($res['error'] ?? 'Could not add item.'));
-            $params = $back === 'product' ? ['id' => $pid] : [];
+            $params = [];
+            if ($back === 'product') {
+                $rSku = trim((string) ($_POST['return_sku'] ?? $_GET['sku'] ?? ''));
+                if ($rSku !== '') {
+                    $params['sku'] = $rSku;
+                } else {
+                    $params['id'] = $pid > 0 ? $pid : (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+                }
+            }
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
             }
@@ -207,7 +215,12 @@ if (!$storeBiz) {
             $redirectPage = $back === 'product' ? 'product' : 'home';
             $params = ['buynow' => '1'];
             if ($redirectPage === 'product') {
-                $params['id'] = $pid > 0 ? $pid : (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+                $rSku = trim((string) ($_POST['return_sku'] ?? $_GET['sku'] ?? ''));
+                if ($rSku !== '') {
+                    $params['sku'] = $rSku;
+                } else {
+                    $params['id'] = $pid > 0 ? $pid : (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+                }
             }
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
@@ -234,7 +247,14 @@ if (!$storeBiz) {
                 redirect($redirectUrl);
             }
             set_flash('error', $res['error'] ?? 'Could not start checkout.');
-            redirect(public_store_url($storeBiz, $redirectPage === 'product' ? 'product' : 'home', $redirectPage === 'product' ? ['id' => $pid] : []));
+            $fallbackProductParams = [];
+            $rSku = trim((string) ($_POST['return_sku'] ?? $_GET['sku'] ?? ''));
+            if ($rSku !== '') {
+                $fallbackProductParams['sku'] = $rSku;
+            } elseif ($pid > 0) {
+                $fallbackProductParams['id'] = $pid;
+            }
+            redirect(public_store_url($storeBiz, $redirectPage === 'product' ? 'product' : 'home', $redirectPage === 'product' ? $fallbackProductParams : []));
         }
 
         if ($action === 'update_cart') {
@@ -249,7 +269,12 @@ if (!$storeBiz) {
             }
             $params = ['cart' => '1'];
             if ($returnPage === 'product') {
-                $params['id'] = (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+                $rSku = trim((string) ($_POST['return_sku'] ?? $_GET['sku'] ?? ''));
+                if ($rSku !== '') {
+                    $params['sku'] = $rSku;
+                } else {
+                    $params['id'] = (int) ($_POST['return_id'] ?? $_GET['id'] ?? 0);
+                }
             }
             if (!empty($_GET['category_id'])) {
                 $params['category_id'] = (int) $_GET['category_id'];
@@ -300,9 +325,13 @@ if (!$storeBiz) {
             if ($retPage === 'buynow') {
                 $bnParams = ['buynow' => '1'];
                 $targetPage = 'home';
-                if ($page === 'product' && !empty($_GET['id'])) {
+                if ($page === 'product' && (!empty($_GET['sku']) || !empty($_GET['id']))) {
                     $targetPage = 'product';
-                    $bnParams['id'] = (int) $_GET['id'];
+                    if (!empty($_GET['sku'])) {
+                        $bnParams['sku'] = trim((string)$_GET['sku']);
+                    } elseif (!empty($_GET['id'])) {
+                        $bnParams['id'] = trim((string)$_GET['id']);
+                    }
                 }
                 redirect(public_store_url($storeBiz, $targetPage, $bnParams));
             }
@@ -472,10 +501,14 @@ if (!$storeBiz) {
             }
             $msg = is_array($result['errors'] ?? null) ? implode(' ', $result['errors']) : 'Could not place order.';
             set_flash('error', $msg);
-            $redirectPage = ($page === 'product' && !empty($_GET['id'])) ? 'product' : ($isBuyNowCheckout ? 'home' : 'checkout');
+            $redirectPage = ($page === 'product' && (!empty($_GET['sku']) || !empty($_GET['id']))) ? 'product' : ($isBuyNowCheckout ? 'home' : 'checkout');
             $redirectParams = $isBuyNowCheckout ? ['buynow' => '1'] : [];
-            if ($redirectPage === 'product' && !empty($_GET['id'])) {
-                $redirectParams['id'] = (int) $_GET['id'];
+            if ($redirectPage === 'product') {
+                if (!empty($_GET['sku'])) {
+                    $redirectParams['sku'] = trim((string)$_GET['sku']);
+                } elseif (!empty($_GET['id'])) {
+                    $redirectParams['id'] = trim((string)$_GET['id']);
+                }
             }
             redirect(public_store_url($storeBiz, $redirectPage, $redirectParams));
         }
@@ -2717,7 +2750,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <div class="ms-item-grid">
                             <?php foreach ($trendingProducts as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
-                                $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
+                                $pUrl = public_store_product_url($storeBiz, $p);
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
                                 $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
@@ -2825,7 +2858,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <div class="ms-item-grid">
                             <?php foreach ($products as $p):
                                 $pMedia = storefront_get_product_media($p, $bid);
-                                $pUrl = public_store_url($storeBiz, 'product', ['id' => (int) $p['id']]);
+                                $pUrl = public_store_product_url($storeBiz, $p);
                                 $pInfo = storefront_parse_product_display_info($p, $bid);
                                 $inStock = !empty($pInfo['in_stock']);
                                 $attrText = $pInfo['attr_text'];
@@ -2932,23 +2965,40 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
 
             <?php elseif ($page === 'product'):
                 $rawId = trim((string) ($_GET['id'] ?? ''));
-                $targetId = is_numeric($rawId) ? (int) $rawId : 0;
                 $targetSku = trim((string) ($_GET['sku'] ?? ''));
+                $targetId = is_numeric($rawId) ? (int) $rawId : 0;
                 if ($targetSku === '' && !is_numeric($rawId) && $rawId !== '' && !str_starts_with($rawId, '{{')) {
                     $targetSku = $rawId;
                 }
                 $product = null;
-                if ($targetId > 0) {
+                // 1. If SKU is given, search by SKU first
+                if ($targetSku !== '' && function_exists('get_product_by_sku')) {
+                    $product = get_product_by_sku($targetSku, $bid);
+                }
+                // 2. If not found and target ID is valid, search by ID
+                if (!$product && $targetId > 0) {
                     $product = get_product_by_id($targetId, $bid);
                 }
-                if (!$product && $targetSku !== '' && function_exists('get_product_by_sku')) {
-                    $product = get_product_by_sku($targetSku, $bid);
+                // 3. Fallback: if rawId was numeric, it might also be a numeric SKU
+                if (!$product && $rawId !== '' && function_exists('get_product_by_sku')) {
+                    $product = get_product_by_sku($rawId, $bid);
                 }
                 if (!$product || ($product['status'] ?? '') !== 'active'): ?>
                     <div class="ms-empty">This product is not available.</div>
                 <?php else:
                     $variants = function_exists('get_product_variants') ? get_product_variants((int) $product['id'], $bid) : [];
-                    $selectedVariantId = !empty($_GET['variant_id']) ? (int) $_GET['variant_id'] : (!empty($variants[0]['id']) ? (int) $variants[0]['id'] : null);
+                    $selectedVariantId = !empty($_GET['variant_id']) ? (int) $_GET['variant_id'] : null;
+                    if (!$selectedVariantId && $targetSku !== '' && !empty($variants)) {
+                        foreach ($variants as $v) {
+                            if (strcasecmp((string)($v['sku'] ?? ''), $targetSku) === 0) {
+                                $selectedVariantId = (int)$v['id'];
+                                break;
+                            }
+                        }
+                    }
+                    if (!$selectedVariantId && !empty($variants[0]['id'])) {
+                        $selectedVariantId = (int)$variants[0]['id'];
+                    }
                     
                     $activeVariant = null;
                     if ($variants) {
@@ -3059,6 +3109,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
                                     <input type="hidden" name="variant_id" id="sfPdpVariantId" value="<?= $selectedVariantId ? (int) $selectedVariantId : '' ?>">
                                     <input type="hidden" name="redirect_page" value="product">
+                                    <input type="hidden" name="return_sku" value="<?= !empty($product['sku']) ? e((string)$product['sku']) : '' ?>">
                                     <input type="hidden" name="return_id" value="<?= (int) $product['id'] ?>">
 
                                     <div class="ms-pdp-action-row" style="display:flex;flex-direction:column;gap:8px;">
@@ -3171,6 +3222,14 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         if (typeof sfInitStorePdpVariants === 'function') {
                             sfInitStorePdpVariants(<?= !empty($variantUi) ? json_encode($variantUi) : '[]' ?>, { price: <?= (float)$product['selling_price'] ?>, stock: <?= (int)$product['stock_quantity'] ?> });
                         }
+                        <?php if (!empty($product['sku']) && empty($_GET['sku'])): ?>
+                        if (window.history && window.history.replaceState) {
+                            try {
+                                var canonicalUrl = <?= json_encode(public_store_product_url($storeBiz, $product)) ?>;
+                                window.history.replaceState(null, '', canonicalUrl);
+                            } catch(e) {}
+                        }
+                        <?php endif; ?>
                     });
                     </script>
                 <?php endif; ?>
@@ -4080,6 +4139,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdSavings = (float) ($drawerCart['total_savings'] ?? 0);
     $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
     $cdReturnId = (int) ($_GET['id'] ?? 0);
+    $cdReturnSku = trim((string) ($_GET['sku'] ?? ''));
 
     $cartShopper = is_array($storeShopper) ? $storeShopper : [];
     $savedLoc = get_storefront_delivery_location($bid);
@@ -4194,37 +4254,40 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                     <input type="hidden" name="qty" value="0">
                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
                                     <?php if ($cdReturnPage === 'product'): ?>
+                                        <input type="hidden" name="return_sku" value="<?= e($cdReturnSku) ?>">
                                         <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
                                     <?php endif; ?>
                                     <button type="submit">Remove</button>
-                                </form>
-                            </div>
-                            <div class="ms-cd-stepper">
-                                <form method="post">
-                                    <?= csrf_field() ?>
-                                    <input type="hidden" name="action" value="update_cart">
-                                    <input type="hidden" name="product_id" value="<?= $pid ?>">
-                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
-                                    <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
-                                    <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
-                                    <?php if ($cdReturnPage === 'product'): ?>
-                                        <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
-                                    <?php endif; ?>
-                                    <button type="submit" aria-label="Decrease quantity">−</button>
-                                </form>
-                                <span><?= $qty ?></span>
-                                <form method="post">
-                                    <?= csrf_field() ?>
-                                    <input type="hidden" name="action" value="update_cart">
-                                    <input type="hidden" name="product_id" value="<?= $pid ?>">
-                                    <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
-                                    <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
-                                    <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
-                                    <?php if ($cdReturnPage === 'product'): ?>
-                                        <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
-                                    <?php endif; ?>
-                                    <button type="submit" aria-label="Increase quantity" <?= $qty >= $stock ? 'disabled' : '' ?>>+</button>
-                                </form>
+                                 </form>
+                             </div>
+                             <div class="ms-cd-stepper">
+                                 <form method="post">
+                                     <?= csrf_field() ?>
+                                     <input type="hidden" name="action" value="update_cart">
+                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                     <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
+                                     <input type="hidden" name="qty" value="<?= max(0, $qty - 1) ?>">
+                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                     <?php if ($cdReturnPage === 'product'): ?>
+                                         <input type="hidden" name="return_sku" value="<?= e($cdReturnSku) ?>">
+                                         <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                     <?php endif; ?>
+                                     <button type="submit" aria-label="Decrease quantity">−</button>
+                                 </form>
+                                 <span><?= $qty ?></span>
+                                 <form method="post">
+                                     <?= csrf_field() ?>
+                                     <input type="hidden" name="action" value="update_cart">
+                                     <input type="hidden" name="product_id" value="<?= $pid ?>">
+                                     <input type="hidden" name="variant_id" value="<?= $lineVid ?>">
+                                     <input type="hidden" name="qty" value="<?= min($stock, $qty + 1) ?>">
+                                     <input type="hidden" name="return_page" value="<?= e($cdReturnPage) ?>">
+                                     <?php if ($cdReturnPage === 'product'): ?>
+                                         <input type="hidden" name="return_sku" value="<?= e($cdReturnSku) ?>">
+                                         <input type="hidden" name="return_id" value="<?= $cdReturnId ?>">
+                                     <?php endif; ?>
+                                     <button type="submit" aria-label="Increase quantity" <?= $qty >= $stock ? 'disabled' : '' ?>>+</button>
+                                 </form>
                             </div>
                         </div>
                     <?php endforeach; ?>

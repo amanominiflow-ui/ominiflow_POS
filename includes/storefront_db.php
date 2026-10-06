@@ -334,12 +334,16 @@ function get_business_by_store_slug(string $slug): ?array {
 }
 
 function get_business_by_custom_domain(string $host, bool $verifiedOnly = true): ?array {
-    ensure_online_store_schema();
     $host = normalize_store_domain($host);
     if ($host === '' || is_local_app_host($host)) {
         return null;
     }
-    $db = get_db();
+    try {
+        ensure_online_store_schema();
+        $db = get_db();
+    } catch (\Throwable $e) {
+        return null;
+    }
     $sql = '
         SELECT b.*, d.domain AS mapped_domain, d.status AS domain_status
         FROM custom_domains d
@@ -408,6 +412,17 @@ function public_store_url(?array $business, string $page = 'home', array $query 
         $query['page'] = $page;
     }
     return app_absolute_url('store.php') . '?' . http_build_query($query);
+}
+
+function public_store_product_url(?array $business, array $product, array $extraQuery = []): string {
+    $sku = trim((string) ($product['sku'] ?? ''));
+    $query = $extraQuery;
+    if ($sku !== '') {
+        $query['sku'] = $sku;
+    } else {
+        $query['id'] = (int) ($product['id'] ?? 0);
+    }
+    return public_store_url($business, 'product', $query);
 }
 
 function public_store_signin_url(?array $business, array $query = []): string {

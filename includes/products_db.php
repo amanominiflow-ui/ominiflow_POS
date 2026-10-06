@@ -343,39 +343,46 @@ function get_product_by_sku(string $sku, ?int $businessId = null): ?array {
     }
 
     $skuUpper = strtoupper($sku);
+    $baseSelect = '
+        SELECT p.*, c.name AS category_name, c.code AS category_code
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id AND c.business_id = :biz_id_cat
+    ';
 
-    $stmt = $db->prepare('SELECT * FROM products WHERE (sku = :sku OR UPPER(sku) = :sku_upper) AND business_id = :biz_id LIMIT 1');
-    $stmt->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid]);
+    $stmt = $db->prepare($baseSelect . ' WHERE (p.sku = :sku OR UPPER(p.sku) = :sku_upper) AND p.business_id = :biz_id LIMIT 1');
+    $stmt->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid, 'biz_id_cat' => $bid]);
     $prod = $stmt->fetch();
     if ($prod) {
         return $prod;
     }
 
-    $stmt2 = $db->prepare('SELECT p.* FROM products p JOIN product_variants pv ON pv.product_id = p.id WHERE (pv.sku = :sku OR UPPER(pv.sku) = :sku_upper) AND p.business_id = :biz_id LIMIT 1');
-    $stmt2->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid]);
+    $stmt2 = $db->prepare($baseSelect . ' JOIN product_variants pv ON pv.product_id = p.id WHERE (pv.sku = :sku OR UPPER(pv.sku) = :sku_upper) AND p.business_id = :biz_id LIMIT 1');
+    $stmt2->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid, 'biz_id_cat' => $bid]);
     $prod2 = $stmt2->fetch();
     if ($prod2) {
         return $prod2;
     }
 
-    $stmt3 = $db->prepare('SELECT p.* FROM products p LEFT JOIN product_variants pv ON pv.product_id = p.id WHERE (p.sku LIKE :prefix OR pv.sku LIKE :prefix2 OR UPPER(p.sku) LIKE :prefix_upper OR UPPER(pv.sku) LIKE :prefix_upper2) AND p.business_id = :biz_id LIMIT 1');
+    $stmt3 = $db->prepare($baseSelect . ' LEFT JOIN product_variants pv ON pv.product_id = p.id WHERE (p.sku LIKE :prefix OR pv.sku LIKE :prefix2 OR UPPER(p.sku) LIKE :prefix_upper OR UPPER(pv.sku) LIKE :prefix_upper2) AND p.business_id = :biz_id LIMIT 1');
     $stmt3->execute([
         'prefix' => $sku . '%',
         'prefix2' => $sku . '%',
         'prefix_upper' => $skuUpper . '%',
         'prefix_upper2' => $skuUpper . '%',
         'biz_id' => $bid,
+        'biz_id_cat' => $bid,
     ]);
     $prod3 = $stmt3->fetch();
     if ($prod3) {
         return $prod3;
     }
 
-    $stmt4 = $db->prepare('SELECT * FROM products WHERE (name LIKE :like_name OR sku LIKE :like_sku) AND business_id = :biz_id LIMIT 1');
+    $stmt4 = $db->prepare($baseSelect . ' WHERE (p.name LIKE :like_name OR p.sku LIKE :like_sku) AND p.business_id = :biz_id LIMIT 1');
     $stmt4->execute([
         'like_name' => '%' . $sku . '%',
         'like_sku' => '%' . $sku . '%',
         'biz_id' => $bid,
+        'biz_id_cat' => $bid,
     ]);
     $prod4 = $stmt4->fetch();
     return $prod4 ?: null;
