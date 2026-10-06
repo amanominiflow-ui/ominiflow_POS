@@ -338,17 +338,47 @@ function get_product_by_sku(string $sku, ?int $businessId = null): ?array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sku = trim($sku);
-    $stmt = $db->prepare('SELECT * FROM products WHERE sku = :sku AND business_id = :biz_id LIMIT 1');
-    $stmt->execute(['sku' => $sku, 'biz_id' => $bid]);
+    if ($sku === '') {
+        return null;
+    }
+
+    $skuUpper = strtoupper($sku);
+
+    $stmt = $db->prepare('SELECT * FROM products WHERE (sku = :sku OR UPPER(sku) = :sku_upper) AND business_id = :biz_id LIMIT 1');
+    $stmt->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid]);
     $prod = $stmt->fetch();
     if ($prod) {
         return $prod;
     }
 
-    $stmt2 = $db->prepare('SELECT p.* FROM products p JOIN product_variants pv ON pv.product_id = p.id WHERE pv.sku = :sku AND p.business_id = :biz_id LIMIT 1');
-    $stmt2->execute(['sku' => $sku, 'biz_id' => $bid]);
+    $stmt2 = $db->prepare('SELECT p.* FROM products p JOIN product_variants pv ON pv.product_id = p.id WHERE (pv.sku = :sku OR UPPER(pv.sku) = :sku_upper) AND p.business_id = :biz_id LIMIT 1');
+    $stmt2->execute(['sku' => $sku, 'sku_upper' => $skuUpper, 'biz_id' => $bid]);
     $prod2 = $stmt2->fetch();
-    return $prod2 ?: null;
+    if ($prod2) {
+        return $prod2;
+    }
+
+    $stmt3 = $db->prepare('SELECT p.* FROM products p LEFT JOIN product_variants pv ON pv.product_id = p.id WHERE (p.sku LIKE :prefix OR pv.sku LIKE :prefix2 OR UPPER(p.sku) LIKE :prefix_upper OR UPPER(pv.sku) LIKE :prefix_upper2) AND p.business_id = :biz_id LIMIT 1');
+    $stmt3->execute([
+        'prefix' => $sku . '%',
+        'prefix2' => $sku . '%',
+        'prefix_upper' => $skuUpper . '%',
+        'prefix_upper2' => $skuUpper . '%',
+        'biz_id' => $bid,
+    ]);
+    $prod3 = $stmt3->fetch();
+    if ($prod3) {
+        return $prod3;
+    }
+
+    $stmt4 = $db->prepare('SELECT * FROM products WHERE (name LIKE :like_name OR sku LIKE :like_sku) AND business_id = :biz_id LIMIT 1');
+    $stmt4->execute([
+        'like_name' => '%' . $sku . '%',
+        'like_sku' => '%' . $sku . '%',
+        'biz_id' => $bid,
+    ]);
+    $prod4 = $stmt4->fetch();
+    return $prod4 ?: null;
 }
 
 function get_product_by_barcode(string $barcode, ?int $businessId = null): ?array {

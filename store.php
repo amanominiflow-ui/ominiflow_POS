@@ -2931,8 +2931,12 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php endforeach; ?>
 
             <?php elseif ($page === 'product'):
-                $targetId = (int) ($_GET['id'] ?? 0);
+                $rawId = trim((string) ($_GET['id'] ?? ''));
+                $targetId = is_numeric($rawId) ? (int) $rawId : 0;
                 $targetSku = trim((string) ($_GET['sku'] ?? ''));
+                if ($targetSku === '' && !is_numeric($rawId) && $rawId !== '' && !str_starts_with($rawId, '{{')) {
+                    $targetSku = $rawId;
+                }
                 $product = null;
                 if ($targetId > 0) {
                     $product = get_product_by_id($targetId, $bid);
