@@ -2931,7 +2931,15 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 <?php endforeach; ?>
 
             <?php elseif ($page === 'product'):
-                $product = get_product_by_id((int) ($_GET['id'] ?? 0), $bid);
+                $targetId = (int) ($_GET['id'] ?? 0);
+                $targetSku = trim((string) ($_GET['sku'] ?? ''));
+                $product = null;
+                if ($targetId > 0) {
+                    $product = get_product_by_id($targetId, $bid);
+                }
+                if (!$product && $targetSku !== '' && function_exists('get_product_by_sku')) {
+                    $product = get_product_by_sku($targetSku, $bid);
+                }
                 if (!$product || ($product['status'] ?? '') !== 'active'): ?>
                     <div class="ms-empty">This product is not available.</div>
                 <?php else:

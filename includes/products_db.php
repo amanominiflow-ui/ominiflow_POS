@@ -337,10 +337,18 @@ function get_product_by_id(int $id, ?int $businessId = null): ?array {
 function get_product_by_sku(string $sku, ?int $businessId = null): ?array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
+    $sku = trim($sku);
     $stmt = $db->prepare('SELECT * FROM products WHERE sku = :sku AND business_id = :biz_id LIMIT 1');
-    $stmt->execute(['sku' => trim($sku), 'biz_id' => $bid]);
+    $stmt->execute(['sku' => $sku, 'biz_id' => $bid]);
     $prod = $stmt->fetch();
-    return $prod ?: null;
+    if ($prod) {
+        return $prod;
+    }
+
+    $stmt2 = $db->prepare('SELECT p.* FROM products p JOIN product_variants pv ON pv.product_id = p.id WHERE pv.sku = :sku AND p.business_id = :biz_id LIMIT 1');
+    $stmt2->execute(['sku' => $sku, 'biz_id' => $bid]);
+    $prod2 = $stmt2->fetch();
+    return $prod2 ?: null;
 }
 
 function get_product_by_barcode(string $barcode, ?int $businessId = null): ?array {
