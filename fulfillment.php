@@ -17,7 +17,7 @@ require_auth();
 $user = current_user();
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
-$db = get_db();
+$bid = current_business_id();
 
 // Handle Status Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_fulfillment') {
@@ -30,8 +30,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $validStatuses = ['pending', 'packed', 'ready_for_pickup', 'shipped', 'delivered', 'cancelled'];
         if (in_array($status, $validStatuses, true)) {
-            $stmt = $db->prepare('UPDATE orders SET fulfillment_status = :st, updated_at = NOW() WHERE id = :id');
-            $stmt->execute(['st' => $status, 'id' => $orderId]);
+            $orderStatus = ($status === 'delivered') ? 'completed' : (($status === 'cancelled') ? 'cancelled' : 'hold');
+            $stmt = $db->prepare('
+                UPDATE orders 
+                SET fulfillment_status = :st, 
+                    order_status = :ost, 
+                    updated_at = NOW() 
+                WHERE id = :id AND business_id = :bid
+            ');
+            $stmt->execute([
+                'st' => $status,
+                'ost' => $orderStatus,
+                'id' => $orderId,
+                'bid' => $bid,
+            ]);
             set_flash('success', "Order #{$orderId} fulfillment status updated to " . strtoupper(str_replace('_', ' ', $status)));
         } else {
             set_flash('error', 'Invalid status specified.');
@@ -41,14 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Fetch orders with fulfillment status
-$stmt = $db->query('
-    SELECT o.id, o.order_number, o.total_amount, o.fulfillment_status, o.created_at,
+$stmt = $db->prepare('
+    SELECT o.id, o.order_number, o.total_amount, o.fulfillment_status, o.order_status, o.payment_status, o.created_at,
            c.name AS customer_name, c.phone AS customer_phone
     FROM orders o
-    LEFT JOIN customers c ON c.id = o.customer_id
+    LEFT JOIN customers c ON c.id = o.customer_id AND c.business_id = :bid_c
+    WHERE o.business_id = :bid
     ORDER BY o.id DESC
     LIMIT 50
 ');
+$stmt->execute(['bid' => $bid, 'bid_c' => $bid]);
 $orders = $stmt->fetchAll();
 $pageTitle = 'Order Fulfillment & Dispatch';
 ?>

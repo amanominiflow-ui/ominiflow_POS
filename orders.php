@@ -7,10 +7,25 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/app.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/orders_db.php';
 
 require_auth();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'mark_order_delivered') {
+    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        set_flash('error', 'Invalid session token. Please refresh.');
+        redirect(APP_URL . '/orders.php');
+    }
+    $orderId = (int)($_POST['order_id'] ?? 0);
+    $bid = current_business_id();
+    $db = get_db();
+    $stmt = $db->prepare('UPDATE orders SET fulfillment_status = "delivered", order_status = "completed", updated_at = NOW() WHERE id = :id AND business_id = :bid');
+    $stmt->execute(['id' => $orderId, 'bid' => $bid]);
+    set_flash('success', "Order #{$orderId} marked as Delivered and Completed!");
+    redirect(APP_URL . '/orders.php');
+}
 
 if (!empty($_GET['fetch_receipt']) && !empty($_GET['id'])) {
     $receiptOrder = get_order_by_id((int) $_GET['id']);
@@ -268,6 +283,7 @@ $flashError = get_flash('error');
                         <select name="status" class="form-control filter-select">
                             <option value="">All Statuses</option>
                             <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Completed</option>
+                            <option value="hold" <?= $statusFilter === 'hold' ? 'selected' : '' ?>>Hold (Awaiting Delivery)</option>
                             <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
                         </select>
 
@@ -334,6 +350,10 @@ $flashError = get_flash('error');
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($orders as $ord): ?>
+                                        <?php
+                                            $ordStatus = strtolower((string)($ord['order_status'] ?? 'completed'));
+                                            $fulStatus = strtolower((string)($ord['fulfillment_status'] ?? 'delivered'));
+                                        ?>
                                         <tr style="<?= ($highlightId && (int)$ord['id'] === $highlightId) ? 'background: #eff6ff;' : '' ?>">
                                             <td>
                                                 <strong style="font-family: monospace; color: var(--saas-primary); font-size: 13.5px;"><?= e($ord['order_number']) ?></strong>
@@ -373,10 +393,14 @@ $flashError = get_flash('error');
                                                 <strong style="color: var(--saas-navy-950); font-size: 14.5px;">₹<?= number_format((float)$ord['total_amount'], 2) ?></strong>
                                             </td>
                                             <td>
-                                                <?php if ($ord['order_status'] === 'completed'): ?>
+                                                <?php if ($ordStatus === 'completed'): ?>
                                                     <span class="badge badge-success">Completed</span>
+                                                <?php elseif ($ordStatus === 'cancelled'): ?>
+                                                    <span class="badge badge-danger">Cancelled</span>
                                                 <?php else: ?>
-                                                    <span class="badge badge-danger"><?= e(ucfirst($ord['order_status'])) ?></span>
+                                                    <span class="badge badge-warning" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a;">
+                                                        Hold<?= ($fulStatus && $fulStatus !== 'delivered') ? ' (' . e(ucfirst(str_replace('_', ' ', $fulStatus))) . ')' : '' ?>
+                                                    </span>
                                                 <?php endif; ?>
                                             </td>
                                             <td style="text-align: right;">
@@ -392,7 +416,19 @@ $flashError = get_flash('error');
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
                                                         </svg>
                                                     </button>
-                                                    <?php if ($ord['order_status'] === 'completed'): ?>
+                                                    <?php if ($ordStatus !== 'completed' && $ordStatus !== 'cancelled'): ?>
+                                                        <form method="POST" action="<?= asset('orders.php') ?>" style="display:inline;" onsubmit="return confirm('Mark Order #<?= e($ord['order_number']) ?> as Delivered and Completed?');">
+                                                            <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
+                                                            <input type="hidden" name="action" value="mark_order_delivered">
+                                                            <input type="hidden" name="order_id" value="<?= $ord['id'] ?>">
+                                                            <button type="submit" class="btn-action" style="color: #059669;" title="Mark as Delivered & Complete">
+                                                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                                                </svg>
+                                                            </button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                    <?php if ($ordStatus === 'completed'): ?>
                                                         <a
                                                             href="<?= asset('returns.php?search=' . urlencode($ord['order_number'])) ?>"
                                                             class="btn-action delete"

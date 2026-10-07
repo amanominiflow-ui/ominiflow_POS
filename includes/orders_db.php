@@ -1957,18 +1957,18 @@ function get_sales_stats(?int $businessId = null): array {
             COUNT(*) AS total_orders,
             COUNT(DISTINCT customer_id) AS total_customers
         FROM orders
-        WHERE order_status = "completed" AND business_id = :bid
+        WHERE (order_status = "completed" OR (payment_status = "paid" AND order_status != "cancelled")) AND business_id = :bid
     ');
     $stmtAll->execute(['bid' => $bid]);
     $all = $stmtAll->fetch();
 
-    // Today's active stats scoped to current business
+    // Today\'s active stats scoped to current business
     $stmtToday = $db->prepare('
         SELECT 
             COALESCE(SUM(total_amount), 0) AS today_revenue,
             COUNT(*) AS today_orders
         FROM orders
-        WHERE order_status = "completed" AND DATE(created_at) = CURDATE() AND business_id = :bid
+        WHERE (order_status = "completed" OR (payment_status = "paid" AND order_status != "cancelled")) AND DATE(created_at) = CURDATE() AND business_id = :bid
     ');
     $stmtToday->execute(['bid' => $bid]);
     $today = $stmtToday->fetch();
