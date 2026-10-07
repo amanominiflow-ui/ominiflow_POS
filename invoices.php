@@ -13,6 +13,7 @@ require_once __DIR__ . '/includes/orders_db.php';
 require_once __DIR__ . '/includes/import_export_db.php';
 
 require_auth();
+ensure_orders_invoices_schema();
 
 $user = current_user();
 $userId = $user ? (int) $user['id'] : null;

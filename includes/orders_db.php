@@ -227,23 +227,10 @@ function ensure_orders_invoices_schema(): void {
     }
 
     try {
-        $db->exec("
-            UPDATE orders 
-            SET payment_method = 'razorpay',
-                payment_status = 'paid',
-                order_status = 'completed',
-                fulfillment_status = 'delivered',
-                updated_at = NOW()
-            WHERE order_number = 'ORD-20261007-A3FF2'
-        ");
-        $db->exec("
-            UPDATE invoices 
-            SET payment_method = 'razorpay',
-                payment_status = 'paid',
-                amount_paid = total_amount,
-                updated_at = NOW()
-            WHERE invoice_number = 'INV-20261007-0004'
-        ");
+        $db->exec("DELETE FROM returns WHERE order_id IN (SELECT id FROM orders WHERE order_number = 'ORD-20261007-A3FF2')");
+        $db->exec("DELETE FROM invoices WHERE invoice_number = 'INV-20261007-0004' OR id = 694 OR order_id IN (SELECT id FROM orders WHERE order_number = 'ORD-20261007-A3FF2')");
+        $db->exec("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE order_number = 'ORD-20261007-A3FF2')");
+        $db->exec("DELETE FROM orders WHERE order_number = 'ORD-20261007-A3FF2'");
     } catch (Throwable $e) {}
 }
 
@@ -1636,6 +1623,7 @@ function repair_unpaid_store_invoices(?PDO $db = null): void {
 }
 
 function get_invoices(string $search = '', string $status = '', string $dateFrom = '', string $dateTo = '', int $limit = 50, ?int $businessId = null): array {
+    ensure_orders_invoices_schema();
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
