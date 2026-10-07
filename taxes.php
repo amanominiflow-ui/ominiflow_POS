@@ -80,7 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create_tax_rate') {
         $name = trim($_POST['name'] ?? '');
         $rate = (float)($_POST['rate'] ?? 0);
-        $type = trim($_POST['type'] ?? 'gst');
+        $type = strtolower(trim($_POST['type'] ?? 'gst'));
+        if (!$type) {
+            $type = 'gst';
+        }
         $isDefault = isset($_POST['is_default']) ? 1 : 0;
 
         if (!$name) {
@@ -89,6 +92,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isDefault) {
                 $db->exec("UPDATE tax_rates SET is_default = 0");
             }
+            try {
+                $db->exec("ALTER TABLE tax_rates MODIFY COLUMN `type` VARCHAR(50) NOT NULL DEFAULT 'gst'");
+            } catch (\Throwable $e) {}
+
             $stmt = $db->prepare('INSERT INTO tax_rates (name, rate, type, is_default, status, created_at, updated_at) VALUES (:name, :rate, :type, :is_def, "active", NOW(), NOW())');
             $stmt->execute([
                 'name' => $name,
@@ -97,6 +104,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'is_def' => $isDefault,
             ]);
             set_flash('success', "Tax Rate '{$name}' created successfully!");
+        }
+        redirect(APP_URL . '/taxes.php?tab=tax-rates');
+    }
+
+    if ($action === 'update_tax_rate') {
+        $rateId = (int)($_POST['rate_id'] ?? 0);
+        $name = trim($_POST['name'] ?? '');
+        $rate = (float)($_POST['rate'] ?? 0);
+        $type = strtolower(trim($_POST['type'] ?? 'gst'));
+        if (!$type) {
+            $type = 'gst';
+        }
+        $isDefault = isset($_POST['is_default']) ? 1 : 0;
+
+        if ($rateId <= 0) {
+            set_flash('error', 'Invalid tax rate ID.');
+        } elseif (!$name) {
+            set_flash('error', 'Tax rate name is required.');
+        } else {
+            if ($isDefault) {
+                $db->exec("UPDATE tax_rates SET is_default = 0");
+            }
+            try {
+                $db->exec("ALTER TABLE tax_rates MODIFY COLUMN `type` VARCHAR(50) NOT NULL DEFAULT 'gst'");
+            } catch (\Throwable $e) {}
+
+            $stmt = $db->prepare('UPDATE tax_rates SET name = :name, rate = :rate, type = :type, is_default = :is_def, updated_at = NOW() WHERE id = :id');
+            $stmt->execute([
+                'name' => $name,
+                'rate' => $rate,
+                'type' => $type,
+                'is_def' => $isDefault,
+                'id' => $rateId,
+            ]);
+            set_flash('success', "Tax Rate '{$name}' updated successfully!");
         }
         redirect(APP_URL . '/taxes.php?tab=tax-rates');
     }
@@ -467,6 +509,290 @@ $taxRates = $stmtT->fetchAll() ?: [];
             background: #dbeafe;
             color: #1d4ed8;
         }
+
+        /* Modal Overlay Support */
+        .modal-overlay.open,
+        .modal-overlay.show {
+            display: flex !important;
+        }
+
+        /* New Tax Modal Styling matching Image 2 */
+        .tax-modal-box {
+            background: #ffffff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border: 1px solid #e2e8f0;
+            animation: modalIn 0.2s ease-out;
+            overflow: visible;
+        }
+
+        .tax-modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .tax-modal-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .tax-modal-title-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            padding: 0;
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .tax-modal-title-btn:hover {
+            color: #2563eb;
+        }
+
+        .tax-modal-close-btn {
+            background: none;
+            border: none;
+            font-size: 22px;
+            line-height: 1;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .tax-modal-close-btn:hover {
+            color: #0f172a;
+            background: #f1f5f9;
+        }
+
+        .tax-modal-body {
+            padding: 20px 24px 24px;
+        }
+
+        .tax-form-group {
+            margin-bottom: 18px;
+            position: relative;
+        }
+
+        .tax-label-red {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #ef4444;
+            margin-bottom: 6px;
+        }
+
+        .tax-label-normal {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+
+        .tax-input-text {
+            width: 100%;
+            height: 40px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0 12px;
+            font-size: 14px;
+            color: #0f172a;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            background: #ffffff;
+            box-sizing: border-box;
+        }
+
+        .tax-input-text:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .tax-rate-group {
+            display: flex;
+            align-items: stretch;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .tax-rate-group:focus-within {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .tax-rate-group input {
+            flex: 1;
+            height: 40px;
+            border: none;
+            outline: none;
+            padding: 0 12px;
+            font-size: 14px;
+            color: #0f172a;
+            background: transparent;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .tax-rate-unit {
+            width: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        /* Custom Searchable Tax Type Dropdown */
+        .tax-custom-select {
+            position: relative;
+        }
+
+        .tax-select-trigger {
+            height: 40px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            color: #64748b;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            user-select: none;
+        }
+
+        .tax-custom-select.active .tax-select-trigger {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .tax-select-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            padding: 8px;
+        }
+
+        .tax-custom-select.active .tax-select-dropdown {
+            display: block;
+        }
+
+        .tax-search-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0 10px;
+            height: 36px;
+            margin-bottom: 6px;
+            background: #ffffff;
+        }
+
+        .tax-search-box input {
+            border: none;
+            background: transparent;
+            outline: none;
+            font-size: 13.5px;
+            width: 100%;
+            color: #0f172a;
+        }
+
+        .tax-search-box svg {
+            color: #94a3b8;
+            flex-shrink: 0;
+        }
+
+        .tax-options-list {
+            max-height: 180px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .tax-opt-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13.5px;
+            color: #1e293b;
+            cursor: pointer;
+            transition: all 0.1s ease;
+        }
+
+        .tax-opt-item:hover {
+            background: #f1f5f9;
+        }
+
+        .tax-opt-item.selected {
+            background: #3b82f6;
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        /* Buttons */
+        .tax-btn-save {
+            background: #3b82f6;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 22px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .tax-btn-save:hover {
+            background: #2563eb;
+        }
+
+        .tax-btn-cancel {
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 8px 18px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .tax-btn-cancel:hover {
+            background: #f8fafc;
+            border-color: #94a3b8;
+        }
     </style>
 </head>
 <body class="app-body">
@@ -680,6 +1006,14 @@ $taxRates = $stmtT->fetchAll() ?: [];
                                                 CGST: <?= number_format((float)$tr['rate'] / 2, 2) ?>% | SGST: <?= number_format((float)$tr['rate'] / 2, 2) ?>%
                                             <?php elseif ($tr['type'] === 'igst'): ?>
                                                 IGST: <?= number_format((float)$tr['rate'], 2) ?>%
+                                            <?php elseif ($tr['type'] === 'cgst'): ?>
+                                                CGST: <?= number_format((float)$tr['rate'], 2) ?>%
+                                            <?php elseif ($tr['type'] === 'sgst'): ?>
+                                                SGST: <?= number_format((float)$tr['rate'], 2) ?>%
+                                            <?php elseif ($tr['type'] === 'utgst'): ?>
+                                                UTGST: <?= number_format((float)$tr['rate'], 2) ?>%
+                                            <?php elseif ($tr['type'] === 'cess'): ?>
+                                                Cess: <?= number_format((float)$tr['rate'], 2) ?>%
                                             <?php else: ?>
                                                 Exempt / Nil Rated
                                             <?php endif; ?>
@@ -691,12 +1025,23 @@ $taxRates = $stmtT->fetchAll() ?: [];
                                                 <span style="color: #94a3b8;">—</span>
                                             <?php endif; ?>
                                         </td>
-                                        <td style="text-align: right;">
+                                        <td style="text-align: right; white-space: nowrap;">
+                                            <button type="button" 
+                                                    onclick="openEditTaxModal(<?= htmlspecialchars(json_encode([
+                                                        'id' => (int)$tr['id'],
+                                                        'name' => $tr['name'],
+                                                        'rate' => (float)$tr['rate'],
+                                                        'type' => $tr['type'],
+                                                        'is_default' => (int)$tr['is_default']
+                                                    ]), ENT_QUOTES, 'UTF-8') ?>)" 
+                                                    style="background: none; border: none; color: #2563eb; font-size: 13px; font-weight: 600; cursor: pointer; margin-right: 14px;">
+                                                Edit
+                                            </button>
                                             <form method="POST" action="<?= asset('taxes.php?tab=tax-rates') ?>" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this tax rate?')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="action" value="delete_tax_rate">
                                                 <input type="hidden" name="rate_id" value="<?= (int)$tr['id'] ?>">
-                                                <button type="submit" style="background: none; border: none; color: #ef4444; font-size: 12.5px; font-weight: 600; cursor: pointer;">Delete</button>
+                                                <button type="submit" style="background: none; border: none; color: #ef4444; font-size: 13px; font-weight: 600; cursor: pointer;">Delete</button>
                                             </form>
                                         </td>
                                     </tr>
@@ -709,46 +1054,82 @@ $taxRates = $stmtT->fetchAll() ?: [];
         </div>
     </div>
 
-    <!-- New Tax Rate Modal -->
-    <div class="modal-overlay" id="newTaxModal">
-        <div class="modal-box" style="max-width: 500px;">
-            <div class="modal-header">
-                <div class="modal-title">Create New Tax Rate</div>
-                <button type="button" class="modal-close-btn" onclick="closeNewTaxModal()">&times;</button>
+    <!-- New / Edit Tax Rate Modal (Exact Parity with Image 2) -->
+    <div class="modal-overlay" id="newTaxModal" onclick="if(event.target===this)closeNewTaxModal()">
+        <div class="tax-modal-box" onclick="event.stopPropagation()">
+            <div class="tax-modal-header">
+                <button type="button" class="tax-modal-title-btn" onclick="closeNewTaxModal()" title="Back / Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                    <span id="taxModalTitleText">New Tax</span>
+                </button>
+                <button type="button" class="tax-modal-close-btn" onclick="closeNewTaxModal()">&times;</button>
             </div>
-            <form method="POST" action="<?= asset('taxes.php?tab=tax-rates') ?>" style="padding: 24px;">
+            <form method="POST" action="<?= asset('taxes.php?tab=tax-rates') ?>" class="tax-modal-body">
                 <?= csrf_field() ?>
-                <input type="hidden" name="action" value="create_tax_rate">
+                <input type="hidden" name="action" id="taxFormAction" value="create_tax_rate">
+                <input type="hidden" name="rate_id" id="taxRateIdInput" value="">
+                <input type="hidden" name="type" id="taxTypeInput" value="gst">
 
-                <div style="margin-bottom: 16px;">
-                    <label class="form-label required" style="display: block; margin-bottom: 6px;">Tax Name</label>
-                    <input type="text" name="name" class="form-control" placeholder="e.g. GST 18% or Compensation Cess 12%" required style="width: 100%;">
+                <!-- 1. Tax Name* -->
+                <div class="tax-form-group">
+                    <label class="tax-label-red">Tax Name*</label>
+                    <input type="text" name="name" id="taxNameInput" class="tax-input-text" placeholder="e.g. GST 18% or Compensation Cess" required autocomplete="off">
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <label class="form-label required" style="display: block; margin-bottom: 6px;">Rate (%)</label>
-                    <input type="number" step="0.01" min="0" max="100" name="rate" class="form-control" placeholder="18.00" required style="width: 100%;">
+                <!-- 2. Rate (%)* -->
+                <div class="tax-form-group">
+                    <label class="tax-label-red">Rate (%)*</label>
+                    <div class="tax-rate-group">
+                        <input type="number" step="0.01" min="0" max="100" name="rate" id="taxRateInput" placeholder="0.00" required>
+                        <div class="tax-rate-unit">%</div>
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <label class="form-label" style="display: block; margin-bottom: 6px;">Tax Type</label>
-                    <select name="type" class="form-control" style="width: 100%;">
-                        <option value="gst">GST (CGST + SGST Dual Split)</option>
-                        <option value="igst">IGST (Integrated GST)</option>
-                        <option value="exempt">Exempt / Nil Rated</option>
-                    </select>
+                <!-- 3. Tax Type -->
+                <div class="tax-form-group">
+                    <label class="tax-label-normal">Tax Type</label>
+                    <div class="tax-custom-select" id="taxDropdownWrapper">
+                        <div class="tax-select-trigger" id="taxSelectTrigger" onclick="toggleTaxTypeDropdown(event)">
+                            <span id="taxTypeSelectedText">Select a Tax Type.</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="taxDropdownChevron">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </div>
+                        <div class="tax-select-dropdown" id="taxSelectDropdown" onclick="event.stopPropagation()">
+                            <div class="tax-search-box">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" id="taxTypeSearchInput" placeholder="Search" oninput="filterTaxTypes(this.value)" autocomplete="off">
+                            </div>
+                            <div class="tax-options-list" id="taxOptionsList">
+                                <div class="tax-opt-item" data-value="cgst" onclick="selectTaxType('cgst', 'CGST')">CGST</div>
+                                <div class="tax-opt-item" data-value="sgst" onclick="selectTaxType('sgst', 'SGST')">SGST</div>
+                                <div class="tax-opt-item" data-value="igst" onclick="selectTaxType('igst', 'IGST')">IGST</div>
+                                <div class="tax-opt-item" data-value="utgst" onclick="selectTaxType('utgst', 'UTGST')">UTGST</div>
+                                <div class="tax-opt-item" data-value="cess" onclick="selectTaxType('cess', 'Cess')">Cess</div>
+                                <div class="tax-opt-item selected" data-value="gst" onclick="selectTaxType('gst', 'GST (CGST + SGST Dual Split)')">GST (CGST + SGST Dual Split)</div>
+                                <div class="tax-opt-item" data-value="exempt" onclick="selectTaxType('exempt', 'Exempt / Nil Rated')">Exempt / Nil Rated</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 24px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px;">
-                        <input type="checkbox" name="is_default" value="1">
+                <!-- 4. Default Checkbox -->
+                <div class="tax-form-group" style="margin-bottom: 24px; padding-top: 4px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px; color: #334155; user-select: none;">
+                        <input type="checkbox" name="is_default" id="taxIsDefaultInput" value="1" style="accent-color: #3b82f6; width: 16px; height: 16px;">
                         <span>Set as Default Tax Rate for new products</span>
                     </label>
                 </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: 12px;">
-                    <button type="button" class="btn btn-secondary" onclick="closeNewTaxModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary" style="background: #2563eb;">Save Tax Rate</button>
+                <!-- 5. Action Buttons -->
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button type="submit" class="tax-btn-save" id="taxSaveBtn">Save</button>
+                    <button type="button" class="tax-btn-cancel" onclick="closeNewTaxModal()">Cancel</button>
                 </div>
             </form>
         </div>
@@ -803,13 +1184,185 @@ $taxRates = $stmtT->fetchAll() ?: [];
 
         function openNewTaxModal() {
             var m = document.getElementById('newTaxModal');
-            if (m) m.classList.add('show');
+            if (!m) return;
+
+            // Mode: Create
+            var titleEl = document.getElementById('taxModalTitleText');
+            if (titleEl) titleEl.textContent = 'New Tax';
+            var actionEl = document.getElementById('taxFormAction');
+            if (actionEl) actionEl.value = 'create_tax_rate';
+            var rateIdEl = document.getElementById('taxRateIdInput');
+            if (rateIdEl) rateIdEl.value = '';
+            var saveBtn = document.getElementById('taxSaveBtn');
+            if (saveBtn) saveBtn.textContent = 'Save';
+
+            // Reset form fields
+            var form = m.querySelector('form');
+            if (form) form.reset();
+
+            var isDef = document.getElementById('taxIsDefaultInput');
+            if (isDef) isDef.checked = false;
+
+            // Set default tax type
+            selectTaxType('gst', 'GST (CGST + SGST Dual Split)');
+
+            var searchInput = document.getElementById('taxTypeSearchInput');
+            if (searchInput) {
+                searchInput.value = '';
+                filterTaxTypes('');
+            }
+
+            m.classList.add('open');
+            m.classList.add('show');
+
+            // Focus on Tax Name
+            setTimeout(function() {
+                var nameInput = document.getElementById('taxNameInput');
+                if (nameInput) nameInput.focus();
+            }, 100);
+        }
+
+        function openEditTaxModal(data) {
+            var m = document.getElementById('newTaxModal');
+            if (!m || !data) return;
+
+            // Mode: Edit
+            var titleEl = document.getElementById('taxModalTitleText');
+            if (titleEl) titleEl.textContent = 'Edit Tax';
+            var actionEl = document.getElementById('taxFormAction');
+            if (actionEl) actionEl.value = 'update_tax_rate';
+            var rateIdEl = document.getElementById('taxRateIdInput');
+            if (rateIdEl) rateIdEl.value = data.id || '';
+            var saveBtn = document.getElementById('taxSaveBtn');
+            if (saveBtn) saveBtn.textContent = 'Update';
+
+            // Populate form values
+            var nameInput = document.getElementById('taxNameInput');
+            if (nameInput) nameInput.value = data.name || '';
+            var rateInput = document.getElementById('taxRateInput');
+            if (rateInput) rateInput.value = data.rate !== undefined ? parseFloat(data.rate) : '';
+
+            var isDef = document.getElementById('taxIsDefaultInput');
+            if (isDef) isDef.checked = Boolean(Number(data.is_default));
+
+            // Select tax type
+            var typeMap = {
+                'gst': 'GST (CGST + SGST Dual Split)',
+                'cgst': 'CGST',
+                'sgst': 'SGST',
+                'igst': 'IGST',
+                'utgst': 'UTGST',
+                'cess': 'Cess',
+                'exempt': 'Exempt / Nil Rated'
+            };
+            var rawType = (data.type || 'gst').toLowerCase();
+            var label = typeMap[rawType] || rawType.toUpperCase();
+            selectTaxType(rawType, label);
+
+            var searchInput = document.getElementById('taxTypeSearchInput');
+            if (searchInput) {
+                searchInput.value = '';
+                filterTaxTypes('');
+            }
+
+            m.classList.add('open');
+            m.classList.add('show');
+
+            // Focus on Tax Name
+            setTimeout(function() {
+                if (nameInput) nameInput.focus();
+            }, 100);
         }
 
         function closeNewTaxModal() {
             var m = document.getElementById('newTaxModal');
-            if (m) m.classList.remove('show');
+            if (!m) return;
+            m.classList.remove('open');
+            m.classList.remove('show');
+
+            var dd = document.getElementById('taxDropdownWrapper');
+            if (dd) dd.classList.remove('active');
         }
+
+        function toggleTaxTypeDropdown(e) {
+            if (e) e.stopPropagation();
+            var dd = document.getElementById('taxDropdownWrapper');
+            if (!dd) return;
+            var isActive = dd.classList.toggle('active');
+
+            var chevron = document.getElementById('taxDropdownChevron');
+            if (chevron) {
+                chevron.innerHTML = isActive 
+                    ? '<polyline points="18 15 12 9 6 15"></polyline>' 
+                    : '<polyline points="6 9 12 15 18 9"></polyline>';
+            }
+
+            if (isActive) {
+                var searchInput = document.getElementById('taxTypeSearchInput');
+                if (searchInput) {
+                    setTimeout(function() { searchInput.focus(); }, 50);
+                }
+            }
+        }
+
+        function selectTaxType(val, label) {
+            var input = document.getElementById('taxTypeInput');
+            var labelEl = document.getElementById('taxTypeSelectedText');
+            if (input) input.value = val;
+            if (labelEl) {
+                labelEl.textContent = label;
+                labelEl.style.color = '#0f172a';
+            }
+
+            var items = document.querySelectorAll('#taxOptionsList .tax-opt-item');
+            items.forEach(function(item) {
+                if (item.getAttribute('data-value') === val) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+
+            var dd = document.getElementById('taxDropdownWrapper');
+            if (dd) dd.classList.remove('active');
+
+            var chevron = document.getElementById('taxDropdownChevron');
+            if (chevron) {
+                chevron.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+            }
+        }
+
+        function filterTaxTypes(query) {
+            var q = (query || '').toLowerCase().trim();
+            var items = document.querySelectorAll('#taxOptionsList .tax-opt-item');
+            items.forEach(function(item) {
+                var text = (item.textContent || '').toLowerCase();
+                if (!q || text.indexOf(q) !== -1) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            var dd = document.getElementById('taxDropdownWrapper');
+            if (dd && !dd.contains(e.target)) {
+                dd.classList.remove('active');
+                var chevron = document.getElementById('taxDropdownChevron');
+                if (chevron) {
+                    chevron.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+                }
+            }
+        });
+
+        // Close modal on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeNewTaxModal();
+            }
+        });
     </script>
 </body>
 </html>

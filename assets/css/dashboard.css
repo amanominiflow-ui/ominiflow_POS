@@ -1507,7 +1507,8 @@ body {
     padding: 20px;
 }
 
-.modal-overlay.open {
+.modal-overlay.open,
+.modal-overlay.show {
     display: flex;
 }
 

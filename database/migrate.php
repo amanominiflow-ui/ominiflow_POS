@@ -990,7 +990,7 @@ try {
             `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             `name` VARCHAR(100) NOT NULL,
             `rate` DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
-            `type` ENUM('gst', 'igst', 'cgst', 'sgst', 'exempt') NOT NULL DEFAULT 'gst',
+            `type` VARCHAR(50) NOT NULL DEFAULT 'gst',
             `is_default` TINYINT(1) NOT NULL DEFAULT 0,
             `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
