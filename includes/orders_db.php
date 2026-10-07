@@ -424,7 +424,7 @@ function get_store_settings(?int $businessId = null): array {
 
     $phone = !empty($settings['phone']) ? $settings['phone'] :
         (!empty($bizProfile['phone']) ? (($bizProfile['phone_code'] ?? '+91') . ' ' . $bizProfile['phone']) :
-        (!empty($biz['phone']) ? $biz['phone'] : '+91 9755332357'));
+        (!empty($biz['phone']) ? $biz['phone'] : ''));
 
     $email = !empty($settings['email']) ? $settings['email'] :
         (!empty($bizProfile['email']) ? $bizProfile['email'] :

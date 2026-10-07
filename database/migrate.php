@@ -1021,7 +1021,7 @@ try {
             `business_type` VARCHAR(100) NOT NULL DEFAULT 'Services',
             `business_location` VARCHAR(100) NOT NULL DEFAULT 'India',
             `phone_code` VARCHAR(10) NOT NULL DEFAULT '+91',
-            `phone` VARCHAR(50) NOT NULL DEFAULT '9755332357',
+            `phone` VARCHAR(50) NOT NULL DEFAULT '',
             `email` VARCHAR(191) NOT NULL DEFAULT 'info@ominiflow.com',
             `website` VARCHAR(191) NULL DEFAULT 'https://ominiflow.com',
             `logo_path` VARCHAR(255) NULL,
@@ -1044,8 +1044,16 @@ try {
     if (!$stmtBP->fetch()) {
         $pdo->exec("
             INSERT INTO `business_profile` (`id`, `organization_id`, `business_name`, `business_type`, `business_location`, `phone_code`, `phone`, `email`, `website`, `state`, `fiscal_year`, `base_currency`, `time_zone`, `date_format`, `created_at`, `updated_at`)
-            VALUES (1, '60082591427', 'Ominiflow', 'Services', 'India', '+91', '9755332357', 'info@ominiflow.com', 'https://ominiflow.com', 'Madhya Pradesh', 'April - March', 'INR', '(GMT 05:30) India Standard Time (Asia/Calcutta)', 'dd MMM yyyy', NOW(), NOW())
+            VALUES (1, '60082591427', 'Ominiflow', 'Services', 'India', '+91', '', 'info@ominiflow.com', 'https://ominiflow.com', 'Madhya Pradesh', 'April - March', 'INR', '(GMT 05:30) India Standard Time (Asia/Calcutta)', 'dd MMM yyyy', NOW(), NOW())
         ");
+    }
+
+    // Clean up any default 9755332357 in existing records
+    try {
+        $pdo->exec("UPDATE `business_profile` SET `phone` = '' WHERE `phone` = '9755332357'");
+        $pdo->exec("ALTER TABLE `business_profile` MODIFY COLUMN `phone` VARCHAR(50) NOT NULL DEFAULT ''");
+    } catch (\Throwable $e) {
+        // Table might have custom schema
     }
 
     // 46. Shipping Integrations Table (Zoho POS Exact Parity)

@@ -184,9 +184,9 @@ $profile = $stmtBP->fetch() ?: [
     'business_type' => 'Services',
     'business_location' => 'India',
     'phone_code' => '+91',
-    'phone' => '9755332357',
-    'email' => 'info@ominiflow.com',
-    'website' => 'https://ominiflow.com',
+    'phone' => (string) (current_business()['phone'] ?? ''),
+    'email' => (string) (current_business()['email'] ?? ''),
+    'website' => (string) (current_business()['website'] ?? ''),
     'logo_path' => null,
     'address_line1' => '',
     'address_line2' => '',
@@ -517,7 +517,7 @@ $indianStates = [
                                     <option value="+44" <?= $profile['phone_code'] === '+44' ? 'selected' : '' ?>>+44 ∨</option>
                                     <option value="+971" <?= $profile['phone_code'] === '+971' ? 'selected' : '' ?>>+971 ∨</option>
                                 </select>
-                                <input type="text" name="phone" value="<?= e($profile['phone']) ?>" required class="bp-input" style="flex: 1;" placeholder="9755332357">
+                                <input type="text" name="phone" value="<?= e($profile['phone']) ?>" class="bp-input" style="flex: 1;" placeholder="e.g. 9876543210">
                             </div>
                         </div>
 

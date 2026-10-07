@@ -218,6 +218,13 @@ function ensure_pos_organization_ids(PDO $db): void
     } catch (\Throwable $e) {
         // index may already exist
     }
+
+    try {
+        $db->exec("UPDATE business_profile SET phone = '' WHERE phone = '9755332357'");
+        $db->exec("ALTER TABLE business_profile MODIFY COLUMN phone VARCHAR(50) NOT NULL DEFAULT ''");
+    } catch (\Throwable $e) {
+        // column / table may not exist yet
+    }
 }
 
 function generate_pos_organization_id(PDO $db, array $used = []): string
