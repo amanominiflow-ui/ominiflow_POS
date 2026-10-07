@@ -17,6 +17,7 @@ require_auth();
 $user = current_user();
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
+$db = get_db();
 $bid = current_business_id();
 
 // Handle Status Update
