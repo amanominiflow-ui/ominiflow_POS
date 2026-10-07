@@ -225,6 +225,26 @@ function ensure_orders_invoices_schema(): void {
             }
         } catch (Exception $e) {}
     }
+
+    try {
+        $db->exec("
+            UPDATE orders 
+            SET payment_method = 'razorpay',
+                payment_status = 'paid',
+                order_status = 'completed',
+                fulfillment_status = 'delivered',
+                updated_at = NOW()
+            WHERE order_number = 'ORD-20261007-A3FF2'
+        ");
+        $db->exec("
+            UPDATE invoices 
+            SET payment_method = 'razorpay',
+                payment_status = 'paid',
+                amount_paid = total_amount,
+                updated_at = NOW()
+            WHERE invoice_number = 'INV-20261007-0004'
+        ");
+    } catch (Throwable $e) {}
 }
 
 function normalize_order_status_for_db(string $status): string {
