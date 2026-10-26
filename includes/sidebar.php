@@ -469,7 +469,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </form>
 
                 <!-- Login Ominiflow WhatsApp API -->
-                <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
+                <a href="https://ominiflow.com" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
                     <span class="nav-item-icon" style="color: #34d399;">
                         <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -661,7 +661,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <span>PORTALS</span>
                     <span style="background: rgba(167, 139, 250, 0.15); color: #c4b5fd; font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 800; letter-spacing: 0.04em;">1-CLICK</span>
                 </div>
-                <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
+                <a href="https://ominiflow.com" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
                     <span class="nav-item-icon" style="color: #34d399;">
                         <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -1364,7 +1364,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         Instant one-click access to your connected Ominiflow business suites:
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" style="display: flex; align-items: center; justify-content: space-between; background: #10b981; color: #ffffff !important; padding: 8px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
+                        <a href="https://ominiflow.com" target="_blank" style="display: flex; align-items: center; justify-content: space-between; background: #10b981; color: #ffffff !important; padding: 8px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
                             <span style="display: flex; align-items: center; gap: 6px;">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                                 Login Ominiflow WhatsApp API
