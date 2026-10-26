@@ -66,6 +66,38 @@ $userIdLabel = function_exists('pos_public_user_id')
     : (string) (60077667000 + (int) ($user['id'] ?? 0));
 $isPremiumPlan = function_exists('is_premium_active') && is_premium_active();
 
+$isAshCollective = false;
+if (!empty($user)) {
+    $ashUserEmail = strtolower(trim((string) ($user['email'] ?? '')));
+    $ashUserName = strtolower(trim((string) ($user['name'] ?? '')));
+    $ashBizName = strtolower(trim((string) ($business['name'] ?? '')));
+    $ashBizEmail = strtolower(trim((string) ($business['email'] ?? '')));
+    $ashPublicId = (string) ($userIdLabel ?? '');
+    $ashDbPublicId = (string) ($user['public_id'] ?? '');
+
+    $hasAshIdentity = (
+        $ashUserEmail === 'ashcollective1@gmail.com'
+        || str_contains($ashUserEmail, 'ashcollective')
+        || str_contains($ashBizName, 'ash collective')
+        || str_contains($ashUserName, 'ash collective')
+        || str_contains($ashBizEmail, 'ashcollective')
+    );
+
+    $hasAshUserId = (
+        $ashPublicId === '60077667007'
+        || $ashDbPublicId === '60077667007'
+        || (int) ($user['id'] ?? 0) === 7
+    );
+
+    if ($hasAshIdentity) {
+        $isAshCollective = true;
+    } elseif ($hasAshUserId && (str_contains($ashUserEmail, 'ash') || str_contains($ashBizName, 'ash') || str_contains($ashUserName, 'ash'))) {
+        $isAshCollective = true;
+    } elseif (function_exists('is_super_admin') && is_super_admin($user) && (!empty($_GET['preview_ash']) || !empty($_SESSION['preview_ash']))) {
+        $isAshCollective = true;
+    }
+}
+
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 // Active rail tab selection
@@ -422,6 +454,47 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <span>Home</span>
                 </a>
 
+                <?php if (!empty($isAshCollective)): ?>
+                <!-- Ash Collective 1-Click Portals (ID: 60077667007) -->
+                <div class="drawer-section-title" style="color: #a78bfa; margin-top: 6px; display: flex; align-items: center; justify-content: space-between;">
+                    <span>PORTALS</span>
+                    <span style="background: rgba(167, 139, 250, 0.15); color: #c4b5fd; font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 800; letter-spacing: 0.04em;">1-CLICK</span>
+                </div>
+
+                <!-- Hidden Auto-POST Form for Instant HRMS Login -->
+                <form id="sidebarHrmsForm" method="POST" action="https://hr.ominiflow.com/Client/login" target="_blank" style="display:none;">
+                    <input type="hidden" name="email" value="ashcollective1@gmail.com">
+                    <input type="hidden" name="password" value="Ash@123">
+                    <input type="hidden" name="remember" value="1">
+                </form>
+
+                <!-- Login Ominiflow WhatsApp API -->
+                <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
+                    <span class="nav-item-icon" style="color: #34d399;">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                        </svg>
+                    </span>
+                    <span>Login Ominiflow WhatsApp API</span>
+                    <span style="margin-left: auto; color: #64748b; display: flex; align-items: center;" title="Opens in new tab">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </span>
+                </a>
+
+                <!-- Login HRMS -->
+                <a href="<?= asset('sso-login.php?service=hrms') ?>" onclick="var f=document.getElementById('sidebarHrmsForm');if(f){f.submit();return false;}" target="_blank" class="nav-item" title="1-Click Login to Ominiflow HRMS Dashboard">
+                    <span class="nav-item-icon" style="color: #a78bfa;">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                    </span>
+                    <span>Login HRMS</span>
+                    <span style="margin-left: auto; color: #64748b; display: flex; align-items: center;" title="Opens in new tab">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </span>
+                </a>
+                <?php endif; ?>
+
                 <!-- Inventory Group -->
                 <?php if (is_feature_enabled('inventory')): ?>
                 <div class="nav-group <?= $isInventoryOpen ? 'open' : '' ?>" id="grp-inventory">
@@ -582,6 +655,35 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     </span>
                     <span>Registers</span>
                 </a>
+
+                <?php if (!empty($isAshCollective)): ?>
+                <div class="drawer-section-title" style="color: #a78bfa; margin-top: 6px; display: flex; align-items: center; justify-content: space-between;">
+                    <span>PORTALS</span>
+                    <span style="background: rgba(167, 139, 250, 0.15); color: #c4b5fd; font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 800; letter-spacing: 0.04em;">1-CLICK</span>
+                </div>
+                <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" class="nav-item" title="1-Click Login to Ominiflow WhatsApp Dashboard">
+                    <span class="nav-item-icon" style="color: #34d399;">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                        </svg>
+                    </span>
+                    <span>Login Ominiflow WhatsApp API</span>
+                    <span style="margin-left: auto; color: #64748b; display: flex; align-items: center;">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </span>
+                </a>
+                <a href="<?= asset('sso-login.php?service=hrms') ?>" onclick="var f=document.getElementById('sidebarHrmsForm');if(f){f.submit();return false;}" target="_blank" class="nav-item" title="1-Click Login to Ominiflow HRMS Dashboard">
+                    <span class="nav-item-icon" style="color: #a78bfa;">
+                        <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                    </span>
+                    <span>Login HRMS</span>
+                    <span style="margin-left: auto; color: #64748b; display: flex; align-items: center;">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                    </span>
+                </a>
+                <?php endif; ?>
 
                 <!-- Customization Group -->
                 <div class="nav-group open" id="grp-pos-cust">
@@ -1175,7 +1277,8 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 
         <!-- Bottom Plan Status Widget -->
         <?php 
-        $isPremiumPlan = function_exists('is_premium_active') && is_premium_active(); 
+        $isPremiumPlan = function_exists('is_premium_active') && is_premium_active();
+
         $currBiz = function_exists('current_business') ? current_business() : null;
         $subStatus = strtolower(trim((string)($currBiz['subscription_status'] ?? '')));
         $planRaw = strtolower(trim((string)($currBiz['subscription_plan'] ?? '')));
@@ -1248,6 +1351,34 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <a href="<?= asset('admin/index.php') ?>" style="display: block; text-align: center; background: #4f46e5; color: #ffffff !important; padding: 7px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
                         Open Super Admin Panel &rarr;
                     </a>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($isAshCollective)): ?>
+                <div class="zpd-card" style="background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%) !important; border-left: 4px solid #6366f1;">
+                    <div style="font-size: 11px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                        <span>⚡ 1-Click Portals</span>
+                        <span style="background: #e0e7ff; color: #3730a3; font-size: 8.5px; padding: 1px 5px; border-radius: 4px; font-weight: 800;">ASH COLLECTIVE</span>
+                    </div>
+                    <div style="font-size: 12px; color: #475569; margin-bottom: 8px;">
+                        Instant one-click access to your connected Ominiflow business suites:
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <a href="<?= asset('sso-login.php?service=ominiflow') ?>" target="_blank" style="display: flex; align-items: center; justify-content: space-between; background: #10b981; color: #ffffff !important; padding: 8px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
+                            <span style="display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                Login Ominiflow WhatsApp API
+                            </span>
+                            <span style="font-size: 14px;">&rarr;</span>
+                        </a>
+                        <a href="<?= asset('sso-login.php?service=hrms') ?>" onclick="var f=document.getElementById('sidebarHrmsForm');if(f){f.submit();return false;}" target="_blank" style="display: flex; align-items: center; justify-content: space-between; background: #6366f1; color: #ffffff !important; padding: 8px 12px; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none;">
+                            <span style="display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                                Login HRMS
+                            </span>
+                            <span style="font-size: 14px;">&rarr;</span>
+                        </a>
+                    </div>
                 </div>
             <?php endif; ?>
 
