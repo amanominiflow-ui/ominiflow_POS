@@ -1006,7 +1006,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
     $status = (!empty($data['status']) && in_array($data['status'], ['active', 'inactive'], true)) ? $data['status'] : 'active';
     $initialStock = max(0, (int) ($data['initial_stock'] ?? 0));
     $itemKind = (($data['item_kind'] ?? 'goods') === 'service') ? 'service' : 'goods';
-    $productType = in_array(($data['product_type'] ?? 'simple'), ['simple', 'variable', 'composite'], true) ? $data['product_type'] : 'simple';
+    $productType = in_array(($data['product_type'] ?? 'simple'), ['simple', 'variable', 'composite'], true) ? (string) ($data['product_type'] ?? 'simple') : 'simple';
     $mrp = isset($data['mrp']) && $data['mrp'] !== '' && $data['mrp'] !== null ? (float) $data['mrp'] : null;
     $nullableDec = static function ($v): ?float {
         if ($v === '' || $v === null) {
@@ -1371,6 +1371,12 @@ function save_product_variants_from_attributes(int $productId, array $attributes
     $postedStock = $_POST['variant_stock'] ?? [];
     $postedExistingImages = $_POST['variant_image_existing'] ?? [];
     $postedRemoveImages = $_POST['variant_image_remove'] ?? [];
+    $parentStmt = $db->prepare('SELECT selling_price, cost_price, sku FROM products WHERE id = :pid AND business_id = :bid');
+    $parentStmt->execute(['pid' => $productId, 'bid' => $bid]);
+    $parentProd = $parentStmt->fetch() ?: [];
+    $parentSelling = (float) ($parentProd['selling_price'] ?? 0.00);
+    $parentCost = (float) ($parentProd['cost_price'] ?? 0.00);
+    $parentSku = (string) ($parentProd['sku'] ?? '');
 
     $totalVariantStock = 0;
     $firstVariantPrice = null;
@@ -1408,10 +1414,10 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             // Generate SKU for new variant
             $baseSku = strtoupper(trim($postedSkus[$ci] ?? ''));
             if ($baseSku === '') {
-                $baseSku = 'SKU-' . strtoupper(substr(uniqid(), -6)) . '-V' . ($ci + 1);
+                $baseSku = ($parentSku !== '' ? $parentSku : 'SKU-' . strtoupper(substr(uniqid(), -6))) . '-V' . ($ci + 1);
             }
-            $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : 0.00;
-            $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : 0.00;
+            $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : $parentSelling;
+            $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : $parentCost;
             $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : 0;
 
             $oldImg = !empty($postedExistingImages[$ci]) ? trim((string) $postedExistingImages[$ci]) : null;

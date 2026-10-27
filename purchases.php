@@ -183,6 +183,9 @@ $flashError = get_flash('error');
                         <p class="page-subtitle">Create procurement orders for vendors, receive goods, and convert to vendor bills.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
+                        <a href="<?= asset('purchase-returns.php') ?>" class="btn-secondary" style="padding: 10px 16px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #dc2626;">
+                            <span>↩ Purchase Returns</span>
+                        </a>
                         <a href="<?= asset('purchase-receives.php') ?>" class="btn-secondary" style="padding: 10px 16px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
                             <span>📦 In Transit Receives</span>
                         </a>
@@ -340,6 +343,9 @@ $flashError = get_flash('error');
                                                             🧾 Bill
                                                         </button>
                                                     </form>
+                                                    <a href="<?= asset('purchase-returns.php?new=1&po_id=' . $po['id']) ?>" class="btn-secondary" style="padding: 4px 8px; font-size: 11.5px; font-weight: 700; color: #dc2626; text-decoration: none;" title="Create Purchase Return / Debit Note">
+                                                        ↩ Return
+                                                    </a>
                                                 </div>
                                             </td>
                                         </tr>

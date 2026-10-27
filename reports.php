@@ -563,6 +563,70 @@ if ($view !== '') {
                         </div>
                     </div>
 
+                <?php elseif ($reportType === 'purchase-returns'): 
+                    require_once __DIR__ . '/includes/purchase_returns_db.php';
+                    $returnRows = get_purchase_returns(['date_from' => $dateFrom, 'date_to' => $dateTo], 100);
+                    $returnKpis = get_purchase_returns_kpis();
+                ?>
+                    <!-- 11b. PURCHASE RETURNS & SUPPLIER DEBIT NOTES -->
+                    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 24px;">
+                        <div class="kpi-card">
+                            <div class="kpi-title">Total Returns</div>
+                            <div class="kpi-value"><?= (int)$returnKpis['total_count'] ?></div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-title">Total Returned Value</div>
+                            <div class="kpi-value" style="color: #b91c1c;">₹<?= number_format((float)$returnKpis['total_amount'], 2) ?></div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-title">Vendor Credit Notes</div>
+                            <div class="kpi-value" style="color: #047857;">₹<?= number_format((float)$returnKpis['total_credit'], 2) ?></div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-title">Cash / Bank Settled</div>
+                            <div class="kpi-value" style="color: #6d28d9;">₹<?= number_format((float)$returnKpis['total_refunded'], 2) ?></div>
+                        </div>
+                    </div>
+                    <div class="section-card">
+                        <div class="section-header">
+                            <h2 class="section-title">Supplier Debit Notes & Purchase Returns</h2>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="saas-table">
+                                <thead>
+                                    <tr>
+                                        <th>Debit Note #</th>
+                                        <th>Date</th>
+                                        <th>Supplier / Vendor</th>
+                                        <th>PO / Bill Ref</th>
+                                        <th>Items Count</th>
+                                        <th>Settlement Mode</th>
+                                        <th>Reason</th>
+                                        <th style="text-align: right;">Total Return Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($returnRows)): ?>
+                                        <tr><td colspan="8" style="text-align: center; padding: 20px; color: #64748b;">No purchase returns during this date range.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($returnRows as $ret): ?>
+                                            <tr>
+                                                <td><strong style="font-family: monospace; color: #b91c1c;"><?= e($ret['return_number']) ?></strong></td>
+                                                <td><?= date('d M Y', strtotime($ret['return_date'] ?? $ret['created_at'])) ?></td>
+                                                <td><strong><?= e($ret['vendor_name']) ?></strong></td>
+                                                <td><span style="font-family: monospace; font-size: 12px;"><?= e($ret['po_number'] ? 'PO #' . $ret['po_number'] : ($ret['bill_number'] ? 'Bill #' . $ret['bill_number'] : 'Direct Return')) ?></span></td>
+                                                <td><?= (int)$ret['items_count'] ?> items (<?= (int)$ret['total_units_returned'] ?> units)</td>
+                                                <td><span class="badge badge-info"><?= strtoupper(str_replace('_', ' ', $ret['refund_method'] ?? 'vendor_credit')) ?></span></td>
+                                                <td><?= e($ret['reason'] ?: 'Damaged / Defective') ?></td>
+                                                <td style="text-align: right; font-weight: 700; color: #b91c1c;">₹<?= number_format((float)$ret['total_amount'], 2) ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                 <?php elseif ($reportType === 'register-shifts'): 
                     $shifts = get_register_shifts_report($dateFrom, $dateTo);
                 ?>

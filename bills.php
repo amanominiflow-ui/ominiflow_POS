@@ -154,6 +154,9 @@ $flashError = get_flash('error');
                         <p class="page-subtitle">Track supplier bills, outstanding payables, and record payments.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
+                        <a href="<?= asset('purchase-returns.php') ?>" class="btn-secondary" style="padding: 10px 16px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #dc2626;">
+                            <span>↩ Purchase Returns</span>
+                        </a>
                         <button type="button" class="header-btn" id="openCreateBillBtn" style="padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px;">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                             <span>+ New Bill</span>
@@ -321,6 +324,9 @@ $flashError = get_flash('error');
                                             </td>
                                             <td style="text-align: right;">
                                                 <div style="display: inline-flex; gap: 6px; align-items: center;">
+                                                    <a href="<?= asset('purchase-returns.php?new=1&bill_id=' . $b['id']) ?>" class="btn-secondary" style="padding: 4px 8px; font-size: 11.5px; font-weight: 700; color: #dc2626; text-decoration: none;" title="Create Return / Debit Note for Bill">
+                                                        ↩ Return
+                                                    </a>
                                                     <?php if ((float)$b['balance_due'] > 0): ?>
                                                         <a href="<?= asset('payments-made.php?bill_id=' . $b['id']) ?>" class="header-btn" style="padding: 4px 10px; font-size: 11.5px; font-weight: 700; text-decoration: none;">
                                                             💳 Pay
