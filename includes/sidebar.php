@@ -576,7 +576,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('inward-entry.php') ?>" class="submenu-link <?= $currentPage === 'inward-entry.php' ? 'active' : '' ?>">Inward Entry</a>
                         <a href="<?= asset('bills.php') ?>" class="submenu-link <?= $currentPage === 'bills.php' ? 'active' : '' ?>">Bills</a>
                         <a href="<?= asset('payments-made.php') ?>" class="submenu-link <?= $currentPage === 'payments-made.php' ? 'active' : '' ?>">Payments Made</a>
-                        <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Vendor Credits</a>
+                        <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link <?= $currentPage === 'purchase-returns.php' ? 'active' : '' ?>">Purchase Returns</a>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -1203,7 +1203,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('purchase-entry.php') ?>" class="submenu-link">Purchase Entry</a>
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link">Bills</a>
                         <a href="<?= asset('purchases.php') ?>" class="submenu-link">Payments Made</a>
-                        <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link">Vendor Credits</a>
+                        <a href="<?= asset('purchase-returns.php') ?>" class="submenu-link">Purchase Returns (Debit Notes)</a>
                     </div>
                 </div>
 

@@ -60,7 +60,12 @@ function parse_variant_size_colour(array $variant): array {
     if (is_array($av) && $av !== []) {
         foreach ($av as $k => $v) {
             $kLow = strtolower(trim((string) $k));
-            $val = trim((string) $v);
+            if (is_array($v)) {
+                $rawVal = $v['name'] ?? $v['value'] ?? (is_array(reset($v)) ? '' : reset($v));
+                $val = is_scalar($rawVal) ? trim((string) $rawVal) : '';
+            } else {
+                $val = trim((string) $v);
+            }
             if ($val === '') {
                 continue;
             }
@@ -72,11 +77,13 @@ function parse_variant_size_colour(array $variant): array {
         }
         if ($size === '' && $colour === '' && count($av) === 2) {
             foreach ($av as $v) {
-                order_item_assign_variant_token(trim((string) $v), $size, $colour);
+                $vStr = is_array($v) ? trim((string) ($v['name'] ?? $v['value'] ?? reset($v) ?? '')) : trim((string) $v);
+                order_item_assign_variant_token($vStr, $size, $colour);
             }
         }
         if ($size === '' && $colour === '' && count($av) === 1) {
-            $onlyVal = trim((string) reset($av));
+            $rawOnly = reset($av);
+            $onlyVal = is_array($rawOnly) ? trim((string) ($rawOnly['name'] ?? $rawOnly['value'] ?? '')) : trim((string) $rawOnly);
             order_item_assign_variant_token($onlyVal, $size, $colour);
         }
     }

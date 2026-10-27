@@ -791,7 +791,7 @@ function create_purchase_receive_log(
                     quantity_received, quantity_counted, unit_cost, cost_status, created_at
                 ) VALUES (
                     :rec_id, :po_item_id, :product_id, NULL, :product_name, :product_sku, NULL, NULL,
-                    :qty, :qty, :cost, "confirmed", NOW()
+                    :qty, :qty_counted, :cost, "confirmed", NOW()
                 )
             ');
         } else {
@@ -837,6 +837,7 @@ function create_purchase_receive_log(
                     'product_id' => $prodId,
                     'product_name' => $foundItem['product_name'],
                     'product_sku' => $foundItem['product_sku'],
+                    'qty_counted' => $qtyToReceive,
                     'qty' => $qtyToReceive,
                     'cost' => $unitCost,
                 ]);

@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/purchases_db.php';
 require_once __DIR__ . '/includes/outlets_db.php';
 require_once __DIR__ . '/includes/inward_db.php';
 require_once __DIR__ . '/includes/roles_db.php';
+require_once __DIR__ . '/includes/products_db.php';
 
 require_auth();
 
@@ -24,7 +25,59 @@ $canInwardCost = inward_entry_can_manage_cost($user);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postAction = (string) ($_POST['action'] ?? '');
-    inward_entry_assert_action($postAction, false);
+    $isAjax = !empty($_POST['is_ajax']);
+    inward_entry_assert_action($postAction, $isAjax);
+
+    if ($postAction === 'quick_create_product') {
+        header('Content-Type: application/json');
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success' => false, 'error' => 'Invalid session token. Please refresh.']);
+            exit;
+        }
+
+        $pName = trim((string) ($_POST['name'] ?? ''));
+        if ($pName === '') {
+            echo json_encode(['success' => false, 'error' => 'Product name is required.']);
+            exit;
+        }
+
+        $pSku = strtoupper(trim((string) ($_POST['sku'] ?? '')));
+        $pBarcode = trim((string) ($_POST['barcode'] ?? ''));
+        $pCost = (float) ($_POST['cost_price'] ?? 0.00);
+        $pSelling = (float) ($_POST['selling_price'] ?? 0.00);
+        $pCatId = !empty($_POST['category_id']) ? (int) $_POST['category_id'] : null;
+
+        $saveRes = save_product([
+            'name' => $pName,
+            'sku' => $pSku,
+            'barcode' => $pBarcode ?: ($pSku ?: null),
+            'cost_price' => $pCost >= 0 ? $pCost : 0.00,
+            'selling_price' => $pSelling >= 0 ? $pSelling : 0.00,
+            'category_id' => $pCatId,
+            'product_type' => 'simple',
+            'track_inventory' => 1,
+            'initial_stock' => 0,
+            'status' => 'active',
+        ], null, null, $userId, current_business_id());
+
+        if (!empty($saveRes['success'])) {
+            $createdProd = get_product_by_id((int) $saveRes['product_id'], current_business_id());
+            echo json_encode([
+                'success' => true,
+                'product' => [
+                    'id' => (int) $saveRes['product_id'],
+                    'name' => $pName,
+                    'sku' => (string) ($createdProd['sku'] ?? $pSku),
+                    'variants' => [],
+                ],
+            ]);
+        } else {
+            $errs = $saveRes['errors'] ?? [];
+            $errMsg = reset($errs) ?: 'Could not save product.';
+            echo json_encode(['success' => false, 'error' => $errMsg]);
+        }
+        exit;
+    }
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
         set_flash('error', 'Invalid session token.');
         redirect(APP_URL . '/inward-entry.php');
@@ -134,6 +187,7 @@ $entries = get_inward_entries($search);
 $warehouses = get_warehouses(null, 'active');
 $vendors = get_vendors();
 $catalog = inward_count_catalog();
+$categories = get_categories('', 'active');
 
 $defaultWarehouseId = 0;
 foreach ($warehouses as $warehouse) {
@@ -157,6 +211,43 @@ $flashError = get_flash('error');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= APP_NAME ?></title>
     <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>">
+    <style>
+        .inw-tag-box:focus-within {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+        }
+        #lineTable th, #lineTable td {
+            vertical-align: top !important;
+        }
+        #lineTable td.inw-qty-cell, #lineTable th.inw-qty-header {
+            text-align: center !important;
+        }
+        .inw-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 4px;
+            line-height: 1.3;
+        }
+        .inw-chip-del {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 0 2px;
+        }
+        .inw-chip-del:hover {
+            color: #ef4444;
+        }
+    </style>
 </head>
 <body>
     <div class="app-layout">
@@ -404,14 +495,14 @@ $flashError = get_flash('error');
                             </div>
 
                             <div class="table-wrap">
-                                <table class="saas-table" id="lineTable">
+                                <table class="saas-table" id="lineTable" style="width: 100%;">
                                     <thead>
                                         <tr>
-                                            <th>Product</th>
-                                            <th>Size</th>
-                                            <th>Colour</th>
-                                            <th style="width: 110px;">Quantity</th>
-                                            <th style="width: 70px;"></th>
+                                            <th style="min-width: 240px; text-align: left;">Product <button type="button" onclick="openQuickProductModal(null)" style="background: none; border: none; color: #2563eb; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: underline; margin-left: 6px;" title="Add New Product to Catalog">+ New Product</button></th>
+                                            <th style="width: 200px; min-width: 160px; text-align: left;">Size</th>
+                                            <th style="width: 200px; min-width: 160px; text-align: left;">Colour</th>
+                                            <th style="width: 110px; min-width: 100px; text-align: center;" class="inw-qty-header">Quantity</th>
+                                            <th style="width: 80px; min-width: 70px; text-align: center;"></th>
                                         </tr>
                                     </thead>
                                     <tbody id="lineBody"></tbody>
@@ -498,6 +589,63 @@ $flashError = get_flash('error');
             </main>
         </div>
     </div>
+    <!-- Quick Add Product Modal -->
+    <div id="quickProductModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(2px); z-index: 10000; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 12px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); overflow: hidden;">
+            <div style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #2563eb;">📦</span> Add New Product
+                </h3>
+                <button type="button" onclick="closeQuickProductModal()" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; line-height: 1; padding: 0 4px;">&times;</button>
+            </div>
+            <form id="quickProductForm" style="padding: 20px;">
+                <div id="quickProductError" style="display: none; padding: 10px 14px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; color: #b91c1c; font-size: 13px; margin-bottom: 14px;"></div>
+                
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">Product Name <span style="color: #ef4444;">*</span></label>
+                    <input type="text" id="qp_name" class="form-control" required placeholder="e.g. Cotton Round Neck T-Shirt" autofocus>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">SKU (Optional)</label>
+                        <input type="text" id="qp_sku" class="form-control" placeholder="Auto-generated if blank">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">Barcode (Optional)</label>
+                        <input type="text" id="qp_barcode" class="form-control" placeholder="Scan or type barcode">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">Category (Optional)</label>
+                    <select id="qp_category_id" class="form-control">
+                        <option value="">General Category</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= (int)$cat['id'] ?>"><?= e((string)$cat['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">Approx Cost (₹)</label>
+                        <input type="number" step="0.01" min="0" id="qp_cost_price" class="form-control" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">Selling Price (₹)</label>
+                        <input type="number" step="0.01" min="0" id="qp_selling_price" class="form-control" placeholder="0.00">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 14px;">
+                    <button type="button" class="btn-secondary" onclick="closeQuickProductModal()" style="padding: 8px 16px;">Cancel</button>
+                    <button type="submit" id="qp_submit_btn" class="header-btn" style="padding: 8px 20px;">Save &amp; Select</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const inwardCatalog = <?= json_encode($catalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const lineBody = document.getElementById('lineBody');
@@ -530,19 +678,218 @@ $flashError = get_flash('error');
             });
         }
 
+        let activeRowForNewProduct = null;
+
+        function populateProductSelect(productSelect, selectedId) {
+            productSelect.innerHTML = '';
+            
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = 'Product';
+            productSelect.appendChild(blank);
+
+            const addNewOpt = document.createElement('option');
+            addNewOpt.value = '__add_new__';
+            addNewOpt.textContent = '+ Add New Product...';
+            addNewOpt.style.color = '#2563eb';
+            addNewOpt.style.fontWeight = '700';
+            addNewOpt.style.backgroundColor = '#eff6ff';
+            productSelect.appendChild(addNewOpt);
+
+            inwardCatalog.forEach(function (product) {
+                const option = document.createElement('option');
+                option.value = String(product.id);
+                option.textContent = product.sku ? product.name + ' (' + product.sku + ')' : product.name;
+                productSelect.appendChild(option);
+            });
+
+            if (selectedId) {
+                productSelect.value = String(selectedId);
+            }
+        }
+
+        function createTagInput(cell, placeholder, isSize) {
+            if (!cell) return null;
+            cell.innerHTML = '';
+            cell.className = isSize ? 'inw-size-cell' : 'inw-colour-cell';
+            cell.style.verticalAlign = 'top';
+
+            const box = document.createElement('div');
+            box.className = 'inw-tag-box ' + (isSize ? 'inw-size-box' : 'inw-colour-box');
+            box.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff; min-height:38px; cursor:text; box-sizing:border-box; width:100%;';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'inw-tag-input ' + (isSize ? 'inw-size-input' : 'inw-colour-input');
+            input.placeholder = placeholder;
+            input.style.cssText = 'border:none; outline:none; font-size:13px; flex:1; min-width:60px; padding:2px 0; background:transparent;';
+            box.appendChild(input);
+            cell.appendChild(box);
+
+            function addChip(val) {
+                val = (val || '').trim();
+                if (!val) return;
+                const existing = Array.from(box.querySelectorAll('.inw-chip')).map(function (c) {
+                    return c.getAttribute('data-val').toUpperCase();
+                });
+                if (existing.indexOf(val.toUpperCase()) !== -1) return;
+
+                const chip = document.createElement('span');
+                chip.className = 'inw-chip';
+                chip.setAttribute('data-val', val);
+                chip.style.cssText = 'display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-size:12px; font-weight:700; padding:2px 7px; border-radius:4px; line-height:1.3;';
+                chip.innerHTML = '<span>' + val + '</span><button type="button" class="inw-chip-del" style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">&times;</button>';
+                
+                chip.querySelector('.inw-chip-del').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    chip.remove();
+                    checkSplitBtn();
+                });
+
+                box.insertBefore(chip, input);
+                checkSplitBtn();
+            }
+
+            function checkSplitBtn() {
+                if (!isSize) return;
+                const row = cell.closest('tr');
+                if (!row) return;
+                const chips = box.querySelectorAll('.inw-chip');
+                let splitBtn = cell.querySelector('.btn-split-row');
+                if (chips.length > 1) {
+                    if (!splitBtn) {
+                        splitBtn = document.createElement('button');
+                        splitBtn.type = 'button';
+                        splitBtn.className = 'btn-split-row';
+                        splitBtn.style.cssText = 'background:none; border:none; color:#2563eb; font-size:11px; font-weight:600; cursor:pointer; padding:3px 0; text-decoration:underline; display:block; margin-top:3px;';
+                        splitBtn.textContent = '⚡ Split into ' + chips.length + ' rows';
+                        splitBtn.addEventListener('click', function () {
+                            splitRowBySizes(row);
+                        });
+                        cell.appendChild(splitBtn);
+                    } else {
+                        splitBtn.textContent = '⚡ Split into ' + chips.length + ' rows';
+                    }
+                } else if (splitBtn) {
+                    splitBtn.remove();
+                }
+            }
+
+            box.addEventListener('click', function (e) {
+                if (e.target !== input && !e.target.closest('.inw-chip')) {
+                    input.focus();
+                }
+            });
+
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const text = input.value;
+                    input.value = '';
+                    text.split(',').forEach(function (part) {
+                        addChip(part);
+                    });
+                } else if (e.key === 'Backspace' && input.value === '') {
+                    const chips = box.querySelectorAll('.inw-chip');
+                    if (chips.length > 0) {
+                        chips[chips.length - 1].remove();
+                        checkSplitBtn();
+                    }
+                }
+            });
+
+            input.addEventListener('blur', function () {
+                if (input.value.trim()) {
+                    const text = input.value;
+                    input.value = '';
+                    text.split(',').forEach(function (part) {
+                        addChip(part);
+                    });
+                }
+            });
+
+            function getValues() {
+                const values = Array.from(box.querySelectorAll('.inw-chip')).map(function (c) {
+                    return c.getAttribute('data-val');
+                });
+                if (input.value.trim()) {
+                    input.value.trim().split(',').forEach(function (v) {
+                        const t = v.trim();
+                        if (t && values.indexOf(t) === -1) values.push(t);
+                    });
+                }
+                return values;
+            }
+
+            box.getValues = getValues;
+            box.addChip = addChip;
+            cell.getValues = getValues;
+            cell.addChip = addChip;
+            return box;
+        }
+
+        function splitRowBySizes(row) {
+            const sizeCell = row.querySelector('.inw-size-cell');
+            const colourCell = row.querySelector('.inw-colour-cell');
+            if (!sizeCell) return;
+
+            const sizes = sizeCell.getValues ? sizeCell.getValues() : [];
+            if (sizes.length <= 1) return;
+
+            const colours = colourCell && colourCell.getValues ? colourCell.getValues() : [];
+            const colourVal = colours.length > 0 ? colours[0] : '';
+            const pid = row.querySelector('.inw-product').value;
+            const qty = row.querySelector('.inw-qty').value || '1';
+
+            // Keep first size on this row
+            createTagInput(sizeCell, 'Type size (e.g. L) & Enter', true);
+            sizeCell.addChip(sizes[0]);
+
+            // Add new rows for remaining sizes
+            for (let i = 1; i < sizes.length; i++) {
+                const newRow = addLine();
+                const sel = newRow.querySelector('.inw-product');
+                if (sel) {
+                    sel.value = pid;
+                    sel.dataset.prevValue = pid;
+                    syncLine(newRow);
+                    const newSizeCell = newRow.querySelector('.inw-size-cell');
+                    if (newSizeCell) {
+                        createTagInput(newSizeCell, 'Type size (e.g. L) & Enter', true);
+                        newSizeCell.addChip(sizes[i]);
+                    }
+                    const newColCell = newRow.querySelector('.inw-colour-cell');
+                    if (newColCell && colourVal) {
+                        newColCell.addChip(colourVal);
+                    }
+                    newRow.querySelector('.inw-qty').value = qty;
+                }
+            }
+        }
+
         function syncLine(row) {
             const product = productById(parseInt(row.querySelector('.inw-product').value || '0', 10));
             const sizeCell = row.querySelector('.inw-size-cell');
             const colourCell = row.querySelector('.inw-colour-cell');
             const variants = product && product.variants ? product.variants : [];
+
+            // Clean up any old fill-all button or split button
+            const oldFillBtn = row.querySelector('.inw-fill-variants-btn');
+            if (oldFillBtn) oldFillBtn.remove();
+            const oldSplitBtn = row.querySelector('.btn-split-row');
+            if (oldSplitBtn) oldSplitBtn.remove();
+
             if (!product || variants.length === 0) {
-                sizeCell.innerHTML = '<input type="text" class="form-control inw-size" maxlength="80" placeholder="Size">';
-                colourCell.innerHTML = '<input type="text" class="form-control inw-colour" maxlength="80" placeholder="Colour">';
+                // Interactive Tag Input for Size: user can type 'l' [Enter], 'm' [Enter], etc.!
+                createTagInput(sizeCell, 'Type size (e.g. L) & Enter', true);
+                createTagInput(colourCell, 'Colour (optional)', false);
                 return;
             }
+
             const sizes = uniqueValues(variants, 'size');
-            sizeCell.innerHTML = '<select class="form-control inw-size"></select>';
-            colourCell.innerHTML = '<select class="form-control inw-colour"></select>';
+            sizeCell.innerHTML = '<select class="form-control inw-size" style="width: 100%;"></select>';
+            colourCell.innerHTML = '<select class="form-control inw-colour" style="width: 100%;"></select>';
             const sizeSelect = sizeCell.querySelector('.inw-size');
             const colourSelect = colourCell.querySelector('.inw-colour');
             fillSelect(sizeSelect, sizes, 'Size');
@@ -552,28 +899,211 @@ $flashError = get_flash('error');
                     return variant.size === sizeSelect.value;
                 }).map(function (variant) { return variant.colour; });
                 fillSelect(colourSelect, uniqueValues(colours.map(function (colour) { return { colour: colour }; }), 'colour'), 'Colour');
+                if (colourSelect.options.length === 2) {
+                    colourSelect.selectedIndex = 1;
+                }
+            });
+            if (sizes.length === 1) {
+                sizeSelect.selectedIndex = 1;
+                sizeSelect.dispatchEvent(new Event('change'));
+            }
+
+            if (variants.length > 1) {
+                const fillBtn = document.createElement('button');
+                fillBtn.type = 'button';
+                fillBtn.className = 'inw-fill-variants-btn';
+                fillBtn.style.cssText = 'background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; cursor:pointer; margin-top:4px; display:inline-flex; align-items:center; gap:4px;';
+                fillBtn.title = 'Add all ' + variants.length + ' size/colour combinations as separate rows';
+                fillBtn.innerHTML = '⚡ Add all ' + variants.length + ' sizes/colours';
+                fillBtn.addEventListener('click', function () {
+                    sizeSelect.value = variants[0].size;
+                    sizeSelect.dispatchEvent(new Event('change'));
+                    colourSelect.value = variants[0].colour;
+
+                    for (let vi = 1; vi < variants.length; vi++) {
+                        const v = variants[vi];
+                        const extraRow = addLine();
+                        const sel = extraRow.querySelector('.inw-product');
+                        if (sel) {
+                            sel.value = String(product.id);
+                            sel.dataset.prevValue = String(product.id);
+                            syncLine(extraRow);
+                            const eSz = extraRow.querySelector('.inw-size');
+                            if (eSz) {
+                                eSz.value = v.size;
+                                eSz.dispatchEvent(new Event('change'));
+                            }
+                            const eCol = extraRow.querySelector('.inw-colour');
+                            if (eCol) eCol.value = v.colour;
+                        }
+                    }
+                });
+                row.cells[0].appendChild(fillBtn);
+            }
+        }
+
+        function openQuickProductModal(row) {
+            activeRowForNewProduct = row || null;
+            const errDiv = document.getElementById('quickProductError');
+            if (errDiv) {
+                errDiv.style.display = 'none';
+                errDiv.textContent = '';
+            }
+            const form = document.getElementById('quickProductForm');
+            if (form) form.reset();
+
+            const modal = document.getElementById('quickProductModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                setTimeout(function () {
+                    const nameInput = document.getElementById('qp_name');
+                    if (nameInput) nameInput.focus();
+                }, 50);
+            }
+        }
+
+        function closeQuickProductModal() {
+            const modal = document.getElementById('quickProductModal');
+            if (modal) modal.style.display = 'none';
+            activeRowForNewProduct = null;
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeQuickProductModal();
+            }
+        });
+
+        const quickProductModal = document.getElementById('quickProductModal');
+        if (quickProductModal) {
+            quickProductModal.addEventListener('click', function (e) {
+                if (e.target === quickProductModal) {
+                    closeQuickProductModal();
+                }
             });
         }
 
         function addLine() {
             const row = document.createElement('tr');
             row.innerHTML = ''
-                + '<td><select class="form-control inw-product"><option value="">Product</option></select></td>'
-                + '<td class="inw-size-cell"><input type="text" class="form-control inw-size" maxlength="80" placeholder="Size"></td>'
-                + '<td class="inw-colour-cell"><input type="text" class="form-control inw-colour" maxlength="80" placeholder="Colour"></td>'
-                + '<td><input type="number" class="form-control inw-qty" min="1" step="1" value="1"></td>'
-                + '<td><button type="button" class="btn-secondary inw-remove" style="padding: 6px 10px;">Remove</button></td>';
+                + '<td style="vertical-align: top; padding: 10px 14px;"><select class="form-control inw-product" style="width: 100%;"></select></td>'
+                + '<td class="inw-size-cell" style="vertical-align: top; padding: 10px 14px; width: 200px;"></td>'
+                + '<td class="inw-colour-cell" style="vertical-align: top; padding: 10px 14px; width: 200px;"></td>'
+                + '<td class="inw-qty-cell" style="vertical-align: top; padding: 10px 14px; width: 110px; text-align: center;">'
+                + '    <input type="number" class="form-control inw-qty" min="1" step="1" value="1" style="width: 100%; text-align: center; font-weight: 600;">'
+                + '</td>'
+                + '<td style="vertical-align: top; padding: 10px 14px; width: 80px; text-align: center;">'
+                + '    <button type="button" class="btn-secondary inw-remove" style="padding: 6px 10px; font-size: 12px;">Remove</button>'
+                + '</td>';
             const productSelect = row.querySelector('.inw-product');
-            inwardCatalog.forEach(function (product) {
-                const option = document.createElement('option');
-                option.value = String(product.id);
-                option.textContent = product.sku ? product.name + ' (' + product.sku + ')' : product.name;
-                productSelect.appendChild(option);
+            populateProductSelect(productSelect);
+
+            productSelect.addEventListener('change', function () {
+                if (this.value === '__add_new__') {
+                    this.value = this.dataset.prevValue || '';
+                    openQuickProductModal(row);
+                    return;
+                }
+                this.dataset.prevValue = this.value;
+                syncLine(row);
             });
+
+            // Default initialize size and colour cells with tag input
+            createTagInput(row.querySelector('.inw-size-cell'), 'Type size (e.g. L) & Enter', true);
+            createTagInput(row.querySelector('.inw-colour-cell'), 'Colour (optional)', false);
+
             lineBody.appendChild(row);
-            row.querySelector('.inw-product').addEventListener('change', function () { syncLine(row); });
             row.querySelector('.inw-remove').addEventListener('click', function () {
                 if (lineBody.children.length > 1) row.remove();
+            });
+            return row;
+        }
+
+        const quickProductForm = document.getElementById('quickProductForm');
+        if (quickProductForm) {
+            quickProductForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                const errDiv = document.getElementById('quickProductError');
+                const submitBtn = document.getElementById('qp_submit_btn');
+                if (errDiv) {
+                    errDiv.style.display = 'none';
+                    errDiv.textContent = '';
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Saving...';
+                }
+
+                const params = new URLSearchParams();
+                params.append('csrf_token', '<?= e(csrf_token()) ?>');
+                params.append('action', 'quick_create_product');
+                params.append('is_ajax', '1');
+                params.append('name', (document.getElementById('qp_name').value || '').trim());
+                params.append('sku', (document.getElementById('qp_sku').value || '').trim());
+                params.append('barcode', (document.getElementById('qp_barcode').value || '').trim());
+                params.append('category_id', document.getElementById('qp_category_id').value || '');
+                params.append('cost_price', document.getElementById('qp_cost_price').value || '0');
+                params.append('selling_price', document.getElementById('qp_selling_price').value || '0');
+
+                fetch('inward-entry.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: params.toString()
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save & Select';
+                    }
+                    if (!data.success) {
+                        if (errDiv) {
+                            errDiv.textContent = data.error || 'Failed to create product.';
+                            errDiv.style.display = 'block';
+                        }
+                        return;
+                    }
+
+                    const newProd = {
+                        id: parseInt(data.product.id, 10),
+                        name: data.product.name,
+                        sku: data.product.sku || '',
+                        variants: []
+                    };
+                    inwardCatalog.push(newProd);
+
+                    // Re-populate all line product selectors preserving values
+                    document.querySelectorAll('.inw-product').forEach(function (select) {
+                        const cur = select.value;
+                        populateProductSelect(select, cur);
+                    });
+
+                    // Select newly added product on active row
+                    const targetRow = activeRowForNewProduct || (lineBody ? lineBody.lastElementChild : null);
+                    if (targetRow) {
+                        const sel = targetRow.querySelector('.inw-product');
+                        if (sel) {
+                            sel.value = String(newProd.id);
+                            sel.dataset.prevValue = String(newProd.id);
+                            syncLine(targetRow);
+                        }
+                    }
+
+                    closeQuickProductModal();
+                })
+                .catch(function (err) {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save & Select';
+                    }
+                    if (errDiv) {
+                        errDiv.textContent = 'Error: ' + err.message;
+                        errDiv.style.display = 'block';
+                    }
+                });
             });
         }
 
@@ -607,20 +1137,63 @@ $flashError = get_flash('error');
             inwardForm.addEventListener('submit', function (event) {
                 const lines = [];
                 lineBody.querySelectorAll('tr').forEach(function (row) {
-                    lines.push({
-                        product_id: parseInt(row.querySelector('.inw-product').value || '0', 10),
-                        size: (row.querySelector('.inw-size').value || '').trim(),
-                        colour: (row.querySelector('.inw-colour').value || '').trim(),
-                        quantity: parseInt(row.querySelector('.inw-qty').value || '0', 10)
+                    const pid = parseInt(row.querySelector('.inw-product').value || '0', 10);
+                    const qty = parseInt(row.querySelector('.inw-qty').value || '0', 10);
+
+                    const sizeCell = row.querySelector('.inw-size-cell');
+                    const colourCell = row.querySelector('.inw-colour-cell');
+                    const sizeSelect = row.querySelector('.inw-size');
+                    const colourSelect = row.querySelector('.inw-colour');
+
+                    let sizes = [];
+                    let colours = [];
+
+                    if (sizeCell && typeof sizeCell.getValues === 'function') {
+                        sizes = sizeCell.getValues();
+                    } else if (sizeSelect) {
+                        sizes = sizeSelect.value ? [sizeSelect.value] : [];
+                    } else if (row.querySelector('.inw-size-box') && row.querySelector('.inw-size-box').getValues) {
+                        sizes = row.querySelector('.inw-size-box').getValues();
+                    } else if (row.querySelector('.inw-size')) {
+                        const legacySize = (row.querySelector('.inw-size').value || '').trim();
+                        sizes = legacySize ? legacySize.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
+                    }
+
+                    if (colourCell && typeof colourCell.getValues === 'function') {
+                        colours = colourCell.getValues();
+                    } else if (colourSelect) {
+                        colours = colourSelect.value ? [colourSelect.value] : [];
+                    } else if (row.querySelector('.inw-colour-box') && row.querySelector('.inw-colour-box').getValues) {
+                        colours = row.querySelector('.inw-colour-box').getValues();
+                    } else if (row.querySelector('.inw-colour')) {
+                        const legacyColour = (row.querySelector('.inw-colour').value || '').trim();
+                        colours = legacyColour ? legacyColour.split(',').map(function (c) { return c.trim(); }).filter(Boolean) : [];
+                    }
+
+                    // Default colour to 'Standard' if not specified so user is never blocked
+                    if (colours.length === 0) {
+                        colours = ['Standard'];
+                    }
+
+                    sizes.forEach(function (sz) {
+                        colours.forEach(function (col) {
+                            lines.push({
+                                product_id: pid,
+                                size: sz,
+                                colour: col,
+                                quantity: qty
+                            });
+                        });
                     });
                 });
+
                 document.getElementById('linesJson').value = JSON.stringify(lines);
                 const invalid = lines.some(function (line) {
-                    return !line.product_id || !line.size || !line.colour || line.quantity < 1;
+                    return !line.product_id || !line.size || line.quantity < 1;
                 });
                 if (invalid) {
                     event.preventDefault();
-                    alert('Each line needs a product, size, colour, and quantity.');
+                    alert('Each line needs a product, size, and quantity.');
                 }
             });
         }

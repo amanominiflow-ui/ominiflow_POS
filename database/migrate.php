@@ -1273,6 +1273,36 @@ try {
     add_column_if_not_exists($pdo, 'invoices', 'outlet_id', "INT UNSIGNED NULL AFTER `id`");
     add_column_if_not_exists($pdo, 'invoices', 'vehicle_number', "VARCHAR(50) NULL AFTER `notes`");
 
+    // Purchase Returns (Zoho POS Parity) Multi-tenant schema extensions
+    try {
+        $pdo->exec("ALTER TABLE `purchase_returns` MODIFY COLUMN `purchase_order_id` INT UNSIGNED NULL");
+        $pdo->exec("ALTER TABLE `purchase_returns` MODIFY COLUMN `user_id` INT UNSIGNED NULL");
+    } catch (Exception $ign) {}
+    add_column_if_not_exists($pdo, 'purchase_returns', 'bill_id', "INT UNSIGNED NULL AFTER `purchase_order_id`");
+    add_column_if_not_exists($pdo, 'purchase_returns', 'return_date', "DATE NOT NULL DEFAULT (CURRENT_DATE) AFTER `user_id`");
+    add_column_if_not_exists($pdo, 'purchase_returns', 'subtotal', "DECIMAL(10, 2) NOT NULL DEFAULT 0.00 AFTER `return_date`");
+    add_column_if_not_exists($pdo, 'purchase_returns', 'tax_amount', "DECIMAL(10, 2) NOT NULL DEFAULT 0.00 AFTER `subtotal`");
+    add_column_if_not_exists($pdo, 'purchase_returns', 'reason', "VARCHAR(255) NULL AFTER `status`");
+
+    add_column_if_not_exists($pdo, 'purchase_return_items', 'product_name', "VARCHAR(191) NOT NULL DEFAULT '' AFTER `product_id`");
+    add_column_if_not_exists($pdo, 'purchase_return_items', 'product_sku', "VARCHAR(100) NOT NULL DEFAULT '' AFTER `product_name`");
+    add_column_if_not_exists($pdo, 'purchase_return_items', 'tax_percent', "DECIMAL(5, 2) NOT NULL DEFAULT 0.00 AFTER `quantity`");
+    add_column_if_not_exists($pdo, 'purchase_return_items', 'tax_amount', "DECIMAL(10, 2) NOT NULL DEFAULT 0.00 AFTER `tax_percent`");
+    add_column_if_not_exists($pdo, 'purchase_return_items', 'reason', "VARCHAR(255) NULL AFTER `line_total`");
+
+    add_column_if_not_exists($pdo, 'purchase_order_items', 'quantity_returned', "INT NOT NULL DEFAULT 0 AFTER `quantity_received`");
+
+    try {
+        $idxs = $pdo->query("SHOW INDEX FROM purchase_returns WHERE Key_name = 'return_number' AND Non_unique = 0")->fetchAll();
+        if (!empty($idxs)) {
+            $pdo->exec("ALTER TABLE purchase_returns DROP INDEX `return_number`");
+        }
+        $chk = $pdo->query("SHOW INDEX FROM purchase_returns WHERE Key_name = 'uk_business_return_number'")->fetchAll();
+        if (empty($chk)) {
+            $pdo->exec("ALTER TABLE purchase_returns ADD UNIQUE KEY `uk_business_return_number` (`business_id`, `return_number`)");
+        }
+    } catch (Exception $ign) {}
+
     // Multi-tenant Unique Indexes for invoices, orders, credit_notes, purchase_orders
     try {
         $idxs = $pdo->query("SHOW INDEX FROM invoices WHERE Key_name = 'invoice_number' AND Non_unique = 0")->fetchAll();

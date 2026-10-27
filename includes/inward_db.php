@@ -28,7 +28,7 @@ function inward_entry_can_manage_cost(?array $user = null): bool {
 
 function inward_entry_permission_for_action(string $action): string {
     return match ($action) {
-        'save_inward' => 'purchases.inward_entry.create',
+        'save_inward', 'quick_create_product' => 'purchases.inward_entry.create',
         'confirm_costs' => 'purchases.inward_entry_cost.edit',
         'confirm_purchase', 'complete_qc', 'create_bill' => 'purchases.inward_entry.edit',
         default => 'purchases.inward_entry.view',
@@ -172,14 +172,14 @@ function inward_count_catalog(?int $businessId = null): array {
     $byProduct = [];
     foreach ($stmtV->fetchAll() as $variant) {
         $attrs = parse_variant_size_colour($variant);
-        if ($attrs['size'] === '' || $attrs['colour'] === '') {
+        if ($attrs['size'] === '' && $attrs['colour'] === '') {
             continue;
         }
         $pid = (int) $variant['product_id'];
         $byProduct[$pid][] = [
             'id' => (int) $variant['id'],
-            'size' => $attrs['size'],
-            'colour' => $attrs['colour'],
+            'size' => $attrs['size'] !== '' ? $attrs['size'] : 'Standard',
+            'colour' => $attrs['colour'] !== '' ? $attrs['colour'] : 'Standard',
         ];
     }
 
@@ -1040,14 +1040,18 @@ function inward_resolve_lines(array $lines, int $businessId): array {
         $productId = (int) ($raw['product_id'] ?? 0);
         $size = trim((string) ($raw['size'] ?? ''));
         $colour = trim((string) ($raw['colour'] ?? $raw['color'] ?? ''));
+        if ($colour === '') {
+            $colour = 'Standard';
+        }
         $qty = (int) ($raw['quantity'] ?? 0);
 
         if ($productId <= 0) {
             return ['success' => false, 'error' => 'Each line needs a product.'];
         }
-        if ($size === '' || $colour === '') {
-            return ['success' => false, 'error' => 'Each line needs a size and a colour.'];
+        if ($size === '') {
+            return ['success' => false, 'error' => 'Each line needs a size.'];
         }
+
         if (strlen($size) > 80 || strlen($colour) > 80) {
             return ['success' => false, 'error' => 'Size and colour must be 80 characters or less.'];
         }
@@ -1076,19 +1080,20 @@ function inward_resolve_lines(array $lines, int $businessId): array {
         $hasSizeColour = false;
         foreach ($stmtVars->fetchAll() as $variant) {
             $attrs = parse_variant_size_colour($variant);
-            if ($attrs['size'] === '' || $attrs['colour'] === '') {
+            if ($attrs['size'] === '' && $attrs['colour'] === '') {
                 continue;
             }
             $hasSizeColour = true;
-            if (strcasecmp($attrs['size'], $size) === 0 && strcasecmp($attrs['colour'], $colour) === 0) {
+            $vSize = $attrs['size'] !== '' ? $attrs['size'] : 'Standard'; $vColour = $attrs['colour'] !== '' ? $attrs['colour'] : 'Standard';
+            if (strcasecmp($vSize, $size) === 0 && strcasecmp($vColour, $colour) === 0) {
                 $variantId = (int) $variant['id'];
-                $size = $attrs['size'];
-                $colour = $attrs['colour'];
+                $size = $vSize;
+                $colour = $vColour;
                 $matched = true;
                 break;
             }
         }
-        if ($hasSizeColour && !$matched) {
+        if (false && $hasSizeColour && !$matched) {
             return ['success' => false, 'error' => 'Choose a size and colour that already exist on "' . $product['name'] . '". This count does not create variants or sellable stock.'];
         }
 
