@@ -1352,7 +1352,6 @@ $flashError = get_flash('error');
             }
         }
 
-        let activeRowForNewProduct = null;
         let activeMatrixCardForNewProduct = null;
 
         function openQuickProductModal(row, matrixCardId) {
