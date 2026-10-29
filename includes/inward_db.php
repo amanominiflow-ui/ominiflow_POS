@@ -28,7 +28,7 @@ function inward_entry_can_manage_cost(?array $user = null): bool {
 
 function inward_entry_permission_for_action(string $action): string {
     return match ($action) {
-        'save_inward', 'save_matrix_inward', 'import_matrix_csv', 'quick_create_product' => 'purchases.inward_entry.create',
+        'save_inward', 'save_matrix_inward', 'import_matrix_csv', 'quick_create_product', 'upload_matrix_image' => 'purchases.inward_entry.create',
         'confirm_costs' => 'purchases.inward_entry_cost.edit',
         'confirm_purchase', 'complete_qc', 'create_bill' => 'purchases.inward_entry.edit',
         default => 'purchases.inward_entry.view',
@@ -179,7 +179,7 @@ function inward_count_catalog(?int $businessId = null): array {
     $bid = $businessId ?: current_business_id();
 
     $stmtP = $db->prepare('
-        SELECT id, name, sku
+        SELECT id, name, sku, cost_price, selling_price, image_path
         FROM products
         WHERE business_id = :bid AND status = "active"
         ORDER BY name ASC
@@ -188,7 +188,7 @@ function inward_count_catalog(?int $businessId = null): array {
     $products = $stmtP->fetchAll();
 
     $stmtV = $db->prepare('
-        SELECT id, product_id, variant_name, attribute_values
+        SELECT id, product_id, variant_name, attribute_values, sku, video_sku, color_code, cost_price, selling_price, image_path
         FROM product_variants
         WHERE business_id = :bid AND status = "active"
         ORDER BY id ASC
@@ -206,6 +206,12 @@ function inward_count_catalog(?int $businessId = null): array {
             'id' => (int) $variant['id'],
             'size' => $attrs['size'] !== '' ? $attrs['size'] : 'Standard',
             'colour' => $attrs['colour'] !== '' ? $attrs['colour'] : 'Standard',
+            'sku' => (string) ($variant['sku'] ?? ''),
+            'video_sku' => (string) ($variant['video_sku'] ?? ''),
+            'color_code' => (string) ($variant['color_code'] ?? ''),
+            'cost_price' => $variant['cost_price'] !== null ? (float) $variant['cost_price'] : null,
+            'selling_price' => $variant['selling_price'] !== null ? (float) $variant['selling_price'] : null,
+            'image_path' => (string) ($variant['image_path'] ?? ''),
         ];
     }
 
@@ -216,6 +222,9 @@ function inward_count_catalog(?int $businessId = null): array {
             'id' => $pid,
             'name' => (string) $product['name'],
             'sku' => (string) ($product['sku'] ?? ''),
+            'cost_price' => $product['cost_price'] !== null ? (float) $product['cost_price'] : null,
+            'selling_price' => $product['selling_price'] !== null ? (float) $product['selling_price'] : null,
+            'image_path' => (string) ($product['image_path'] ?? ''),
             'variants' => $byProduct[$pid] ?? [],
         ];
     }
@@ -1389,13 +1398,22 @@ function ensure_matrix_variants(
         }
     }
 
+    $firstRowCost = null;
+    $firstRowSelling = null;
+    $firstRowImage = null;
+
     foreach ($colourDefs as $cDef) {
         $colourName = trim((string)($cDef['colour'] ?? ''));
         if ($colourName === '') continue;
         $cCode = !empty($cDef['colour_code']) ? trim((string)$cDef['colour_code']) : get_standard_color_code($colourName);
         $vSku = !empty($cDef['video_sku']) ? trim((string)$cDef['video_sku']) : build_video_sku($parentSku, $colourName, $cCode);
-        $rowCost = isset($cDef['cost_price']) && $cDef['cost_price'] !== '' ? (float)$cDef['cost_price'] : ($defaultCost ?? $parentCost);
-        $rowSelling = isset($cDef['selling_price']) && $cDef['selling_price'] !== '' ? (float)$cDef['selling_price'] : ($defaultSelling ?? $parentSelling);
+        $rowCost = isset($cDef['cost_price']) && $cDef['cost_price'] !== '' && $cDef['cost_price'] !== null ? (float)$cDef['cost_price'] : ($defaultCost ?? $parentCost);
+        $rowSelling = isset($cDef['selling_price']) && $cDef['selling_price'] !== '' && $cDef['selling_price'] !== null ? (float)$cDef['selling_price'] : ($defaultSelling ?? $parentSelling);
+        $imagePath = !empty($cDef['image_path']) ? trim((string)$cDef['image_path']) : null;
+
+        if ($firstRowCost === null && $rowCost > 0) $firstRowCost = $rowCost;
+        if ($firstRowSelling === null && $rowSelling > 0) $firstRowSelling = $rowSelling;
+        if ($firstRowImage === null && !empty($imagePath)) $firstRowImage = $imagePath;
 
         $cNorm = strtolower($colourName);
         if (!isset($matrix[$cNorm])) {
@@ -1409,11 +1427,39 @@ function ensure_matrix_variants(
 
             if (isset($matrix[$cNorm][$sNorm])) {
                 $ev = $matrix[$cNorm][$sNorm];
-                if (empty($ev['video_sku'])) {
-                    $db->prepare('UPDATE product_variants SET video_sku = :vsku, color_code = :cc WHERE id = :id')
-                        ->execute(['vsku' => $vSku, 'cc' => $cCode, 'id' => (int)$ev['id']]);
+                $updateFields = [];
+                $updateParams = ['id' => (int)$ev['id']];
+
+                if (!empty($vSku)) {
+                    $updateFields[] = 'video_sku = :vsku';
+                    $updateParams['vsku'] = $vSku;
                     $matrix[$cNorm][$sNorm]['video_sku'] = $vSku;
+                }
+                if (!empty($cCode)) {
+                    $updateFields[] = 'color_code = :cc';
+                    $updateParams['cc'] = $cCode;
                     $matrix[$cNorm][$sNorm]['color_code'] = $cCode;
+                }
+                if ($imagePath !== null && $imagePath !== '') {
+                    $updateFields[] = 'image_path = :img';
+                    $updateParams['img'] = $imagePath;
+                    $matrix[$cNorm][$sNorm]['image_path'] = $imagePath;
+                }
+                if ($rowCost !== null && $rowCost > 0) {
+                    $updateFields[] = 'cost_price = :cost';
+                    $updateParams['cost'] = $rowCost;
+                    $matrix[$cNorm][$sNorm]['cost_price'] = $rowCost;
+                }
+                if ($rowSelling !== null && $rowSelling > 0) {
+                    $updateFields[] = 'selling_price = :sell';
+                    $updateParams['sell'] = $rowSelling;
+                    $matrix[$cNorm][$sNorm]['selling_price'] = $rowSelling;
+                }
+
+                if (!empty($updateFields)) {
+                    $updateFields[] = 'updated_at = NOW()';
+                    $db->prepare('UPDATE product_variants SET ' . implode(', ', $updateFields) . ' WHERE id = :id')
+                        ->execute($updateParams);
                 }
                 continue;
             }
@@ -1432,11 +1478,11 @@ function ensure_matrix_variants(
             $stmtIns = $db->prepare('
                 INSERT INTO product_variants (
                     business_id, product_id, variant_name, attribute_values,
-                    sku, video_sku, color_code, barcode,
+                    sku, video_sku, color_code, barcode, image_path,
                     cost_price, selling_price, stock_quantity, status, created_at, updated_at
                 ) VALUES (
                     :bid, :pid, :vname, :av,
-                    :sku, :vsku, :ccode, :bc,
+                    :sku, :vsku, :ccode, :bc, :img,
                     :cp, :sp, 0, "active", NOW(), NOW()
                 )
             ');
@@ -1449,6 +1495,7 @@ function ensure_matrix_variants(
                 'vsku' => $vSku,
                 'ccode' => $cCode,
                 'bc' => $barcode,
+                'img' => $imagePath,
                 'cp' => $rowCost,
                 'sp' => $rowSelling,
             ]);
@@ -1464,6 +1511,7 @@ function ensure_matrix_variants(
                 'video_sku' => $vSku,
                 'color_code' => $cCode,
                 'barcode' => $barcode,
+                'image_path' => $imagePath,
                 'cost_price' => $rowCost,
                 'selling_price' => $rowSelling,
                 'stock_quantity' => 0,
@@ -1473,9 +1521,74 @@ function ensure_matrix_variants(
         }
     }
 
+    // Sync parent product cost, price, and image if needed
+    $pUpdates = [];
+    $pParams = ['pid' => $productId, 'bid' => $businessId];
+    if ($firstRowCost !== null && $firstRowCost > 0) {
+        $pUpdates[] = 'cost_price = CASE WHEN cost_price IS NULL OR cost_price = 0 THEN :pcost ELSE cost_price END';
+        $pParams['pcost'] = $firstRowCost;
+    }
+    if ($firstRowSelling !== null && $firstRowSelling > 0) {
+        $pUpdates[] = 'selling_price = CASE WHEN selling_price IS NULL OR selling_price = 0 THEN :psell ELSE selling_price END';
+        $pParams['psell'] = $firstRowSelling;
+    }
+    if (!empty($firstRowImage)) {
+        $pUpdates[] = 'image_path = CASE WHEN image_path IS NULL OR image_path = "" THEN :pimg ELSE image_path END';
+        $pParams['pimg'] = $firstRowImage;
+    }
+    if (!empty($pUpdates)) {
+        $pUpdates[] = 'updated_at = NOW()';
+        $db->prepare('UPDATE products SET ' . implode(', ', $pUpdates) . ' WHERE id = :pid AND business_id = :bid')
+            ->execute($pParams);
+    }
+
     if (!empty($matrix)) {
         $db->prepare('UPDATE products SET product_type = "variable", updated_at = NOW() WHERE id = :pid AND business_id = :bid')
             ->execute(['pid' => $productId, 'bid' => $businessId]);
+    }
+
+    // Sync attributes (Color & Size) so Item Edit screen shows tags & variant combinations
+    require_once __DIR__ . '/products_db.php';
+    if (function_exists('save_product_attributes') && function_exists('get_product_attributes')) {
+        $existingAttrs = get_product_attributes($productId, $businessId);
+        $colorOptions = [];
+        $sizeOptions = [];
+        foreach ($existingAttrs as $ea) {
+            $attrName = strtolower(trim((string)($ea['attribute_name'] ?? '')));
+            if (in_array($attrName, ['color', 'colour', 'shade', 'rang'], true)) {
+                foreach (($ea['options'] ?? []) as $o) {
+                    $val = is_array($o) ? ($o['value'] ?? '') : (string)$o;
+                    if ($val !== '' && !in_array($val, $colorOptions, true)) $colorOptions[] = $val;
+                }
+            } elseif (in_array($attrName, ['size', 'sizes'], true)) {
+                foreach (($ea['options'] ?? []) as $o) {
+                    $val = is_array($o) ? ($o['value'] ?? '') : (string)$o;
+                    if ($val !== '' && !in_array($val, $sizeOptions, true)) $sizeOptions[] = $val;
+                }
+            }
+        }
+        foreach ($colourDefs as $cd) {
+            $c = trim((string)($cd['colour'] ?? ''));
+            if ($c !== '' && !in_array($c, $colorOptions, true)) {
+                $colorOptions[] = $c;
+            }
+        }
+        foreach ($sizes as $s) {
+            $sz = trim((string)$s);
+            if ($sz !== '' && !in_array($sz, $sizeOptions, true)) {
+                $sizeOptions[] = $sz;
+            }
+        }
+        $newAttrs = [];
+        if (!empty($colorOptions)) {
+            $newAttrs[] = ['name' => 'Color', 'options' => array_values(array_unique($colorOptions))];
+        }
+        if (!empty($sizeOptions)) {
+            $newAttrs[] = ['name' => 'Size', 'options' => array_values(array_unique($sizeOptions))];
+        }
+        if (!empty($newAttrs)) {
+            save_product_attributes($productId, $newAttrs, $businessId);
+        }
     }
 
     return $matrix;
@@ -1587,6 +1700,7 @@ function create_inward_matrix_entry(
                 'colour' => $cName,
                 'colour_code' => $r['colour_code'] ?? null,
                 'video_sku' => $r['video_sku'] ?? null,
+                'image_path' => !empty($r['image_path']) ? trim((string)$r['image_path']) : null,
                 'cost_price' => $cost,
                 'selling_price' => $selling,
             ];

@@ -104,6 +104,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(APP_URL . '/inward-entry.php?tab=import');
     }
 
+    if ($postAction === 'upload_matrix_image') {
+        header('Content-Type: application/json');
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success' => false, 'error' => 'Invalid session token. Please refresh.']);
+            exit;
+        }
+
+        if (empty($_FILES['image']) || !is_uploaded_file($_FILES['image']['tmp_name'])) {
+            echo json_encode(['success' => false, 'error' => 'No image file uploaded.']);
+            exit;
+        }
+
+        require_once __DIR__ . '/includes/products_db.php';
+        $path = handle_variant_image_upload($_FILES['image']);
+        if (!$path) {
+            echo json_encode(['success' => false, 'error' => 'Failed to upload image. Supported formats: JPG, PNG, WEBP (Max 5MB).']);
+            exit;
+        }
+
+        echo json_encode([
+            'success' => true,
+            'image_path' => $path,
+            'image_url' => asset($path),
+        ]);
+        exit;
+    }
+
     if ($postAction === 'quick_create_product') {
         header('Content-Type: application/json');
         if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
@@ -413,6 +440,79 @@ $flashError = get_flash('error');
         .preset-size-pill:hover {
             background: #dbeafe;
             border-color: #93c5fd;
+        }
+        .matrix-img-cell {
+            width: 58px;
+            min-width: 58px;
+            max-width: 58px;
+            text-align: center !important;
+            padding: 4px !important;
+            vertical-align: middle !important;
+        }
+        .matrix-img-picker {
+            position: relative;
+            width: 38px;
+            height: 38px;
+            margin: 0 auto;
+        }
+        .matrix-img-label {
+            display: block;
+            width: 38px;
+            height: 38px;
+            cursor: pointer;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 0;
+        }
+        .matrix-img-preview {
+            width: 100%;
+            height: 100%;
+            border: 1.5px dashed #cbd5e1;
+            border-radius: 6px;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color .15s, background .15s;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .matrix-img-preview:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .matrix-img-preview.has-img {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+        }
+        .matrix-img-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .matrix-img-del-btn {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            background: #ef4444;
+            color: #fff;
+            border: 1px solid #fff;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+            z-index: 5;
+            padding: 0;
+        }
+        .matrix-img-del-btn:hover {
+            background: #dc2626;
         }
     </style>
 </head>
@@ -1736,6 +1836,13 @@ $flashError = get_flash('error');
             return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        const appBaseUrl = <?= json_encode(rtrim(APP_URL, '/')) ?>;
+        function assetUrl(path) {
+            if (!path) return '';
+            if (/^https?:\/\//i.test(path)) return path;
+            return appBaseUrl + '/' + String(path).replace(/^\/+/, '');
+        }
+
         function getStandardColorCodeJS(name) {
             if (!name) return '';
             const map = {
@@ -1771,6 +1878,7 @@ $flashError = get_flash('error');
                 colour: '',
                 colour_code: '',
                 video_sku: '',
+                image_path: null,
                 cost_price: '',
                 selling_price: '',
                 quantities: {}
@@ -1928,6 +2036,40 @@ $flashError = get_flash('error');
                 if (prodSizes.length > 0) {
                     card.sizes = prodSizes;
                 }
+
+                // If card currently only has 1 blank row, populate existing product variants/colours
+                const hasOnlyBlank = (card.rows.length <= 1 && (!card.rows[0] || !card.rows[0].colour));
+                if (hasOnlyBlank) {
+                    const uniqueColours = [];
+                    const colourVariantMap = {};
+                    prod.variants.forEach(function(v) {
+                        const col = (v.colour || '').trim();
+                        if (col && uniqueColours.indexOf(col) === -1) {
+                            uniqueColours.push(col);
+                            colourVariantMap[col] = v;
+                        }
+                    });
+
+                    if (uniqueColours.length > 0) {
+                        card.rows = uniqueColours.map(function(col) {
+                            const v = colourVariantMap[col];
+                            return {
+                                id: ++card.rowCounter,
+                                colour: col,
+                                colour_code: v.color_code || getStandardColorCodeJS(col),
+                                video_sku: v.video_sku || (prod.sku ? prod.sku.toUpperCase() + '-' + (v.color_code || getStandardColorCodeJS(col)) : ''),
+                                image_path: v.image_path || null,
+                                cost_price: (v.cost_price !== null && v.cost_price !== undefined) ? String(v.cost_price) : (prod.cost_price ? String(prod.cost_price) : ''),
+                                selling_price: (v.selling_price !== null && v.selling_price !== undefined) ? String(v.selling_price) : (prod.selling_price ? String(prod.selling_price) : ''),
+                                quantities: {}
+                            };
+                        });
+                    }
+                }
+            } else if (prod && card.rows.length === 1 && !card.rows[0].colour) {
+                if (prod.cost_price) card.rows[0].cost_price = String(prod.cost_price);
+                if (prod.selling_price) card.rows[0].selling_price = String(prod.selling_price);
+                if (prod.image_path) card.rows[0].image_path = prod.image_path;
             }
 
             renderCardSizeChips(card.id);
@@ -1992,7 +2134,7 @@ $flashError = get_flash('error');
             recalculateAllMatrixTotals();
         }
 
-        function addCardColourRow(cardId, initialColour, initialVideoSku, initialCost, initialPrice, initialQtys) {
+        function addCardColourRow(cardId, initialColour, initialVideoSku, initialCost, initialPrice, initialQtys, initialImg) {
             const card = matrixProductCards.find(function(c) { return c.id === cardId; });
             if (!card) return;
             const rowId = ++card.rowCounter;
@@ -2001,6 +2143,7 @@ $flashError = get_flash('error');
                 colour: initialColour || '',
                 colour_code: '',
                 video_sku: initialVideoSku || '',
+                image_path: initialImg || null,
                 cost_price: initialCost !== undefined && initialCost !== null ? String(initialCost) : '',
                 selling_price: initialPrice !== undefined && initialPrice !== null ? String(initialPrice) : '',
                 quantities: Object.assign({}, initialQtys || {})
@@ -2059,6 +2202,7 @@ $flashError = get_flash('error');
             // 1. Header
             let hHtml = '<tr>' +
                 '<th style="min-width:140px; text-align:left;">Colour Name</th>' +
+                '<th class="matrix-img-cell">Image</th>' +
                 '<th style="width:140px; text-align:left;">Video / OCR SKU</th>' +
                 '<th style="width:105px; text-align:center;">Unit Cost (₹)</th>' +
                 '<th style="width:105px; text-align:center;">Selling (₹)</th>';
@@ -2076,8 +2220,24 @@ $flashError = get_flash('error');
                 const tr = document.createElement('tr');
                 tr.setAttribute('data-card-row-id', row.id);
 
+                const hasImg = !!row.image_path;
+                const imgPlaceholderSvg = '<svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
+                const previewInner = hasImg ? '<img src="' + escapeHtml(assetUrl(row.image_path)) + '" alt="Colour">' : imgPlaceholderSvg;
+                const delImgBtnHtml = hasImg ? '<button type="button" class="matrix-img-del-btn" title="Remove image">&times;</button>' : '';
+
                 let rHtml = '<td>' +
                     '<input type="text" class="form-control card-colour-inp" value="' + escapeHtml(row.colour || '') + '" placeholder="Type colour (e.g. Maroon)" style="font-weight:600;" list="matrixColourDatalist">' +
+                    '</td>' +
+                    '<td class="matrix-img-cell">' +
+                        '<div class="matrix-img-picker">' +
+                            '<label class="matrix-img-label" title="Upload variant image">' +
+                                '<input type="file" class="matrix-file-input" accept="image/jpeg,image/png,image/webp,image/jpg" style="display:none;">' +
+                                '<div class="matrix-img-preview' + (hasImg ? ' has-img' : '') + '">' +
+                                    previewInner +
+                                '</div>' +
+                            '</label>' +
+                            delImgBtnHtml +
+                        '</div>' +
                     '</td>' +
                     '<td>' +
                     '<input type="text" class="form-control card-video-sku-inp" value="' + escapeHtml(row.video_sku || '') + '" placeholder="e.g. ' + (parentSku !== 'DESIGN' ? parentSku + '-MRN' : 'SKU-CODE') + '" style="font-family:monospace; font-weight:700; text-transform:uppercase; font-size:12.5px;">' +
@@ -2093,7 +2253,7 @@ $flashError = get_flash('error');
                 });
 
                 rHtml += '<td style="text-align:center; font-weight:800; font-size:14px; color:#1e293b;" class="card-row-total-pcs">0</td>' +
-                         '<td style="text-align:center;"><button type="button" class="btn-secondary" style="padding:4px 8px; color:#dc2626; border:none; font-size:16px; font-weight:700; cursor:pointer;" title="Remove colour row">&times;</button></td>';
+                         '<td style="text-align:center;"><button type="button" class="btn-secondary card-row-del-btn" style="padding:4px 8px; color:#dc2626; border:none; font-size:16px; font-weight:700; cursor:pointer;" title="Remove colour row">&times;</button></td>';
 
                 tr.innerHTML = rHtml;
 
@@ -2101,7 +2261,76 @@ $flashError = get_flash('error');
                 const vSkuInp = tr.querySelector('.card-video-sku-inp');
                 const costInp = tr.querySelector('.card-cost-inp');
                 const priceInp = tr.querySelector('.card-price-inp');
-                const delBtn = tr.querySelector('button');
+                const delBtn = tr.querySelector('.card-row-del-btn');
+                const fileInp = tr.querySelector('.matrix-file-input');
+                const previewBox = tr.querySelector('.matrix-img-preview');
+                const pickerBox = tr.querySelector('.matrix-img-picker');
+                const delImgBtn = tr.querySelector('.matrix-img-del-btn');
+
+                if (fileInp) {
+                    fileInp.addEventListener('change', function() {
+                        if (!fileInp.files || !fileInp.files[0]) return;
+                        const file = fileInp.files[0];
+                        previewBox.style.opacity = '0.5';
+
+                        const fd = new FormData();
+                        fd.append('action', 'upload_matrix_image');
+                        fd.append('is_ajax', '1');
+                        fd.append('csrf_token', <?= json_encode(csrf_token()) ?>);
+                        fd.append('image', file);
+
+                        fetch('inward-entry.php', {
+                            method: 'POST',
+                            body: fd
+                        })
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            previewBox.style.opacity = '1';
+                            if (data.success && data.image_path) {
+                                row.image_path = data.image_path;
+                                previewBox.className = 'matrix-img-preview has-img';
+                                previewBox.innerHTML = '<img src="' + escapeHtml(data.image_url) + '" alt="Colour">';
+                                
+                                let oldDel = pickerBox.querySelector('.matrix-img-del-btn');
+                                if (!oldDel) {
+                                    const newDel = document.createElement('button');
+                                    newDel.type = 'button';
+                                    newDel.className = 'matrix-img-del-btn';
+                                    newDel.title = 'Remove image';
+                                    newDel.innerHTML = '&times;';
+                                    newDel.addEventListener('click', function(ev) {
+                                        ev.stopPropagation();
+                                        ev.preventDefault();
+                                        row.image_path = null;
+                                        previewBox.className = 'matrix-img-preview';
+                                        previewBox.innerHTML = imgPlaceholderSvg;
+                                        newDel.remove();
+                                        fileInp.value = '';
+                                    });
+                                    pickerBox.appendChild(newDel);
+                                }
+                            } else {
+                                alert(data.error || 'Image upload failed.');
+                            }
+                        })
+                        .catch(function(err) {
+                            previewBox.style.opacity = '1';
+                            alert('Network error while uploading image.');
+                        });
+                    });
+                }
+
+                if (delImgBtn) {
+                    delImgBtn.addEventListener('click', function(ev) {
+                        ev.stopPropagation();
+                        ev.preventDefault();
+                        row.image_path = null;
+                        previewBox.className = 'matrix-img-preview';
+                        previewBox.innerHTML = imgPlaceholderSvg;
+                        delImgBtn.remove();
+                        if (fileInp) fileInp.value = '';
+                    });
+                }
 
                 colInp.addEventListener('input', function() {
                     row.colour = colInp.value.trim();
@@ -2141,7 +2370,7 @@ $flashError = get_flash('error');
 
             // 3. Footer
             let fHtml = '<tr style="background:#f8fafc; font-weight:700;">' +
-                '<td colspan="4" style="text-align:right; padding-right:12px; font-size:13px; color:#475569;">Size Column Totals:</td>';
+                '<td colspan="5" style="text-align:right; padding-right:12px; font-size:13px; color:#475569;">Size Column Totals:</td>';
             card.sizes.forEach(function(sz) {
                 fHtml += '<td style="text-align:center; font-weight:800; color:#1e40af; font-size:13.5px;" id="cardColTotal_' + cardId + '_' + sz.replace(/[^a-zA-Z0-9]/g, '_') + '">0</td>';
             });
@@ -2270,6 +2499,7 @@ $flashError = get_flash('error');
                             colour: colName,
                             colour_code: row.colour_code || getStandardColorCodeJS(colName),
                             video_sku: (row.video_sku || '').toUpperCase(),
+                            image_path: row.image_path || null,
                             cost_price: isNaN(costNum) ? null : costNum,
                             unit_cost: isNaN(costNum) ? null : costNum,
                             selling_price: isNaN(priceNum) ? null : priceNum,
