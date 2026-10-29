@@ -546,6 +546,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                         <tr>
                             <th style="width:52px;text-align:center;">Image</th>
                             <th>Variant</th>
+                            <th style="width:140px;">Video SKU (OCR)</th>
                             <th>SKU</th>
                             <th>Selling Price (₹)</th>
                             <th>Cost Price (₹)</th>
@@ -575,6 +576,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                                 </div>
                             </td>
                             <td class="variant-name-cell"><?= e((string) $ev['variant_name']) ?></td>
+                            <td><input type="text" name="variant_video_sku[<?= $vi ?>]" value="<?= e((string) ($ev['video_sku'] ?? '')) ?>" placeholder="e.g. <?= e((string)($product['sku'] ?? 'SKU')) ?>-MRN" style="text-transform:uppercase" title="Video/OCR lookup SKU"></td>
                             <td><input type="text" name="variant_sku[<?= $vi ?>]" value="<?= e((string) $ev['sku']) ?>" style="text-transform:uppercase"></td>
                             <td><input type="number" step="0.01" min="0" name="variant_selling_price[<?= $vi ?>]" value="<?= e((string) $ev['selling_price']) ?>" placeholder="0.00"></td>
                             <td><input type="number" step="0.01" min="0" name="variant_cost_price[<?= $vi ?>]" value="<?= e((string) $ev['cost_price']) ?>" placeholder="0.00"></td>
@@ -950,6 +952,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
             var nameCell = tr.querySelector('.variant-name-cell');
             var varName = nameCell ? nameCell.textContent.trim() : '';
             var skuInp = tr.querySelector('input[name^="variant_sku"]');
+            var vskuInp = tr.querySelector('input[name^="variant_video_sku"]');
             var spInp = tr.querySelector('input[name^="variant_selling_price"]');
             var cpInp = tr.querySelector('input[name^="variant_cost_price"]');
             var stInp = tr.querySelector('input[name^="variant_stock"]');
@@ -959,6 +962,7 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
 
             var rowData = {
                 sku: skuInp ? skuInp.value : '',
+                video_sku: vskuInp ? vskuInp.value : '',
                 selling_price: spInp ? spInp.value : '',
                 cost_price: cpInp ? cpInp.value : '',
                 stock: stInp ? stInp.value : '',
@@ -974,18 +978,50 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
         var parentSku = (document.getElementById('sku') ? document.getElementById('sku').value.trim() : '') || 'SKU';
         var imgPlaceholderSvg = '<svg width="18" height="18" fill="none" stroke="#94a3b8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
 
+        function getCommonColorCode(name) {
+            if (!name) return '';
+            var map = {
+                'maroon': 'MRN', 'black': 'BLK', 'bottle green': 'BGR', 'bottlegreen': 'BGR',
+                'red': 'RED', 'blue': 'BLU', 'navy': 'NVY', 'navy blue': 'NVY',
+                'white': 'WHT', 'pink': 'PNK', 'yellow': 'YEL', 'green': 'GRN',
+                'mustard': 'MSTD', 'peach': 'PCH', 'olive': 'OLV', 'teal': 'TEL',
+                'grey': 'GRY', 'gray': 'GRY', 'orange': 'ORG', 'purple': 'PRP',
+                'lavender': 'LAV', 'beige': 'BGE', 'brown': 'BRN', 'rust': 'RST',
+                'wine': 'WIN', 'magenta': 'MAG', 'cyan': 'CYN'
+            };
+            var lower = name.toLowerCase().trim();
+            if (map[lower]) return map[lower];
+            var clean = lower.replace(/[^a-z0-9]/g, '');
+            if (clean.length <= 4) return clean.toUpperCase();
+            var consonants = clean.charAt(0) + clean.slice(1).replace(/[aeiou]/g, '');
+            return (consonants.length >= 3 ? consonants.slice(0, 4) : clean.slice(0, 3)).toUpperCase();
+        }
+
         combos.forEach(function (combo, i) {
             var comboKey = JSON.stringify(combo);
             var varName = Object.values(combo).join(' / ');
             var prev = existingData[comboKey] || existingData['name:' + varName] || {};
 
             var skuVal = prev.sku !== undefined ? prev.sku : '';
+            var vskuVal = prev.video_sku !== undefined ? prev.video_sku : '';
             var spVal = prev.selling_price !== undefined ? prev.selling_price : '';
             var cpVal = prev.cost_price !== undefined ? prev.cost_price : '';
             var stVal = prev.stock !== undefined ? prev.stock : '';
             var existingImgVal = prev.existingImg || '';
             var removeImgVal = prev.removeImg || '0';
             var previewSrcVal = prev.previewSrc || '';
+
+            // Derive 3-tier convention values
+            var colorVal = '';
+            var sizeVal = '';
+            Object.keys(combo).forEach(function(k) {
+                var kl = k.toLowerCase().trim();
+                if (['color', 'colour', 'shade', 'rang'].indexOf(kl) !== -1) colorVal = combo[k].trim();
+                if (['size', 'sizes'].indexOf(kl) !== -1) sizeVal = combo[k].trim();
+            });
+            var colorCode = colorVal ? getCommonColorCode(colorVal) : '';
+            var autoVideoSku = (parentSku && colorCode) ? (parentSku + '-' + colorCode) : (parentSku ? parentSku + '-VID' : '');
+            var autoSku = (parentSku && colorCode && sizeVal) ? (parentSku + '-' + colorCode + '-' + sizeVal.toUpperCase().replace(/\s+/g, '')) : (parentSku + '-V' + (i+1));
 
             var hasImg = (previewSrcVal !== '' && removeImgVal !== '1');
             var previewInner = hasImg ? '<img src="' + previewSrcVal + '" alt="Variant">' : imgPlaceholderSvg;
@@ -1008,7 +1044,8 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                     '</div>' +
                 '</td>' +
                 '<td class="variant-name-cell">' + varName + '</td>' +
-                '<td><input type="text" name="variant_sku[' + i + ']" value="' + skuVal + '" placeholder="' + parentSku + '-V' + (i+1) + '" style="text-transform:uppercase"></td>' +
+                '<td><input type="text" name="variant_video_sku[' + i + ']" value="' + vskuVal + '" placeholder="' + autoVideoSku + '" style="text-transform:uppercase" title="Video/OCR lookup SKU"></td>' +
+                '<td><input type="text" name="variant_sku[' + i + ']" value="' + skuVal + '" placeholder="' + autoSku + '" style="text-transform:uppercase"></td>' +
                 '<td><input type="number" step="0.01" min="0" name="variant_selling_price[' + i + ']" value="' + spVal + '" placeholder="0.00"></td>' +
                 '<td><input type="number" step="0.01" min="0" name="variant_cost_price[' + i + ']" value="' + cpVal + '" placeholder="0.00"></td>' +
                 '<td><input type="number" min="0" name="variant_stock[' + i + ']" value="' + stVal + '" placeholder="0"></td>';

@@ -28,7 +28,7 @@ function inward_entry_can_manage_cost(?array $user = null): bool {
 
 function inward_entry_permission_for_action(string $action): string {
     return match ($action) {
-        'save_inward', 'quick_create_product' => 'purchases.inward_entry.create',
+        'save_inward', 'save_matrix_inward', 'import_matrix_csv', 'quick_create_product' => 'purchases.inward_entry.create',
         'confirm_costs' => 'purchases.inward_entry_cost.edit',
         'confirm_purchase', 'complete_qc', 'create_bill' => 'purchases.inward_entry.edit',
         default => 'purchases.inward_entry.view',
@@ -114,6 +114,7 @@ function inward_migrate_cost_columns(PDO $db): void {
         return;
     }
     $add = [
+        'sku' => 'VARCHAR(100) NULL AFTER `variant_id`',
         'purchase_cost' => 'DECIMAL(12,2) NULL AFTER `quantity`',
         'selling_price' => 'DECIMAL(12,2) NULL AFTER `purchase_cost`',
         'cost_status' => "ENUM('pending','confirmed') NOT NULL DEFAULT 'pending' AFTER `selling_price`",
@@ -130,6 +131,9 @@ function inward_migrate_cost_columns(PDO $db): void {
 
     try {
         $entryCols = $db->query('SHOW COLUMNS FROM `inward_entries`')->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('supplier_reference', $entryCols, true)) {
+            $db->exec('ALTER TABLE `inward_entries` ADD COLUMN `supplier_reference` VARCHAR(100) NULL AFTER `vendor_id`');
+        }
         if (!in_array('bill_id', $entryCols, true)) {
             $db->exec('ALTER TABLE `inward_entries` ADD COLUMN `bill_id` INT UNSIGNED NULL AFTER `vendor_id`');
         }
@@ -142,6 +146,28 @@ function inward_migrate_cost_columns(PDO $db): void {
         if (!in_array('company_stock_posted', $entryCols, true)) {
             $db->exec('ALTER TABLE `inward_entries` ADD COLUMN `company_stock_posted` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_sellable`');
         }
+        if (!in_array('inward_mode', $entryCols, true)) {
+            $db->exec("ALTER TABLE `inward_entries` ADD COLUMN `inward_mode` ENUM('standard','matrix','import') NOT NULL DEFAULT 'standard' AFTER `notes`");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS `warehouse_variant_stock` (
+                `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                `warehouse_id` INT UNSIGNED NOT NULL,
+                `product_id` INT UNSIGNED NOT NULL,
+                `variant_id` INT UNSIGNED NOT NULL,
+                `stock_quantity` INT NOT NULL DEFAULT 0,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY `uniq_wh_variant` (`warehouse_id`, `variant_id`),
+                INDEX `idx_wvs_wh` (`warehouse_id`),
+                INDEX `idx_wvs_prod` (`product_id`),
+                INDEX `idx_wvs_var` (`variant_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
     } catch (Throwable $e) {
     }
 }
@@ -280,10 +306,10 @@ function create_inward_entry(
 
         $stmtLine = $db->prepare('
             INSERT INTO inward_lines (
-                inward_entry_id, product_id, variant_id, size, colour, quantity,
+                inward_entry_id, product_id, variant_id, sku, size, colour, quantity,
                 purchase_cost, selling_price, cost_status, created_at
             ) VALUES (
-                :eid, :pid, :varid, :size, :colour, :qty,
+                :eid, :pid, :varid, :sku, :size, :colour, :qty,
                 NULL, NULL, "pending", NOW()
             )
         ');
@@ -292,13 +318,14 @@ function create_inward_entry(
                 'eid' => $entryId,
                 'pid' => $line['product_id'],
                 'varid' => $line['variant_id'],
+                'sku' => $line['sku'] ?? null,
                 'size' => $line['size'],
                 'colour' => $line['colour'],
                 'qty' => $line['quantity'],
             ]);
         }
 
-        inward_post_company_stock($db, $bid, $entryId, $entryNumber, $resolved['lines'], $userId);
+        inward_post_company_stock($db, $bid, $entryId, $entryNumber, $resolved['lines'], $userId, $warehouseId);
         $db->prepare('UPDATE inward_entries SET company_stock_posted = 1 WHERE id = :id AND business_id = :bid')
             ->execute(['id' => $entryId, 'bid' => $bid]);
 
@@ -600,7 +627,7 @@ function confirm_inward_purchase(int $entryId, ?int $businessId = null): array {
  *
  * @param array<int, array<string, mixed>> $lines
  */
-function inward_post_company_stock(PDO $db, int $businessId, int $entryId, string $entryNumber, array $lines, ?int $userId): void {
+function inward_post_company_stock(PDO $db, int $businessId, int $entryId, string $entryNumber, array $lines, ?int $userId, ?int $warehouseId = null): void {
     $byProduct = [];
     foreach ($lines as $line) {
         $productId = (int) ($line['product_id'] ?? 0);
@@ -642,6 +669,41 @@ function inward_post_company_stock(PDO $db, int $businessId, int $entryId, strin
         ]);
     }
     unset($entryId);
+}
+
+function inward_post_variant_stock(PDO $db, int $businessId, ?int $warehouseId, array $lines): void {
+    $stmtVarCur = $db->prepare('SELECT stock_quantity FROM product_variants WHERE id = :id AND business_id = :bid FOR UPDATE');
+    $stmtVarInc = $db->prepare('UPDATE product_variants SET stock_quantity = stock_quantity + :qty, updated_at = NOW() WHERE id = :id AND business_id = :bid');
+
+    $stmtWvs = null;
+    if ($warehouseId !== null && $warehouseId > 0) {
+        $stmtWvs = $db->prepare('
+            INSERT INTO warehouse_variant_stock (warehouse_id, product_id, variant_id, stock_quantity, created_at, updated_at)
+            VALUES (:wid, :pid, :varid, :qty, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE stock_quantity = stock_quantity + :qty_up, updated_at = NOW()
+        ');
+    }
+
+    foreach ($lines as $line) {
+        $variantId = (int) ($line['variant_id'] ?? 0);
+        $productId = (int) ($line['product_id'] ?? 0);
+        $qty = (int) ($line['quantity'] ?? 0);
+        if ($variantId > 0 && $qty > 0) {
+            $stmtVarCur->execute(['id' => $variantId, 'bid' => $businessId]);
+            if ($stmtVarCur->fetchColumn() !== false) {
+                $stmtVarInc->execute(['qty' => $qty, 'id' => $variantId, 'bid' => $businessId]);
+            }
+            if ($stmtWvs && $productId > 0) {
+                $stmtWvs->execute([
+                    'wid' => $warehouseId,
+                    'pid' => $productId,
+                    'varid' => $variantId,
+                    'qty' => $qty,
+                    'qty_up' => $qty,
+                ]);
+            }
+        }
+    }
 }
 
 function inward_central_warehouse_id(PDO $db, int $businessId): int {
@@ -754,6 +816,26 @@ function complete_inward_qc(int $entryId, ?int $businessId = null, ?int $userId 
                 'qty' => $next,
                 'qty_up' => $next,
             ]);
+        }
+
+        $stmtWvsCentral = $db->prepare('
+            INSERT INTO warehouse_variant_stock (warehouse_id, product_id, variant_id, stock_quantity, created_at, updated_at)
+            VALUES (:wid, :pid, :varid, :qty, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE stock_quantity = stock_quantity + :qty_up, updated_at = NOW()
+        ');
+        foreach ($entry['lines'] as $line) {
+            $pid = (int) $line['product_id'];
+            $vid = (int) ($line['variant_id'] ?? 0);
+            $qty = (int) $line['quantity'];
+            if ($pid > 0 && $vid > 0 && $qty > 0) {
+                $stmtWvsCentral->execute([
+                    'wid' => $centralId,
+                    'pid' => $pid,
+                    'varid' => $vid,
+                    'qty' => $qty,
+                    'qty_up' => $qty,
+                ]);
+            }
         }
 
         $updated = $db->prepare('
@@ -1070,7 +1152,7 @@ function inward_resolve_lines(array $lines, int $businessId): array {
         }
 
         $stmtVars = $db->prepare('
-            SELECT id, variant_name, attribute_values
+            SELECT id, variant_name, attribute_values, sku
             FROM product_variants
             WHERE product_id = :pid AND business_id = :bid AND status = "active"
         ');
@@ -1078,23 +1160,63 @@ function inward_resolve_lines(array $lines, int $businessId): array {
         $variantId = null;
         $matched = false;
         $hasSizeColour = false;
+        $lineSku = (string)($product['sku'] ?? '');
         foreach ($stmtVars->fetchAll() as $variant) {
             $attrs = parse_variant_size_colour($variant);
             if ($attrs['size'] === '' && $attrs['colour'] === '') {
                 continue;
             }
             $hasSizeColour = true;
-            $vSize = $attrs['size'] !== '' ? $attrs['size'] : 'Standard'; $vColour = $attrs['colour'] !== '' ? $attrs['colour'] : 'Standard';
+            $vSize = $attrs['size'] !== '' ? $attrs['size'] : 'Standard';
+            $vColour = $attrs['colour'] !== '' ? $attrs['colour'] : 'Standard';
             if (strcasecmp($vSize, $size) === 0 && strcasecmp($vColour, $colour) === 0) {
                 $variantId = (int) $variant['id'];
                 $size = $vSize;
                 $colour = $vColour;
+                $lineSku = (string)($variant['sku'] ?? $lineSku);
                 $matched = true;
                 break;
             }
         }
-        if (false && $hasSizeColour && !$matched) {
-            return ['success' => false, 'error' => 'Choose a size and colour that already exist on "' . $product['name'] . '". This count does not create variants or sellable stock.'];
+
+        // If not matched to existing variant, auto-create variant with 3-tier SKU & barcode
+        if (!$matched && $size !== '') {
+            $parentSku = trim((string)($product['sku'] ?? ''));
+            if ($parentSku === '') {
+                $parentSku = 'P' . $productId;
+            }
+            $cCode = function_exists('get_standard_color_code') ? get_standard_color_code($colour) : 'STD';
+            $videoSku = function_exists('build_video_sku') ? build_video_sku($parentSku, $colour, $cCode) : ($parentSku . '-' . $cCode);
+            $invSku = function_exists('build_variant_inventory_sku') ? build_variant_inventory_sku($parentSku, $colour, $size, $cCode) : ($videoSku . '-' . strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $size)));
+            $barcode = inward_allocate_barcode($db, $businessId);
+            $varName = $colour . ' / ' . $size;
+            $attrValues = json_encode(['Colour' => $colour, 'Size' => $size], JSON_UNESCAPED_UNICODE);
+
+            $stmtInsVar = $db->prepare('
+                INSERT INTO product_variants (
+                    business_id, product_id, variant_name, attribute_values,
+                    sku, video_sku, color_code, barcode,
+                    cost_price, selling_price, stock_quantity, status, created_at, updated_at
+                ) VALUES (
+                    :bid, :pid, :vname, :av,
+                    :sku, :vsku, :ccode, :bc,
+                    :cp, :sp, 0, "active", NOW(), NOW()
+                )
+            ');
+            $stmtInsVar->execute([
+                'bid' => $businessId,
+                'pid' => $productId,
+                'vname' => $varName,
+                'av' => $attrValues,
+                'sku' => $invSku,
+                'vsku' => $videoSku,
+                'ccode' => $cCode,
+                'bc' => $barcode,
+                'cp' => (float)($product['cost_price'] ?? 0),
+                'sp' => (float)($product['selling_price'] ?? 0),
+            ]);
+            $variantId = (int)$db->lastInsertId();
+            $lineSku = $invSku;
         }
 
         $key = $productId . '|' . strtolower($size) . '|' . strtolower($colour);
@@ -1102,6 +1224,7 @@ function inward_resolve_lines(array $lines, int $businessId): array {
             $merged[$key] = [
                 'product_id' => $productId,
                 'variant_id' => $variantId,
+                'sku' => $lineSku,
                 'size' => $size,
                 'colour' => $colour,
                 'quantity' => 0,
@@ -1165,11 +1288,12 @@ function get_inward_entries(string $search = '', int $limit = 50, ?int $business
     ';
     $params = ['bid' => $bid];
     if ($search !== '') {
-        $sql .= ' AND (ie.entry_number LIKE :s1 OR w.name LIKE :s2 OR v.name LIKE :s3 OR ie.notes LIKE :s4)';
+        $sql .= ' AND (ie.entry_number LIKE :s1 OR w.name LIKE :s2 OR v.name LIKE :s3 OR ie.notes LIKE :s4 OR ie.supplier_reference LIKE :s5)';
         $params['s1'] = '%' . $search . '%';
         $params['s2'] = '%' . $search . '%';
         $params['s3'] = '%' . $search . '%';
         $params['s4'] = '%' . $search . '%';
+        $params['s5'] = '%' . $search . '%';
     }
     $sql .= ' ORDER BY ie.id DESC LIMIT ' . $limit;
     $stmt = $db->prepare($sql);
@@ -1211,4 +1335,668 @@ function get_inward_entry_by_id(int $id, ?int $businessId = null): ?array {
     $stmtLines->execute(['id' => $id, 'bid' => $bid]);
     $entry['lines'] = $stmtLines->fetchAll();
     return $entry;
+}
+
+/**
+ * Ensure variants exist for a parent design product following the 3-tier SKU convention:
+ * - Parent SKU: AC125
+ * - Video SKU: AC125-MRN (lookup alias only)
+ * - Inventory SKU: AC125-MRN-L (stock-bearing variant)
+ *
+ * @param int $productId
+ * @param array<int, array{colour:string, colour_code?:string, video_sku?:string, cost_price?:float, selling_price?:float}> $colourDefs
+ * @param array<int, string> $sizes
+ * @param int $businessId
+ * @return array<string, array<string, array<string, mixed>>> [colour_norm][size_norm] => variant
+ */
+function ensure_matrix_variants(
+    int $productId,
+    array $colourDefs,
+    array $sizes,
+    int $businessId,
+    ?float $defaultCost = null,
+    ?float $defaultSelling = null
+): array {
+    ensure_inward_schema();
+    $db = get_db();
+
+    $stmtP = $db->prepare('SELECT id, name, sku, cost_price, selling_price FROM products WHERE id = :pid AND business_id = :bid LIMIT 1');
+    $stmtP->execute(['pid' => $productId, 'bid' => $businessId]);
+    $product = $stmtP->fetch(PDO::FETCH_ASSOC);
+    if (!$product) {
+        throw new RuntimeException("Product ID {$productId} not found for business {$businessId}.");
+    }
+    $parentSku = trim((string)($product['sku'] ?? ''));
+    if ($parentSku === '') {
+        $parentSku = 'P' . $productId;
+        $db->prepare('UPDATE products SET sku = :sku WHERE id = :id')->execute(['sku' => $parentSku, 'id' => $productId]);
+    }
+    $parentCost = (float)($product['cost_price'] ?? 0);
+    $parentSelling = (float)($product['selling_price'] ?? 0);
+
+    // Get existing variants
+    $stmtV = $db->prepare('SELECT * FROM product_variants WHERE product_id = :pid AND business_id = :bid');
+    $stmtV->execute(['pid' => $productId, 'bid' => $businessId]);
+    $existing = $stmtV->fetchAll(PDO::FETCH_ASSOC);
+
+    $matrix = [];
+    foreach ($existing as $ev) {
+        $attrs = parse_variant_size_colour($ev);
+        $cNorm = strtolower(trim($attrs['colour']));
+        $sNorm = strtolower(trim($attrs['size']));
+        if ($cNorm !== '' && $sNorm !== '') {
+            $matrix[$cNorm][$sNorm] = $ev;
+        }
+    }
+
+    foreach ($colourDefs as $cDef) {
+        $colourName = trim((string)($cDef['colour'] ?? ''));
+        if ($colourName === '') continue;
+        $cCode = !empty($cDef['colour_code']) ? trim((string)$cDef['colour_code']) : get_standard_color_code($colourName);
+        $vSku = !empty($cDef['video_sku']) ? trim((string)$cDef['video_sku']) : build_video_sku($parentSku, $colourName, $cCode);
+        $rowCost = isset($cDef['cost_price']) && $cDef['cost_price'] !== '' ? (float)$cDef['cost_price'] : ($defaultCost ?? $parentCost);
+        $rowSelling = isset($cDef['selling_price']) && $cDef['selling_price'] !== '' ? (float)$cDef['selling_price'] : ($defaultSelling ?? $parentSelling);
+
+        $cNorm = strtolower($colourName);
+        if (!isset($matrix[$cNorm])) {
+            $matrix[$cNorm] = [];
+        }
+
+        foreach ($sizes as $sizeName) {
+            $sizeName = trim((string)$sizeName);
+            if ($sizeName === '') continue;
+            $sNorm = strtolower($sizeName);
+
+            if (isset($matrix[$cNorm][$sNorm])) {
+                $ev = $matrix[$cNorm][$sNorm];
+                if (empty($ev['video_sku'])) {
+                    $db->prepare('UPDATE product_variants SET video_sku = :vsku, color_code = :cc WHERE id = :id')
+                        ->execute(['vsku' => $vSku, 'cc' => $cCode, 'id' => (int)$ev['id']]);
+                    $matrix[$cNorm][$sNorm]['video_sku'] = $vSku;
+                    $matrix[$cNorm][$sNorm]['color_code'] = $cCode;
+                }
+                continue;
+            }
+
+            $invSku = build_variant_inventory_sku($parentSku, $colourName, $sizeName, $cCode);
+            $chkSku = $db->prepare('SELECT COUNT(*) FROM product_variants WHERE sku = :sku');
+            $chkSku->execute(['sku' => $invSku]);
+            if ((int)$chkSku->fetchColumn() > 0) {
+                $invSku .= '-' . substr(uniqid(), -4);
+            }
+
+            $barcode = inward_allocate_barcode($db, $businessId);
+            $varName = $colourName . ' / ' . $sizeName;
+            $attrValues = json_encode(['Colour' => $colourName, 'Size' => $sizeName], JSON_UNESCAPED_UNICODE);
+
+            $stmtIns = $db->prepare('
+                INSERT INTO product_variants (
+                    business_id, product_id, variant_name, attribute_values,
+                    sku, video_sku, color_code, barcode,
+                    cost_price, selling_price, stock_quantity, status, created_at, updated_at
+                ) VALUES (
+                    :bid, :pid, :vname, :av,
+                    :sku, :vsku, :ccode, :bc,
+                    :cp, :sp, 0, "active", NOW(), NOW()
+                )
+            ');
+            $stmtIns->execute([
+                'bid' => $businessId,
+                'pid' => $productId,
+                'vname' => $varName,
+                'av' => $attrValues,
+                'sku' => $invSku,
+                'vsku' => $vSku,
+                'ccode' => $cCode,
+                'bc' => $barcode,
+                'cp' => $rowCost,
+                'sp' => $rowSelling,
+            ]);
+            $newId = (int)$db->lastInsertId();
+
+            $newRow = [
+                'id' => $newId,
+                'business_id' => $businessId,
+                'product_id' => $productId,
+                'variant_name' => $varName,
+                'attribute_values' => $attrValues,
+                'sku' => $invSku,
+                'video_sku' => $vSku,
+                'color_code' => $cCode,
+                'barcode' => $barcode,
+                'cost_price' => $rowCost,
+                'selling_price' => $rowSelling,
+                'stock_quantity' => 0,
+                'status' => 'active',
+            ];
+            $matrix[$cNorm][$sNorm] = $newRow;
+        }
+    }
+
+    if (!empty($matrix)) {
+        $db->prepare('UPDATE products SET product_type = "variable", updated_at = NOW() WHERE id = :pid AND business_id = :bid')
+            ->execute(['pid' => $productId, 'bid' => $businessId]);
+    }
+
+    return $matrix;
+}
+
+/**
+ * Save an inward count entered via the Size x Colour Matrix screen.
+ *
+ * @param int $warehouseId
+ * @param array<string, mixed> $matrixPayload
+ * @param string $entryDate
+ * @param string $supplierReference
+ * @param string $notes
+ * @param int|null $vendorId
+ * @param string|null $vendorName
+ * @param int|null $userId
+ * @param int|null $businessId
+ * @return array{success:bool, error?:string, entry_id?:int, entry_number?:string, total_qty?:int, lines_count?:int, duplicate_entry_id?:int, duplicate_entry_number?:string}
+ */
+function create_inward_matrix_entry(
+    int $warehouseId,
+    array $matrixPayload,
+    string $entryDate = '',
+    string $supplierReference = '',
+    string $notes = '',
+    ?int $vendorId = null,
+    ?string $vendorName = null,
+    ?int $userId = null,
+    ?int $businessId = null
+): array {
+    ensure_inward_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    if ($warehouseId <= 0) {
+        return ['success' => false, 'error' => 'Choose the warehouse that was counted.'];
+    }
+
+    $supplierReference = trim($supplierReference);
+    if ($supplierReference !== '') {
+        $chkRef = $db->prepare('
+            SELECT id, entry_number, entry_date
+            FROM inward_entries
+            WHERE business_id = :bid AND supplier_reference = :ref
+            LIMIT 1
+        ');
+        $chkRef->execute(['bid' => $bid, 'ref' => $supplierReference]);
+        $existingDoc = $chkRef->fetch(PDO::FETCH_ASSOC);
+        if ($existingDoc) {
+            return [
+                'success' => false,
+                'error' => "Supplier document reference '{$supplierReference}' has already been inwarded under entry #{$existingDoc['entry_number']} on " . date('d M Y', strtotime($existingDoc['entry_date'])) . ". Double posting prevented.",
+                'duplicate_entry_id' => (int)$existingDoc['id'],
+                'duplicate_entry_number' => $existingDoc['entry_number'],
+            ];
+        }
+    }
+
+    $resolvedVendor = inward_resolve_vendor($vendorId, $vendorName, $bid, false);
+    if (!$resolvedVendor['success']) {
+        return ['success' => false, 'error' => $resolvedVendor['error'] ?? 'Could not resolve supplier.'];
+    }
+    $vendorId = $resolvedVendor['vendor_id'];
+
+    $productId = (int)($matrixPayload['product_id'] ?? 0);
+    if ($productId <= 0) {
+        return ['success' => false, 'error' => 'Please select or create a design product for the matrix.'];
+    }
+
+    $sizes = (array)($matrixPayload['sizes'] ?? []);
+    $rows = (array)($matrixPayload['rows'] ?? []);
+    if (empty($sizes) || empty($rows)) {
+        return ['success' => false, 'error' => 'Matrix must have at least one size column and one colour row.'];
+    }
+
+    $colourDefs = [];
+    foreach ($rows as $r) {
+        $colourDefs[] = [
+            'colour' => $r['colour'] ?? '',
+            'colour_code' => $r['colour_code'] ?? null,
+            'video_sku' => $r['video_sku'] ?? null,
+            'cost_price' => isset($r['cost_price']) && $r['cost_price'] !== '' ? (float)$r['cost_price'] : null,
+            'selling_price' => isset($r['selling_price']) && $r['selling_price'] !== '' ? (float)$r['selling_price'] : null,
+        ];
+    }
+    $variantMatrix = ensure_matrix_variants($productId, $colourDefs, $sizes, $bid);
+
+    $lines = [];
+    $totalQty = 0;
+    foreach ($rows as $r) {
+        $cName = trim((string)($r['colour'] ?? ''));
+        $cNorm = strtolower($cName);
+        $cost = isset($r['cost_price']) && $r['cost_price'] !== '' ? (float)$r['cost_price'] : null;
+        $selling = isset($r['selling_price']) && $r['selling_price'] !== '' ? (float)$r['selling_price'] : null;
+        $cellQtys = (array)($r['quantities'] ?? []);
+
+        foreach ($sizes as $sName) {
+            $sNorm = strtolower(trim((string)$sName));
+            $qty = isset($cellQtys[$sName]) ? (int)$cellQtys[$sName] : (isset($cellQtys[$sNorm]) ? (int)$cellQtys[$sNorm] : 0);
+            if ($qty > 0) {
+                $varRow = $variantMatrix[$cNorm][$sNorm] ?? null;
+                $lines[] = [
+                    'product_id' => $productId,
+                    'variant_id' => $varRow ? (int)$varRow['id'] : null,
+                    'sku' => $varRow ? (string)$varRow['sku'] : null,
+                    'size' => $sName,
+                    'colour' => $cName,
+                    'quantity' => $qty,
+                    'purchase_cost' => $cost,
+                    'selling_price' => $selling,
+                ];
+                $totalQty += $qty;
+            }
+        }
+    }
+
+    if (empty($lines)) {
+        return ['success' => false, 'error' => 'Matrix has no quantities entered. Enter quantities for at least one size/colour cell.'];
+    }
+
+    $entryDate = trim($entryDate) ?: date('Y-m-d');
+
+    $ownTx = !$db->inTransaction();
+    if ($ownTx) {
+        $db->beginTransaction();
+    }
+
+    try {
+        $entryNumber = inward_next_number($db, $bid);
+        $stmtEntry = $db->prepare('
+            INSERT INTO inward_entries (
+                business_id, entry_number, warehouse_id, vendor_id, supplier_reference, user_id,
+                entry_date, status, purchase_status, is_sellable, notes, inward_mode, created_at, updated_at
+            ) VALUES (
+                :bid, :num, :wid, :vid, :ref, :uid,
+                :entry_date, "cost_pending", "pending", 0, :notes, "matrix", NOW(), NOW()
+            )
+        ');
+        $stmtEntry->execute([
+            'bid' => $bid,
+            'num' => $entryNumber,
+            'wid' => $warehouseId,
+            'vid' => $vendorId,
+            'ref' => $supplierReference !== '' ? $supplierReference : null,
+            'uid' => $userId,
+            'entry_date' => $entryDate,
+            'notes' => $notes !== '' ? $notes : null,
+        ]);
+        $entryId = (int)$db->lastInsertId();
+
+        $stmtLine = $db->prepare('
+            INSERT INTO inward_lines (
+                inward_entry_id, product_id, variant_id, sku, size, colour, quantity,
+                purchase_cost, selling_price, cost_status, barcode, created_at
+            ) VALUES (
+                :eid, :pid, :varid, :sku, :size, :colour, :qty,
+                :cost, :price, :cost_status, :barcode, NOW()
+            )
+        ');
+
+        foreach ($lines as $line) {
+            $costStatus = ($line['purchase_cost'] !== null && $line['selling_price'] !== null) ? 'confirmed' : 'pending';
+            $stmtLine->execute([
+                'eid' => $entryId,
+                'pid' => $line['product_id'],
+                'varid' => $line['variant_id'],
+                'sku' => $line['sku'],
+                'size' => $line['size'],
+                'colour' => $line['colour'],
+                'qty' => $line['quantity'],
+                'cost' => $line['purchase_cost'],
+                'price' => $line['selling_price'],
+                'cost_status' => $costStatus,
+                'barcode' => null,
+            ]);
+        }
+
+        inward_post_company_stock($db, $bid, $entryId, $entryNumber, $lines, $userId, $warehouseId);
+        inward_post_variant_stock($db, $bid, $warehouseId, $lines);
+        $db->prepare('UPDATE inward_entries SET company_stock_posted = 1 WHERE id = :id AND business_id = :bid')
+            ->execute(['id' => $entryId, 'bid' => $bid]);
+
+        if ($ownTx) {
+            $db->commit();
+        }
+
+        return [
+            'success' => true,
+            'entry_id' => $entryId,
+            'entry_number' => $entryNumber,
+            'total_qty' => $totalQty,
+            'lines_count' => count($lines),
+        ];
+    } catch (Throwable $e) {
+        if ($ownTx && $db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => 'Could not save the matrix inward entry: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Import bulk matrix inward entries from CSV.
+ * Supports format:
+ * Supplier, Receipt Date, Warehouse, Design Code, Colour, Unit Cost, S, M, L, XL, XXL...
+ *
+ * @return array{success:bool, error?:string, entry_id?:int, entry_number?:string, total_qty?:int, rows_imported?:int}
+ */
+function import_inward_matrix_csv(
+    string $csvContent,
+    int $defaultWarehouseId,
+    ?int $defaultVendorId = null,
+    string $defaultDate = '',
+    string $supplierReference = '',
+    ?int $userId = null,
+    ?int $businessId = null
+): array {
+    ensure_inward_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $supplierReference = trim($supplierReference);
+    if ($supplierReference !== '') {
+        $chkRef = $db->prepare('SELECT id, entry_number, entry_date FROM inward_entries WHERE business_id = :bid AND supplier_reference = :ref LIMIT 1');
+        $chkRef->execute(['bid' => $bid, 'ref' => $supplierReference]);
+        $existingDoc = $chkRef->fetch(PDO::FETCH_ASSOC);
+        if ($existingDoc) {
+            return [
+                'success' => false,
+                'error' => "Supplier document reference '{$supplierReference}' has already been imported under inward entry #{$existingDoc['entry_number']} on " . date('d M Y', strtotime($existingDoc['entry_date'])) . ". Duplicate import blocked to prevent double stock.",
+                'duplicate_entry_id' => (int)$existingDoc['id'],
+                'duplicate_entry_number' => $existingDoc['entry_number'],
+            ];
+        }
+    }
+
+    $lines = preg_split('/\r\n|\r|\n/', trim($csvContent));
+    if (empty($lines) || count($lines) < 2) {
+        return ['success' => false, 'error' => 'The CSV file is empty or missing data rows.'];
+    }
+
+    $rawHeader = str_getcsv(array_shift($lines));
+    $headers = array_map(function ($h) {
+        return strtolower(trim(preg_replace('/[\x{FEFF}]/u', '', (string)$h)));
+    }, $rawHeader);
+
+    // Map column indexes
+    $colMap = [
+        'supplier' => -1,
+        'date' => -1,
+        'warehouse' => -1,
+        'design_code' => -1,
+        'colour' => -1,
+        'cost' => -1,
+        'reference' => -1,
+    ];
+
+    $sizeCols = []; // colIndex => sizeLabel
+    foreach ($headers as $idx => $h) {
+        if (in_array($h, ['supplier', 'vendor', 'vendor_name', 'supplier_name', 'supplier name'], true)) {
+            $colMap['supplier'] = $idx;
+        } elseif (in_array($h, ['receipt date', 'receipt_date', 'date', 'entry_date', 'entry date'], true)) {
+            $colMap['date'] = $idx;
+        } elseif (in_array($h, ['warehouse', 'warehouse_name', 'warehouse name', 'location'], true)) {
+            $colMap['warehouse'] = $idx;
+        } elseif (in_array($h, ['design code', 'design_code', 'design', 'sku', 'product_sku', 'product sku', 'product_code', 'product code', 'parent_sku', 'parent sku'], true)) {
+            $colMap['design_code'] = $idx;
+        } elseif (in_array($h, ['colour', 'color', 'shade'], true)) {
+            $colMap['colour'] = $idx;
+        } elseif (in_array($h, ['unit cost', 'unit_cost', 'cost', 'cost_price', 'cost price', 'purchase_cost', 'purchase cost'], true)) {
+            $colMap['cost'] = $idx;
+        } elseif (in_array($h, ['reference', 'supplier reference', 'supplier_reference', 'supplier ref', 'supplier_ref', 'invoice_no', 'invoice no', 'bill_no', 'bill no', 'doc_ref', 'doc ref', 'document reference', 'invoice ref'], true)) {
+            $colMap['reference'] = $idx;
+        } else {
+            // Treat as size column
+            $sizeLabel = trim($rawHeader[$idx]);
+            if ($sizeLabel !== '') {
+                $sizeCols[$idx] = $sizeLabel;
+            }
+        }
+    }
+
+    if ($colMap['design_code'] === -1) {
+        return ['success' => false, 'error' => 'Missing "Design Code" column in CSV header.'];
+    }
+    if ($colMap['colour'] === -1) {
+        return ['success' => false, 'error' => 'Missing "Colour" column in CSV header.'];
+    }
+    if (empty($sizeCols)) {
+        return ['success' => false, 'error' => 'No size columns found in CSV (e.g. S, M, L, XL, XXL).'];
+    }
+
+    $sizes = array_values($sizeCols);
+
+    // Group rows by design code
+    $grouped = [];
+    $detectedSupplier = null;
+    $detectedWarehouse = null;
+    $detectedDate = null;
+    $detectedRef = null;
+
+    foreach ($lines as $lineNum => $lineStr) {
+        if (trim($lineStr) === '') continue;
+        $row = str_getcsv($lineStr);
+        $dCode = strtoupper(trim((string)($row[$colMap['design_code']] ?? '')));
+        $colour = trim((string)($row[$colMap['colour']] ?? ''));
+        if ($dCode === '' || $colour === '') continue;
+
+        $cost = $colMap['cost'] !== -1 ? (float)($row[$colMap['cost']] ?? 0) : null;
+        if ($colMap['supplier'] !== -1 && trim((string)($row[$colMap['supplier']] ?? '')) !== '') {
+            $detectedSupplier = trim((string)$row[$colMap['supplier']]);
+        }
+        if ($colMap['warehouse'] !== -1 && trim((string)($row[$colMap['warehouse']] ?? '')) !== '') {
+            $detectedWarehouse = trim((string)$row[$colMap['warehouse']]);
+        }
+        if ($colMap['date'] !== -1 && trim((string)($row[$colMap['date']] ?? '')) !== '') {
+            $detectedDate = trim((string)$row[$colMap['date']]);
+        }
+        if ($colMap['reference'] !== -1 && trim((string)($row[$colMap['reference']] ?? '')) !== '') {
+            $detectedRef = trim((string)$row[$colMap['reference']]);
+        }
+
+        $qtys = [];
+        foreach ($sizeCols as $cIdx => $sLabel) {
+            $qtys[$sLabel] = max(0, (int)($row[$cIdx] ?? 0));
+        }
+
+        if (!isset($grouped[$dCode])) {
+            $grouped[$dCode] = [];
+        }
+        $grouped[$dCode][] = [
+            'colour' => $colour,
+            'cost_price' => $cost,
+            'quantities' => $qtys,
+        ];
+    }
+
+    if (empty($grouped)) {
+        return ['success' => false, 'error' => 'No valid data rows found in CSV.'];
+    }
+
+    // Resolve warehouse
+    $whId = $defaultWarehouseId;
+    if ($detectedWarehouse) {
+        $stmtWh = $db->prepare('SELECT id FROM warehouses WHERE business_id = :bid AND (name = :name OR code = :code) AND status = "active" LIMIT 1');
+        $stmtWh->execute(['bid' => $bid, 'name' => $detectedWarehouse, 'code' => $detectedWarehouse]);
+        $whRow = $stmtWh->fetchColumn();
+        if ($whRow) {
+            $whId = (int)$whRow;
+        }
+    }
+    if ($whId <= 0) {
+        return ['success' => false, 'error' => 'Please choose a warehouse for the imported inward entry.'];
+    }
+
+    // Resolve supplier
+    $vId = $defaultVendorId;
+    $vName = $detectedSupplier;
+    if ($vName) {
+        $vRes = inward_resolve_vendor(null, $vName, $bid, false);
+        if (!empty($vRes['vendor_id'])) {
+            $vId = (int)$vRes['vendor_id'];
+        }
+    }
+
+    $ref = $detectedRef ?: $supplierReference;
+    if ($ref !== '') {
+        $chkRef = $db->prepare('SELECT id, entry_number FROM inward_entries WHERE business_id = :bid AND supplier_reference = :ref LIMIT 1');
+        $chkRef->execute(['bid' => $bid, 'ref' => $ref]);
+        $dup = $chkRef->fetch();
+        if ($dup) {
+            return [
+                'success' => false,
+                'error' => "Supplier document reference '{$ref}' has already been imported under entry #{$dup['entry_number']}. Duplicate import blocked to prevent double stock.",
+                'duplicate_entry_id' => (int)$dup['id'],
+            ];
+        }
+    }
+
+    $eDate = $detectedDate ?: ($defaultDate ?: date('Y-m-d'));
+
+    // Process all designs and post single/grouped inward entry
+    $allLines = [];
+    $totalQty = 0;
+
+    foreach ($grouped as $dCode => $rows) {
+        // Find or create parent product
+        $stmtP = $db->prepare('SELECT id, name, sku, cost_price, selling_price FROM products WHERE sku = :sku AND business_id = :bid LIMIT 1');
+        $stmtP->execute(['sku' => $dCode, 'bid' => $bid]);
+        $prod = $stmtP->fetch(PDO::FETCH_ASSOC);
+
+        if (!$prod) {
+            $db->prepare('
+                INSERT INTO products (
+                    business_id, name, sku, product_type, cost_price, selling_price,
+                    track_inventory, stock_quantity, status, created_at, updated_at
+                ) VALUES (
+                    :bid, :name, :sku, "variable", :cp, 0,
+                    1, 0, "active", NOW(), NOW()
+                )
+            ')->execute([
+                'bid' => $bid,
+                'name' => 'Design ' . $dCode,
+                'sku' => $dCode,
+                'cp' => (float)($rows[0]['cost_price'] ?? 0),
+            ]);
+            $productId = (int)$db->lastInsertId();
+        } else {
+            $productId = (int)$prod['id'];
+        }
+
+        $cDefs = [];
+        foreach ($rows as $r) {
+            $cDefs[] = [
+                'colour' => $r['colour'],
+                'cost_price' => $r['cost_price'],
+            ];
+        }
+        $vMatrix = ensure_matrix_variants($productId, $cDefs, $sizes, $bid);
+
+        foreach ($rows as $r) {
+            $cName = $r['colour'];
+            $cNorm = strtolower($cName);
+            $cost = $r['cost_price'];
+            foreach ($sizes as $sName) {
+                $sNorm = strtolower($sName);
+                $qty = (int)($r['quantities'][$sName] ?? 0);
+                if ($qty > 0) {
+                    $vRow = $vMatrix[$cNorm][$sNorm] ?? null;
+                    $allLines[] = [
+                        'product_id' => $productId,
+                        'variant_id' => $vRow ? (int)$vRow['id'] : null,
+                        'sku' => $vRow ? (string)$vRow['sku'] : null,
+                        'size' => $sName,
+                        'colour' => $cName,
+                        'quantity' => $qty,
+                        'purchase_cost' => $cost,
+                        'selling_price' => null,
+                    ];
+                    $totalQty += $qty;
+                }
+            }
+        }
+    }
+
+    if (empty($allLines)) {
+        return ['success' => false, 'error' => 'No inward quantities found in the CSV rows.'];
+    }
+
+    // Save inward entry
+    $ownTx = !$db->inTransaction();
+    if ($ownTx) {
+        $db->beginTransaction();
+    }
+
+    try {
+        $entryNumber = inward_next_number($db, $bid);
+        $stmtEntry = $db->prepare('
+            INSERT INTO inward_entries (
+                business_id, entry_number, warehouse_id, vendor_id, supplier_reference, user_id,
+                entry_date, status, purchase_status, is_sellable, notes, inward_mode, created_at, updated_at
+            ) VALUES (
+                :bid, :num, :wid, :vid, :ref, :uid,
+                :entry_date, "cost_pending", "pending", 0, "Bulk CSV Import", "import", NOW(), NOW()
+            )
+        ');
+        $stmtEntry->execute([
+            'bid' => $bid,
+            'num' => $entryNumber,
+            'wid' => $whId,
+            'vid' => $vId,
+            'ref' => $ref !== '' ? $ref : null,
+            'uid' => $userId,
+            'entry_date' => $eDate,
+        ]);
+        $entryId = (int)$db->lastInsertId();
+
+        $stmtLine = $db->prepare('
+            INSERT INTO inward_lines (
+                inward_entry_id, product_id, variant_id, sku, size, colour, quantity,
+                purchase_cost, selling_price, cost_status, created_at
+            ) VALUES (
+                :eid, :pid, :varid, :sku, :size, :colour, :qty,
+                :cost, NULL, :cost_status, NOW()
+            )
+        ');
+
+        foreach ($allLines as $line) {
+            $stmtLine->execute([
+                'eid' => $entryId,
+                'pid' => $line['product_id'],
+                'varid' => $line['variant_id'],
+                'sku' => $line['sku'],
+                'size' => $line['size'],
+                'colour' => $line['colour'],
+                'qty' => $line['quantity'],
+                'cost' => $line['purchase_cost'],
+                'cost_status' => $line['purchase_cost'] !== null ? 'confirmed' : 'pending',
+            ]);
+        }
+
+        inward_post_company_stock($db, $bid, $entryId, $entryNumber, $allLines, $userId, $whId);
+        inward_post_variant_stock($db, $bid, $whId, $allLines);
+        $db->prepare('UPDATE inward_entries SET company_stock_posted = 1 WHERE id = :id AND business_id = :bid')
+            ->execute(['id' => $entryId, 'bid' => $bid]);
+
+        if ($ownTx) {
+            $db->commit();
+        }
+
+        return [
+            'success' => true,
+            'entry_id' => $entryId,
+            'entry_number' => $entryNumber,
+            'total_qty' => $totalQty,
+            'rows_imported' => count($allLines),
+        ];
+    } catch (Throwable $e) {
+        if ($ownTx && $db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'error' => 'CSV Inward Import failed: ' . $e->getMessage()];
+    }
 }

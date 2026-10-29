@@ -23,10 +23,86 @@ $user = current_user();
 $userId = $user ? (int) $user['id'] : null;
 $canInwardCost = inward_entry_can_manage_cost($user);
 
+if (isset($_GET['action']) && $_GET['action'] === 'download_matrix_template') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="inward_matrix_template.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Supplier', 'Receipt Date', 'Warehouse', 'Supplier Reference', 'Design Code', 'Colour', 'Unit Cost', 'S', 'M', 'L', 'XL', 'XXL']);
+    fputcsv($out, ['Ash Wholesale', date('Y-m-d'), 'Central Warehouse', 'BILL-2026-101', 'AC125', 'Maroon', '250.00', '4', '8', '10', '6', '2']);
+    fputcsv($out, ['Ash Wholesale', date('Y-m-d'), 'Central Warehouse', 'BILL-2026-101', 'AC125', 'Black', '250.00', '5', '8', '12', '5', '0']);
+    fputcsv($out, ['Ash Wholesale', date('Y-m-d'), 'Central Warehouse', 'BILL-2026-101', 'AC125', 'Bottle Green', '250.00', '3', '10', '15', '8', '4']);
+    fputcsv($out, ['Ash Wholesale', date('Y-m-d'), 'Central Warehouse', 'BILL-2026-102', 'AC126', 'Pink', '280.00', '6', '10', '12', '8', '4']);
+    fputcsv($out, ['Ash Wholesale', date('Y-m-d'), 'Central Warehouse', 'BILL-2026-102', 'AC126', 'Blue', '280.00', '5', '8', '10', '6', '3']);
+    fclose($out);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postAction = (string) ($_POST['action'] ?? '');
     $isAjax = !empty($_POST['is_ajax']);
     inward_entry_assert_action($postAction, $isAjax);
+
+    if ($postAction === 'save_matrix_inward') {
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            set_flash('error', 'Invalid session token.');
+            redirect(APP_URL . '/inward-entry.php?tab=matrix');
+        }
+        $matrixPayload = json_decode((string)($_POST['matrix_json'] ?? '[]'), true);
+        if (!is_array($matrixPayload)) {
+            $matrixPayload = [];
+        }
+        $vendorId = (int)($_POST['vendor_id'] ?? 0);
+        $vendorName = trim((string)($_POST['vendor_name'] ?? ''));
+        $supplierReference = trim((string)($_POST['supplier_reference'] ?? ''));
+        $res = create_inward_matrix_entry(
+            (int)($_POST['warehouse_id'] ?? 0),
+            $matrixPayload,
+            (string)($_POST['entry_date'] ?? ''),
+            $supplierReference,
+            (string)($_POST['notes'] ?? ''),
+            $vendorId > 0 ? $vendorId : null,
+            $vendorName,
+            $userId
+        );
+        if ($res['success']) {
+            set_flash('success', 'Matrix Inward ' . $res['entry_number'] . ' saved! ' . $res['total_qty'] . ' pieces across ' . $res['lines_count'] . ' size/colour combinations posted to company stock.');
+            redirect(APP_URL . '/inward-entry.php?id=' . (int)$res['entry_id']);
+        }
+        set_flash('error', $res['error'] ?? 'Could not save the matrix inward count.');
+        redirect(APP_URL . '/inward-entry.php?tab=matrix');
+    }
+
+    if ($postAction === 'import_matrix_csv') {
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            set_flash('error', 'Invalid session token.');
+            redirect(APP_URL . '/inward-entry.php?tab=import');
+        }
+        $csvText = '';
+        if (!empty($_FILES['csv_file']['tmp_name']) && is_uploaded_file($_FILES['csv_file']['tmp_name'])) {
+            $csvText = file_get_contents($_FILES['csv_file']['tmp_name']) ?: '';
+        } else {
+            $csvText = (string)($_POST['csv_text'] ?? '');
+        }
+        if (trim($csvText) === '') {
+            set_flash('error', 'Please select a CSV file to upload or enter CSV text.');
+            redirect(APP_URL . '/inward-entry.php?tab=import');
+        }
+        $vendorId = (int)($_POST['vendor_id'] ?? 0);
+        $res = import_inward_matrix_csv(
+            $csvText,
+            (int)($_POST['warehouse_id'] ?? 0),
+            $vendorId > 0 ? $vendorId : null,
+            (string)($_POST['entry_date'] ?? ''),
+            trim((string)($_POST['supplier_reference'] ?? '')),
+            $userId
+        );
+        if ($res['success']) {
+            set_flash('success', 'Bulk CSV Inward ' . $res['entry_number'] . ' imported successfully! ' . $res['total_qty'] . ' total pieces inwarded.');
+            redirect(APP_URL . '/inward-entry.php?id=' . (int)$res['entry_id']);
+        }
+        set_flash('error', $res['error'] ?? 'CSV Inward Import failed.');
+        redirect(APP_URL . '/inward-entry.php?tab=import');
+    }
 
     if ($postAction === 'quick_create_product') {
         header('Content-Type: application/json');
@@ -247,6 +323,97 @@ $flashError = get_flash('error');
         .inw-chip-del:hover {
             color: #ef4444;
         }
+        .inw-tab-nav {
+            display: flex;
+            gap: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            padding: 0 20px;
+            margin-bottom: 20px;
+            background: #f8fafc;
+        }
+        .inw-tab-btn {
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            padding: 12px 18px;
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: -2px;
+        }
+        .inw-tab-btn:hover {
+            color: #1e293b;
+        }
+        .inw-tab-btn.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+            background: #ffffff;
+            border-radius: 6px 6px 0 0;
+        }
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .matrix-table th {
+            background: #f1f5f9;
+            color: #334155;
+            font-weight: 700;
+            text-align: center;
+            padding: 10px 8px;
+            border: 1px solid #cbd5e1;
+            white-space: nowrap;
+        }
+        .matrix-table td {
+            padding: 6px 8px;
+            border: 1px solid #cbd5e1;
+            vertical-align: middle;
+            text-align: center;
+            background: #ffffff;
+        }
+        .matrix-cell-input {
+            width: 55px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            padding: 6px 4px;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            transition: border 0.15s;
+        }
+        .matrix-cell-input:focus {
+            border-color: #2563eb;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+            background: #eff6ff;
+        }
+        .matrix-total-cell {
+            font-weight: 700;
+            color: #0f172a;
+            background: #f8fafc !important;
+        }
+        .preset-size-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .preset-size-pill:hover {
+            background: #dbeafe;
+            border-color: #93c5fd;
+        }
     </style>
 </head>
 <body>
@@ -291,8 +458,19 @@ $flashError = get_flash('error');
                         $costPending = (string) ($selected['status'] ?? '') !== 'confirmed';
                         $purchaseConfirmed = (string) ($selected['purchase_status'] ?? 'pending') === 'confirmed';
                         $qcDone = (string) ($selected['qc_status'] ?? 'pending') === 'done';
+                        $inwMode = (string) ($selected['inward_mode'] ?? 'standard');
                         ?>
-                        <div style="padding: 0 20px 16px;">
+                        <div style="padding: 0 20px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                            <?php if ($inwMode === 'matrix'): ?>
+                                <span class="badge-info" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe;">Matrix Inward</span>
+                            <?php elseif ($inwMode === 'import'): ?>
+                                <span class="badge-info" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a;">CSV Import</span>
+                            <?php else: ?>
+                                <span class="badge-secondary">Line Entry</span>
+                            <?php endif; ?>
+                            <?php if (!empty($selected['supplier_reference'])): ?>
+                                <span style="font-size:12px; font-weight:700; color:#334155; background:#f1f5f9; padding:3px 8px; border-radius:4px; border:1px solid #cbd5e1; font-family:monospace;">Ref: <?= e((string)$selected['supplier_reference']) ?></span>
+                            <?php endif; ?>
                             <?php if ($costPending): ?>
                                 <span class="badge-warning">Cost pending</span>
                             <?php else: ?>
@@ -372,7 +550,7 @@ $flashError = get_flash('error');
                                     <?php foreach ($selected['lines'] as $line): ?>
                                         <tr data-line-id="<?= (int) $line['id'] ?>">
                                             <td><strong><?= e((string) $line['product_name']) ?></strong></td>
-                                            <td><?= e((string) ($line['product_sku'] ?? '')) ?></td>
+                                            <td><code style="font-size:12px; font-weight:700; color:#1d4ed8; background:#eff6ff; padding:2px 6px; border-radius:4px;"><?= e((string) ($line['sku'] ?: ($line['product_sku'] ?? ''))) ?></code></td>
                                             <td><?= e((string) $line['size']) ?></td>
                                             <td><?= e((string) $line['colour']) ?></td>
                                             <td><?= (int) $line['quantity'] ?></td>
@@ -449,70 +627,265 @@ $flashError = get_flash('error');
                         <?php endif; ?>
                     </div>
                 <?php else: ?>
+                    <?php $activeTab = trim((string)($_GET['tab'] ?? 'matrix')); ?>
                     <div class="section-card" style="margin-bottom: 18px;">
-                        <div class="section-header">
-                            <div>
-                                <h2 class="section-heading">New warehouse count</h2>
-                                <p class="section-subheading">Counted by <?= e((string) ($user['name'] ?? 'you')) ?>. Saving adds company stock. It does not put ready stock in Central.</p>
-                            </div>
+                        <div class="inw-tab-nav">
+                            <button type="button" class="inw-tab-btn <?= $activeTab === 'matrix' ? 'active' : '' ?>" id="tabBtnMatrix" onclick="switchInwardTab('matrix')">
+                                <span style="font-size:16px;">⊞</span> Size × Colour Matrix Entry
+                            </button>
+                            <button type="button" class="inw-tab-btn <?= $activeTab === 'lines' ? 'active' : '' ?>" id="tabBtnLines" onclick="switchInwardTab('lines')">
+                                <span style="font-size:16px;">≡</span> Standard Line Entry
+                            </button>
+                            <button type="button" class="inw-tab-btn <?= $activeTab === 'import' ? 'active' : '' ?>" id="tabBtnImport" onclick="switchInwardTab('import')">
+                                <span style="font-size:16px;">📥</span> Bulk CSV Import
+                            </button>
                         </div>
-                        <form method="post" id="inwardForm" style="padding: 0 20px 20px;">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="action" value="save_inward">
-                            <input type="hidden" name="lines_json" id="linesJson" value="[]">
-                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
-                                <div class="form-group">
-                                    <label class="form-label" for="warehouse_id">Warehouse</label>
-                                    <select name="warehouse_id" id="warehouse_id" class="form-control" required>
-                                        <?php foreach ($warehouses as $warehouse): ?>
-                                            <option value="<?= (int) $warehouse['id'] ?>" <?= (int) $warehouse['id'] === $defaultWarehouseId ? 'selected' : '' ?>>
-                                                <?= e((string) $warehouse['name']) ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+
+                        <!-- 1. SIZE x COLOUR MATRIX PANE -->
+                        <div id="tabPaneMatrix" style="<?= $activeTab === 'matrix' ? 'display:block;' : 'display:none;' ?>">
+                            <div class="section-header" style="padding-top: 0;">
+                                <div>
+                                    <h2 class="section-heading">Size × Colour Matrix Inward</h2>
+                                    <p class="section-subheading">Fast bulk entry for design products across all colour &amp; size variants. Auto-generates unique 3-tier SKUs and posts company stock.</p>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="vendor_id">Supplier</label>
-                                    <?php if ($vendors === []): ?>
-                                        <input type="text" name="vendor_name" id="vendor_id" class="form-control" maxlength="191" placeholder="Type a supplier name, or leave blank">
-                                    <?php else: ?>
-                                        <select name="vendor_id" id="vendor_id" class="form-control">
-                                            <option value="">Not linked</option>
+                            </div>
+                            <form method="post" id="matrixInwardForm" style="padding: 0 20px 20px;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_matrix_inward">
+                                <input type="hidden" name="matrix_json" id="matrixJson" value="{}">
+                                
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                                    <div class="form-group">
+                                        <label class="form-label" for="matrix_warehouse_id">Warehouse <span style="color:#ef4444;">*</span></label>
+                                        <select name="warehouse_id" id="matrix_warehouse_id" class="form-control" required>
+                                            <?php foreach ($warehouses as $warehouse): ?>
+                                                <option value="<?= (int) $warehouse['id'] ?>" <?= (int) $warehouse['id'] === $defaultWarehouseId ? 'selected' : '' ?>>
+                                                    <?= e((string) $warehouse['name']) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="matrix_vendor_id">Supplier</label>
+                                        <?php if ($vendors === []): ?>
+                                            <input type="text" name="vendor_name" id="matrix_vendor_id" class="form-control" maxlength="191" placeholder="Supplier name">
+                                        <?php else: ?>
+                                            <select name="vendor_id" id="matrix_vendor_id" class="form-control">
+                                                <option value="">Not linked</option>
+                                                <?php foreach ($vendors as $vendor): ?>
+                                                    <option value="<?= (int) $vendor['id'] ?>"><?= e((string) $vendor['name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="matrix_entry_date">Receipt Date <span style="color:#ef4444;">*</span></label>
+                                        <input type="date" name="entry_date" id="matrix_entry_date" class="form-control" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="matrix_supplier_ref">Supplier Bill / Doc Ref (Optional)</label>
+                                        <input type="text" name="supplier_reference" id="matrix_supplier_ref" class="form-control" placeholder="e.g. INV-1092 / DC-441">
+                                    </div>
+                                </div>
+
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 18px;">
+                                    <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                                        <div style="display:flex; align-items: center; gap: 12px; flex: 1; min-width: 280px;">
+                                            <div style="flex: 1;">
+                                                <label class="form-label" style="font-weight:700; margin-bottom: 4px;">Select Design / Product <span style="color:#ef4444;">*</span></label>
+                                                <select id="matrix_product_id" class="form-control" style="font-weight: 600;" onchange="onMatrixProductChange(this.value)">
+                                                    <option value="">Choose design product...</option>
+                                                    <?php foreach ($catalog as $prod): ?>
+                                                        <option value="<?= (int)$prod['id'] ?>" data-sku="<?= e($prod['sku']) ?>" data-name="<?= e($prod['name']) ?>">
+                                                            <?= e($prod['name']) ?> (<?= e($prod['sku'] ?: 'No SKU') ?>)
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                            <button type="button" onclick="openQuickProductModal(null)" class="btn-secondary" style="margin-top: 22px; padding: 8px 12px; white-space: nowrap; font-size: 12.5px;">+ New Design Product</button>
+                                        </div>
+                                        <div id="parentSkuBox" style="display:none; align-items: center; gap: 8px; margin-top: 22px;">
+                                            <span style="font-size:12px; color:#64748b; font-weight:600;">Design Code:</span>
+                                            <span id="parentSkuBadge" style="font-weight:700; color:#1d4ed8; background:#eff6ff; padding:3px 10px; border-radius:4px; border:1px solid #bfdbfe; font-family:monospace; font-size:14px;"></span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Size Presets and Tags -->
+                                    <div style="margin-bottom: 14px;">
+                                        <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                                            <label class="form-label" style="font-weight:700; margin-bottom: 0;">Size Columns:</label>
+                                            <div style="display:flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                                <span style="font-size:11.5px; color:#64748b; font-weight:600;">Presets:</span>
+                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['S','M','L','XL','XXL'])">S, M, L, XL, XXL</button>
+                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['XS','S','M','L','XL','2XL','3XL'])">XS to 3XL</button>
+                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['28','30','32','34','36','38'])">Waist 28-38</button>
+                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['Free Size'])">Free Size</button>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items: center; gap: 8px; flex-wrap: wrap;" id="matrixSizesChipsContainer">
+                                            <!-- Dynamically populated size chips -->
+                                        </div>
+                                        <div style="display:flex; align-items: center; gap: 8px; margin-top: 6px; max-width: 240px;">
+                                            <input type="text" id="newSizeInput" class="form-control" placeholder="Add size (e.g. 3XL)" style="padding: 4px 8px; font-size: 12px; height: 32px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addMatrixSizeFromInput();}">
+                                            <button type="button" class="btn-secondary" onclick="addMatrixSizeFromInput()" style="padding: 4px 10px; font-size: 12px; height: 32px; white-space: nowrap;">+ Add</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- The Matrix Grid Table -->
+                                <div class="table-wrap" style="overflow-x: auto; margin-bottom: 16px;">
+                                    <table class="matrix-table" id="matrixGridTable">
+                                        <thead id="matrixHead"></thead>
+                                        <tbody id="matrixBody"></tbody>
+                                        <tfoot id="matrixFoot"></tfoot>
+                                    </table>
+                                </div>
+
+                                <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px;">
+                                    <div style="display:flex; gap: 8px;">
+                                        <button type="button" class="btn-secondary" onclick="addMatrixColourRow()" style="padding: 8px 14px; font-weight:600;">+ Add Colour</button>
+                                    </div>
+                                    <div style="display:flex; align-items: center; gap: 14px;">
+                                        <div style="font-size: 14px; font-weight: 700; color: #1e293b; background: #f1f5f9; padding: 8px 16px; border-radius: 6px;">
+                                            Total: <span id="matrixSummaryQty" style="color:#2563eb;">0</span> pcs
+                                            · ₹<span id="matrixSummaryCost" style="color:#16a34a;">0.00</span>
+                                        </div>
+                                        <button type="submit" class="header-btn" style="padding: 10px 22px; font-weight:700;">Save Matrix Count</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- 2. STANDARD LINE ENTRY PANE (Preserved untouched) -->
+                        <div id="tabPaneLines" style="<?= $activeTab === 'lines' ? 'display:block;' : 'display:none;' ?>">
+                            <div class="section-header" style="padding-top: 0;">
+                                <div>
+                                    <h2 class="section-heading">Standard Line Inward Entry</h2>
+                                    <p class="section-subheading">Counted by <?= e((string) ($user['name'] ?? 'you')) ?>. Add items line by line with tag-based sizes and colours.</p>
+                                </div>
+                            </div>
+                            <form method="post" id="inwardForm" style="padding: 0 20px 20px;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_inward">
+                                <input type="hidden" name="lines_json" id="linesJson" value="[]">
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                                    <div class="form-group">
+                                        <label class="form-label" for="warehouse_id">Warehouse</label>
+                                        <select name="warehouse_id" id="warehouse_id" class="form-control" required>
+                                            <?php foreach ($warehouses as $warehouse): ?>
+                                                <option value="<?= (int) $warehouse['id'] ?>" <?= (int) $warehouse['id'] === $defaultWarehouseId ? 'selected' : '' ?>>
+                                                    <?= e((string) $warehouse['name']) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="vendor_id">Supplier</label>
+                                        <?php if ($vendors === []): ?>
+                                            <input type="text" name="vendor_name" id="vendor_id" class="form-control" maxlength="191" placeholder="Type a supplier name, or leave blank">
+                                        <?php else: ?>
+                                            <select name="vendor_id" id="vendor_id" class="form-control">
+                                                <option value="">Not linked</option>
+                                                <?php foreach ($vendors as $vendor): ?>
+                                                    <option value="<?= (int) $vendor['id'] ?>"><?= e((string) $vendor['name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="entry_date">Count date</label>
+                                        <input type="date" name="entry_date" id="entry_date" class="form-control" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>" required>
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 16px;">
+                                    <label class="form-label" for="notes">Notes</label>
+                                    <input type="text" name="notes" id="notes" class="form-control" placeholder="Optional note for this count">
+                                </div>
+
+                                <div class="table-wrap">
+                                    <table class="saas-table" id="lineTable" style="width: 100%;">
+                                        <thead>
+                                            <tr>
+                                                <th style="min-width: 240px; text-align: left;">Product <button type="button" onclick="openQuickProductModal(null)" style="background: none; border: none; color: #2563eb; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: underline; margin-left: 6px;" title="Add New Product to Catalog">+ New Product</button></th>
+                                                <th style="width: 200px; min-width: 160px; text-align: left;">Size</th>
+                                                <th style="width: 200px; min-width: 160px; text-align: left;">Colour</th>
+                                                <th style="width: 110px; min-width: 100px; text-align: center;" class="inw-qty-header">Quantity</th>
+                                                <th style="width: 80px; min-width: 70px; text-align: center;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="lineBody"></tbody>
+                                    </table>
+                                </div>
+                                <div style="display:flex; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap;">
+                                    <button type="button" class="btn-secondary" id="addLineBtn" style="padding: 8px 14px;">Add line</button>
+                                    <button type="submit" class="header-btn" style="padding: 10px 18px;">Save count</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- 3. BULK CSV IMPORT PANE -->
+                        <div id="tabPaneImport" style="<?= $activeTab === 'import' ? 'display:block;' : 'display:none;' ?>">
+                            <div class="section-header" style="padding-top: 0;">
+                                <div>
+                                    <h2 class="section-heading">Bulk Inward via Spreadsheet / CSV</h2>
+                                    <p class="section-subheading">One row per design and colour, with size quantities in columns (S, M, L, XL, XXL). Imports goods-receipt transaction without overwriting on-hand balances.</p>
+                                </div>
+                                <a href="<?= asset('inward-entry.php?action=download_matrix_template') ?>" class="btn-secondary" style="padding: 8px 14px; display:inline-flex; align-items:center; gap:6px;">
+                                    <span>📥</span> Download Sample CSV Template
+                                </a>
+                            </div>
+                            <form method="post" enctype="multipart/form-data" id="csvImportForm" style="padding: 0 20px 20px;">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="import_matrix_csv">
+                                
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                                    <div class="form-group">
+                                        <label class="form-label" for="import_warehouse_id">Target Warehouse <span style="color:#ef4444;">*</span></label>
+                                        <select name="warehouse_id" id="import_warehouse_id" class="form-control" required>
+                                            <?php foreach ($warehouses as $warehouse): ?>
+                                                <option value="<?= (int) $warehouse['id'] ?>" <?= (int) $warehouse['id'] === $defaultWarehouseId ? 'selected' : '' ?>>
+                                                    <?= e((string) $warehouse['name']) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="import_vendor_id">Supplier (Default if omitted in CSV)</label>
+                                        <select name="vendor_id" id="import_vendor_id" class="form-control">
+                                            <option value="">From CSV or none</option>
                                             <?php foreach ($vendors as $vendor): ?>
                                                 <option value="<?= (int) $vendor['id'] ?>"><?= e((string) $vendor['name']) ?></option>
                                             <?php endforeach; ?>
                                         </select>
-                                    <?php endif; ?>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="import_entry_date">Receipt Date</label>
+                                        <input type="date" name="entry_date" id="import_entry_date" class="form-control" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="import_supplier_ref">Supplier Document / Invoice Ref</label>
+                                        <input type="text" name="supplier_reference" id="import_supplier_ref" class="form-control" placeholder="Blocks duplicate re-imports">
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="entry_date">Count date</label>
-                                    <input type="date" name="entry_date" id="entry_date" class="form-control" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>" required>
-                                </div>
-                            </div>
-                            <div class="form-group" style="margin-bottom: 16px;">
-                                <label class="form-label" for="notes">Notes</label>
-                                <input type="text" name="notes" id="notes" class="form-control" placeholder="Optional note for this count">
-                            </div>
 
-                            <div class="table-wrap">
-                                <table class="saas-table" id="lineTable" style="width: 100%;">
-                                    <thead>
-                                        <tr>
-                                            <th style="min-width: 240px; text-align: left;">Product <button type="button" onclick="openQuickProductModal(null)" style="background: none; border: none; color: #2563eb; font-size: 11.5px; font-weight: 700; cursor: pointer; text-decoration: underline; margin-left: 6px;" title="Add New Product to Catalog">+ New Product</button></th>
-                                            <th style="width: 200px; min-width: 160px; text-align: left;">Size</th>
-                                            <th style="width: 200px; min-width: 160px; text-align: left;">Colour</th>
-                                            <th style="width: 110px; min-width: 100px; text-align: center;" class="inw-qty-header">Quantity</th>
-                                            <th style="width: 80px; min-width: 70px; text-align: center;"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="lineBody"></tbody>
-                                </table>
-                            </div>
-                            <div style="display:flex; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap;">
-                                <button type="button" class="btn-secondary" id="addLineBtn" style="padding: 8px 14px;">Add line</button>
-                                <button type="submit" class="header-btn" style="padding: 10px 18px;">Save count</button>
-                            </div>
-                        </form>
+                                <div class="form-group" style="margin-bottom: 16px;">
+                                    <label class="form-label" style="font-weight:700;">Upload CSV File</label>
+                                    <input type="file" name="csv_file" id="csv_file" class="form-control" accept=".csv,text/csv">
+                                    <p style="margin: 6px 0 0; font-size: 12px; color: #64748b;">
+                                        Expected columns: <code>Design Code, Colour, Unit Cost, S, M, L, XL, XXL</code> (or include Supplier, Date, Warehouse).
+                                    </p>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 16px;">
+                                    <label class="form-label" style="font-weight:600;">Or Paste CSV Content:</label>
+                                    <textarea name="csv_text" id="csv_text" class="form-control" rows="5" placeholder="Supplier,Receipt Date,Warehouse,Supplier Reference,Design Code,Colour,Unit Cost,S,M,L,XL,XXL&#10;Ash Wholesale,<?= date('Y-m-d') ?>,Central Warehouse,BILL-101,AC125,Maroon,250,4,8,10,6,2&#10;Ash Wholesale,<?= date('Y-m-d') ?>,Central Warehouse,BILL-101,AC125,Black,250,5,8,12,5,0&#10;Ash Wholesale,<?= date('Y-m-d') ?>,Central Warehouse,BILL-101,AC125,Bottle Green,250,3,10,15,8,4"></textarea>
+                                </div>
+
+                                <div style="display:flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+                                    <button type="submit" class="header-btn" style="padding: 10px 22px; font-weight:700;">Post CSV Inward</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 <?php endif; ?>
 
@@ -535,6 +908,7 @@ $flashError = get_flash('error');
                                     <th>Date</th>
                                     <th>Warehouse</th>
                                     <th>Supplier</th>
+                                    <th>Mode / Ref</th>
                                     <th>Lines</th>
                                     <th>Quantity</th>
                                     <th>Bill</th>
@@ -543,7 +917,7 @@ $flashError = get_flash('error');
                             </thead>
                             <tbody>
                                 <?php if ($entries === []): ?>
-                                    <tr><td colspan="8" style="text-align:center; padding: 28px; color:#64748b;">No inward counts yet.</td></tr>
+                                    <tr><td colspan="9" style="text-align:center; padding: 28px; color:#64748b;">No inward counts yet.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($entries as $entry): ?>
                                         <tr>
@@ -551,6 +925,19 @@ $flashError = get_flash('error');
                                             <td><?= e(date('d M Y', strtotime((string) $entry['entry_date']))) ?></td>
                                             <td><?= e((string) ($entry['warehouse_name'] ?? '')) ?></td>
                                             <td><?= e((string) ($entry['vendor_name'] ?? '—')) ?></td>
+                                            <td>
+                                                <?php $mode = (string)($entry['inward_mode'] ?? 'standard'); ?>
+                                                <?php if ($mode === 'matrix'): ?>
+                                                    <span style="display:inline-block; font-size:11px; font-weight:700; padding:2px 6px; border-radius:3px; background:#e0e7ff; color:#3730a3;">Matrix</span>
+                                                <?php elseif ($mode === 'import'): ?>
+                                                    <span style="display:inline-block; font-size:11px; font-weight:700; padding:2px 6px; border-radius:3px; background:#fef3c7; color:#92400e;">CSV</span>
+                                                <?php else: ?>
+                                                    <span style="display:inline-block; font-size:11px; font-weight:600; padding:2px 6px; border-radius:3px; background:#f1f5f9; color:#475569;">Line</span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($entry['supplier_reference'])): ?>
+                                                    <div style="font-size:11px; color:#64748b; font-weight:600; font-family:monospace; margin-top:2px;"><?= e((string)$entry['supplier_reference']) ?></div>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><?= (int) $entry['line_count'] ?></td>
                                             <td><?= (int) $entry['total_qty'] ?></td>
                                             <td>
@@ -645,6 +1032,27 @@ $flashError = get_flash('error');
             </form>
         </div>
     </div>
+
+    <datalist id="matrixColourDatalist">
+        <option value="Maroon">
+        <option value="Black">
+        <option value="Bottle Green">
+        <option value="Navy Blue">
+        <option value="Red">
+        <option value="White">
+        <option value="Mustard">
+        <option value="Peach">
+        <option value="Teal">
+        <option value="Pink">
+        <option value="Yellow">
+        <option value="Olive">
+        <option value="Grey">
+        <option value="Orange">
+        <option value="Lavender">
+        <option value="Wine">
+        <option value="Rust">
+        <option value="Beige">
+    </datalist>
 
     <script>
         const inwardCatalog = <?= json_encode($catalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -1081,14 +1489,27 @@ $flashError = get_flash('error');
                         populateProductSelect(select, cur);
                     });
 
-                    // Select newly added product on active row
+                    // Select newly added product on active row or matrix select
                     const targetRow = activeRowForNewProduct || (lineBody ? lineBody.lastElementChild : null);
-                    if (targetRow) {
+                    if (targetRow && activeRowForNewProduct) {
                         const sel = targetRow.querySelector('.inw-product');
                         if (sel) {
                             sel.value = String(newProd.id);
                             sel.dataset.prevValue = String(newProd.id);
                             syncLine(targetRow);
+                        }
+                    }
+
+                    // Update matrix product dropdown
+                    const matrixProdSel = document.getElementById('matrix_product_id');
+                    if (matrixProdSel) {
+                        const opt = document.createElement('option');
+                        opt.value = String(newProd.id);
+                        opt.textContent = newProd.sku ? newProd.name + ' (' + newProd.sku + ')' : newProd.name;
+                        matrixProdSel.appendChild(opt);
+                        if (!activeRowForNewProduct) {
+                            matrixProdSel.value = String(newProd.id);
+                            onMatrixProductChange(newProd.id);
                         }
                     }
 
@@ -1196,6 +1617,381 @@ $flashError = get_flash('error');
                     alert('Each line needs a product, size, and quantity.');
                 }
             });
+        }
+
+        // =========================================================================
+        // SIZE × COLOUR MATRIX ENTRY LOGIC
+        // =========================================================================
+
+        function switchInwardTab(tab) {
+            const tabs = ['matrix', 'lines', 'import'];
+            tabs.forEach(function(t) {
+                const pane = document.getElementById('tabPane' + t.charAt(0).toUpperCase() + t.slice(1));
+                const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (pane) pane.style.display = (t === tab) ? 'block' : 'none';
+                if (btn) {
+                    if (t === tab) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                }
+            });
+        }
+
+        let matrixSizes = ['S', 'M', 'L', 'XL', 'XXL'];
+        let matrixRows = [];
+        let matrixRowCounter = 0;
+
+        function getStandardColorCodeJS(name) {
+            if (!name) return '';
+            const map = {
+                'maroon': 'MRN', 'black': 'BLK', 'bottle green': 'BGR', 'bottlegreen': 'BGR',
+                'red': 'RED', 'blue': 'BLU', 'navy': 'NVY', 'navy blue': 'NVY',
+                'white': 'WHT', 'pink': 'PNK', 'yellow': 'YEL', 'green': 'GRN',
+                'mustard': 'MSTD', 'peach': 'PCH', 'olive': 'OLV', 'teal': 'TEL',
+                'grey': 'GRY', 'gray': 'GRY', 'orange': 'ORG', 'purple': 'PRP',
+                'lavender': 'LAV', 'beige': 'BGE', 'brown': 'BRN', 'rust': 'RST',
+                'wine': 'WIN', 'magenta': 'MAG', 'cyan': 'CYN'
+            };
+            const lower = name.toLowerCase().trim();
+            if (map[lower]) return map[lower];
+            const clean = lower.replace(/[^a-z0-9]/g, '');
+            if (clean.length <= 4) return clean.toUpperCase();
+            const consonants = clean.charAt(0) + clean.slice(1).replace(/[aeiou]/g, '');
+            return (consonants.length >= 3 ? consonants.slice(0, 4) : clean.slice(0, 3)).toUpperCase();
+        }
+
+        function renderMatrixSizeChips() {
+            const container = document.getElementById('matrixSizesChipsContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            matrixSizes.forEach(function(sz) {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-size:12px; font-weight:700; padding:3px 9px; border-radius:14px;';
+                chip.innerHTML = '<span>' + sz + '</span>' + 
+                    (matrixSizes.length > 1 ? '<button type="button" style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">&times;</button>' : '');
+                const btn = chip.querySelector('button');
+                if (btn) {
+                    btn.addEventListener('click', function() {
+                        removeMatrixSize(sz);
+                    });
+                }
+                container.appendChild(chip);
+            });
+        }
+
+        function applyMatrixSizePreset(preset) {
+            if (!Array.isArray(preset) || preset.length === 0) return;
+            matrixSizes = preset.slice();
+            renderMatrixSizeChips();
+            renderMatrixTable();
+        }
+
+        function addMatrixSizeFromInput() {
+            const inp = document.getElementById('newSizeInput');
+            if (!inp) return;
+            const val = (inp.value || '').trim();
+            if (!val) return;
+            const exists = matrixSizes.some(function(s) { return s.toUpperCase() === val.toUpperCase(); });
+            if (!exists) {
+                matrixSizes.push(val);
+                renderMatrixSizeChips();
+                renderMatrixTable();
+            }
+            inp.value = '';
+            inp.focus();
+        }
+
+        function removeMatrixSize(sz) {
+            if (matrixSizes.length <= 1) return;
+            matrixSizes = matrixSizes.filter(function(s) { return s !== sz; });
+            renderMatrixSizeChips();
+            renderMatrixTable();
+        }
+
+        function getSelectedMatrixProduct() {
+            const sel = document.getElementById('matrix_product_id');
+            if (!sel || !sel.value) return null;
+            return productById(parseInt(sel.value, 10));
+        }
+
+        function onMatrixProductChange(productId) {
+            const prod = productById(parseInt(productId, 10));
+            const box = document.getElementById('parentSkuBox');
+            const badge = document.getElementById('parentSkuBadge');
+
+            if (!prod) {
+                if (box) box.style.display = 'none';
+                return;
+            }
+
+            const parentSku = (prod.sku || ('PRD-' + prod.id)).toUpperCase();
+            if (badge) badge.textContent = parentSku;
+            if (box) box.style.display = 'flex';
+
+            if (prod.variants && prod.variants.length > 0) {
+                const prodSizes = uniqueValues(prod.variants, 'size').filter(Boolean);
+                if (prodSizes.length > 0) {
+                    matrixSizes = prodSizes;
+                }
+            }
+
+            if (matrixRows.length === 0) {
+                addMatrixColourRow('', '', '', '');
+            }
+
+            renderMatrixSizeChips();
+            renderMatrixTable();
+        }
+
+        function addMatrixColourRow(initialColour, initialCode, initialCost, initialPrice, initialQtys, initialVideoSku) {
+            const rowId = ++matrixRowCounter;
+            const col = initialColour || '';
+            const code = initialCode || '';
+            const row = {
+                id: rowId,
+                colour: col,
+                colour_code: code,
+                video_sku: initialVideoSku || '',
+                cost_price: initialCost !== undefined && initialCost !== null ? String(initialCost) : '',
+                selling_price: initialPrice !== undefined && initialPrice !== null ? String(initialPrice) : '',
+                quantities: Object.assign({}, initialQtys || {})
+            };
+            matrixRows.push(row);
+            renderMatrixTable();
+        }
+
+        function removeMatrixColourRow(rowId) {
+            if (matrixRows.length <= 1) {
+                alert('At least one colour row is required in the matrix.');
+                return;
+            }
+            matrixRows = matrixRows.filter(function(r) { return r.id !== rowId; });
+            renderMatrixTable();
+        }
+
+        function renderMatrixTable() {
+            const table = document.getElementById('matrixGridTable');
+            const head = document.getElementById('matrixHead');
+            const body = document.getElementById('matrixBody');
+            const foot = document.getElementById('matrixFoot');
+            if (!table || !head || !body || !foot) return;
+
+            const prod = getSelectedMatrixProduct();
+            const parentSku = prod && prod.sku ? prod.sku.toUpperCase() : 'DESIGN';
+
+            // 1. Build Header
+            let hHtml = '<tr>' +
+                '<th style="min-width:140px; text-align:left;">Colour Name</th>' +
+                '<th style="width:140px; text-align:left;">Video / OCR SKU</th>' +
+                '<th style="width:105px; text-align:center;">Unit Cost (₹)</th>' +
+                '<th style="width:105px; text-align:center;">Selling (₹)</th>';
+            matrixSizes.forEach(function(sz) {
+                hHtml += '<th style="min-width:64px; text-align:center; background:#eff6ff; color:#1e40af;">' + sz + '</th>';
+            });
+            hHtml += '<th style="width:80px; text-align:center; background:#f1f5f9;">Total Pcs</th>' +
+                     '<th style="width:40px; text-align:center;"></th>' +
+                     '</tr>';
+            head.innerHTML = hHtml;
+
+            // 2. Build Body
+            body.innerHTML = '';
+            matrixRows.forEach(function(row) {
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-matrix-row-id', row.id);
+
+                let rHtml = '<td>' +
+                    '<input type="text" class="form-control matrix-colour-inp" value="' + (row.colour || '') + '" placeholder="Type colour (e.g. Maroon)" style="font-weight:600;" list="matrixColourDatalist">' +
+                    '</td>' +
+                    '<td>' +
+                    '<input type="text" class="form-control matrix-video-sku-inp" value="' + (row.video_sku || '') + '" placeholder="e.g. ' + (parentSku !== 'DESIGN' ? parentSku + '-MRN' : 'SKU-CODE') + '" style="font-family:monospace; font-weight:700; text-transform:uppercase; font-size:12.5px;">' +
+                    '</td>' +
+                    '<td><input type="number" step="0.01" min="0" class="form-control matrix-cost-inp" value="' + (row.cost_price || '') + '" placeholder="0.00" style="text-align:right;"></td>' +
+                    '<td><input type="number" step="0.01" min="0" class="form-control matrix-price-inp" value="' + (row.selling_price || '') + '" placeholder="0.00" style="text-align:right;"></td>';
+
+                matrixSizes.forEach(function(sz) {
+                    const qtyVal = row.quantities[sz] !== undefined && row.quantities[sz] !== null ? row.quantities[sz] : '';
+                    rHtml += '<td style="text-align:center; padding: 4px;">' +
+                        '<input type="number" min="0" step="1" class="form-control matrix-qty-inp" data-size="' + sz + '" value="' + qtyVal + '" placeholder="0" style="text-align:center; font-weight:700; font-size:14px; width:100%; min-width:55px;">' +
+                        '</td>';
+                });
+
+                rHtml += '<td style="text-align:center; font-weight:800; font-size:14px; color:#1e293b;" class="matrix-row-total-pcs">0</td>' +
+                         '<td style="text-align:center;"><button type="button" class="btn-secondary" style="padding:4px 8px; color:#dc2626; border:none; font-size:16px; font-weight:700; cursor:pointer;" title="Remove colour row">&times;</button></td>';
+
+                tr.innerHTML = rHtml;
+
+                const colInp = tr.querySelector('.matrix-colour-inp');
+                const vSkuInp = tr.querySelector('.matrix-video-sku-inp');
+                const costInp = tr.querySelector('.matrix-cost-inp');
+                const priceInp = tr.querySelector('.matrix-price-inp');
+                const delBtn = tr.querySelector('button');
+
+                colInp.addEventListener('input', function() {
+                    row.colour = colInp.value.trim();
+                });
+
+                vSkuInp.addEventListener('input', function() {
+                    row.video_sku = vSkuInp.value.trim().toUpperCase();
+                });
+
+                costInp.addEventListener('input', function() {
+                    row.cost_price = costInp.value;
+                    recalculateMatrixTotals();
+                });
+
+                priceInp.addEventListener('input', function() {
+                    row.selling_price = priceInp.value;
+                });
+
+                delBtn.addEventListener('click', function() {
+                    removeMatrixColourRow(row.id);
+                });
+
+                tr.querySelectorAll('.matrix-qty-inp').forEach(function(qInp) {
+                    qInp.addEventListener('input', function() {
+                        const s = qInp.getAttribute('data-size');
+                        const v = parseInt(qInp.value || '0', 10);
+                        row.quantities[s] = isNaN(v) ? 0 : Math.max(0, v);
+                        recalculateMatrixTotals();
+                    });
+                    qInp.addEventListener('focus', function() {
+                        if (qInp.value === '0') qInp.value = '';
+                    });
+                });
+
+                body.appendChild(tr);
+            });
+
+            // 3. Build Footer
+            let fHtml = '<tr style="background:#f8fafc; font-weight:700;">' +
+                '<td colspan="4" style="text-align:right; padding-right:12px; font-size:13px; color:#475569;">Size Column Totals:</td>';
+            matrixSizes.forEach(function(sz) {
+                fHtml += '<td style="text-align:center; font-weight:800; color:#1e40af; font-size:13.5px;" id="matrixColTotal_' + sz.replace(/[^a-zA-Z0-9]/g, '_') + '">0</td>';
+            });
+            fHtml += '<td style="text-align:center; font-weight:900; font-size:15px; color:#2563eb;" id="matrixFootGrandTotal">0</td>' +
+                     '<td></td>' +
+                     '</tr>';
+            foot.innerHTML = fHtml;
+
+            recalculateMatrixTotals();
+        }
+
+        function recalculateMatrixTotals() {
+            let grandQty = 0;
+            let grandCost = 0.0;
+            const colTotals = {};
+            matrixSizes.forEach(function(s) { colTotals[s] = 0; });
+
+            document.querySelectorAll('#matrixBody tr[data-matrix-row-id]').forEach(function(tr) {
+                const rowId = parseInt(tr.getAttribute('data-matrix-row-id') || '0', 10);
+                const rowObj = matrixRows.find(function(r) { return r.id === rowId; });
+                if (!rowObj) return;
+
+                let rowQty = 0;
+                tr.querySelectorAll('.matrix-qty-inp').forEach(function(qInp) {
+                    const s = qInp.getAttribute('data-size');
+                    const v = parseInt(qInp.value || '0', 10);
+                    const val = isNaN(v) ? 0 : Math.max(0, v);
+                    rowQty += val;
+                    if (colTotals[s] !== undefined) colTotals[s] += val;
+                });
+
+                const rowTotalEl = tr.querySelector('.matrix-row-total-pcs');
+                if (rowTotalEl) rowTotalEl.textContent = String(rowQty);
+
+                const costVal = parseFloat(rowObj.cost_price || '0');
+                const unitCost = isNaN(costVal) ? 0 : costVal;
+                grandQty += rowQty;
+                grandCost += (rowQty * unitCost);
+            });
+
+            matrixSizes.forEach(function(sz) {
+                const el = document.getElementById('matrixColTotal_' + sz.replace(/[^a-zA-Z0-9]/g, '_'));
+                if (el) el.textContent = String(colTotals[sz] || 0);
+            });
+
+            const sumQtyEl = document.getElementById('matrixSummaryQty');
+            const sumCostEl = document.getElementById('matrixSummaryCost');
+            const footGrandEl = document.getElementById('matrixFootGrandTotal');
+
+            if (sumQtyEl) sumQtyEl.textContent = String(grandQty);
+            if (footGrandEl) footGrandEl.textContent = String(grandQty);
+            if (sumCostEl) sumCostEl.textContent = grandCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        const matrixInwardForm = document.getElementById('matrixInwardForm');
+        if (matrixInwardForm) {
+            matrixInwardForm.addEventListener('submit', function(e) {
+                const prodId = parseInt(document.getElementById('matrix_product_id').value || '0', 10);
+                if (!prodId) {
+                    e.preventDefault();
+                    alert('Please select a Design / Product.');
+                    document.getElementById('matrix_product_id').focus();
+                    return;
+                }
+
+                if (matrixRows.length === 0) {
+                    e.preventDefault();
+                    alert('Please add at least one colour row in the matrix.');
+                    return;
+                }
+
+                let totalQty = 0;
+                let missingColour = false;
+                const serializedRows = [];
+
+                matrixRows.forEach(function(row) {
+                    const colName = (row.colour || '').trim();
+                    if (!colName) missingColour = true;
+
+                    let rowQty = 0;
+                    const qMap = {};
+                    matrixSizes.forEach(function(sz) {
+                        const q = parseInt(row.quantities[sz] || '0', 10);
+                        const val = isNaN(q) ? 0 : Math.max(0, q);
+                        qMap[sz] = val;
+                        rowQty += val;
+                    });
+                    totalQty += rowQty;
+
+                    serializedRows.push({
+                        colour: colName,
+                        colour_code: row.colour_code || getStandardColorCodeJS(colName),
+                        video_sku: (row.video_sku || '').toUpperCase(),
+                        unit_cost: parseFloat(row.cost_price || '0') || 0,
+                        selling_price: parseFloat(row.selling_price || '0') || 0,
+                        quantities: qMap
+                    });
+                });
+
+                if (missingColour) {
+                    e.preventDefault();
+                    alert('Please specify the colour name for all rows.');
+                    return;
+                }
+
+                if (totalQty <= 0) {
+                    e.preventDefault();
+                    alert('Please enter at least 1 piece in the matrix.');
+                    return;
+                }
+
+                const payload = {
+                    product_id: prodId,
+                    sizes: matrixSizes,
+                    rows: serializedRows
+                };
+
+                document.getElementById('matrixJson').value = JSON.stringify(payload);
+            });
+        }
+
+        // Initialize Matrix defaults (1 blank row by default)
+        if (document.getElementById('tabPaneMatrix')) {
+            renderMatrixSizeChips();
+            if (matrixRows.length === 0) {
+                addMatrixColourRow('', '', '', '');
+            }
+            renderMatrixTable();
         }
     </script>
 </body>

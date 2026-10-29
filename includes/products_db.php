@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/orders_db.php';
 
 /* =========================================================================
    1. CATEGORY OPERATIONS
@@ -711,7 +712,9 @@ function ensure_product_item_schema(): void {
     foreach ([
         'business_id' => "INT UNSIGNED NOT NULL DEFAULT 1 AFTER `id`",
         'attribute_values' => "JSON NULL AFTER `variant_name`",
-        'image_path' => "VARCHAR(255) NULL AFTER `attribute_values`"
+        'image_path' => "VARCHAR(255) NULL AFTER `attribute_values`",
+        'video_sku' => "VARCHAR(100) NULL AFTER `sku`",
+        'color_code' => "VARCHAR(50) NULL AFTER `video_sku`"
     ] as $vc => $vd) {
         try {
             $stmt = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = :db AND TABLE_NAME = 'product_variants' AND COLUMN_NAME = :col");
@@ -721,6 +724,9 @@ function ensure_product_item_schema(): void {
             }
         } catch (PDOException $e) { /* ignore */ }
     }
+    try {
+        $db->exec("CREATE INDEX idx_variant_video_sku ON product_variants (video_sku)");
+    } catch (PDOException $e) { /* ignore if index exists */ }
 }
 
 function get_tax_rates_list(?int $businessId = null): array {
@@ -1347,6 +1353,195 @@ function generate_variant_combinations(array $attributes): array {
     return $combos;
 }
 
+/**
+ * Standard fashion colour code abbreviation mapping.
+ */
+function get_standard_color_code(string $colour): string {
+    $colour = trim($colour);
+    if ($colour === '') {
+        return 'STD';
+    }
+    $map = [
+        'MAROON' => 'MRN',
+        'BLACK' => 'BLK',
+        'BOTTLE GREEN' => 'BGR',
+        'GREEN' => 'GRN',
+        'RED' => 'RED',
+        'BLUE' => 'BLU',
+        'NAVY' => 'NVY',
+        'NAVY BLUE' => 'NVY',
+        'PINK' => 'PNK',
+        'YELLOW' => 'YEL',
+        'WHITE' => 'WHT',
+        'GREY' => 'GRY',
+        'GRAY' => 'GRY',
+        'ORANGE' => 'ORG',
+        'PURPLE' => 'PRP',
+        'BROWN' => 'BRN',
+        'BEIGE' => 'BGE',
+        'OLIVE' => 'OLV',
+        'TEAL' => 'TEL',
+        'PEACH' => 'PCH',
+        'RUST' => 'RST',
+        'MUSTARD' => 'MSD',
+        'WINE' => 'WIN',
+        'GOLD' => 'GLD',
+        'SILVER' => 'SLV',
+        'MEHENDI' => 'MHN',
+        'LAVENDER' => 'LVD',
+        'MAGENTA' => 'MGT',
+        'TURQUOISE' => 'TRQ',
+        'CORAL' => 'CRL',
+    ];
+    $upper = strtoupper($colour);
+    if (isset($map[$upper])) {
+        return $map[$upper];
+    }
+    if (preg_match('/^[A-Z0-9]{2,4}$/', $upper)) {
+        return $upper;
+    }
+    $consonants = preg_replace('/[AEIOU\s\-_]/i', '', $upper);
+    if (strlen($consonants) >= 3) {
+        return substr($consonants, 0, 3);
+    }
+    $clean = preg_replace('/[^A-Za-z0-9]/', '', $upper);
+    return strlen($clean) > 0 ? substr($clean, 0, 3) : 'STD';
+}
+
+function build_video_sku(string $parentSku, string $colour, ?string $colourCode = null): string {
+    $pSku = strtoupper(trim(preg_replace('/[^A-Za-z0-9\-_]/', '', $parentSku)));
+    if ($pSku === '') {
+        $pSku = 'PROD';
+    }
+    $cCode = $colourCode ? strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $colourCode))) : get_standard_color_code($colour);
+    return $pSku . '-' . $cCode;
+}
+
+function build_variant_inventory_sku(string $parentSku, string $colour, string $size, ?string $colourCode = null): string {
+    $videoSku = build_video_sku($parentSku, $colour, $colourCode);
+    $sCode = strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $size)));
+    if ($sCode === '') {
+        $sCode = 'STD';
+    }
+    return $videoSku . '-' . $sCode;
+}
+
+/**
+ * Lookup colour variants by video SKU (printed on social media video).
+ * Resolves to the parent design and all size variants.
+ */
+function find_variants_by_video_sku(string $videoSku, ?int $businessId = null): ?array {
+    $cleanCode = strtoupper(trim(preg_replace('/[^A-Za-z0-9\-_]/', '', $videoSku)));
+    if ($cleanCode === '') return null;
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+
+    // 1. Direct match on video_sku
+    $stmt = $db->prepare('
+        SELECT pv.*, p.name AS product_name, p.sku AS parent_sku, p.selling_price AS parent_selling_price
+        FROM product_variants pv
+        INNER JOIN products p ON p.id = pv.product_id AND p.business_id = :bid_p
+        WHERE (pv.video_sku = :vsku OR pv.sku LIKE :prefix)
+          AND pv.business_id = :bid_pv
+          AND pv.status = "active"
+        ORDER BY pv.id ASC
+    ');
+    $stmt->execute([
+        'vsku' => $cleanCode,
+        'prefix' => $cleanCode . '-%',
+        'bid_p' => $bid,
+        'bid_pv' => $bid,
+    ]);
+    $variants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($variants)) {
+        // Fallback: check if cleanCode matches a parent SKU
+        $stmtP = $db->prepare('
+            SELECT pv.*, p.name AS product_name, p.sku AS parent_sku, p.selling_price AS parent_selling_price
+            FROM product_variants pv
+            INNER JOIN products p ON p.id = pv.product_id AND p.business_id = :bid_p
+            WHERE p.sku = :psku AND pv.business_id = :bid_pv AND pv.status = "active"
+            ORDER BY pv.id ASC
+        ');
+        $stmtP->execute(['psku' => $cleanCode, 'bid_p' => $bid, 'bid_pv' => $bid]);
+        $variants = $stmtP->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    if (empty($variants)) return null;
+
+    $first = $variants[0];
+    $colour = '';
+    if (!empty($first['attribute_values'])) {
+        $decoded = json_decode((string)$first['attribute_values'], true);
+        if (is_array($decoded)) {
+            foreach ($decoded as $k => $v) {
+                if (in_array(strtolower(trim((string)$k)), ['colour', 'color', 'shade', 'rang'], true)) {
+                    $colour = trim((string)$v);
+                    break;
+                }
+            }
+        }
+    }
+    if ($colour === '') {
+        $attrs = function_exists('parse_variant_size_colour') ? parse_variant_size_colour($first) : ['colour' => '', 'size' => ''];
+        $colour = $attrs['colour'] ?: ($first['color_code'] ?: 'Standard');
+    }
+
+    $sizeVariants = [];
+    $totalStock = 0;
+    foreach ($variants as $v) {
+        $vColour = $colour;
+        $vSize = '';
+        if (!empty($v['attribute_values'])) {
+            $decoded = json_decode((string)$v['attribute_values'], true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $k => $val) {
+                    $kl = strtolower(trim((string)$k));
+                    if (in_array($kl, ['colour', 'color', 'shade', 'rang'], true)) {
+                        $vColour = trim((string)$val);
+                    } elseif (in_array($kl, ['size', 'sizes'], true)) {
+                        $vSize = trim((string)$val);
+                    }
+                }
+            }
+        }
+        if ($vSize === '') {
+            $vAttrs = function_exists('parse_variant_size_colour') ? parse_variant_size_colour($v) : ['colour' => '', 'size' => ''];
+            $vSize = $vAttrs['size'] ?: 'Standard';
+            if (!empty($vAttrs['colour'])) $vColour = $vAttrs['colour'];
+        }
+
+        $stk = (int)$v['stock_quantity'];
+        $totalStock += $stk;
+        $sizeVariants[] = [
+            'id' => (int)$v['id'],
+            'size' => $vSize,
+            'colour' => $vColour,
+            'sku' => (string)$v['sku'],
+            'video_sku' => (string)($v['video_sku'] ?: $cleanCode),
+            'barcode' => (string)($v['barcode'] ?? ''),
+            'stock_quantity' => $stk,
+            'in_stock' => $stk > 0,
+            'selling_price' => (float)($v['selling_price'] > 0 ? $v['selling_price'] : ($v['parent_selling_price'] ?? 0)),
+        ];
+    }
+
+    return [
+        'product_id' => (int)$first['product_id'],
+        'product_name' => (string)$first['product_name'],
+        'parent_sku' => (string)$first['parent_sku'],
+        'parent' => [
+            'id' => (int)$first['product_id'],
+            'name' => (string)$first['product_name'],
+            'sku' => (string)$first['parent_sku'],
+        ],
+        'colour' => $colour,
+        'video_sku' => (string)($first['video_sku'] ?: $cleanCode),
+        'total_stock' => $totalStock,
+        'variants' => $sizeVariants,
+    ];
+}
+
 function save_product_variants_from_attributes(int $productId, array $attributes, ?int $businessId = null): void {
     ensure_product_item_schema();
     $bid = $businessId ?: current_business_id();
@@ -1366,6 +1561,7 @@ function save_product_variants_from_attributes(int $productId, array $attributes
 
     // Check if POST has variant-specific data
     $postedSkus = $_POST['variant_sku'] ?? [];
+    $postedVideoSkus = $_POST['variant_video_sku'] ?? [];
     $postedSelling = $_POST['variant_selling_price'] ?? [];
     $postedCost = $_POST['variant_cost_price'] ?? [];
     $postedStock = $_POST['variant_stock'] ?? [];
@@ -1387,11 +1583,29 @@ function save_product_variants_from_attributes(int $productId, array $attributes
         $attrJson = json_encode($combo, JSON_UNESCAPED_UNICODE);
         $usedKeys[] = $attrJson;
 
+        // Parse colour and size for 3-tier SKU convention
+        $comboColor = '';
+        $comboSize = '';
+        foreach ($combo as $k => $v) {
+            $kLow = strtolower(trim((string)$k));
+            if (in_array($kLow, ['color', 'colour', 'shade', 'rang'], true)) {
+                $comboColor = trim((string)$v);
+            } elseif (in_array($kLow, ['size', 'sizes'], true)) {
+                $comboSize = trim((string)$v);
+            }
+        }
+        $colorCode = $comboColor !== '' ? get_standard_color_code($comboColor) : null;
+        $videoSku = !empty($postedVideoSkus[$ci])
+            ? strtoupper(trim($postedVideoSkus[$ci]))
+            : ($parentSku !== '' && $comboColor !== '' ? build_video_sku($parentSku, $comboColor, $colorCode) : null);
+
         // Check if variant already exists
         if (isset($existingVariants[$attrJson])) {
             // Update existing
             $ev = $existingVariants[$attrJson];
             $sku = !empty($postedSkus[$ci]) ? strtoupper(trim($postedSkus[$ci])) : $ev['sku'];
+            $vSku = !empty($postedVideoSkus[$ci]) ? strtoupper(trim($postedVideoSkus[$ci])) : ($ev['video_sku'] ?? $videoSku);
+            $cCode = $colorCode ?? ($ev['color_code'] ?? null);
             $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : (float) $ev['selling_price'];
             $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : (float) $ev['cost_price'];
             $stk = isset($postedStock[$ci]) && $postedStock[$ci] !== '' ? max(0, (int) $postedStock[$ci]) : (int) $ev['stock_quantity'];
@@ -1405,8 +1619,8 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             }
             $imgPath = handle_variant_image_upload($ci, $oldImg);
 
-            $db->prepare('UPDATE product_variants SET variant_name = :vn, sku = :sku, selling_price = :sp, cost_price = :cp, stock_quantity = :stk, image_path = :img, updated_at = NOW() WHERE id = :id')
-                ->execute(['vn' => $variantName, 'sku' => $sku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk, 'img' => $imgPath, 'id' => (int) $ev['id']]);
+            $db->prepare('UPDATE product_variants SET variant_name = :vn, sku = :sku, video_sku = :vsku, color_code = :ccode, selling_price = :sp, cost_price = :cp, stock_quantity = :stk, image_path = :img, updated_at = NOW() WHERE id = :id')
+                ->execute(['vn' => $variantName, 'sku' => $sku, 'vsku' => $vSku, 'ccode' => $cCode, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk, 'img' => $imgPath, 'id' => (int) $ev['id']]);
             $totalVariantStock += $stk;
             if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
             if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
@@ -1414,7 +1628,11 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             // Generate SKU for new variant
             $baseSku = strtoupper(trim($postedSkus[$ci] ?? ''));
             if ($baseSku === '') {
-                $baseSku = ($parentSku !== '' ? $parentSku : 'SKU-' . strtoupper(substr(uniqid(), -6))) . '-V' . ($ci + 1);
+                if ($parentSku !== '' && $comboColor !== '' && $comboSize !== '') {
+                    $baseSku = build_variant_inventory_sku($parentSku, $comboColor, $comboSize, $colorCode);
+                } else {
+                    $baseSku = ($parentSku !== '' ? $parentSku : 'SKU-' . strtoupper(substr(uniqid(), -6))) . '-V' . ($ci + 1);
+                }
             }
             $sp = isset($postedSelling[$ci]) && $postedSelling[$ci] !== '' ? (float) $postedSelling[$ci] : $parentSelling;
             $cp = isset($postedCost[$ci]) && $postedCost[$ci] !== '' ? (float) $postedCost[$ci] : $parentCost;
@@ -1426,8 +1644,8 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             }
             $imgPath = handle_variant_image_upload($ci, $oldImg);
 
-            $db->prepare('INSERT INTO product_variants (business_id, product_id, variant_name, attribute_values, image_path, sku, selling_price, cost_price, stock_quantity) VALUES (:bid, :pid, :vn, :av, :img, :sku, :sp, :cp, :stk)')
-                ->execute(['bid' => $bid, 'pid' => $productId, 'vn' => $variantName, 'av' => $attrJson, 'img' => $imgPath, 'sku' => $baseSku, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk]);
+            $db->prepare('INSERT INTO product_variants (business_id, product_id, variant_name, attribute_values, image_path, sku, video_sku, color_code, selling_price, cost_price, stock_quantity) VALUES (:bid, :pid, :vn, :av, :img, :sku, :vsku, :ccode, :sp, :cp, :stk)')
+                ->execute(['bid' => $bid, 'pid' => $productId, 'vn' => $variantName, 'av' => $attrJson, 'img' => $imgPath, 'sku' => $baseSku, 'vsku' => $videoSku, 'ccode' => $colorCode, 'sp' => $sp, 'cp' => $cp, 'stk' => $stk]);
             $totalVariantStock += $stk;
             if ($firstVariantPrice === null && $sp > 0) $firstVariantPrice = $sp;
             if ($firstVariantCost === null && $cp > 0) $firstVariantCost = $cp;
