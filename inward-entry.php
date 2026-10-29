@@ -532,6 +532,35 @@ $flashError = get_flash('error');
                                 </div>
                             <?php endif; ?>
                         <?php endif; ?>
+                        <?php if ($costPending && $canInwardCost && !empty($selected['lines'])): ?>
+                            <!-- ⚡ QUICK FILL ALL VARIANTS BAR -->
+                            <div class="quick-fill-bar" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 18px;">⚡</span>
+                                    <div>
+                                        <div style="font-weight: 700; color: #0f172a; font-size: 13.5px;">Quick Fill All Variants</div>
+                                        <div style="font-size: 12px; color: #64748b;">Enter purchase cost and selling price once to populate all lines instantly.</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <label style="font-size: 12px; font-weight: 600; color: #475569; margin: 0;">Cost (₹):</label>
+                                        <input type="number" step="0.01" min="0" id="quickFillCost" class="form-control" placeholder="0.00" style="width: 105px; height: 38px; font-weight: 700; text-align: right;">
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <label style="font-size: 12px; font-weight: 600; color: #475569; margin: 0;">Selling (₹):</label>
+                                        <input type="number" step="0.01" min="0" id="quickFillPrice" class="form-control" placeholder="0.00" style="width: 105px; height: 38px; font-weight: 700; text-align: right;">
+                                    </div>
+                                    <button type="button" class="btn-secondary" onclick="applyQuickFillCostPrice(false)" style="height: 38px; padding: 0 14px; font-weight: 700; background: #2563eb; color: #ffffff; border-color: #2563eb; cursor: pointer;">
+                                        ⚡ Apply to All Variants
+                                    </button>
+                                    <button type="button" class="btn-secondary" onclick="applyQuickFillCostPrice(true)" style="height: 38px; padding: 0 12px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                        Apply to Blank Only
+                                    </button>
+                                    <span id="quickFillNotice" style="font-size: 12.5px; color: #16a34a; font-weight: 700; display: none;"></span>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                         <div class="table-wrap">
                             <table class="saas-table">
                                 <thead>
@@ -555,8 +584,22 @@ $flashError = get_flash('error');
                                             <td><?= e((string) $line['colour']) ?></td>
                                             <td><?= (int) $line['quantity'] ?></td>
                                             <?php if ($costPending && $canInwardCost): ?>
-                                                <td><input type="text" inputmode="decimal" class="form-control inw-cost" autocomplete="off" placeholder="Blank" style="min-height: 48px; font-size: 18px;"></td>
-                                                <td><input type="text" inputmode="decimal" class="form-control inw-price" autocomplete="off" placeholder="Blank" style="min-height: 48px; font-size: 18px;"></td>
+                                                <?php
+                                                    $preCost = ($line['purchase_cost'] !== null && (float)$line['purchase_cost'] > 0) ? (string)(float)$line['purchase_cost'] : '';
+                                                    $prePrice = ($line['selling_price'] !== null && (float)$line['selling_price'] > 0) ? (string)(float)$line['selling_price'] : '';
+                                                ?>
+                                                <td>
+                                                    <div style="display:flex; align-items:center; gap:6px;">
+                                                        <input type="text" inputmode="decimal" class="form-control inw-cost" autocomplete="off" placeholder="Blank" value="<?= e($preCost) ?>" style="min-height: 44px; font-size: 16px; font-weight:600; text-align:right;">
+                                                        <button type="button" class="btn-secondary" title="Copy this cost to all rows below" onclick="copyCostDown(this)" style="padding: 6px 8px; font-size: 12px; cursor: pointer; color: #475569;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background=''">⬇</button>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div style="display:flex; align-items:center; gap:6px;">
+                                                        <input type="text" inputmode="decimal" class="form-control inw-price" autocomplete="off" placeholder="Blank" value="<?= e($prePrice) ?>" style="min-height: 44px; font-size: 16px; font-weight:600; text-align:right;">
+                                                        <button type="button" class="btn-secondary" title="Copy this selling price to all rows below" onclick="copyPriceDown(this)" style="padding: 6px 8px; font-size: 12px; cursor: pointer; color: #475569;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background=''">⬇</button>
+                                                    </div>
+                                                </td>
                                             <?php elseif ($costPending): ?>
                                                 <td colspan="2" style="color:#64748b; font-weight:700;">🔒 Restricted</td>
                                             <?php else: ?>
@@ -688,69 +731,28 @@ $flashError = get_flash('error');
                                     </div>
                                 </div>
 
-                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 18px;">
-                                    <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
-                                        <div style="display:flex; align-items: center; gap: 12px; flex: 1; min-width: 280px;">
-                                            <div style="flex: 1;">
-                                                <label class="form-label" style="font-weight:700; margin-bottom: 4px;">Select Design / Product <span style="color:#ef4444;">*</span></label>
-                                                <select id="matrix_product_id" class="form-control" style="font-weight: 600;" onchange="onMatrixProductChange(this.value)">
-                                                    <option value="">Choose design product...</option>
-                                                    <?php foreach ($catalog as $prod): ?>
-                                                        <option value="<?= (int)$prod['id'] ?>" data-sku="<?= e($prod['sku']) ?>" data-name="<?= e($prod['name']) ?>">
-                                                            <?= e($prod['name']) ?> (<?= e($prod['sku'] ?: 'No SKU') ?>)
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </div>
-                                            <button type="button" onclick="openQuickProductModal(null)" class="btn-secondary" style="margin-top: 22px; padding: 8px 12px; white-space: nowrap; font-size: 12.5px;">+ New Design Product</button>
-                                        </div>
-                                        <div id="parentSkuBox" style="display:none; align-items: center; gap: 8px; margin-top: 22px;">
-                                            <span style="font-size:12px; color:#64748b; font-weight:600;">Design Code:</span>
-                                            <span id="parentSkuBadge" style="font-weight:700; color:#1d4ed8; background:#eff6ff; padding:3px 10px; border-radius:4px; border:1px solid #bfdbfe; font-family:monospace; font-size:14px;"></span>
-                                        </div>
-                                    </div>
-
-                                    <!-- Size Presets and Tags -->
-                                    <div style="margin-bottom: 14px;">
-                                        <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
-                                            <label class="form-label" style="font-weight:700; margin-bottom: 0;">Size Columns:</label>
-                                            <div style="display:flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-                                                <span style="font-size:11.5px; color:#64748b; font-weight:600;">Presets:</span>
-                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['S','M','L','XL','XXL'])">S, M, L, XL, XXL</button>
-                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['XS','S','M','L','XL','2XL','3XL'])">XS to 3XL</button>
-                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['28','30','32','34','36','38'])">Waist 28-38</button>
-                                                <button type="button" class="preset-size-pill" onclick="applyMatrixSizePreset(['Free Size'])">Free Size</button>
-                                            </div>
-                                        </div>
-                                        <div style="display:flex; align-items: center; gap: 8px; flex-wrap: wrap;" id="matrixSizesChipsContainer">
-                                            <!-- Dynamically populated size chips -->
-                                        </div>
-                                        <div style="display:flex; align-items: center; gap: 8px; margin-top: 6px; max-width: 240px;">
-                                            <input type="text" id="newSizeInput" class="form-control" placeholder="Add size (e.g. 3XL)" style="padding: 4px 8px; font-size: 12px; height: 32px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addMatrixSizeFromInput();}">
-                                            <button type="button" class="btn-secondary" onclick="addMatrixSizeFromInput()" style="padding: 4px 10px; font-size: 12px; height: 32px; white-space: nowrap;">+ Add</button>
-                                        </div>
-                                    </div>
+                                <!-- DYNAMIC MULTI-PRODUCT CONTAINER -->
+                                <div id="matrixProductsContainer" style="display: flex; flex-direction: column; gap: 20px; margin-bottom: 16px;">
+                                    <!-- Rendered dynamically by JavaScript -->
                                 </div>
 
-                                <!-- The Matrix Grid Table -->
-                                <div class="table-wrap" style="overflow-x: auto; margin-bottom: 16px;">
-                                    <table class="matrix-table" id="matrixGridTable">
-                                        <thead id="matrixHead"></thead>
-                                        <tbody id="matrixBody"></tbody>
-                                        <tfoot id="matrixFoot"></tfoot>
-                                    </table>
+                                <!-- ADD ANOTHER PRODUCT BUTTON -->
+                                <div style="margin: 16px 0 24px; display: flex; justify-content: flex-start;">
+                                    <button type="button" onclick="addNewMatrixProductCard()" class="btn-secondary" style="border: 2px dashed #93c5fd; background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+                                        <span style="font-size: 18px; font-weight: 800; line-height: 1;">+</span> Add Another Product to this Inward
+                                    </button>
                                 </div>
 
-                                <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px;">
-                                    <div style="display:flex; gap: 8px;">
-                                        <button type="button" class="btn-secondary" onclick="addMatrixColourRow()" style="padding: 8px 14px; font-weight:600;">+ Add Colour</button>
+                                <!-- MATRIX SUMMARY & SUBMIT -->
+                                <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 16px; padding-top: 16px; border-top: 2px solid #e2e8f0;">
+                                    <div style="font-size: 12.5px; color: #64748b;">
+                                        <span style="font-weight: 600; color: #334155;">💡 Tip:</span> All variants and stock across all added products will be created and posted together in a single receipt.
                                     </div>
                                     <div style="display:flex; align-items: center; gap: 14px;">
-                                        <div style="font-size: 14px; font-weight: 700; color: #1e293b; background: #f1f5f9; padding: 8px 16px; border-radius: 6px;">
-                                            Total: <span id="matrixSummaryQty" style="color:#2563eb;">0</span> pcs
-                                            · ₹<span id="matrixSummaryCost" style="color:#16a34a;">0.00</span>
+                                        <div style="font-size: 14px; font-weight: 700; color: #1e293b; background: #f1f5f9; padding: 10px 18px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                            Total: <span id="matrixSummaryProductsCount" style="color:#0f172a;">1</span> Product(s) · <span id="matrixSummaryQty" style="color:#2563eb;">0</span> pcs · ₹<span id="matrixSummaryCost" style="color:#16a34a;">0.00</span>
                                         </div>
-                                        <button type="submit" class="header-btn" style="padding: 10px 22px; font-weight:700;">Save Matrix Count</button>
+                                        <button type="submit" class="header-btn" style="padding: 11px 24px; font-weight:700; font-size: 15px;">Save Matrix Count</button>
                                     </div>
                                 </div>
                             </form>
@@ -1350,8 +1352,12 @@ $flashError = get_flash('error');
             }
         }
 
-        function openQuickProductModal(row) {
+        let activeRowForNewProduct = null;
+        let activeMatrixCardForNewProduct = null;
+
+        function openQuickProductModal(row, matrixCardId) {
             activeRowForNewProduct = row || null;
+            activeMatrixCardForNewProduct = matrixCardId || null;
             const errDiv = document.getElementById('quickProductError');
             if (errDiv) {
                 errDiv.style.display = 'none';
@@ -1374,6 +1380,7 @@ $flashError = get_flash('error');
             const modal = document.getElementById('quickProductModal');
             if (modal) modal.style.display = 'none';
             activeRowForNewProduct = null;
+            activeMatrixCardForNewProduct = null;
         }
 
         document.addEventListener('keydown', function (e) {
@@ -1500,16 +1507,22 @@ $flashError = get_flash('error');
                         }
                     }
 
-                    // Update matrix product dropdown
-                    const matrixProdSel = document.getElementById('matrix_product_id');
-                    if (matrixProdSel) {
+                    // Update all matrix card product dropdowns
+                    document.querySelectorAll('.card-product-select').forEach(function (matrixProdSel) {
                         const opt = document.createElement('option');
                         opt.value = String(newProd.id);
                         opt.textContent = newProd.sku ? newProd.name + ' (' + newProd.sku + ')' : newProd.name;
                         matrixProdSel.appendChild(opt);
-                        if (!activeRowForNewProduct) {
-                            matrixProdSel.value = String(newProd.id);
-                            onMatrixProductChange(newProd.id);
+                    });
+
+                    if (activeMatrixCardForNewProduct) {
+                        const cardDiv = document.getElementById('matrixCard_' + activeMatrixCardForNewProduct);
+                        if (cardDiv) {
+                            const sel = cardDiv.querySelector('.card-product-select');
+                            if (sel) {
+                                sel.value = String(newProd.id);
+                                onCardProductChange(activeMatrixCardForNewProduct, newProd.id);
+                            }
                         }
                     }
 
@@ -1526,6 +1539,83 @@ $flashError = get_flash('error');
                     }
                 });
             });
+        }
+
+        // Quick Fill & Copy Down handlers for Cost Confirmation Screen
+        function applyQuickFillCostPrice(onlyBlank) {
+            const costInp = document.getElementById('quickFillCost');
+            const priceInp = document.getElementById('quickFillPrice');
+            const costVal = costInp ? (costInp.value || '').trim() : '';
+            const priceVal = priceInp ? (priceInp.value || '').trim() : '';
+
+            if (!costVal && !priceVal) {
+                alert('Please enter a Cost and/or Selling Price to apply.');
+                return;
+            }
+
+            let count = 0;
+            document.querySelectorAll('#costForm tr[data-line-id]').forEach(function (row) {
+                const cInp = row.querySelector('.inw-cost');
+                const pInp = row.querySelector('.inw-price');
+                if (cInp && costVal) {
+                    if (!onlyBlank || !cInp.value.trim()) {
+                        cInp.value = costVal;
+                    }
+                }
+                if (pInp && priceVal) {
+                    if (!onlyBlank || !pInp.value.trim()) {
+                        pInp.value = priceVal;
+                    }
+                }
+                count++;
+            });
+
+            const notice = document.getElementById('quickFillNotice');
+            if (notice) {
+                notice.style.display = 'inline';
+                notice.textContent = '✓ Applied to ' + count + ' variants!';
+                setTimeout(function () { notice.style.display = 'none'; }, 3500);
+            }
+        }
+
+        function copyCostDown(btn) {
+            const tr = btn.closest('tr');
+            if (!tr) return;
+            const curVal = (tr.querySelector('.inw-cost').value || '').trim();
+            if (!curVal) {
+                alert('Please enter a purchase cost in this row first.');
+                return;
+            }
+            let next = tr.nextElementSibling;
+            let count = 0;
+            while (next) {
+                const inp = next.querySelector('.inw-cost');
+                if (inp) {
+                    inp.value = curVal;
+                    count++;
+                }
+                next = next.nextElementSibling;
+            }
+        }
+
+        function copyPriceDown(btn) {
+            const tr = btn.closest('tr');
+            if (!tr) return;
+            const curVal = (tr.querySelector('.inw-price').value || '').trim();
+            if (!curVal) {
+                alert('Please enter a selling price in this row first.');
+                return;
+            }
+            let next = tr.nextElementSibling;
+            let count = 0;
+            while (next) {
+                const inp = next.querySelector('.inw-price');
+                if (inp) {
+                    inp.value = curVal;
+                    count++;
+                }
+                next = next.nextElementSibling;
+            }
         }
 
         const costForm = document.getElementById('costForm');
@@ -1636,9 +1726,16 @@ $flashError = get_flash('error');
             });
         }
 
-        let matrixSizes = ['S', 'M', 'L', 'XL', 'XXL'];
-        let matrixRows = [];
-        let matrixRowCounter = 0;
+        // -------------------------------------------------------------
+        // MULTI-PRODUCT MATRIX INWARD ENTRY CONTROLLER
+        // -------------------------------------------------------------
+        let matrixProductCards = [];
+        let matrixCardCounter = 0;
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
 
         function getStandardColorCodeJS(name) {
             if (!name) return '';
@@ -1659,170 +1756,352 @@ $flashError = get_flash('error');
             return (consonants.length >= 3 ? consonants.slice(0, 4) : clean.slice(0, 3)).toUpperCase();
         }
 
-        function renderMatrixSizeChips() {
-            const container = document.getElementById('matrixSizesChipsContainer');
+        function addNewMatrixProductCard(initialProdId) {
+            const cardId = ++matrixCardCounter;
+            const card = {
+                id: cardId,
+                productId: initialProdId ? parseInt(initialProdId, 10) : null,
+                sizes: ['S', 'M', 'L', 'XL', 'XXL'],
+                rowCounter: 0,
+                rows: []
+            };
+
+            // Start with 1 default blank row
+            card.rows.push({
+                id: ++card.rowCounter,
+                colour: '',
+                colour_code: '',
+                video_sku: '',
+                cost_price: '',
+                selling_price: '',
+                quantities: {}
+            });
+
+            matrixProductCards.push(card);
+
+            const container = document.getElementById('matrixProductsContainer');
+            if (!container) return;
+
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'matrix-product-card';
+            cardDiv.id = 'matrixCard_' + cardId;
+            cardDiv.setAttribute('data-card-id', cardId);
+            cardDiv.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); margin-bottom: 6px;';
+            container.appendChild(cardDiv);
+
+            renderCardStructure(card);
+            updateCardHeadersAndButtons();
+            recalculateAllMatrixTotals();
+        }
+
+        function updateCardHeadersAndButtons() {
+            const cards = document.querySelectorAll('#matrixProductsContainer .matrix-product-card');
+            cards.forEach(function(cardEl, idx) {
+                const badge = cardEl.querySelector('.card-number-badge');
+                if (badge) badge.textContent = 'Product #' + (idx + 1);
+                const remBtn = cardEl.querySelector('.btn-remove-card');
+                if (remBtn) {
+                    remBtn.style.display = cards.length > 1 ? 'inline-block' : 'none';
+                }
+            });
+            const pCountEl = document.getElementById('matrixSummaryProductsCount');
+            if (pCountEl) pCountEl.textContent = String(cards.length);
+        }
+
+        function removeMatrixProductCard(cardId) {
+            if (matrixProductCards.length <= 1) {
+                alert('At least one product is required in the matrix inward.');
+                return;
+            }
+            matrixProductCards = matrixProductCards.filter(function(c) { return c.id !== cardId; });
+            const cardDiv = document.getElementById('matrixCard_' + cardId);
+            if (cardDiv) cardDiv.remove();
+            updateCardHeadersAndButtons();
+            recalculateAllMatrixTotals();
+        }
+
+        function renderCardStructure(card) {
+            const cardDiv = document.getElementById('matrixCard_' + card.id);
+            if (!cardDiv) return;
+
+            let optionsHtml = '<option value="">Choose design product...</option>';
+            inwardCatalog.forEach(function(prod) {
+                const isSel = card.productId === prod.id ? 'selected' : '';
+                const skuStr = prod.sku ? ' (' + prod.sku + ')' : '';
+                optionsHtml += '<option value="' + prod.id + '" ' + isSel + '>' + escapeHtml(prod.name) + escapeHtml(skuStr) + '</option>';
+            });
+
+            cardDiv.innerHTML =
+                '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #f1f5f9;">' +
+                    '<div style="display:flex; align-items:center; gap:10px;">' +
+                        '<span class="card-number-badge" style="font-size:12.5px; font-weight:800; background:#2563eb; color:#ffffff; padding:3px 12px; border-radius:9999px;">Product #1</span>' +
+                        '<div class="card-sku-box" id="cardSkuBox_' + card.id + '" style="display:none; align-items:center; gap:6px;">' +
+                            '<span style="font-size:11.5px; color:#64748b; font-weight:600; text-transform:uppercase;">Design Code:</span>' +
+                            '<span class="card-sku-badge" id="cardSkuBadge_' + card.id + '" style="font-weight:700; color:#1d4ed8; background:#eff6ff; padding:2px 8px; border-radius:4px; border:1px solid #bfdbfe; font-family:monospace; font-size:13px;"></span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<button type="button" class="btn-remove-card" onclick="removeMatrixProductCard(' + card.id + ')" style="background:transparent; border:1px solid #fca5a5; color:#dc2626; border-radius:6px; padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer;" title="Remove this product from inward">&times; Remove Product</button>' +
+                '</div>' +
+
+                '<div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:14px;">' +
+                    '<div style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap;">' +
+                        '<div style="flex:1; min-width:260px;">' +
+                            '<label class="form-label" style="font-weight:700; margin-bottom:4px; font-size:13px;">Select Design / Product <span style="color:#ef4444;">*</span></label>' +
+                            '<select class="form-control card-product-select" style="font-weight:600;" onchange="onCardProductChange(' + card.id + ', this.value)">' +
+                                optionsHtml +
+                            '</select>' +
+                        '</div>' +
+                        '<button type="button" onclick="openQuickProductModal(null, ' + card.id + ')" class="btn-secondary" style="padding:8px 12px; white-space:nowrap; font-size:12.5px; height:42px;">+ New Design Product</button>' +
+                    '</div>' +
+
+                    '<div>' +
+                        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">' +
+                            '<label class="form-label" style="font-weight:700; margin-bottom:0; font-size:12px;">Size Columns:</label>' +
+                            '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">' +
+                                '<span style="font-size:11.5px; color:#64748b; font-weight:600;">Presets:</span>' +
+                                '<button type="button" class="preset-size-pill" onclick="applyCardSizePreset(' + card.id + ', [\'S\',\'M\',\'L\',\'XL\',\'XXL\'])">S, M, L, XL, XXL</button>' +
+                                '<button type="button" class="preset-size-pill" onclick="applyCardSizePreset(' + card.id + ', [\'XS\',\'S\',\'M\',\'L\',\'XL\',\'2XL\',\'3XL\'])">XS to 3XL</button>' +
+                                '<button type="button" class="preset-size-pill" onclick="applyCardSizePreset(' + card.id + ', [\'28\',\'30\',\'32\',\'34\',\'36\',\'38\'])">Waist 28-38</button>' +
+                                '<button type="button" class="preset-size-pill" onclick="applyCardSizePreset(' + card.id + ', [\'Free Size\'])">Free Size</button>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;" id="cardSizesChips_' + card.id + '"></div>' +
+                        '<div style="display:flex; align-items:center; gap:8px; margin-top:6px; max-width:240px;">' +
+                            '<input type="text" id="cardNewSizeInput_' + card.id + '" class="form-control" placeholder="Add size (e.g. 4XL)" style="padding:4px 8px; font-size:12px; height:32px;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addCardCustomSize(' + card.id + ');}">' +
+                            '<button type="button" class="btn-secondary" onclick="addCardCustomSize(' + card.id + ')" style="padding:4px 10px; font-size:12px; height:32px; white-space:nowrap;">+ Add</button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+
+                '<div class="table-wrap" style="overflow-x:auto; margin-bottom:12px; border:1px solid #e2e8f0; border-radius:6px;">' +
+                    '<table class="matrix-table" id="cardMatrixTable_' + card.id + '" style="margin:0; width:100%;">' +
+                        '<thead id="cardHead_' + card.id + '"></thead>' +
+                        '<tbody id="cardBody_' + card.id + '"></tbody>' +
+                        '<tfoot id="cardFoot_' + card.id + '"></tfoot>' +
+                    '</table>' +
+                '</div>' +
+
+                '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-top:4px;">' +
+                    '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">' +
+                        '<button type="button" class="btn-secondary" onclick="addCardColourRow(' + card.id + ')" style="padding:7px 14px; font-weight:600; font-size:12.5px;">+ Add Colour</button>' +
+                        '<div style="display:inline-flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:6px; border:1px solid #e2e8f0;">' +
+                            '<span style="font-size:11.5px; color:#475569; font-weight:600;">Fill all rows:</span>' +
+                            '<input type="number" step="0.01" min="0" placeholder="Cost (₹)" id="cardBulkCost_' + card.id + '" class="form-control" style="width:85px; height:30px; font-size:12px; padding:2px 8px; text-align:right;">' +
+                            '<input type="number" step="0.01" min="0" placeholder="Selling (₹)" id="cardBulkPrice_' + card.id + '" class="form-control" style="width:85px; height:30px; font-size:12px; padding:2px 8px; text-align:right;">' +
+                            '<button type="button" class="btn-secondary" onclick="applyCardBulkCostPrice(' + card.id + ')" style="padding:2px 10px; font-size:11.5px; height:30px; font-weight:600;">Apply</button>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div style="font-size:13px; font-weight:700; color:#334155; background:#f8fafc; border:1px solid #cbd5e1; padding:6px 14px; border-radius:6px;">' +
+                        'Product Subtotal: <span id="cardTotalQty_' + card.id + '" style="color:#2563eb;">0</span> pcs · ₹<span id="cardTotalCost_' + card.id + '" style="color:#16a34a;">0.00</span>' +
+                    '</div>' +
+                '</div>';
+
+            renderCardSizeChips(card.id);
+            renderCardTable(card.id);
+            if (card.productId) {
+                updateCardSkuDisplay(card);
+            }
+        }
+
+        function updateCardSkuDisplay(card) {
+            const box = document.getElementById('cardSkuBox_' + card.id);
+            const badge = document.getElementById('cardSkuBadge_' + card.id);
+            const prod = productById(card.productId);
+            if (!prod) {
+                if (box) box.style.display = 'none';
+                return;
+            }
+            const parentSku = (prod.sku || ('PRD-' + prod.id)).toUpperCase();
+            if (badge) badge.textContent = parentSku;
+            if (box) box.style.display = 'inline-flex';
+        }
+
+        function onCardProductChange(cardId, productId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            card.productId = productId ? parseInt(productId, 10) : null;
+            const prod = productById(card.productId);
+
+            updateCardSkuDisplay(card);
+
+            if (prod && prod.variants && prod.variants.length > 0) {
+                const prodSizes = uniqueValues(prod.variants, 'size').filter(Boolean);
+                if (prodSizes.length > 0) {
+                    card.sizes = prodSizes;
+                }
+            }
+
+            renderCardSizeChips(card.id);
+            renderCardTable(card.id);
+            recalculateAllMatrixTotals();
+        }
+
+        function renderCardSizeChips(cardId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            const container = document.getElementById('cardSizesChips_' + cardId);
             if (!container) return;
             container.innerHTML = '';
-            matrixSizes.forEach(function(sz) {
+            card.sizes.forEach(function(sz) {
                 const chip = document.createElement('span');
                 chip.style.cssText = 'display:inline-flex; align-items:center; gap:5px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-size:12px; font-weight:700; padding:3px 9px; border-radius:14px;';
-                chip.innerHTML = '<span>' + sz + '</span>' + 
-                    (matrixSizes.length > 1 ? '<button type="button" style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">&times;</button>' : '');
+                chip.innerHTML = '<span>' + escapeHtml(sz) + '</span>' + 
+                    (card.sizes.length > 1 ? '<button type="button" style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">&times;</button>' : '');
                 const btn = chip.querySelector('button');
                 if (btn) {
                     btn.addEventListener('click', function() {
-                        removeMatrixSize(sz);
+                        removeCardSize(cardId, sz);
                     });
                 }
                 container.appendChild(chip);
             });
         }
 
-        function applyMatrixSizePreset(preset) {
-            if (!Array.isArray(preset) || preset.length === 0) return;
-            matrixSizes = preset.slice();
-            renderMatrixSizeChips();
-            renderMatrixTable();
+        function applyCardSizePreset(cardId, preset) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card || !Array.isArray(preset) || preset.length === 0) return;
+            card.sizes = preset.slice();
+            renderCardSizeChips(cardId);
+            renderCardTable(cardId);
+            recalculateAllMatrixTotals();
         }
 
-        function addMatrixSizeFromInput() {
-            const inp = document.getElementById('newSizeInput');
+        function addCardCustomSize(cardId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            const inp = document.getElementById('cardNewSizeInput_' + cardId);
             if (!inp) return;
             const val = (inp.value || '').trim();
             if (!val) return;
-            const exists = matrixSizes.some(function(s) { return s.toUpperCase() === val.toUpperCase(); });
+            const exists = card.sizes.some(function(s) { return s.toUpperCase() === val.toUpperCase(); });
             if (!exists) {
-                matrixSizes.push(val);
-                renderMatrixSizeChips();
-                renderMatrixTable();
+                card.sizes.push(val);
+                renderCardSizeChips(cardId);
+                renderCardTable(cardId);
+                recalculateAllMatrixTotals();
             }
             inp.value = '';
             inp.focus();
         }
 
-        function removeMatrixSize(sz) {
-            if (matrixSizes.length <= 1) return;
-            matrixSizes = matrixSizes.filter(function(s) { return s !== sz; });
-            renderMatrixSizeChips();
-            renderMatrixTable();
+        function removeCardSize(cardId, sz) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card || card.sizes.length <= 1) return;
+            card.sizes = card.sizes.filter(function(s) { return s !== sz; });
+            renderCardSizeChips(cardId);
+            renderCardTable(cardId);
+            recalculateAllMatrixTotals();
         }
 
-        function getSelectedMatrixProduct() {
-            const sel = document.getElementById('matrix_product_id');
-            if (!sel || !sel.value) return null;
-            return productById(parseInt(sel.value, 10));
-        }
-
-        function onMatrixProductChange(productId) {
-            const prod = productById(parseInt(productId, 10));
-            const box = document.getElementById('parentSkuBox');
-            const badge = document.getElementById('parentSkuBadge');
-
-            if (!prod) {
-                if (box) box.style.display = 'none';
-                return;
-            }
-
-            const parentSku = (prod.sku || ('PRD-' + prod.id)).toUpperCase();
-            if (badge) badge.textContent = parentSku;
-            if (box) box.style.display = 'flex';
-
-            if (prod.variants && prod.variants.length > 0) {
-                const prodSizes = uniqueValues(prod.variants, 'size').filter(Boolean);
-                if (prodSizes.length > 0) {
-                    matrixSizes = prodSizes;
-                }
-            }
-
-            if (matrixRows.length === 0) {
-                addMatrixColourRow('', '', '', '');
-            }
-
-            renderMatrixSizeChips();
-            renderMatrixTable();
-        }
-
-        function addMatrixColourRow(initialColour, initialCode, initialCost, initialPrice, initialQtys, initialVideoSku) {
-            const rowId = ++matrixRowCounter;
-            const col = initialColour || '';
-            const code = initialCode || '';
-            const row = {
+        function addCardColourRow(cardId, initialColour, initialVideoSku, initialCost, initialPrice, initialQtys) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            const rowId = ++card.rowCounter;
+            card.rows.push({
                 id: rowId,
-                colour: col,
-                colour_code: code,
+                colour: initialColour || '',
+                colour_code: '',
                 video_sku: initialVideoSku || '',
                 cost_price: initialCost !== undefined && initialCost !== null ? String(initialCost) : '',
                 selling_price: initialPrice !== undefined && initialPrice !== null ? String(initialPrice) : '',
                 quantities: Object.assign({}, initialQtys || {})
-            };
-            matrixRows.push(row);
-            renderMatrixTable();
+            });
+            renderCardTable(cardId);
+            recalculateAllMatrixTotals();
         }
 
-        function removeMatrixColourRow(rowId) {
-            if (matrixRows.length <= 1) {
-                alert('At least one colour row is required in the matrix.');
+        function removeCardColourRow(cardId, rowId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            if (card.rows.length <= 1) {
+                alert('At least one colour row is required for this product.');
                 return;
             }
-            matrixRows = matrixRows.filter(function(r) { return r.id !== rowId; });
-            renderMatrixTable();
+            card.rows = card.rows.filter(function(r) { return r.id !== rowId; });
+            renderCardTable(cardId);
+            recalculateAllMatrixTotals();
         }
 
-        function renderMatrixTable() {
-            const table = document.getElementById('matrixGridTable');
-            const head = document.getElementById('matrixHead');
-            const body = document.getElementById('matrixBody');
-            const foot = document.getElementById('matrixFoot');
+        function applyCardBulkCostPrice(cardId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+            const costInp = document.getElementById('cardBulkCost_' + cardId);
+            const priceInp = document.getElementById('cardBulkPrice_' + cardId);
+            const costVal = costInp ? (costInp.value || '').trim() : '';
+            const priceVal = priceInp ? (priceInp.value || '').trim() : '';
+
+            if (!costVal && !priceVal) {
+                alert('Please enter a Cost and/or Selling price to fill all rows.');
+                return;
+            }
+
+            card.rows.forEach(function(r) {
+                if (costVal) r.cost_price = costVal;
+                if (priceVal) r.selling_price = priceVal;
+            });
+
+            renderCardTable(cardId);
+            recalculateAllMatrixTotals();
+        }
+
+        function renderCardTable(cardId) {
+            const card = matrixProductCards.find(function(c) { return c.id === cardId; });
+            if (!card) return;
+
+            const table = document.getElementById('cardMatrixTable_' + cardId);
+            const head = document.getElementById('cardHead_' + cardId);
+            const body = document.getElementById('cardBody_' + cardId);
+            const foot = document.getElementById('cardFoot_' + cardId);
             if (!table || !head || !body || !foot) return;
 
-            const prod = getSelectedMatrixProduct();
+            const prod = productById(card.productId);
             const parentSku = prod && prod.sku ? prod.sku.toUpperCase() : 'DESIGN';
 
-            // 1. Build Header
+            // 1. Header
             let hHtml = '<tr>' +
                 '<th style="min-width:140px; text-align:left;">Colour Name</th>' +
                 '<th style="width:140px; text-align:left;">Video / OCR SKU</th>' +
                 '<th style="width:105px; text-align:center;">Unit Cost (₹)</th>' +
                 '<th style="width:105px; text-align:center;">Selling (₹)</th>';
-            matrixSizes.forEach(function(sz) {
-                hHtml += '<th style="min-width:64px; text-align:center; background:#eff6ff; color:#1e40af;">' + sz + '</th>';
+            card.sizes.forEach(function(sz) {
+                hHtml += '<th style="min-width:64px; text-align:center; background:#eff6ff; color:#1e40af;">' + escapeHtml(sz) + '</th>';
             });
             hHtml += '<th style="width:80px; text-align:center; background:#f1f5f9;">Total Pcs</th>' +
                      '<th style="width:40px; text-align:center;"></th>' +
                      '</tr>';
             head.innerHTML = hHtml;
 
-            // 2. Build Body
+            // 2. Body
             body.innerHTML = '';
-            matrixRows.forEach(function(row) {
+            card.rows.forEach(function(row) {
                 const tr = document.createElement('tr');
-                tr.setAttribute('data-matrix-row-id', row.id);
+                tr.setAttribute('data-card-row-id', row.id);
 
                 let rHtml = '<td>' +
-                    '<input type="text" class="form-control matrix-colour-inp" value="' + (row.colour || '') + '" placeholder="Type colour (e.g. Maroon)" style="font-weight:600;" list="matrixColourDatalist">' +
+                    '<input type="text" class="form-control card-colour-inp" value="' + escapeHtml(row.colour || '') + '" placeholder="Type colour (e.g. Maroon)" style="font-weight:600;" list="matrixColourDatalist">' +
                     '</td>' +
                     '<td>' +
-                    '<input type="text" class="form-control matrix-video-sku-inp" value="' + (row.video_sku || '') + '" placeholder="e.g. ' + (parentSku !== 'DESIGN' ? parentSku + '-MRN' : 'SKU-CODE') + '" style="font-family:monospace; font-weight:700; text-transform:uppercase; font-size:12.5px;">' +
+                    '<input type="text" class="form-control card-video-sku-inp" value="' + escapeHtml(row.video_sku || '') + '" placeholder="e.g. ' + (parentSku !== 'DESIGN' ? parentSku + '-MRN' : 'SKU-CODE') + '" style="font-family:monospace; font-weight:700; text-transform:uppercase; font-size:12.5px;">' +
                     '</td>' +
-                    '<td><input type="number" step="0.01" min="0" class="form-control matrix-cost-inp" value="' + (row.cost_price || '') + '" placeholder="0.00" style="text-align:right;"></td>' +
-                    '<td><input type="number" step="0.01" min="0" class="form-control matrix-price-inp" value="' + (row.selling_price || '') + '" placeholder="0.00" style="text-align:right;"></td>';
+                    '<td><input type="number" step="0.01" min="0" class="form-control card-cost-inp" value="' + escapeHtml(row.cost_price || '') + '" placeholder="0.00" style="text-align:right;"></td>' +
+                    '<td><input type="number" step="0.01" min="0" class="form-control card-price-inp" value="' + escapeHtml(row.selling_price || '') + '" placeholder="0.00" style="text-align:right;"></td>';
 
-                matrixSizes.forEach(function(sz) {
+                card.sizes.forEach(function(sz) {
                     const qtyVal = row.quantities[sz] !== undefined && row.quantities[sz] !== null ? row.quantities[sz] : '';
                     rHtml += '<td style="text-align:center; padding: 4px;">' +
-                        '<input type="number" min="0" step="1" class="form-control matrix-qty-inp" data-size="' + sz + '" value="' + qtyVal + '" placeholder="0" style="text-align:center; font-weight:700; font-size:14px; width:100%; min-width:55px;">' +
+                        '<input type="number" min="0" step="1" class="form-control card-qty-inp" data-size="' + escapeHtml(sz) + '" value="' + qtyVal + '" placeholder="0" style="text-align:center; font-weight:700; font-size:14px; width:100%; min-width:55px;">' +
                         '</td>';
                 });
 
-                rHtml += '<td style="text-align:center; font-weight:800; font-size:14px; color:#1e293b;" class="matrix-row-total-pcs">0</td>' +
+                rHtml += '<td style="text-align:center; font-weight:800; font-size:14px; color:#1e293b;" class="card-row-total-pcs">0</td>' +
                          '<td style="text-align:center;"><button type="button" class="btn-secondary" style="padding:4px 8px; color:#dc2626; border:none; font-size:16px; font-weight:700; cursor:pointer;" title="Remove colour row">&times;</button></td>';
 
                 tr.innerHTML = rHtml;
 
-                const colInp = tr.querySelector('.matrix-colour-inp');
-                const vSkuInp = tr.querySelector('.matrix-video-sku-inp');
-                const costInp = tr.querySelector('.matrix-cost-inp');
-                const priceInp = tr.querySelector('.matrix-price-inp');
+                const colInp = tr.querySelector('.card-colour-inp');
+                const vSkuInp = tr.querySelector('.card-video-sku-inp');
+                const costInp = tr.querySelector('.card-cost-inp');
+                const priceInp = tr.querySelector('.card-price-inp');
                 const delBtn = tr.querySelector('button');
 
                 colInp.addEventListener('input', function() {
@@ -1835,7 +2114,7 @@ $flashError = get_flash('error');
 
                 costInp.addEventListener('input', function() {
                     row.cost_price = costInp.value;
-                    recalculateMatrixTotals();
+                    recalculateAllMatrixTotals();
                 });
 
                 priceInp.addEventListener('input', function() {
@@ -1843,15 +2122,15 @@ $flashError = get_flash('error');
                 });
 
                 delBtn.addEventListener('click', function() {
-                    removeMatrixColourRow(row.id);
+                    removeCardColourRow(cardId, row.id);
                 });
 
-                tr.querySelectorAll('.matrix-qty-inp').forEach(function(qInp) {
+                tr.querySelectorAll('.card-qty-inp').forEach(function(qInp) {
                     qInp.addEventListener('input', function() {
                         const s = qInp.getAttribute('data-size');
                         const v = parseInt(qInp.value || '0', 10);
                         row.quantities[s] = isNaN(v) ? 0 : Math.max(0, v);
-                        recalculateMatrixTotals();
+                        recalculateAllMatrixTotals();
                     });
                     qInp.addEventListener('focus', function() {
                         if (qInp.value === '0') qInp.value = '';
@@ -1861,137 +2140,181 @@ $flashError = get_flash('error');
                 body.appendChild(tr);
             });
 
-            // 3. Build Footer
+            // 3. Footer
             let fHtml = '<tr style="background:#f8fafc; font-weight:700;">' +
                 '<td colspan="4" style="text-align:right; padding-right:12px; font-size:13px; color:#475569;">Size Column Totals:</td>';
-            matrixSizes.forEach(function(sz) {
-                fHtml += '<td style="text-align:center; font-weight:800; color:#1e40af; font-size:13.5px;" id="matrixColTotal_' + sz.replace(/[^a-zA-Z0-9]/g, '_') + '">0</td>';
+            card.sizes.forEach(function(sz) {
+                fHtml += '<td style="text-align:center; font-weight:800; color:#1e40af; font-size:13.5px;" id="cardColTotal_' + cardId + '_' + sz.replace(/[^a-zA-Z0-9]/g, '_') + '">0</td>';
             });
-            fHtml += '<td style="text-align:center; font-weight:900; font-size:15px; color:#2563eb;" id="matrixFootGrandTotal">0</td>' +
+            fHtml += '<td style="text-align:center; font-weight:900; font-size:15px; color:#2563eb;" id="cardFootGrandTotal_' + cardId + '">0</td>' +
                      '<td></td>' +
                      '</tr>';
             foot.innerHTML = fHtml;
-
-            recalculateMatrixTotals();
         }
 
-        function recalculateMatrixTotals() {
-            let grandQty = 0;
-            let grandCost = 0.0;
-            const colTotals = {};
-            matrixSizes.forEach(function(s) { colTotals[s] = 0; });
+        function recalculateAllMatrixTotals() {
+            let grandTotalQty = 0;
+            let grandTotalCost = 0.0;
 
-            document.querySelectorAll('#matrixBody tr[data-matrix-row-id]').forEach(function(tr) {
-                const rowId = parseInt(tr.getAttribute('data-matrix-row-id') || '0', 10);
-                const rowObj = matrixRows.find(function(r) { return r.id === rowId; });
-                if (!rowObj) return;
+            matrixProductCards.forEach(function(card) {
+                let cardQty = 0;
+                let cardCost = 0.0;
+                const colTotals = {};
+                card.sizes.forEach(function(s) { colTotals[s] = 0; });
 
-                let rowQty = 0;
-                tr.querySelectorAll('.matrix-qty-inp').forEach(function(qInp) {
-                    const s = qInp.getAttribute('data-size');
-                    const v = parseInt(qInp.value || '0', 10);
-                    const val = isNaN(v) ? 0 : Math.max(0, v);
-                    rowQty += val;
-                    if (colTotals[s] !== undefined) colTotals[s] += val;
-                });
+                const cardDiv = document.getElementById('matrixCard_' + card.id);
+                if (cardDiv) {
+                    cardDiv.querySelectorAll('tbody tr[data-card-row-id]').forEach(function(tr) {
+                        const rowId = parseInt(tr.getAttribute('data-card-row-id') || '0', 10);
+                        const rowObj = card.rows.find(function(r) { return r.id === rowId; });
+                        if (!rowObj) return;
 
-                const rowTotalEl = tr.querySelector('.matrix-row-total-pcs');
-                if (rowTotalEl) rowTotalEl.textContent = String(rowQty);
+                        let rowQty = 0;
+                        tr.querySelectorAll('.card-qty-inp').forEach(function(qInp) {
+                            const s = qInp.getAttribute('data-size');
+                            const v = parseInt(qInp.value || '0', 10);
+                            const val = isNaN(v) ? 0 : Math.max(0, v);
+                            rowQty += val;
+                            if (colTotals[s] !== undefined) colTotals[s] += val;
+                        });
 
-                const costVal = parseFloat(rowObj.cost_price || '0');
-                const unitCost = isNaN(costVal) ? 0 : costVal;
-                grandQty += rowQty;
-                grandCost += (rowQty * unitCost);
-            });
+                        const rowTotalEl = tr.querySelector('.card-row-total-pcs');
+                        if (rowTotalEl) rowTotalEl.textContent = String(rowQty);
 
-            matrixSizes.forEach(function(sz) {
-                const el = document.getElementById('matrixColTotal_' + sz.replace(/[^a-zA-Z0-9]/g, '_'));
-                if (el) el.textContent = String(colTotals[sz] || 0);
+                        const costVal = parseFloat(rowObj.cost_price || '0');
+                        const unitCost = isNaN(costVal) ? 0 : costVal;
+                        cardQty += rowQty;
+                        cardCost += (rowQty * unitCost);
+                    });
+
+                    card.sizes.forEach(function(sz) {
+                        const colEl = document.getElementById('cardColTotal_' + card.id + '_' + sz.replace(/[^a-zA-Z0-9]/g, '_'));
+                        if (colEl) colEl.textContent = String(colTotals[sz] || 0);
+                    });
+
+                    const footEl = document.getElementById('cardFootGrandTotal_' + card.id);
+                    if (footEl) footEl.textContent = String(cardQty);
+
+                    const cardQtyEl = document.getElementById('cardTotalQty_' + card.id);
+                    if (cardQtyEl) cardQtyEl.textContent = String(cardQty);
+
+                    const cardCostEl = document.getElementById('cardTotalCost_' + card.id);
+                    if (cardCostEl) cardCostEl.textContent = cardCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+
+                grandTotalQty += cardQty;
+                grandTotalCost += cardCost;
             });
 
             const sumQtyEl = document.getElementById('matrixSummaryQty');
             const sumCostEl = document.getElementById('matrixSummaryCost');
-            const footGrandEl = document.getElementById('matrixFootGrandTotal');
 
-            if (sumQtyEl) sumQtyEl.textContent = String(grandQty);
-            if (footGrandEl) footGrandEl.textContent = String(grandQty);
-            if (sumCostEl) sumCostEl.textContent = grandCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (sumQtyEl) sumQtyEl.textContent = String(grandTotalQty);
+            if (sumCostEl) sumCostEl.textContent = grandTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
         const matrixInwardForm = document.getElementById('matrixInwardForm');
         if (matrixInwardForm) {
             matrixInwardForm.addEventListener('submit', function(e) {
-                const prodId = parseInt(document.getElementById('matrix_product_id').value || '0', 10);
-                if (!prodId) {
+                if (matrixProductCards.length === 0) {
                     e.preventDefault();
-                    alert('Please select a Design / Product.');
-                    document.getElementById('matrix_product_id').focus();
+                    alert('Please add at least one product.');
                     return;
                 }
 
-                if (matrixRows.length === 0) {
-                    e.preventDefault();
-                    alert('Please add at least one colour row in the matrix.');
-                    return;
-                }
+                let grandQty = 0;
+                const serializedProducts = [];
 
-                let totalQty = 0;
-                let missingColour = false;
-                const serializedRows = [];
+                for (let i = 0; i < matrixProductCards.length; i++) {
+                    const card = matrixProductCards[i];
+                    const cardNum = i + 1;
 
-                matrixRows.forEach(function(row) {
-                    const colName = (row.colour || '').trim();
-                    if (!colName) missingColour = true;
+                    if (!card.productId) {
+                        e.preventDefault();
+                        alert('Please select a Design / Product for Product #' + cardNum + '.');
+                        const cardDiv = document.getElementById('matrixCard_' + card.id);
+                        if (cardDiv) {
+                            const sel = cardDiv.querySelector('.card-product-select');
+                            if (sel) sel.focus();
+                        }
+                        return;
+                    }
 
-                    let rowQty = 0;
-                    const qMap = {};
-                    matrixSizes.forEach(function(sz) {
-                        const q = parseInt(row.quantities[sz] || '0', 10);
-                        const val = isNaN(q) ? 0 : Math.max(0, q);
-                        qMap[sz] = val;
-                        rowQty += val;
+                    if (card.rows.length === 0) {
+                        e.preventDefault();
+                        alert('Please add at least one colour row for Product #' + cardNum + '.');
+                        return;
+                    }
+
+                    let cardQty = 0;
+                    let missingColour = false;
+                    const serializedRows = [];
+
+                    card.rows.forEach(function(row) {
+                        const colName = (row.colour || '').trim();
+                        if (!colName) missingColour = true;
+
+                        let rowQty = 0;
+                        const qMap = {};
+                        card.sizes.forEach(function(sz) {
+                            const q = parseInt(row.quantities[sz] || '0', 10);
+                            const val = isNaN(q) ? 0 : Math.max(0, q);
+                            qMap[sz] = val;
+                            rowQty += val;
+                        });
+                        cardQty += rowQty;
+
+                        const costNum = row.cost_price !== '' && row.cost_price !== null && row.cost_price !== undefined ? parseFloat(row.cost_price) : null;
+                        const priceNum = row.selling_price !== '' && row.selling_price !== null && row.selling_price !== undefined ? parseFloat(row.selling_price) : null;
+
+                        serializedRows.push({
+                            colour: colName,
+                            colour_code: row.colour_code || getStandardColorCodeJS(colName),
+                            video_sku: (row.video_sku || '').toUpperCase(),
+                            cost_price: isNaN(costNum) ? null : costNum,
+                            unit_cost: isNaN(costNum) ? null : costNum,
+                            selling_price: isNaN(priceNum) ? null : priceNum,
+                            quantities: qMap
+                        });
                     });
-                    totalQty += rowQty;
 
-                    serializedRows.push({
-                        colour: colName,
-                        colour_code: row.colour_code || getStandardColorCodeJS(colName),
-                        video_sku: (row.video_sku || '').toUpperCase(),
-                        unit_cost: parseFloat(row.cost_price || '0') || 0,
-                        selling_price: parseFloat(row.selling_price || '0') || 0,
-                        quantities: qMap
+                    if (missingColour) {
+                        e.preventDefault();
+                        alert('Please specify the colour name for all rows in Product #' + cardNum + '.');
+                        return;
+                    }
+
+                    if (cardQty <= 0) {
+                        e.preventDefault();
+                        alert('Please enter at least 1 piece for Product #' + cardNum + '.');
+                        return;
+                    }
+
+                    grandQty += cardQty;
+                    serializedProducts.push({
+                        product_id: card.productId,
+                        sizes: card.sizes,
+                        rows: serializedRows
                     });
-                });
-
-                if (missingColour) {
-                    e.preventDefault();
-                    alert('Please specify the colour name for all rows.');
-                    return;
                 }
 
-                if (totalQty <= 0) {
+                if (grandQty <= 0) {
                     e.preventDefault();
-                    alert('Please enter at least 1 piece in the matrix.');
+                    alert('Please enter at least 1 piece across the matrix products.');
                     return;
                 }
 
                 const payload = {
-                    product_id: prodId,
-                    sizes: matrixSizes,
-                    rows: serializedRows
+                    products: serializedProducts
                 };
 
                 document.getElementById('matrixJson').value = JSON.stringify(payload);
             });
         }
 
-        // Initialize Matrix defaults (1 blank row by default)
+        // Initialize Matrix with 1 default blank product card
         if (document.getElementById('tabPaneMatrix')) {
-            renderMatrixSizeChips();
-            if (matrixRows.length === 0) {
-                addMatrixColourRow('', '', '', '');
-            }
-            renderMatrixTable();
+            addNewMatrixProductCard();
         }
     </script>
 </body>

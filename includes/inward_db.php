@@ -1540,55 +1540,107 @@ function create_inward_matrix_entry(
     }
     $vendorId = $resolvedVendor['vendor_id'];
 
-    $productId = (int)($matrixPayload['product_id'] ?? 0);
-    if ($productId <= 0) {
-        return ['success' => false, 'error' => 'Please select or create a design product for the matrix.'];
+    // Support both multi-product payload ({products: [...]}) and legacy single-product payload ({product_id, sizes, rows})
+    $products = [];
+    if (!empty($matrixPayload['products']) && is_array($matrixPayload['products'])) {
+        $products = $matrixPayload['products'];
+    } elseif (!empty($matrixPayload['product_id'])) {
+        $products = [$matrixPayload];
     }
 
-    $sizes = (array)($matrixPayload['sizes'] ?? []);
-    $rows = (array)($matrixPayload['rows'] ?? []);
-    if (empty($sizes) || empty($rows)) {
-        return ['success' => false, 'error' => 'Matrix must have at least one size column and one colour row.'];
+    if (empty($products)) {
+        return ['success' => false, 'error' => 'Please select at least one design product for the matrix inward.'];
     }
-
-    $colourDefs = [];
-    foreach ($rows as $r) {
-        $colourDefs[] = [
-            'colour' => $r['colour'] ?? '',
-            'colour_code' => $r['colour_code'] ?? null,
-            'video_sku' => $r['video_sku'] ?? null,
-            'cost_price' => isset($r['cost_price']) && $r['cost_price'] !== '' ? (float)$r['cost_price'] : null,
-            'selling_price' => isset($r['selling_price']) && $r['selling_price'] !== '' ? (float)$r['selling_price'] : null,
-        ];
-    }
-    $variantMatrix = ensure_matrix_variants($productId, $colourDefs, $sizes, $bid);
 
     $lines = [];
     $totalQty = 0;
-    foreach ($rows as $r) {
-        $cName = trim((string)($r['colour'] ?? ''));
-        $cNorm = strtolower($cName);
-        $cost = isset($r['cost_price']) && $r['cost_price'] !== '' ? (float)$r['cost_price'] : null;
-        $selling = isset($r['selling_price']) && $r['selling_price'] !== '' ? (float)$r['selling_price'] : null;
-        $cellQtys = (array)($r['quantities'] ?? []);
+    $allCosted = true;
 
-        foreach ($sizes as $sName) {
-            $sNorm = strtolower(trim((string)$sName));
-            $qty = isset($cellQtys[$sName]) ? (int)$cellQtys[$sName] : (isset($cellQtys[$sNorm]) ? (int)$cellQtys[$sNorm] : 0);
-            if ($qty > 0) {
-                $varRow = $variantMatrix[$cNorm][$sNorm] ?? null;
-                $lines[] = [
-                    'product_id' => $productId,
-                    'variant_id' => $varRow ? (int)$varRow['id'] : null,
-                    'sku' => $varRow ? (string)$varRow['sku'] : null,
-                    'size' => $sName,
-                    'colour' => $cName,
-                    'quantity' => $qty,
-                    'purchase_cost' => $cost,
-                    'selling_price' => $selling,
-                ];
-                $totalQty += $qty;
+    foreach ($products as $idx => $pBlock) {
+        $cardNum = $idx + 1;
+        $productId = (int)($pBlock['product_id'] ?? 0);
+        if ($productId <= 0) {
+            return ['success' => false, 'error' => "Please select a design product for Product #{$cardNum}."];
+        }
+
+        $sizes = (array)($pBlock['sizes'] ?? []);
+        $rows = (array)($pBlock['rows'] ?? []);
+        if (empty($sizes) || empty($rows)) {
+            return ['success' => false, 'error' => "Product #{$cardNum} must have at least one size column and one colour row."];
+        }
+
+        $colourDefs = [];
+        foreach ($rows as $r) {
+            $cName = trim((string)($r['colour'] ?? ''));
+            if ($cName === '') {
+                continue;
             }
+            $cost = null;
+            if (isset($r['cost_price']) && $r['cost_price'] !== '' && $r['cost_price'] !== null) {
+                $cost = (float)$r['cost_price'];
+            } elseif (isset($r['unit_cost']) && $r['unit_cost'] !== '' && $r['unit_cost'] !== null) {
+                $cost = (float)$r['unit_cost'];
+            }
+            $selling = isset($r['selling_price']) && $r['selling_price'] !== '' && $r['selling_price'] !== null ? (float)$r['selling_price'] : null;
+
+            $colourDefs[] = [
+                'colour' => $cName,
+                'colour_code' => $r['colour_code'] ?? null,
+                'video_sku' => $r['video_sku'] ?? null,
+                'cost_price' => $cost,
+                'selling_price' => $selling,
+            ];
+        }
+
+        if (empty($colourDefs)) {
+            return ['success' => false, 'error' => "Product #{$cardNum} must have at least one colour row with a colour name."];
+        }
+
+        $variantMatrix = ensure_matrix_variants($productId, $colourDefs, $sizes, $bid);
+
+        $productQty = 0;
+        foreach ($rows as $r) {
+            $cName = trim((string)($r['colour'] ?? ''));
+            if ($cName === '') {
+                continue;
+            }
+            $cNorm = strtolower($cName);
+            $cost = null;
+            if (isset($r['cost_price']) && $r['cost_price'] !== '' && $r['cost_price'] !== null) {
+                $cost = (float)$r['cost_price'];
+            } elseif (isset($r['unit_cost']) && $r['unit_cost'] !== '' && $r['unit_cost'] !== null) {
+                $cost = (float)$r['unit_cost'];
+            }
+            $selling = isset($r['selling_price']) && $r['selling_price'] !== '' && $r['selling_price'] !== null ? (float)$r['selling_price'] : null;
+            $cellQtys = (array)($r['quantities'] ?? []);
+
+            foreach ($sizes as $sName) {
+                $sNorm = strtolower(trim((string)$sName));
+                $qty = isset($cellQtys[$sName]) ? (int)$cellQtys[$sName] : (isset($cellQtys[$sNorm]) ? (int)$cellQtys[$sNorm] : 0);
+                if ($qty > 0) {
+                    $varRow = $variantMatrix[$cNorm][$sNorm] ?? null;
+                    $lines[] = [
+                        'product_id' => $productId,
+                        'variant_id' => $varRow ? (int)$varRow['id'] : null,
+                        'sku' => $varRow ? (string)$varRow['sku'] : null,
+                        'size' => $sName,
+                        'colour' => $cName,
+                        'quantity' => $qty,
+                        'purchase_cost' => $cost,
+                        'selling_price' => $selling,
+                    ];
+                    $totalQty += $qty;
+                    $productQty += $qty;
+
+                    if ($cost === null || $selling === null || $cost <= 0 || $selling <= 0) {
+                        $allCosted = false;
+                    }
+                }
+            }
+        }
+
+        if ($productQty <= 0) {
+            return ['success' => false, 'error' => "Product #{$cardNum} has no quantities entered. Enter quantities for at least one size/colour cell."];
         }
     }
 
@@ -1636,8 +1688,8 @@ function create_inward_matrix_entry(
             )
         ');
 
-        foreach ($lines as $line) {
-            $costStatus = ($line['purchase_cost'] !== null && $line['selling_price'] !== null) ? 'confirmed' : 'pending';
+        foreach ($lines as &$line) {
+            $costStatus = ($line['purchase_cost'] !== null && $line['selling_price'] !== null && (float)$line['purchase_cost'] > 0 && (float)$line['selling_price'] > 0) ? 'confirmed' : 'pending';
             $stmtLine->execute([
                 'eid' => $entryId,
                 'pid' => $line['product_id'],
@@ -1651,7 +1703,9 @@ function create_inward_matrix_entry(
                 'cost_status' => $costStatus,
                 'barcode' => null,
             ]);
+            $line['id'] = (int)$db->lastInsertId();
         }
+        unset($line);
 
         inward_post_company_stock($db, $bid, $entryId, $entryNumber, $lines, $userId, $warehouseId);
         inward_post_variant_stock($db, $bid, $warehouseId, $lines);
@@ -1662,12 +1716,35 @@ function create_inward_matrix_entry(
             $db->commit();
         }
 
+        // Auto-confirm costs and generate purchase bill if all lines have positive purchase cost & selling price and vendor is selected
+        $autoConfirmed = false;
+        if ($allCosted && $vendorId !== null && $vendorId > 0) {
+            try {
+                $pricesPayload = [];
+                foreach ($lines as $l) {
+                    $pricesPayload[] = [
+                        'line_id' => $l['id'],
+                        'purchase_cost' => $l['purchase_cost'],
+                        'selling_price' => $l['selling_price'],
+                    ];
+                }
+                $confirmRes = confirm_inward_costs($entryId, $pricesPayload, $bid, $vendorId, $userId, $vendorName);
+                if (!empty($confirmRes['success'])) {
+                    $autoConfirmed = true;
+                }
+            } catch (Throwable $e) {
+                // If auto-confirm encounters an issue, the inward entry remains safely in cost_pending
+            }
+        }
+
         return [
             'success' => true,
             'entry_id' => $entryId,
             'entry_number' => $entryNumber,
             'total_qty' => $totalQty,
             'lines_count' => count($lines),
+            'products_count' => count($products),
+            'auto_confirmed' => $autoConfirmed,
         ];
     } catch (Throwable $e) {
         if ($ownTx && $db->inTransaction()) {
