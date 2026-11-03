@@ -22,6 +22,9 @@ if (!function_exists('product_form_val')) {
 $isEdit = !empty($isEdit);
 $product = is_array($product ?? null) ? $product : [];
 $errors = $errors ?? [];
+$showOnStoreChecked = ($_SERVER['REQUEST_METHOD'] === 'POST')
+    ? !empty($_POST['show_on_store'])
+    : ($isEdit ? ((int)($product['show_on_store'] ?? 1) === 1) : true);
 $units = ['pcs', 'box', 'dz', 'kg', 'g', 'mg', 'lb', 'ml', 'l', 'm', 'cm', 'ft', 'in', 'sqft', 'sqm'];
 $salesAccounts = ['Sales', 'Other Charges', 'Shipping Charge', 'Discount'];
 $purchaseAccounts = ['Cost of Goods Sold', 'Inventory Asset', 'Freight', 'Purchase'];
@@ -765,8 +768,20 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
     <div class="item-card" style="margin-top:16px;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;background:#f8fafc;">
         <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-            <span>Online Storefront Highlights</span>
+            <span>Online Store Visibility</span>
         </div>
+
+        <!-- Show on Store Toggle -->
+        <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;user-select:none;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;">
+            <input type="checkbox" name="show_on_store" value="1" <?= $showOnStoreChecked ? 'checked' : '' ?> style="width:20px;height:20px;margin-top:2px;accent-color:#2563eb;cursor:pointer;">
+            <div style="flex:1;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-weight:700;font-size:14px;color:#0f172a;">Show on Store</span>
+                    <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;">Default: Active</span>
+                </div>
+                <div style="font-size:12px;color:#64748b;margin-top:2px;">Display and make this product available to buy on your customer-facing online store. (Checked by default for new products).</div>
+            </div>
+        </label>
         <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;">
             <input type="checkbox" name="is_trending" value="1" <?= !empty(product_form_val('is_trending')) ? 'checked' : '' ?> style="width:18px;height:18px;margin-top:2px;accent-color:#083d30;cursor:pointer;">
             <div>

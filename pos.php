@@ -213,6 +213,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $promoLines = [];
         foreach ($cartItems as $item) {
             $promoLines[] = [
+                'product_id' => (int) ($item['product_id'] ?? 0),
+                'sku' => (string) ($item['sku'] ?? ''),
                 'price' => (float) ($item['price'] ?? 0),
                 'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
             ];
@@ -224,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'success' => true,
             'total_discount' => (float) ($promoResult['total_discount'] ?? 0),
             'applied_promotions' => $promoResult['applied_promotions'] ?? [],
+            'item_discounts' => $promoResult['item_discounts'] ?? [],
         ]);
         exit;
     } elseif ($action === 'hold_sale') {
@@ -1363,6 +1366,7 @@ $flashError = get_flash('error');
             const promoDiscountLabel = document.getElementById('promoDiscountLabel');
             const posCheckoutSavedStrip = document.getElementById('posCheckoutSavedStrip');
             const posCheckoutSavedAmount = document.getElementById('posCheckoutSavedAmount');
+            let activeItemDiscounts = {};
             const hiddenPaymentMethod = document.getElementById('hiddenPaymentMethod');
             const tenderedInput = document.getElementById('tenderedAmountInput');
             const changeDueVal = document.getElementById('changeDueValue');
@@ -1475,7 +1479,7 @@ $flashError = get_flash('error');
 
             function scheduleAutoPromoRecalc(subtotal) {
                 syncPromotionHiddenField();
-                if (cart.length === 0 || selectedPromotionId() <= 0) {
+                if (cart.length === 0) {
                     autoPromoDiscount = 0;
                     autoPromoLabel = '';
                     updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
@@ -1496,8 +1500,30 @@ $flashError = get_flash('error');
                             autoPromoDiscount = parseFloat(data.total_discount) || 0;
                             const promos = data.applied_promotions || [];
                             autoPromoLabel = promos.map(function (p) { return p.name; }).filter(Boolean).join(', ');
+                            activeItemDiscounts = data.item_discounts || {};
                             updateCartTotalsDisplay(summarySubtotalCache, summaryTaxCache);
                             scheduleCouponRevalidate();
+
+                            // Update item-level promotional badges on cart rows
+                            document.querySelectorAll('.pos-cart-item').forEach(function(rowEl, idx) {
+                                const it = cart[idx];
+                                const existingBadge = rowEl.querySelector('.pos-cart-item-promo-badge');
+                                if (it && activeItemDiscounts[it.product_id]) {
+                                    const off = activeItemDiscounts[it.product_id];
+                                    if (existingBadge) {
+                                        existingBadge.textContent = '🏷️ ' + off.discount_percent + '% OFF (' + off.promo_name + ')';
+                                    } else {
+                                        const b = document.createElement('div');
+                                        b.className = 'pos-cart-item-promo-badge';
+                                        b.style.cssText = 'display:inline-block; margin-top:3px; font-size:10px; font-weight:700; color:#15803d; background:#dcfce7; padding:1px 6px; border-radius:4px;';
+                                        b.textContent = '🏷️ ' + off.discount_percent + '% OFF (' + off.promo_name + ')';
+                                        const skuEl = rowEl.querySelector('.pos-cart-item-sku');
+                                        if (skuEl) skuEl.after(b);
+                                    }
+                                } else if (existingBadge) {
+                                    existingBadge.remove();
+                                }
+                            });
                         })
                         .catch(function () {
                             autoPromoDiscount = 0;
@@ -1687,6 +1713,9 @@ $flashError = get_flash('error');
                     subtotal += itemSubtotal;
                     taxTotal += itemTax;
 
+                    const off = activeItemDiscounts[item.product_id];
+                    const itemOfferBadge = off ? `<div class="pos-cart-item-promo-badge" style="display:inline-block; margin-top:3px; font-size:10px; font-weight:700; color:#15803d; background:#dcfce7; padding:1px 6px; border-radius:4px;">🏷️ ${off.discount_percent}% OFF (${escapeHtml(off.promo_name)})</div>` : '';
+
                     const row = document.createElement('div');
                     row.className = 'pos-cart-item';
                     row.innerHTML = `
@@ -1695,6 +1724,7 @@ $flashError = get_flash('error');
                                 <div class="pos-cart-item-name">${escapeHtml(item.name)}</div>
                                 ${variantLabel(item) ? '<div class="pos-cart-item-variant">' + escapeHtml(variantLabel(item)) + '</div>' : ''}
                                 <div class="pos-cart-item-sku">SKU: ${escapeHtml(item.sku)}</div>
+                                ${itemOfferBadge}
                             </div>
                             <button type="button" class="pos-btn-remove-item" data-index="${index}" title="Remove Item">
                                 <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2557,6 +2587,12 @@ $flashError = get_flash('error');
                         const newStock = Math.max(0, parseInt(card.getAttribute('data-stock'), 10) - parseInt(it.quantity, 10));
                         card.setAttribute('data-stock', newStock);
                         const stockEl = card.querySelector('.pos-card-stock');
+                        if (it.variant_id && posVariants && posVariants[it.product_id]) {
+                            const vObj = posVariants[it.product_id].find(v => v.id == it.variant_id);
+                            if (vObj) {
+                                vObj.stock = Math.max(0, parseInt(vObj.stock, 10) - parseInt(it.quantity, 10));
+                            }
+                        }
                         if (newStock <= 0) {
                             card.classList.add('out-of-stock');
                             stockEl.className = 'badge badge-out-of-stock pos-card-stock';

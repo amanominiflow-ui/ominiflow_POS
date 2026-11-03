@@ -431,7 +431,7 @@ $movements = get_inventory_movements(null, 100);
                                                     <div style="font-size: 11px; color: var(--saas-slate-400);">Alert at <?= $threshold ?> units</div>
                                                 </td>
                                                 <td>
-                                                    <span class="badge <?= $stockBadgeClass ?>">
+                                                    <span class="badge <?= $stockBadgeClass ?> open-stock-matrix-badge" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= $stock ?>" style="cursor: pointer;" title="Click to view/edit size stock matrix">
                                                         <?= e($stockLabel) ?>
                                                     </span>
                                                 </td>
@@ -439,6 +439,7 @@ $movements = get_inventory_movements(null, 100);
                                                     <span style="font-weight: 700; color: var(--saas-navy-950);">₹<?= number_format($itemValuation, 2) ?></span>
                                                 </td>
                                                 <td style="text-align: right;">
+                                                    <button type="button" class="header-btn open-stock-matrix-btn" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= $stock ?>" style="font-size: 12px; padding: 6px 10px; border: 0; background: #eff6ff; color: #2563eb; font-weight: 700; margin-right: 4px;" title="Open Size Stock Matrix">⊞ Matrix</button>
                                                     <button
                                                         type="button"
                                                         class="header-btn open-stock-adjust-btn"
@@ -580,5 +581,6 @@ $movements = get_inventory_movements(null, 100);
             });
         });
     </script>
+    <?php require_once __DIR__ . '/includes/stock_matrix_modal.php'; ?>
 </body>
 </html>

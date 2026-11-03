@@ -42,6 +42,31 @@ function catalog_filter_url(array $overrides = []): string {
 $flashSuccess = get_flash('success');
 $flashError = get_flash('error');
 
+// Handle AJAX Stock Matrix requests
+if (($_GET['action'] ?? '') === 'get_stock_matrix') {
+    header('Content-Type: application/json');
+    $pid = (int)($_GET['product_id'] ?? 0);
+    $res = get_product_stock_matrix($pid);
+    echo json_encode($res);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_stock_matrix') {
+    header('Content-Type: application/json');
+    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'error' => 'Invalid session token.']);
+        exit;
+    }
+    $pid = (int)($_POST['product_id'] ?? 0);
+    $payload = json_decode((string)($_POST['matrix_data'] ?? '[]'), true);
+    if (!is_array($payload)) {
+        $payload = [];
+    }
+    $res = save_product_stock_matrix($pid, $payload, null, $userId);
+    echo json_encode($res);
+    exit;
+}
+
 // Handle Product Deletion, Quick Stock Adjustment, and Direct CSV Import
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
@@ -641,7 +666,7 @@ $inventoryStats = get_inventory_stats();
                                         <?php else: ?>
                                             <div style="font-size: 38px;">📦</div>
                                         <?php endif; ?>
-                                        <span class="badge <?= $stockBadgeClass ?>" style="position: absolute; top: 10px; right: 10px;">
+                                        <span class="badge <?= $stockBadgeClass ?> open-stock-matrix-badge" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= (int)$prod['stock_quantity'] ?>" style="position: absolute; top: 10px; right: 10px; cursor: pointer;" title="Click to view/edit size stock matrix">
                                             <?= e($stockLabel) ?>
                                         </span>
                                     </div>
@@ -666,6 +691,7 @@ $inventoryStats = get_inventory_stats();
                                                 <div class="product-card-price">₹<?= number_format((float)$prod['selling_price'], 2) ?></div>
                                             </div>
                                             <div class="product-card-actions">
+                                                <button type="button" class="btn-action open-stock-matrix-btn" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= (int)$prod['stock_quantity'] ?>" title="Open Size Stock Matrix" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 800; font-size: 13px;">⊞</button>
                                                 <button
                                                     type="button"
                                                     class="btn-action adjust open-adjust-modal-btn"
@@ -758,7 +784,7 @@ $inventoryStats = get_inventory_stats();
                                                 <span style="font-size: 12.5px; color: var(--saas-slate-600);"><?= number_format((float)$prod['tax_percent'], 1) ?>%</span>
                                             </td>
                                             <td>
-                                                <span class="badge <?= $stockBadgeClass ?>">
+                                                <span class="badge <?= $stockBadgeClass ?> open-stock-matrix-badge" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= (int)$prod['stock_quantity'] ?>" style="cursor: pointer;" title="Click to view/edit size stock matrix">
                                                     <?= e($stockLabel) ?>
                                                 </span>
                                             </td>
@@ -771,6 +797,7 @@ $inventoryStats = get_inventory_stats();
                                             </td>
                                             <td style="text-align: right;">
                                                 <div class="action-group" style="justify-content: flex-end;">
+                                                    <button type="button" class="btn-action open-stock-matrix-btn" data-id="<?= $prod['id'] ?>" data-name="<?= e($prod['name']) ?>" data-sku="<?= e($prod['sku']) ?>" data-stock="<?= (int)$prod['stock_quantity'] ?>" title="Open Size Stock Matrix" style="color: #2563eb; background: #eff6ff; border-color: #bfdbfe; font-weight: 800; font-size: 13px;">⊞</button>
                                                     <button
                                                         type="button"
                                                         class="btn-action adjust open-adjust-modal-btn"
@@ -1013,5 +1040,6 @@ $inventoryStats = get_inventory_stats();
             });
         });
     </script>
+    <?php require_once __DIR__ . '/includes/stock_matrix_modal.php'; ?>
 </body>
 </html>
