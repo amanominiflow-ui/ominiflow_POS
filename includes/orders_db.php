@@ -999,6 +999,8 @@ function process_pos_order(
         $promoLines = [];
         foreach ($processedItems as $row) {
             $promoLines[] = [
+                'product_id' => (int) ($row['product_id'] ?? 0),
+                'sku' => (string) ($row['product_sku'] ?? $row['sku'] ?? ''),
                 'price' => (float) ($row['unit_price'] ?? 0),
                 'quantity' => max(1, (int) ($row['quantity'] ?? 1)),
             ];
@@ -1286,6 +1288,18 @@ function process_pos_order(
                         'id' => $pItem['product_id'],
                         'biz_id' => $bid,
                     ]);
+
+                    if (!empty($pItem['variant_id'])) {
+                        $db->prepare('
+                            UPDATE products
+                            SET stock_quantity = (
+                                SELECT COALESCE(SUM(stock_quantity), 0)
+                                FROM product_variants
+                                WHERE product_id = :pid AND business_id = :biz_id AND status = "active"
+                            ), updated_at = NOW()
+                            WHERE id = :pid AND business_id = :biz_id AND product_type = "variable"
+                        ')->execute(['pid' => $pItem['product_id'], 'biz_id' => $bid]);
+                    }
 
                     $parentBefore = (int) ($pItem['parent_stock_before'] ?? $pItem['stock_before']);
                     $stmtMoveLog->execute([

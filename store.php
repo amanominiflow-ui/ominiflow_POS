@@ -786,7 +786,7 @@ if (!empty($bid)) {
 
     if (count($searchCategories) < 4) {
         try {
-            $rawProds = get_products('', null, 'active', '', $bid);
+            $rawProds = get_products('', null, 'active', '', $bid, '', true);
             foreach ($rawProds as $rp) {
                 $pName = trim((string) ($rp['name'] ?? ''));
                 if ($pName !== '' && !in_array($pName, $searchCategories, true)) {
@@ -2250,7 +2250,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 $q = trim((string) ($_GET['q'] ?? ''));
                 $catId = !empty($_GET['category_id']) ? (int) $_GET['category_id'] : null;
                 $categories = get_categories('', 'active', $bid);
-                $products = get_products($q, $catId, 'active', '', $bid);
+                $products = get_products($q, $catId, 'active', '', $bid, '', true);
 
                 if (!empty($brand['hide_out_of_stock'])) {
                     $products = array_values(array_filter($products, static fn($p) => (int) ($p['stock_quantity'] ?? 0) > 0));
@@ -2823,6 +2823,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <?php endif; ?>
                                                 <?php endif; ?>
                                             </div>
+                                            <?php if (!empty($pInfo['has_offer'])): ?>
+                                                <div style="margin-top:2px; margin-bottom:4px;">
+                                                    <span style="font-size:10px; font-weight:700; color:#4338ca; background:#e0e7ff; padding:1px 6px; border-radius:4px;">🏷️ <?= e($pInfo['offer_name']) ?></span>
+                                                </div>
+                                            <?php endif; ?>
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
@@ -2931,6 +2936,11 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                                     <?php endif; ?>
                                                 <?php endif; ?>
                                             </div>
+                                            <?php if (!empty($pInfo['has_offer'])): ?>
+                                                <div style="margin-top:2px; margin-bottom:4px;">
+                                                    <span style="font-size:10px; font-weight:700; color:#4338ca; background:#e0e7ff; padding:1px 6px; border-radius:4px;">🏷️ <?= e($pInfo['offer_name']) ?></span>
+                                                </div>
+                                            <?php endif; ?>
 
                                             <?php if (!$inStock): ?>
                                                 <button type="button" class="ms-card-add-btn is-disabled" disabled>Out of Stock</button>
@@ -2983,7 +2993,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                 if (!$product && $rawId !== '' && function_exists('get_product_by_sku')) {
                     $product = get_product_by_sku($rawId, $bid);
                 }
-                if (!$product || ($product['status'] ?? '') !== 'active'): ?>
+                if (!$product || ($product['status'] ?? '') !== 'active' || (isset($product['show_on_store']) && (int)$product['show_on_store'] === 0)): ?>
                     <div class="ms-empty">This product is not available.</div>
                 <?php else:
                     $variants = function_exists('get_product_variants') ? get_product_variants((int) $product['id'], $bid) : [];
@@ -3018,6 +3028,20 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     $currentPrice = $activeVariant ? (float)$activeVariant['selling_price'] : (float)$product['selling_price'];
                     if ($activeVariant && (float)$activeVariant['selling_price'] <= 0) {
                         $currentPrice = (float)$product['selling_price'];
+                    }
+                    $pdpOrigPrice = $currentPrice;
+                    $pdpHasOffer = false;
+                    $pdpOfferName = '';
+                    $pdpDiscountPct = 0;
+                    if (!function_exists('get_product_active_offer')) {
+                        require_once __DIR__ . '/includes/promotions_db.php';
+                    }
+                    $pdpOffer = function_exists('get_product_active_offer') ? get_product_active_offer((int)$product['id'], $bid) : null;
+                    if ($pdpOffer && (float)($pdpOffer['discount_percent'] ?? 0) > 0) {
+                        $pdpHasOffer = true;
+                        $pdpOfferName = (string)($pdpOffer['promo_name'] ?? '');
+                        $pdpDiscountPct = (float)$pdpOffer['discount_percent'];
+                        $currentPrice = max(0.00, round($pdpOrigPrice * (1.0 - ($pdpDiscountPct / 100.0)), 2));
                     }
                     $inStock = storefront_product_is_in_stock($product, $variants);
                     $stockQty = $activeVariant ? (int)$activeVariant['stock_quantity'] : (int)$product['stock_quantity'];
@@ -3085,7 +3109,22 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 <h1 class="ms-pdp-title"><?= e((string) $product['name']) ?></h1>
 
                                 <?php if (empty($brand['hide_product_price'])): ?>
-                                    <div class="ms-pdp-price"><?= sf_money($currency, $currentPrice) ?></div>
+                                    <div class="ms-pdp-price" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                        <span><?= sf_money($currency, $currentPrice) ?></span>
+                                        <?php if ($pdpHasOffer || ((float)($product['mrp'] ?? 0) > $currentPrice)): ?>
+                                            <span style="font-size:16px; color:#94a3b8; text-decoration:line-through; font-weight:500;">
+                                                <?= sf_money($currency, $pdpHasOffer ? $pdpOrigPrice : (float)$product['mrp']) ?>
+                                            </span>
+                                            <span style="background:#fee2e2; color:#ef4444; font-size:12px; font-weight:800; padding:2px 8px; border-radius:6px;">
+                                                <?= round($pdpDiscountPct ?: (((float)($product['mrp'] ?? 0) - $currentPrice) / (float)$product['mrp'] * 100)) ?>% OFF
+                                            </span>
+                                            <?php if ($pdpHasOffer): ?>
+                                                <span style="background:#e0e7ff; color:#4338ca; font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px;">
+                                                    🏷️ <?= e($pdpOfferName) ?>
+                                                </span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
                                 <?php endif; ?>
 
                                 <?php if (!empty($variants)): ?>
@@ -5227,12 +5266,17 @@ function sfUniqueVariantValues(list, key) {
 
 function sfFindVariantMatch(list, size, colour) {
     var sizes = sfUniqueVariantValues(list, 'size');
-    var colours = sfUniqueVariantValues(list, 'colour');
+    var rawColours = sfUniqueVariantValues(list, 'colour');
+    var colours = rawColours.filter(function(c){
+        return c && c.toLowerCase() !== 'default' && c.toLowerCase() !== 'standard';
+    });
     if (sizes.length && !size) return null;
     if (colours.length && !colour) return null;
     return list.find(function (row) {
-        var sizeOk = !sizes.length || row.size === size;
-        var colourOk = !colours.length || row.colour === colour;
+        var sizeOk = !sizes.length || (row.size && String(row.size).trim().toLowerCase() === String(size).trim().toLowerCase());
+        var rowCol = String(row.colour || '').trim().toLowerCase();
+        var matchCol = String(colour || '').trim().toLowerCase();
+        var colourOk = !colours.length || (matchCol !== '' && rowCol === matchCol) || (!matchCol && (!row.colour || rowCol === 'default' || rowCol === 'standard'));
         return sizeOk && colourOk;
     }) || null;
 }
@@ -5369,10 +5413,12 @@ function sfInitStorePdpVariants(variantList, parentProductInfo) {
 
     var sizes = sfUniqueVariantValues(variantList, 'size');
     var rawColours = sfUniqueVariantValues(variantList, 'colour');
-    var colours = ['Default'].concat(rawColours.filter(function(c){ return c.toLowerCase() !== 'default'; }));
+    var colours = rawColours.filter(function(c){
+        return c && c.toLowerCase() !== 'default' && c.toLowerCase() !== 'standard';
+    });
 
     document.getElementById('sfPdpSizeRow').style.display = sizes.length ? 'block' : 'none';
-    document.getElementById('sfPdpColourRow').style.display = 'block';
+    document.getElementById('sfPdpColourRow').style.display = colours.length ? 'block' : 'none';
     sfPaintVariantChips(sizesBox, sizes, 'data-size');
     sfPaintVariantChips(coloursBox, colours, 'data-colour');
 
@@ -5388,15 +5434,14 @@ function sfInitStorePdpVariants(variantList, parentProductInfo) {
         var mainImg = document.getElementById('pdpMainImg');
         var mainVid = document.getElementById('pdpMainVideo');
 
-        // Check if "Default" is selected
-        if (selectedColour === 'Default' || (!selectedColour && !selectedSize)) {
-            var defaultVariant = variantList.find(function(r){ return r.stock > 0; }) || variantList[0];
-            if (vidInput) vidInput.value = defaultVariant ? String(defaultVariant.id) : '';
-            var totalStock = 0;
-            variantList.forEach(function(r){ totalStock += (parseInt(r.stock, 10) || 0); });
-            if (totalStock === 0 && parentDefaultStock > 0) totalStock = parentDefaultStock;
+        var totalStock = 0;
+        variantList.forEach(function(r){ totalStock += (parseInt(r.stock, 10) || 0); });
+        if (totalStock === 0 && parentDefaultStock > 0) totalStock = parentDefaultStock;
 
-            if (meta) meta.textContent = totalStock > 0 ? (totalStock + ' in stock') : 'Out of stock';
+        // If sizes exist and none chosen yet
+        if (sizes.length > 0 && !selectedSize) {
+            if (vidInput) vidInput.value = '';
+            if (meta) meta.textContent = totalStock > 0 ? (totalStock + ' in stock · Please select a size') : 'Out of stock';
             if (priceEl && parentDefaultPrice) {
                 priceEl.textContent = '₹' + parseFloat(parentDefaultPrice).toFixed(2);
             }
@@ -5405,25 +5450,13 @@ function sfInitStorePdpVariants(variantList, parentProductInfo) {
                 if (totalStock <= 0) qtyInput.setAttribute('disabled', 'disabled');
                 else qtyInput.removeAttribute('disabled');
             }
+            return;
+        }
 
-            // Restore parent product image
-            if (parentDefaultImg && parentDefaultImg.trim() !== '') {
-                if (mainVid) {
-                    mainVid.pause();
-                    mainVid.style.display = 'none';
-                }
-                if (mainImg) {
-                    mainImg.style.display = 'block';
-                    mainImg.src = parentDefaultImg;
-                }
-                if (typeof pdpMedia !== 'undefined' && pdpMedia && pdpMedia.length) {
-                    pdpCurrentIdx = 0;
-                    var thumbs = document.querySelectorAll('.ms-pdp-thumb');
-                    for (var ti = 0; ti < thumbs.length; ti++) {
-                        thumbs[ti].classList.toggle('is-active', ti === 0);
-                    }
-                }
-            }
+        // If colours exist and none chosen yet
+        if (colours.length > 0 && !selectedColour) {
+            if (vidInput) vidInput.value = '';
+            if (meta) meta.textContent = totalStock > 0 ? (totalStock + ' in stock · Please select a colour') : 'Out of stock';
             return;
         }
 
@@ -5502,10 +5535,10 @@ function sfInitStorePdpVariants(variantList, parentProductInfo) {
         });
     });
 
-    // Default to 'Default' chip on load
-    var defChip = coloursBox.querySelector('[data-colour="Default"]');
-    if (defChip) {
-        defChip.classList.add('on');
+    // If only one colour exists, auto-select it
+    if (colours.length === 1) {
+        var onlyColChip = coloursBox.querySelector('.sf-variant-chip');
+        if (onlyColChip) onlyColChip.classList.add('on');
     }
     refreshPdpVariant(false);
 }

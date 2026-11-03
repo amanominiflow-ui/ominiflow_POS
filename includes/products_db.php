@@ -258,7 +258,7 @@ function delete_category(int $id, ?int $businessId = null): array {
    2. PRODUCT OPERATIONS
    ========================================================================= */
 
-function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = '', ?int $businessId = null, string $sort = ''): array {
+function get_products(string $search = '', ?int $categoryId = null, string $status = '', string $stockFilter = '', ?int $businessId = null, string $sort = '', ?bool $showOnStore = null): array {
     $db = get_db();
     $bid = $businessId ?: current_business_id();
     $sql = '
@@ -295,6 +295,12 @@ function get_products(string $search = '', ?int $categoryId = null, string $stat
         $sql .= ' AND p.stock_quantity <= 0';
     } elseif ($stockFilter === 'in_stock') {
         $sql .= ' AND p.stock_quantity > p.low_stock_threshold';
+    }
+
+    if ($showOnStore === true) {
+        $sql .= ' AND p.show_on_store = 1';
+    } elseif ($showOnStore === false) {
+        $sql .= ' AND p.show_on_store = 0';
     }
 
     if ($sort === 'name_asc') {
@@ -602,6 +608,8 @@ function ensure_product_item_schema(): void {
         'rear_image_path' => "VARCHAR(255) NULL",
         'video_path' => "VARCHAR(255) NULL",
         'video_url' => "VARCHAR(500) NULL",
+        'is_trending' => "TINYINT(1) NOT NULL DEFAULT 0",
+        'show_on_store' => "TINYINT(1) NOT NULL DEFAULT 1",
     ];
     foreach ($columns as $col => $def) {
         try {
@@ -892,6 +900,7 @@ function collect_product_form_data(): array {
         'extra_identifiers' => json_encode($identifiers, JSON_UNESCAPED_UNICODE),
         'product_type' => $hasVariants ? 'variable' : 'simple',
         'is_trending' => !empty($_POST['is_trending']) ? 1 : 0,
+        'show_on_store' => isset($_POST['show_on_store']) ? (!empty($_POST['show_on_store']) ? 1 : 0) : 0,
         'remove_image_ids' => array_map('intval', (array) ($_POST['remove_image_ids'] ?? [])),
         'remove_video' => !empty($_POST['remove_video']),
         'video_url' => trim((string) ($_POST['video_url'] ?? '')),
@@ -1131,6 +1140,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         'video_url' => trim((string) ($data['video_url'] ?? '')) ?: null,
         'status' => $status,
         'is_trending' => array_key_exists('is_trending', $data) ? (!empty($data['is_trending']) ? 1 : 0) : (!empty($oldProduct['is_trending']) ? 1 : 0),
+        'show_on_store' => array_key_exists('show_on_store', $data) ? (!empty($data['show_on_store']) ? 1 : 0) : (isset($oldProduct['show_on_store']) ? (int)$oldProduct['show_on_store'] : 1),
     ];
 
     try {
@@ -1702,6 +1712,313 @@ function save_product_variants_from_attributes(int $productId, array $attributes
             }
         }
     } catch (PDOException $e) { /* ignore */ }
+}
+
+/* =========================================================================
+   2c. PRODUCT STOCK MATRIX OPERATIONS
+   ========================================================================= */
+
+/**
+ * Sort garment sizes into intuitive retail order: XS, S, M, L, XL, XXL, 3XL...
+ *
+ * @param array<int, string> $sizes
+ * @return array<int, string>
+ */
+function sort_garment_sizes(array $sizes): array {
+    $stdOrder = [
+        'XXS' => 1, 'XS' => 2, 'S' => 3, 'M' => 4, 'L' => 5, 'XL' => 6,
+        'XXL' => 7, '2XL' => 8, '3XL' => 9, 'XXXL' => 10, '4XL' => 11, 'XXXXL' => 12, '5XL' => 13,
+        'FREE SIZE' => 14, 'FREESIZE' => 15, 'FS' => 16
+    ];
+    $clean = array_values(array_unique(array_filter(array_map('trim', $sizes))));
+    usort($clean, function ($a, $b) use ($stdOrder) {
+        $aUpper = strtoupper((string)$a);
+        $bUpper = strtoupper((string)$b);
+        $aRank = $stdOrder[$aUpper] ?? 999;
+        $bRank = $stdOrder[$bUpper] ?? 999;
+        if ($aRank !== $bRank) {
+            return $aRank <=> $bRank;
+        }
+        return strnatcasecmp((string)$a, (string)$b);
+    });
+    return $clean;
+}
+
+/**
+ * Fetch complete stock matrix data for a product (sizes columns, colour rows, per-variant stocks).
+ *
+ * @param int $productId
+ * @param int|null $businessId
+ * @return array{success:bool, error?:string, product?:array, is_variable?:bool, has_colours?:bool, sizes?:array, rows?:array, totals?:array}
+ */
+function get_product_stock_matrix(int $productId, ?int $businessId = null): array {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+
+    $stmtP = $db->prepare('
+        SELECT id, name, sku, barcode, cost_price, selling_price, stock_quantity, product_type, image_path, business_id
+        FROM products
+        WHERE id = :pid AND business_id = :bid
+        LIMIT 1
+    ');
+    $stmtP->execute(['pid' => $productId, 'bid' => $bid]);
+    $prod = $stmtP->fetch(PDO::FETCH_ASSOC);
+    if (!$prod) {
+        return ['success' => false, 'error' => 'Product not found.'];
+    }
+
+    require_once __DIR__ . '/orders_db.php';
+
+    $stmtV = $db->prepare('
+        SELECT * FROM product_variants
+        WHERE product_id = :pid AND business_id = :bid AND status = "active"
+        ORDER BY id ASC
+    ');
+    $stmtV->execute(['pid' => $productId, 'bid' => $bid]);
+    $variants = $stmtV->fetchAll(PDO::FETCH_ASSOC);
+
+    $standardSizes = ['S', 'M', 'L', 'XL', 'XXL'];
+    $sizes = [];
+    $colourMap = [];
+
+    if (!empty($variants)) {
+        foreach ($variants as $v) {
+            $attrs = parse_variant_size_colour($v);
+            $sz = trim((string)($attrs['size'] ?? ''));
+            $col = trim((string)($attrs['colour'] ?? ''));
+            if ($col === '') $col = 'Standard';
+            if ($sz !== '' && !in_array($sz, $sizes, true)) {
+                $sizes[] = $sz;
+            }
+            if (!isset($colourMap[$col])) {
+                $colourMap[$col] = [
+                    'colour' => $col,
+                    'colour_code' => (string)($v['color_code'] ?? ''),
+                    'video_sku' => (string)($v['video_sku'] ?? ''),
+                    'image_path' => !empty($v['image_path']) ? (string)$v['image_path'] : null,
+                    'cost_price' => (float)($v['cost_price'] ?: $prod['cost_price']),
+                    'selling_price' => (float)($v['selling_price'] ?: $prod['selling_price']),
+                    'quantities' => [],
+                    'variant_ids' => [],
+                ];
+            }
+            if ($sz !== '') {
+                $colourMap[$col]['quantities'][$sz] = (int)$v['stock_quantity'];
+                $colourMap[$col]['variant_ids'][$sz] = (int)$v['id'];
+            }
+        }
+    }
+
+    if (empty($sizes)) {
+        $sizes = $standardSizes;
+    } else {
+        $sizes = sort_garment_sizes($sizes);
+    }
+
+    if (empty($colourMap)) {
+        $colourMap['Standard'] = [
+            'colour' => 'Standard',
+            'colour_code' => '',
+            'video_sku' => (string)($prod['sku'] ?? ''),
+            'image_path' => !empty($prod['image_path']) ? (string)$prod['image_path'] : null,
+            'cost_price' => (float)$prod['cost_price'],
+            'selling_price' => (float)$prod['selling_price'],
+            'quantities' => [],
+            'variant_ids' => [],
+        ];
+        foreach ($sizes as $sz) {
+            $colourMap['Standard']['quantities'][$sz] = 0;
+            $colourMap['Standard']['variant_ids'][$sz] = null;
+        }
+    } else {
+        foreach ($colourMap as $col => &$cData) {
+            foreach ($sizes as $sz) {
+                if (!isset($cData['quantities'][$sz])) {
+                    $cData['quantities'][$sz] = 0;
+                    $cData['variant_ids'][$sz] = null;
+                }
+            }
+        }
+        unset($cData);
+    }
+
+    $rows = array_values($colourMap);
+
+    $sizeTotals = array_fill_keys($sizes, 0);
+    $totalQty = 0;
+    $totalVal = 0.0;
+    $totalCost = 0.0;
+
+    foreach ($rows as &$r) {
+        $rowTotal = 0;
+        foreach ($sizes as $sz) {
+            $q = (int)($r['quantities'][$sz] ?? 0);
+            $rowTotal += $q;
+            $sizeTotals[$sz] += $q;
+            $totalQty += $q;
+            $totalVal += $q * (float)$r['selling_price'];
+            $totalCost += $q * (float)$r['cost_price'];
+        }
+        $r['row_total'] = $rowTotal;
+    }
+    unset($r);
+
+    return [
+        'success' => true,
+        'product' => [
+            'id' => (int)$prod['id'],
+            'name' => (string)$prod['name'],
+            'sku' => (string)$prod['sku'],
+            'barcode' => (string)($prod['barcode'] ?? ''),
+            'cost_price' => (float)$prod['cost_price'],
+            'selling_price' => (float)$prod['selling_price'],
+            'stock_quantity' => (int)$prod['stock_quantity'],
+            'product_type' => (string)$prod['product_type'],
+            'image_path' => !empty($prod['image_path']) ? (string)$prod['image_path'] : '',
+        ],
+        'is_variable' => !empty($variants) || $prod['product_type'] === 'variable',
+        'has_colours' => count($rows) > 1 || (count($rows) === 1 && $rows[0]['colour'] !== 'Standard'),
+        'sizes' => $sizes,
+        'rows' => $rows,
+        'totals' => [
+            'by_size' => $sizeTotals,
+            'total_qty' => $totalQty,
+            'total_cost' => round($totalCost, 2),
+            'total_value' => round($totalVal, 2),
+        ],
+    ];
+}
+
+/**
+ * Save stock matrix updates for a product:
+ * Updates product_variants.stock_quantity for every cell,
+ * syncs parent products.stock_quantity = SUM(variants),
+ * syncs warehouse stock, and logs inventory movement.
+ *
+ * @param int $productId
+ * @param array $payload
+ * @param int|null $businessId
+ * @param int|null $userId
+ * @return array{success:bool, error?:string, product_id?:int, total_stock?:int, message?:string}
+ */
+function save_product_stock_matrix(int $productId, array $payload, ?int $businessId = null, ?int $userId = null): array {
+    ensure_product_item_schema();
+    $bid = $businessId ?: current_business_id();
+    $db = get_db();
+
+    $stmtP = $db->prepare('
+        SELECT id, name, sku, cost_price, selling_price, stock_quantity, product_type
+        FROM products
+        WHERE id = :pid AND business_id = :bid
+        LIMIT 1
+    ');
+    $stmtP->execute(['pid' => $productId, 'bid' => $bid]);
+    $product = $stmtP->fetch(PDO::FETCH_ASSOC);
+    if (!$product) {
+        return ['success' => false, 'error' => 'Product not found.'];
+    }
+
+    $sizes = !empty($payload['sizes']) ? array_values(array_filter(array_map('trim', (array)$payload['sizes']))) : [];
+    if (empty($sizes)) {
+        return ['success' => false, 'error' => 'At least one size column is required.'];
+    }
+    $sizes = sort_garment_sizes($sizes);
+
+    $rows = !empty($payload['rows']) ? (array)$payload['rows'] : [];
+    if (empty($rows)) {
+        return ['success' => false, 'error' => 'At least one row is required.'];
+    }
+
+    require_once __DIR__ . '/inward_db.php';
+    require_once __DIR__ . '/outlets_db.php';
+
+    $colourDefs = [];
+    foreach ($rows as $r) {
+        $cName = trim((string)($r['colour'] ?? ''));
+        if ($cName === '') $cName = 'Standard';
+        $colourDefs[] = [
+            'colour' => $cName,
+            'colour_code' => trim((string)($r['colour_code'] ?? '')),
+            'video_sku' => trim((string)($r['video_sku'] ?? '')),
+            'cost_price' => isset($r['cost_price']) && $r['cost_price'] !== '' ? (float)$r['cost_price'] : (float)$product['cost_price'],
+            'selling_price' => isset($r['selling_price']) && $r['selling_price'] !== '' ? (float)$r['selling_price'] : (float)$product['selling_price'],
+        ];
+    }
+
+    try {
+        $matrix = ensure_matrix_variants($productId, $colourDefs, $sizes, $bid);
+
+        $totalStock = 0;
+        $stmtUpdateStock = $db->prepare('
+            UPDATE product_variants
+            SET stock_quantity = :stk, updated_at = NOW()
+            WHERE id = :id AND business_id = :bid AND product_id = :pid
+        ');
+
+        foreach ($rows as $r) {
+            $cName = trim((string)($r['colour'] ?? ''));
+            if ($cName === '') $cName = 'Standard';
+            $cNorm = strtolower($cName);
+            $quantities = (array)($r['quantities'] ?? []);
+
+            foreach ($sizes as $sz) {
+                $sNorm = strtolower($sz);
+                $qty = max(0, (int)($quantities[$sz] ?? 0));
+                $varRow = $matrix[$cNorm][$sNorm] ?? null;
+                if ($varRow && !empty($varRow['id'])) {
+                    $stmtUpdateStock->execute([
+                        'stk' => $qty,
+                        'id' => (int)$varRow['id'],
+                        'bid' => $bid,
+                        'pid' => $productId,
+                    ]);
+                    $totalStock += $qty;
+                }
+            }
+        }
+
+        $oldStock = (int)$product['stock_quantity'];
+        $db->prepare('UPDATE products SET stock_quantity = :stk, product_type = "variable", updated_at = NOW() WHERE id = :pid AND business_id = :bid')
+            ->execute(['stk' => $totalStock, 'pid' => $productId, 'bid' => $bid]);
+
+        $whStmt = $db->prepare('SELECT id FROM warehouses WHERE business_id = :bid AND status = "active" ORDER BY id ASC LIMIT 1');
+        $whStmt->execute(['bid' => $bid]);
+        $defaultWhId = (int)$whStmt->fetchColumn();
+        if ($defaultWhId > 0) {
+            set_product_warehouse_stock($productId, $defaultWhId, $totalStock);
+        }
+
+        $diff = $totalStock - $oldStock;
+        if ($diff !== 0) {
+            $stmtMov = $db->prepare('
+                INSERT INTO inventory_movements (
+                    business_id, product_id, user_id, movement_type, quantity_change, quantity_before, quantity_after, reason, created_at
+                ) VALUES (
+                    :bid, :pid, :uid, :mtype, :qchange, :qbefore, :qafter, :reason, NOW()
+                )
+            ');
+            $stmtMov->execute([
+                'bid' => $bid,
+                'pid' => $productId,
+                'uid' => $userId,
+                'mtype' => $diff > 0 ? 'in' : 'out',
+                'qchange' => $diff,
+                'qbefore' => $oldStock,
+                'qafter' => $totalStock,
+                'reason' => 'Stock Matrix adjustment',
+            ]);
+        }
+
+        return [
+            'success' => true,
+            'product_id' => $productId,
+            'total_stock' => $totalStock,
+            'message' => 'Stock matrix updated successfully! Total stock: ' . $totalStock . ' units.',
+        ];
+    } catch (\Throwable $ex) {
+        return ['success' => false, 'error' => $ex->getMessage()];
+    }
 }
 
 /* =========================================================================

@@ -106,6 +106,8 @@ if (in_array($currentPage, ['pos.php', 'registers.php', 'payment-options.php', '
     $activeRailTab = 'channels';
 } elseif ($currentPage === 'reports.php') {
     $activeRailTab = 'reports';
+} elseif ($currentPage === 'books.php') {
+    $activeRailTab = 'books';
 } elseif (in_array($currentPage, ['settings.php', 'payment-integrations.php', 'customer-payments.php', 'integrations-whatsapp.php', 'integrations-shipping.php', 'integrations-cart.php', 'taxes.php', 'business-profile.php', 'users.php', 'roles.php', 'role-create.php'], true)) {
     $activeRailTab = 'settings';
 }
@@ -395,6 +397,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                     <span>Reports</span>
                 </button>
                 <?php endif; ?>
+
+                <!-- Books Tab (Books of Accounts) -->
+                <button type="button" class="rail-tab-btn <?= $activeRailTab === 'books' ? 'active' : '' ?>" onclick="handleRailTabClick('books')" id="rail-btn-books" title="Books of Accounts">
+                    <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                    </svg>
+                    <span>Books</span>
+                </button>
 
                 <!-- Quick Spotlight Search Button (Extra gap above) -->
                 <button type="button" class="rail-tab-btn" onclick="openSpotlightSearch()" title="Global Spotlight Search (/)" style="margin-top: 16px;">
@@ -974,6 +984,135 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         <a href="<?= asset('reports.php?type=register-shifts') ?>" class="submenu-link <?= $currentType === 'register-shifts' ? 'active' : '' ?>">Register Shifts</a>
                         <a href="<?= asset('reports.php?type=cash-movements') ?>" class="submenu-link <?= $currentType === 'cash-movements' ? 'active' : '' ?>">Cash Movements</a>
                         <a href="<?= asset('reports.php?type=gst-tax') ?>" class="submenu-link <?= $currentType === 'gst-tax' ? 'active' : '' ?>">GST Tax & GSTR-1</a>
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+        <!-- ================= TAB CONTENT: BOOKS (Books of Accounts) ================= -->
+        <div class="drawer-tab-content <?= $activeRailTab === 'books' ? 'active' : '' ?>" id="drawer-tab-books">
+            <div class="sidebar-store-bar">
+                <div class="store-badge-title" style="color: #ffffff; border-bottom: 2px solid #3b82f6; width: fit-content; padding-bottom: 3px; font-weight: 700;">Books of Accounts</div>
+            </div>
+
+            <div class="drawer-search-wrap">
+                <input type="text" placeholder="Search books & ledgers" class="drawer-search-input" id="booksSearchInp" onkeyup="filterBooksNav(this.value)">
+            </div>
+
+            <nav class="sidebar-nav">
+                <!-- Overview & Daily -->
+                <?php $currentBookTab = $_GET['tab'] ?? 'overview'; ?>
+                <a href="<?= asset('books.php?tab=overview') ?>" class="nav-item <?= $currentBookTab === 'overview' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                    </span>
+                    <span>Accounting Overview</span>
+                </a>
+
+                <a href="<?= asset('books.php?tab=day-book') ?>" class="nav-item <?= $currentBookTab === 'day-book' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </span>
+                    <span>Day Book</span>
+                </a>
+
+                <a href="<?= asset('books.php?tab=daily-closing') ?>" class="nav-item <?= $currentBookTab === 'daily-closing' ? 'active' : '' ?>">
+                    <span class="nav-item-icon">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </span>
+                    <span>Daily Cash Closing</span>
+                </a>
+
+                <div class="drawer-section-title">BOOKS OF ACCOUNTS</div>
+
+                <!-- 1. Books Group -->
+                <div class="nav-group <?= in_array($currentBookTab, ['cash-book', 'bank-book', 'sales-book', 'purchase-book', 'sales-return-book', 'purchase-return-book', 'expense-book', 'journal-book'], true) ? 'open' : '' ?>" id="grp-books-accounts">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-books-accounts')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                            </span>
+                            <span>Registers & Books</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('books.php?tab=cash-book') ?>" class="submenu-link <?= $currentBookTab === 'cash-book' ? 'active' : '' ?>">Cash Book</a>
+                        <a href="<?= asset('books.php?tab=bank-book') ?>" class="submenu-link <?= $currentBookTab === 'bank-book' ? 'active' : '' ?>">Bank Book</a>
+                        <a href="<?= asset('books.php?tab=sales-book') ?>" class="submenu-link <?= $currentBookTab === 'sales-book' ? 'active' : '' ?>">Sales Book</a>
+                        <a href="<?= asset('books.php?tab=purchase-book') ?>" class="submenu-link <?= $currentBookTab === 'purchase-book' ? 'active' : '' ?>">Purchase Book</a>
+                        <a href="<?= asset('books.php?tab=sales-return-book') ?>" class="submenu-link <?= $currentBookTab === 'sales-return-book' ? 'active' : '' ?>">Sales Return Book</a>
+                        <a href="<?= asset('books.php?tab=purchase-return-book') ?>" class="submenu-link <?= $currentBookTab === 'purchase-return-book' ? 'active' : '' ?>">Purchase Return Book</a>
+                        <a href="<?= asset('books.php?tab=expense-book') ?>" class="submenu-link <?= $currentBookTab === 'expense-book' ? 'active' : '' ?>">Expense Book</a>
+                        <a href="<?= asset('books.php?tab=journal-book') ?>" class="submenu-link <?= $currentBookTab === 'journal-book' ? 'active' : '' ?>">Journal Book</a>
+                    </div>
+                </div>
+
+                <div class="drawer-section-title">LEDGERS & STATEMENTS</div>
+
+                <!-- 2. Ledgers Group -->
+                <div class="nav-group <?= in_array($currentBookTab, ['customer-ledger', 'supplier-ledger', 'employee-ledger', 'general-ledger'], true) ? 'open' : '' ?>" id="grp-books-ledgers">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-books-ledgers')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                            </span>
+                            <span>Ledger Accounts</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('books.php?tab=customer-ledger') ?>" class="submenu-link <?= $currentBookTab === 'customer-ledger' ? 'active' : '' ?>">Customer Ledger</a>
+                        <a href="<?= asset('books.php?tab=supplier-ledger') ?>" class="submenu-link <?= $currentBookTab === 'supplier-ledger' ? 'active' : '' ?>">Supplier Ledger</a>
+                        <a href="<?= asset('books.php?tab=employee-ledger') ?>" class="submenu-link <?= $currentBookTab === 'employee-ledger' ? 'active' : '' ?>">Employee Ledger</a>
+                        <a href="<?= asset('books.php?tab=general-ledger') ?>" class="submenu-link <?= $currentBookTab === 'general-ledger' ? 'active' : '' ?>">General Ledger</a>
+                    </div>
+                </div>
+
+                <!-- 3. Financial Statements Group -->
+                <div class="nav-group <?= in_array($currentBookTab, ['trial-balance', 'profit-loss', 'balance-sheet', 'cash-flow'], true) ? 'open' : '' ?>" id="grp-books-statements">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-books-statements')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            </span>
+                            <span>Financial Statements</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('books.php?tab=trial-balance') ?>" class="submenu-link <?= $currentBookTab === 'trial-balance' ? 'active' : '' ?>">Trial Balance</a>
+                        <a href="<?= asset('books.php?tab=profit-loss') ?>" class="submenu-link <?= $currentBookTab === 'profit-loss' ? 'active' : '' ?>">Profit & Loss</a>
+                        <a href="<?= asset('books.php?tab=balance-sheet') ?>" class="submenu-link <?= $currentBookTab === 'balance-sheet' ? 'active' : '' ?>">Balance Sheet</a>
+                        <a href="<?= asset('books.php?tab=cash-flow') ?>" class="submenu-link <?= $currentBookTab === 'cash-flow' ? 'active' : '' ?>">Cash Flow Statement</a>
+                    </div>
+                </div>
+
+                <div class="drawer-section-title">RECONCILIATION & TAX</div>
+
+                <!-- 4. Reconciliation & Tax Group -->
+                <div class="nav-group <?= in_array($currentBookTab, ['bank-reconciliation', 'gst-reports', 'branch-comparison'], true) ? 'open' : '' ?>" id="grp-books-tax">
+                    <div class="nav-group-header" onclick="toggleSidebarGroup('grp-books-tax')">
+                        <div class="nav-group-title">
+                            <span class="nav-item-icon">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            </span>
+                            <span>Tax & Controls</span>
+                        </div>
+                        <span class="nav-group-arrow">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        </span>
+                    </div>
+                    <div class="nav-submenu">
+                        <a href="<?= asset('books.php?tab=bank-reconciliation') ?>" class="submenu-link <?= $currentBookTab === 'bank-reconciliation' ? 'active' : '' ?>">Bank Reconciliation</a>
+                        <a href="<?= asset('books.php?tab=gst-reports') ?>" class="submenu-link <?= $currentBookTab === 'gst-reports' ? 'active' : '' ?>">GST Reports (GSTR-1 / 3B)</a>
+                        <a href="<?= asset('books.php?tab=branch-comparison') ?>" class="submenu-link <?= $currentBookTab === 'branch-comparison' ? 'active' : '' ?>">Branch Comparison</a>
                     </div>
                 </div>
             </nav>
@@ -1690,6 +1829,29 @@ function filterReportsNav(query) {
     document.querySelectorAll('#drawer-tab-reports .nav-item').forEach(function(item) {
         var txt = item.textContent.toLowerCase();
         item.style.display = (txt.indexOf(q) !== -1) ? 'flex' : 'none';
+    });
+}
+
+function filterBooksNav(query) {
+    var q = (query || '').toLowerCase().trim();
+    document.querySelectorAll('#drawer-tab-books .nav-item, #drawer-tab-books .submenu-link').forEach(function(item) {
+        var txt = item.textContent.toLowerCase();
+        item.style.display = (txt.indexOf(q) !== -1) ? 'flex' : 'none';
+    });
+    document.querySelectorAll('#drawer-tab-books .nav-group').forEach(function(group) {
+        var txt = group.textContent.toLowerCase();
+        if (q && txt.indexOf(q) !== -1) {
+            group.classList.add('open');
+            group.style.display = '';
+        } else if (q) {
+            var hasVisible = false;
+            group.querySelectorAll('.submenu-link').forEach(function(link) {
+                if (link.style.display !== 'none') hasVisible = true;
+            });
+            group.style.display = hasVisible ? '' : 'none';
+        } else {
+            group.style.display = '';
+        }
     });
 }
 

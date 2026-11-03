@@ -101,8 +101,11 @@ $pageTitle = 'Promotions, Coupons & Loyalty';
                         <p class="page-subtitle">Configure discount rules, promotional coupon codes, customer tiers and loyalty rewards.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button type="button" onclick="document.getElementById('promoModal').style.display='flex'" class="header-btn">
-                            + New Promotion
+                        <button type="button" onclick="document.getElementById('promotionsOffersModal').style.display='flex'" class="header-btn" style="background: #4f46e5;">
+                            🏷️ Manage Offers
+                        </button>
+                        <button type="button" onclick="document.getElementById('promoModal').style.display='flex'" class="header-btn-secondary">
+                            + New Store Promotion
                         </button>
                         <button type="button" onclick="document.getElementById('couponModal').style.display='flex'" class="header-btn-secondary">
                             + New Coupon Code

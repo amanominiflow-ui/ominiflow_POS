@@ -1284,6 +1284,7 @@ function get_storefront_trending_products(int $businessId, int $limit = 20): arr
         WHERE business_id = :bid 
           AND status = 'active' 
           AND is_trending = 1 
+          AND COALESCE(show_on_store, 1) = 1
         ORDER BY updated_at DESC, id DESC 
         LIMIT :lim
     ");
@@ -1685,6 +1686,14 @@ function storefront_resolve_sale_line(int $businessId, int $productId, int $vari
         if ($unit <= 0) {
             $unit = (float) ($product['selling_price'] ?? 0);
         }
+        $origUnit = $unit;
+        if (!function_exists('get_product_active_offer')) {
+            require_once __DIR__ . '/promotions_db.php';
+        }
+        $activeOffer = function_exists('get_product_active_offer') ? get_product_active_offer($productId, $businessId) : null;
+        if ($activeOffer && (float) ($activeOffer['discount_percent'] ?? 0) > 0) {
+            $unit = max(0.00, round($unit * (1.0 - ((float) $activeOffer['discount_percent'] / 100.0)), 2));
+        }
         $attrs = parse_variant_size_colour($chosen);
         return [
             'success' => true,
@@ -1693,7 +1702,7 @@ function storefront_resolve_sale_line(int $businessId, int $productId, int $vari
             'variant_id' => $variantId,
             'stock' => $stock,
             'unit_price' => $unit,
-            'mrp' => (float) ($product['mrp'] ?? 0),
+            'mrp' => max((float) ($product['mrp'] ?? 0), $origUnit),
             'tax_percent' => (float) ($product['tax_percent'] ?? 0),
             'size' => (string) ($attrs['size'] ?? ''),
             'colour' => (string) ($attrs['colour'] ?? ''),
@@ -1704,14 +1713,23 @@ function storefront_resolve_sale_line(int $businessId, int $productId, int $vari
     if ($stock <= 0) {
         return ['success' => false, 'error' => 'This item is out of stock.'];
     }
+    $unit = (float) ($product['selling_price'] ?? 0);
+    $origUnit = $unit;
+    if (!function_exists('get_product_active_offer')) {
+        require_once __DIR__ . '/promotions_db.php';
+    }
+    $activeOffer = function_exists('get_product_active_offer') ? get_product_active_offer($productId, $businessId) : null;
+    if ($activeOffer && (float) ($activeOffer['discount_percent'] ?? 0) > 0) {
+        $unit = max(0.00, round($unit * (1.0 - ((float) $activeOffer['discount_percent'] / 100.0)), 2));
+    }
     return [
         'success' => true,
         'product' => $product,
         'variant' => null,
         'variant_id' => 0,
         'stock' => $stock,
-        'unit_price' => (float) ($product['selling_price'] ?? 0),
-        'mrp' => (float) ($product['mrp'] ?? 0),
+        'unit_price' => $unit,
+        'mrp' => max((float) ($product['mrp'] ?? 0), $origUnit),
         'tax_percent' => (float) ($product['tax_percent'] ?? 0),
         'size' => '',
         'colour' => '',
@@ -4189,7 +4207,25 @@ if (!function_exists('storefront_parse_product_display_info')) {
         }
 
         $discountPercent = 0;
-        if ($mrp > $sellingPrice && $mrp > 0) {
+        $hasOffer = false;
+        $offerName = '';
+
+        if (!function_exists('get_all_active_product_offers_map')) {
+            require_once __DIR__ . '/promotions_db.php';
+        }
+        $pid = (int) ($p['id'] ?? 0);
+        $offersMap = function_exists('get_all_active_product_offers_map') ? get_all_active_product_offers_map($businessId) : [];
+        $activeOffer = $offersMap[$pid] ?? null;
+
+        if ($activeOffer && (float) ($activeOffer['discount_percent'] ?? 0) > 0) {
+            $hasOffer = true;
+            $offerName = (string) ($activeOffer['promo_name'] ?? '');
+            $offerPct = (float) $activeOffer['discount_percent'];
+            $discountPercent = (int) round($offerPct);
+            $origPrice = $mrp > $sellingPrice ? $mrp : $sellingPrice;
+            $mrp = $origPrice;
+            $sellingPrice = max(0.00, round($origPrice * (1.0 - ($offerPct / 100.0)), 2));
+        } elseif ($mrp > $sellingPrice && $mrp > 0) {
             $discountPercent = (int) round((($mrp - $sellingPrice) / $mrp) * 100);
         }
 
@@ -4203,6 +4239,8 @@ if (!function_exists('storefront_parse_product_display_info')) {
             'selling_price' => $sellingPrice,
             'mrp' => $mrp,
             'discount_percent' => $discountPercent,
+            'has_offer' => $hasOffer,
+            'offer_name' => $offerName,
             'in_stock' => storefront_product_is_in_stock($p, $variants),
         ];
     }
