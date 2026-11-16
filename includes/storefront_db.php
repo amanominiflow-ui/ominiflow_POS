@@ -1704,6 +1704,7 @@ function storefront_resolve_sale_line(int $businessId, int $productId, int $vari
             'unit_price' => $unit,
             'mrp' => max((float) ($product['mrp'] ?? 0), $origUnit),
             'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+            'delivery_charge' => max(0.0, (float) ($product['delivery_charge'] ?? 0)),
             'size' => (string) ($attrs['size'] ?? ''),
             'colour' => (string) ($attrs['colour'] ?? ''),
         ];
@@ -1731,6 +1732,7 @@ function storefront_resolve_sale_line(int $businessId, int $productId, int $vari
         'unit_price' => $unit,
         'mrp' => max((float) ($product['mrp'] ?? 0), $origUnit),
         'tax_percent' => (float) ($product['tax_percent'] ?? 0),
+        'delivery_charge' => max(0.0, (float) ($product['delivery_charge'] ?? 0)),
         'size' => '',
         'colour' => '',
     ];
@@ -1801,6 +1803,7 @@ function hydrate_storefront_cart(int $businessId): array {
     $lines = [];
     $subtotal = 0.0;
     $tax = 0.0;
+    $deliveryCharge = 0.0;
     $totalSavings = 0.0;
     $changed = false;
     $clean = [];
@@ -1835,6 +1838,8 @@ function hydrate_storefront_cart(int $businessId): array {
         $line = $unit * $qty;
         $lineTax = round($line * ($taxPct / 100), 2);
         $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
+        $pDelivery = (float) ($resolved['delivery_charge'] ?? $product['delivery_charge'] ?? 0);
+        $deliveryCharge += $pDelivery * $qty;
 
         $subtotal += $line;
         $tax += $lineTax;
@@ -1850,6 +1855,7 @@ function hydrate_storefront_cart(int $businessId): array {
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
+            'delivery_charge' => $pDelivery,
             'line_total' => $line,
             'tax_amount' => $lineTax,
             'savings' => $lineSavings,
@@ -1864,7 +1870,8 @@ function hydrate_storefront_cart(int $businessId): array {
         'lines' => $lines,
         'subtotal' => round($subtotal, 2),
         'tax' => round($tax, 2),
-        'total' => round($subtotal + $tax, 2),
+        'delivery_charge' => round($deliveryCharge, 2),
+        'total' => round($subtotal + $tax + $deliveryCharge, 2),
         'total_savings' => round($totalSavings, 2),
         'count' => storefront_cart_count($businessId),
     ];
@@ -1953,6 +1960,9 @@ function hydrate_storefront_buynow(int $businessId): array {
     $lineTax = round($line * ($taxPct / 100), 2);
     $lineSavings = ($mrp > $unit) ? round(($mrp - $unit) * $qty, 2) : 0.0;
 
+    $pDelivery = max(0.0, (float) ($resolved['delivery_charge'] ?? $product['delivery_charge'] ?? 0));
+    $deliveryCharge = $pDelivery * $qty;
+
     return [
         'lines' => [[
             'product' => $product,
@@ -1964,13 +1974,15 @@ function hydrate_storefront_buynow(int $businessId): array {
             'unit_price' => $unit,
             'mrp' => $mrp,
             'tax_percent' => $taxPct,
+            'delivery_charge' => $pDelivery,
             'line_total' => $line,
             'tax_amount' => $lineTax,
             'savings' => $lineSavings,
         ]],
         'subtotal' => round($line, 2),
         'tax' => $lineTax,
-        'total' => round($line + $lineTax, 2),
+        'delivery_charge' => round($deliveryCharge, 2),
+        'total' => round($line + $lineTax + $deliveryCharge, 2),
         'total_savings' => $lineSavings,
         'count' => $qty,
     ];
@@ -3805,8 +3817,9 @@ function storefront_apply_checkout_discounts(int $businessId, array $hydrated): 
         }
     }
 
+    $deliveryCharge = (float) ($hydrated['delivery_charge'] ?? 0);
     $checkoutDiscount = min($subtotal, $promoDiscount + $couponDiscount);
-    $total = max(0.0, round($subtotal - $checkoutDiscount + $tax, 2));
+    $total = max(0.0, round($subtotal - $checkoutDiscount + $tax + $deliveryCharge, 2));
 
     $hydrated['promo_discount'] = round($promoDiscount, 2);
     $hydrated['coupon_discount'] = round($couponDiscount, 2);
@@ -3814,6 +3827,7 @@ function storefront_apply_checkout_discounts(int $businessId, array $hydrated): 
     $hydrated['applied_coupon_id'] = $couponId;
     $hydrated['applied_coupon_code'] = $couponCode;
     $hydrated['applied_promotions'] = $promoResult['applied_promotions'] ?? [];
+    $hydrated['delivery_charge'] = round($deliveryCharge, 2);
     $hydrated['total'] = $total;
 
     return $hydrated;
@@ -3823,6 +3837,7 @@ function storefront_checkout_totals_payload(array $enriched): array {
     return [
         'subtotal' => (float) ($enriched['subtotal'] ?? 0),
         'tax' => (float) ($enriched['tax'] ?? 0),
+        'delivery_charge' => (float) ($enriched['delivery_charge'] ?? 0),
         'total' => (float) ($enriched['total'] ?? 0),
         'promo_discount' => (float) ($enriched['promo_discount'] ?? 0),
         'coupon_discount' => (float) ($enriched['coupon_discount'] ?? 0),

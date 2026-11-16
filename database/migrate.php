@@ -1236,6 +1236,9 @@ try {
     }
 
     add_column_if_not_exists($pdo, 'users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Admin' AFTER `password`");
+    try {
+        $pdo->exec("ALTER TABLE `users` MODIFY COLUMN `role` VARCHAR(50) NOT NULL DEFAULT 'Admin'");
+    } catch (Throwable $eRole) {}
     add_column_if_not_exists($pdo, 'products', 'product_type', "ENUM('simple', 'variable', 'composite') NOT NULL DEFAULT 'simple' AFTER `category_id`");
     add_column_if_not_exists($pdo, 'products', 'hsn_code', "VARCHAR(50) NULL AFTER `barcode`");
     add_column_if_not_exists($pdo, 'products', 'has_serials', "TINYINT(1) NOT NULL DEFAULT 0 AFTER `low_stock_threshold`");
@@ -1696,6 +1699,9 @@ try {
     add_column_if_not_exists($pdo, 'businesses', 'subscription_expires_at', "DATETIME NULL");
     add_column_if_not_exists($pdo, 'businesses', 'max_outlets', "INT NOT NULL DEFAULT 5");
     add_column_if_not_exists($pdo, 'businesses', 'max_users', "INT NOT NULL DEFAULT 10");
+    add_column_if_not_exists($pdo, 'products', 'delivery_charge', "DECIMAL(10,2) NOT NULL DEFAULT 0.00");
+    add_column_if_not_exists($pdo, 'orders', 'shipping_fee', "DECIMAL(12,2) NOT NULL DEFAULT 0.00");
+    add_column_if_not_exists($pdo, 'invoices', 'shipping_fee', "DECIMAL(12,2) NOT NULL DEFAULT 0.00");
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `system_features` (

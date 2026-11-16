@@ -9,11 +9,25 @@ require_once __DIR__ . '/impersonate_banner.php';
 ?>
 <header class="app-header">
     <div class="header-left">
-        <button class="sidebar-toggle-btn" id="sidebarToggle" aria-label="Toggle navigation">
-            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-        </button>
+        <?php
+        $isPosScreen = !empty($isPosPage)
+            || (basename($_SERVER['PHP_SELF'] ?? '') === 'pos.php')
+            || (str_contains($_SERVER['REQUEST_URI'] ?? '', 'pos.php'));
+        ?>
+        <?php if ($isPosScreen): ?>
+            <a href="<?= asset('dashboard.php') ?>" class="pos-header-back-btn" title="Back to Dashboard" onclick="if (document.referrer && !document.referrer.includes('/pos.php') && document.referrer.includes(window.location.host)) { history.back(); return false; }">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                <span>Back</span>
+            </a>
+        <?php else: ?>
+            <button class="sidebar-toggle-btn" id="sidebarToggle" aria-label="Toggle navigation">
+                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+        <?php endif; ?>
         <a href="<?= asset('dashboard.php') ?>" class="header-brand-logo-link" title="OminiFlow POS">
             <img src="<?= asset('assets/images/ominiflow_logo.png') ?>" alt="OminiFlow" class="header-brand-logo">
         </a>
@@ -31,8 +45,14 @@ require_once __DIR__ . '/impersonate_banner.php';
         $hdrLow = function_exists('get_pos_low_stock_alerts') ? get_pos_low_stock_alerts() : [];
         $hdrUnsold = function_exists('get_pos_unsold_products_alerts') ? get_pos_unsold_products_alerts(7) : [];
         $hdrAlertsCount = count($hdrLow) + count($hdrUnsold);
+
+        $currentScript = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
+        $isDashboardScreen = ($currentScript === 'dashboard.php')
+            || (basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'dashboard.php')
+            || str_contains((string) ($_SERVER['REQUEST_URI'] ?? ''), 'dashboard.php');
         ?>
-        <!-- Offers & Promotions Button (Left of notification bell icon) -->
+        <?php if ($isDashboardScreen): ?>
+        <!-- Offers & Promotions Button (Only visible on Dashboard) -->
         <button type="button" class="header-icon-btn pos-offers-header-btn" id="openHeaderOffersBtn" title="Manage Offers" style="position: relative; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; height: 38px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 13px; font-weight: 600; color: #4f46e5;">
             <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: #6366f1;">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
@@ -40,6 +60,7 @@ require_once __DIR__ . '/impersonate_banner.php';
             <span>Manage Offers</span>
             <span id="hdrOffersBadge" style="display: none; background: #4f46e5; color: #fff; font-size: 10px; font-weight: 800; border-radius: 9999px; min-width: 17px; height: 17px; align-items: center; justify-content: center; padding: 0 4px; line-height: 1;">0</span>
         </button>
+        <?php endif; ?>
 
         <button type="button" class="header-icon-btn pos-alerts-header-btn" id="openHeaderAlertsBtn" title="Daily Inventory & Sales Notices (<?= $hdrAlertsCount ?>)" style="position: relative; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease;">
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: <?= $hdrAlertsCount > 0 ? '#ea580c' : '#64748b' ?>;">

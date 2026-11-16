@@ -1844,6 +1844,7 @@ body.ms-cart-lock {
 }
 
 .ms-cd-free { color: #16a34a; font-weight: 700; }
+.ms-cd-delivery { color: #0284c7; font-weight: 700; }
 
 .ms-cd-pay {
     font-weight: 800;

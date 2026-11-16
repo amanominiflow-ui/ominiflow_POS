@@ -703,7 +703,7 @@ $flashError = get_flash('error');
                                             <?php elseif ($costPending): ?>
                                                 <td colspan="2" style="color:#64748b; font-weight:700;">🔒 Restricted</td>
                                             <?php else: ?>
-                                                <td><?= $line['purchase_cost'] === null ? '—' : '₹' . number_format((float) $line['purchase_cost'], 2) ?></td>
+                                                <td><?= !$canInwardCost ? '<span style="color:#64748b; font-weight:700;">🔒 Restricted</span>' : ($line['purchase_cost'] === null ? '—' : '₹' . number_format((float) $line['purchase_cost'], 2)) ?></td>
                                                 <td><?= $line['selling_price'] === null ? '—' : '₹' . number_format((float) $line['selling_price'], 2) ?></td>
                                             <?php endif; ?>
                                             <td><?= $purchaseConfirmed && trim((string) ($line['barcode'] ?? '')) !== '' ? e((string) $line['barcode']) : 'Not released' ?></td>
@@ -850,7 +850,7 @@ $flashError = get_flash('error');
                                     </div>
                                     <div style="display:flex; align-items: center; gap: 14px;">
                                         <div style="font-size: 14px; font-weight: 700; color: #1e293b; background: #f1f5f9; padding: 10px 18px; border-radius: 6px; border: 1px solid #cbd5e1;">
-                                            Total: <span id="matrixSummaryProductsCount" style="color:#0f172a;">1</span> Product(s) · <span id="matrixSummaryQty" style="color:#2563eb;">0</span> pcs · ₹<span id="matrixSummaryCost" style="color:#16a34a;">0.00</span>
+                                            Total: <span id="matrixSummaryProductsCount" style="color:#0f172a;">1</span> Product(s) · <span id="matrixSummaryQty" style="color:#2563eb;">0</span> pcs<?php if ($canInwardCost): ?> · ₹<span id="matrixSummaryCost" style="color:#16a34a;">0.00</span><?php endif; ?>
                                         </div>
                                         <button type="submit" class="header-btn" style="padding: 11px 24px; font-weight:700; font-size: 15px;">Save Matrix Count</button>
                                     </div>
@@ -1828,6 +1828,7 @@ $flashError = get_flash('error');
         // -------------------------------------------------------------
         // MULTI-PRODUCT MATRIX INWARD ENTRY CONTROLLER
         // -------------------------------------------------------------
+        const canInwardCost = <?= $canInwardCost ? 'true' : 'false' ?>;
         let matrixProductCards = [];
         let matrixCardCounter = 0;
 
@@ -1993,13 +1994,13 @@ $flashError = get_flash('error');
                         '<button type="button" class="btn-secondary" onclick="addCardColourRow(' + card.id + ')" style="padding:7px 14px; font-weight:600; font-size:12.5px;">+ Add Colour</button>' +
                         '<div style="display:inline-flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 10px; border-radius:6px; border:1px solid #e2e8f0;">' +
                             '<span style="font-size:11.5px; color:#475569; font-weight:600;">Fill all rows:</span>' +
-                            '<input type="number" step="0.01" min="0" placeholder="Cost (₹)" id="cardBulkCost_' + card.id + '" class="form-control" style="width:85px; height:30px; font-size:12px; padding:2px 8px; text-align:right;">' +
+                            (canInwardCost ? '<input type="number" step="0.01" min="0" placeholder="Cost (₹)" id="cardBulkCost_' + card.id + '" class="form-control" style="width:85px; height:30px; font-size:12px; padding:2px 8px; text-align:right;">' : '') +
                             '<input type="number" step="0.01" min="0" placeholder="Selling (₹)" id="cardBulkPrice_' + card.id + '" class="form-control" style="width:85px; height:30px; font-size:12px; padding:2px 8px; text-align:right;">' +
                             '<button type="button" class="btn-secondary" onclick="applyCardBulkCostPrice(' + card.id + ')" style="padding:2px 10px; font-size:11.5px; height:30px; font-weight:600;">Apply</button>' +
                         '</div>' +
                     '</div>' +
                     '<div style="font-size:13px; font-weight:700; color:#334155; background:#f8fafc; border:1px solid #cbd5e1; padding:6px 14px; border-radius:6px;">' +
-                        'Product Subtotal: <span id="cardTotalQty_' + card.id + '" style="color:#2563eb;">0</span> pcs · ₹<span id="cardTotalCost_' + card.id + '" style="color:#16a34a;">0.00</span>' +
+                        'Product Subtotal: <span id="cardTotalQty_' + card.id + '" style="color:#2563eb;">0</span> pcs' + (canInwardCost ? ' · ₹<span id="cardTotalCost_' + card.id + '" style="color:#16a34a;">0.00</span>' : '') +
                     '</div>' +
                 '</div>';
 
@@ -2204,7 +2205,7 @@ $flashError = get_flash('error');
                 '<th style="min-width:140px; text-align:left;">Colour Name</th>' +
                 '<th class="matrix-img-cell">Image</th>' +
                 '<th style="width:140px; text-align:left;">Video / OCR SKU</th>' +
-                '<th style="width:105px; text-align:center;">Unit Cost (₹)</th>' +
+                (canInwardCost ? '<th style="width:105px; text-align:center;">Unit Cost (₹)</th>' : '') +
                 '<th style="width:105px; text-align:center;">Selling (₹)</th>';
             card.sizes.forEach(function(sz) {
                 hHtml += '<th style="min-width:64px; text-align:center; background:#eff6ff; color:#1e40af;">' + escapeHtml(sz) + '</th>';
@@ -2242,7 +2243,7 @@ $flashError = get_flash('error');
                     '<td>' +
                     '<input type="text" class="form-control card-video-sku-inp" value="' + escapeHtml(row.video_sku || '') + '" placeholder="e.g. ' + (parentSku !== 'DESIGN' ? parentSku + '-MRN' : 'SKU-CODE') + '" style="font-family:monospace; font-weight:700; text-transform:uppercase; font-size:12.5px;">' +
                     '</td>' +
-                    '<td><input type="number" step="0.01" min="0" class="form-control card-cost-inp" value="' + escapeHtml(row.cost_price || '') + '" placeholder="0.00" style="text-align:right;"></td>' +
+                    (canInwardCost ? '<td><input type="number" step="0.01" min="0" class="form-control card-cost-inp" value="' + escapeHtml(row.cost_price || '') + '" placeholder="0.00" style="text-align:right;"></td>' : '') +
                     '<td><input type="number" step="0.01" min="0" class="form-control card-price-inp" value="' + escapeHtml(row.selling_price || '') + '" placeholder="0.00" style="text-align:right;"></td>';
 
                 card.sizes.forEach(function(sz) {

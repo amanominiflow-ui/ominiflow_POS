@@ -82,6 +82,193 @@ if (!$invoice) {
     }
 }
 
+// Handle AJAX Save Invoice Edits Request
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    $jsonData = json_decode($rawInput, true);
+    $action = $_POST['action'] ?? ($jsonData['action'] ?? '');
+
+    if ($action === 'save_invoice_edits') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$isAdmin) {
+            echo json_encode(['success' => false, 'error' => 'Unauthorized access.']);
+            exit;
+        }
+
+        $token = $_POST['csrf_token'] ?? ($jsonData['csrf_token'] ?? '');
+        if (!verify_csrf_token($token)) {
+            echo json_encode(['success' => false, 'error' => 'Security token invalid or expired. Please refresh the page.']);
+            exit;
+        }
+
+        $payload = is_array($jsonData) ? $jsonData : $_POST;
+        $invId = (int)($payload['invoice_id'] ?? $invoice['id']);
+
+        if ($invId !== (int)$invoice['id']) {
+            echo json_encode(['success' => false, 'error' => 'Invoice ID mismatch.']);
+            exit;
+        }
+
+        try {
+            $db->beginTransaction();
+
+            $custName = trim((string)($payload['customer_name'] ?? ''));
+            $custPhone = trim((string)($payload['customer_phone'] ?? ''));
+            $custAddress = trim((string)($payload['customer_address'] ?? ''));
+            $custPincode = trim((string)($payload['customer_pincode'] ?? ''));
+            $paymentMode = trim((string)($payload['payment_mode'] ?? ''));
+            $subtotal = (float)($payload['subtotal'] ?? $invoice['subtotal']);
+            $discount = (float)($payload['discount_amount'] ?? $invoice['discount_amount']);
+            $tax = (float)($payload['tax_amount'] ?? $invoice['tax_amount']);
+            $grandTotal = (float)($payload['grand_total'] ?? $invoice['total_amount']);
+
+            // Normalize payment mode
+            $payKey = strtolower($paymentMode);
+            if (str_contains($payKey, 'cash')) $payKey = 'cash';
+            elseif (str_contains($payKey, 'upi')) $payKey = 'upi';
+            elseif (str_contains($payKey, 'card')) $payKey = 'card';
+            elseif (str_contains($payKey, 'cod')) $payKey = 'cod';
+            elseif (str_contains($payKey, 'razorpay') || str_contains($payKey, 'online')) $payKey = 'online';
+
+            $invCols = $db->query('SHOW COLUMNS FROM invoices')->fetchAll(PDO::FETCH_COLUMN);
+            $ordCols = $db->query('SHOW COLUMNS FROM orders')->fetchAll(PDO::FETCH_COLUMN);
+            $itemCols = $db->query('SHOW COLUMNS FROM order_items')->fetchAll(PDO::FETCH_COLUMN);
+
+            // 1. Customer updates
+            $customerId = (int)($invoice['customer_id'] ?? 0);
+            $fullAddr = $custAddress;
+            if ($custPincode !== '' && !str_contains($fullAddr, $custPincode)) {
+                $fullAddr = rtrim($fullAddr, ', ') . ', ' . $custPincode;
+            }
+            if ($customerId > 1) {
+                $stmtC = $db->prepare('UPDATE customers SET name = :name, phone = :phone, address = :addr, updated_at = NOW() WHERE id = :cid');
+                $stmtC->execute([
+                    'name' => $custName ?: 'Customer',
+                    'phone' => ($custPhone === '' || $custPhone === 'N/A') ? null : $custPhone,
+                    'addr' => $fullAddr,
+                    'cid' => $customerId
+                ]);
+            } elseif ($custName !== '' && $custName !== 'Walk-in Customer' && $custPhone !== '' && $custPhone !== 'N/A') {
+                $bid = (int)($invoice['business_id'] ?? 1);
+                $stmtFind = $db->prepare('SELECT id FROM customers WHERE phone = :phone AND business_id = :bid LIMIT 1');
+                $stmtFind->execute(['phone' => $custPhone, 'bid' => $bid]);
+                $foundCid = (int)$stmtFind->fetchColumn();
+                if (!$foundCid) {
+                    $stmtNewC = $db->prepare('INSERT INTO customers (business_id, name, phone, address, created_at, updated_at) VALUES (:bid, :name, :phone, :addr, NOW(), NOW())');
+                    $stmtNewC->execute([
+                        'bid' => $bid,
+                        'name' => $custName,
+                        'phone' => $custPhone,
+                        'addr' => $fullAddr
+                    ]);
+                    $foundCid = (int)$db->lastInsertId();
+                }
+                if ($foundCid > 0) {
+                    $customerId = $foundCid;
+                    $db->prepare('UPDATE invoices SET customer_id = :cid WHERE id = :id')->execute(['cid' => $foundCid, 'id' => $invId]);
+                    if (!empty($invoice['order_id'])) {
+                        $db->prepare('UPDATE orders SET customer_id = :cid WHERE id = :oid')->execute(['cid' => $foundCid, 'oid' => $invoice['order_id']]);
+                    }
+                }
+            }
+
+            // 2. Invoice update
+            $invSets = ['subtotal = :subtotal', 'discount_amount = :discount', 'tax_amount = :tax', 'total_amount = :grand_total'];
+            $invParams = [
+                'subtotal' => $subtotal,
+                'discount' => $discount,
+                'tax' => $tax,
+                'grand_total' => $grandTotal,
+                'id' => $invId
+            ];
+            if ($payKey !== '') {
+                $invSets[] = 'payment_method = :pay_method';
+                $invParams['pay_method'] = $payKey;
+            }
+            if (in_array('amount_paid', $invCols, true)) {
+                $invSets[] = 'amount_paid = :amount_paid';
+                $invParams['amount_paid'] = $grandTotal;
+            }
+            $stmtUpdInv = $db->prepare('UPDATE invoices SET ' . implode(', ', $invSets) . ' WHERE id = :id');
+            $stmtUpdInv->execute($invParams);
+
+            // 3. Order update
+            $orderId = (int)($invoice['order_id'] ?? 0);
+            if ($orderId > 0) {
+                $ordSets = ['subtotal = :subtotal', 'discount_amount = :discount', 'tax_amount = :tax', 'total_amount = :grand_total'];
+                $ordParams = [
+                    'subtotal' => $subtotal,
+                    'discount' => $discount,
+                    'tax' => $tax,
+                    'grand_total' => $grandTotal,
+                    'oid' => $orderId
+                ];
+                if ($payKey !== '') {
+                    $ordSets[] = 'payment_method = :pay_method';
+                    $ordParams['pay_method'] = $payKey;
+                }
+                $stmtUpdOrd = $db->prepare('UPDATE orders SET ' . implode(', ', $ordSets) . ' WHERE id = :oid');
+                $stmtUpdOrd->execute($ordParams);
+
+                // 4. Line Items update
+                if (!empty($payload['items']) && is_array($payload['items'])) {
+                    foreach ($payload['items'] as $it) {
+                        $itemId = (int)($it['id'] ?? 0);
+                        if ($itemId <= 0) continue;
+                        $pName = trim((string)($it['product_name'] ?? ''));
+                        $qty = max(1, (int)($it['quantity'] ?? 1));
+                        $unitPrice = (float)($it['unit_price'] ?? 0);
+                        $lineTotal = (float)($it['line_total'] ?? ($unitPrice * $qty));
+                        $taxPct = (float)($it['tax_percent'] ?? 0);
+                        $hsn = trim((string)($it['hsn_code'] ?? ''));
+                        $size = trim((string)($it['size'] ?? ''));
+                        $colour = trim((string)($it['colour'] ?? ''));
+
+                        $itemSets = ['product_name = :pname', 'quantity = :qty', 'unit_price = :unit_price', 'line_total = :line_total'];
+                        $itemParams = [
+                            'pname' => $pName,
+                            'qty' => $qty,
+                            'unit_price' => $unitPrice,
+                            'line_total' => $lineTotal,
+                            'iid' => $itemId,
+                            'oid' => $orderId
+                        ];
+                        if (in_array('tax_percent', $itemCols, true)) {
+                            $itemSets[] = 'tax_percent = :tax_percent';
+                            $itemParams['tax_percent'] = $taxPct;
+                        }
+                        if (in_array('hsn_code', $itemCols, true) && $hsn !== '') {
+                            $itemSets[] = 'hsn_code = :hsn';
+                            $itemParams['hsn'] = $hsn;
+                        }
+                        if (in_array('size', $itemCols, true) && $size !== '') {
+                            $itemSets[] = 'size = :size';
+                            $itemParams['size'] = $size;
+                        }
+                        if (in_array('colour', $itemCols, true) && $colour !== '') {
+                            $itemSets[] = 'colour = :colour';
+                            $itemParams['colour'] = $colour;
+                        }
+
+                        $stmtUpdItem = $db->prepare('UPDATE order_items SET ' . implode(', ', $itemSets) . ' WHERE id = :iid AND order_id = :oid');
+                        $stmtUpdItem->execute($itemParams);
+                    }
+                }
+            }
+
+            $db->commit();
+            echo json_encode(['success' => true, 'message' => 'Invoice saved and updated successfully!']);
+            exit;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            echo json_encode(['success' => false, 'error' => 'Failed to save invoice changes: ' . $e->getMessage()]);
+            exit;
+        }
+    }
+}
+
 $businessId = (int)($invoice['business_id'] ?? 1);
 $store = get_store_settings($businessId);
 $brand = function_exists('get_mobile_store_settings') ? get_mobile_store_settings($businessId) : [];
@@ -157,6 +344,7 @@ $invoice['items'] = $items;
 $isCancelled = ($invoice['invoice_status'] === 'cancelled');
 $autoPrint = isset($_GET['print']) || isset($_GET['download']);
 $isPublicView = !$isAdmin || isset($_GET['standalone']);
+$isEditMode = $isAdmin && !$isCancelled && !empty($_GET['edit']);
 $requestedSize = trim((string)($_GET['size'] ?? 'default'));
 if (!in_array($requestedSize, ['default', '4x3'], true)) {
     $requestedSize = 'default';
@@ -1511,6 +1699,37 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             body.size-4x3 .inv-help-text { font-size: 7px !important; line-height: 1.15 !important; }
             body.size-4x3 .inv-help-title { font-size: 7.5px !important; }
         }
+
+        /* Invoice In-Place Live Editing Styles */
+        body.is-editing-invoice .inv-card [contenteditable="true"] {
+            outline: 1.5px dashed rgba(59, 130, 246, 0.65) !important;
+            outline-offset: 2px !important;
+            border-radius: 3px !important;
+            background-color: rgba(239, 246, 255, 0.5) !important;
+            cursor: text !important;
+            min-height: 1.1em;
+            display: inline-block;
+            transition: background-color 0.15s ease, outline-color 0.15s ease;
+        }
+        body.is-editing-invoice .inv-card [contenteditable="true"]:hover {
+            outline-color: #2563eb !important;
+            background-color: rgba(219, 234, 254, 0.8) !important;
+        }
+        body.is-editing-invoice .inv-card [contenteditable="true"]:focus {
+            outline: 2px solid #2563eb !important;
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+        }
+        @media print {
+            body.is-editing-invoice .inv-card [contenteditable="true"] {
+                outline: none !important;
+                background-color: transparent !important;
+                display: initial !important;
+            }
+            #invoiceEditNoticeBanner, #invToastNotice {
+                display: none !important;
+            }
+        }
     </style>
 
     <style id="dynamicPageSizeStyle">
@@ -1524,7 +1743,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         <?php endif; ?>
     </style>
 </head>
-<body class="<?= $requestedSize !== 'default' ? 'size-' . $requestedSize : '' ?>">
+<body class="<?= trim(($requestedSize !== 'default' ? 'size-' . $requestedSize : '') . ($isEditMode ? ' is-editing-invoice' : '')) ?>">
 
 <?php if ($isAdmin && !$isPublicView): ?>
     <div class="app-layout">
@@ -1573,6 +1792,24 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                 <span>Print / Save PDF</span>
             </button>
 
+            <?php if ($isAdmin && !$isCancelled): ?>
+                <!-- Edit Invoice Toggle Button (Pencil Icon) -->
+                <button type="button" class="inv-btn <?= $isEditMode ? 'inv-btn-primary' : 'inv-btn-outline' ?>" id="toggleEditModeBtn" onclick="toggleInvoiceEditMode();" title="Edit Invoice (Click any text to edit)">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                    </svg>
+                    <span id="toggleEditBtnLabel"><?= $isEditMode ? 'Editing Mode' : 'Edit Invoice' ?></span>
+                </button>
+
+                <!-- Save Changes Button -->
+                <button type="button" class="inv-btn" id="saveInvoiceEditsBtn" onclick="saveInvoiceEdits();" style="<?= $isEditMode ? '' : 'display:none;' ?> background: #059669; color: #fff; border-color: #059669;" title="Save changes to database">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                    <span>Save Changes</span>
+                </button>
+            <?php endif; ?>
+
             <?php if ($isAdmin && !empty($invoice['order_number'])): ?>
                 <a href="<?= asset('orders.php?search=' . urlencode($invoice['order_number'])) ?>" class="inv-btn inv-btn-outline">
                     View Order
@@ -1586,6 +1823,27 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Edit Mode Active Notification Banner (No-Print) -->
+    <div id="invoiceEditNoticeBanner" class="no-print" style="<?= $isEditMode ? '' : 'display: none;' ?> margin-bottom: 20px; background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 12px 18px; font-size: 13px; color: #1e40af; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 18px;">✏️</span>
+                <div>
+                    <strong>Edit Mode Active:</strong> All text on this invoice is now editable directly. Click on any text (Customer Details, Order/Invoice No, Dates, Product Names, Prices, Qty, Totals) to change it.
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" onclick="saveInvoiceEdits();" class="inv-btn" style="padding: 5px 12px; font-size: 12px; background: #059669; color: #fff; border: 1px solid #059669; border-radius: 6px; cursor: pointer;">
+                    Save Changes
+                </button>
+                <button type="button" onclick="toggleInvoiceEditMode(false);" style="background: none; border: none; font-size: 18px; color: #60a5fa; cursor: pointer; line-height: 1;" title="Exit Edit Mode">&times;</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="hidden" id="invCsrfToken" value="<?= csrf_token() ?>">
+    <input type="hidden" id="invCurrentId" value="<?= (int) $invoice['id'] ?>">
 
     <!-- MULTI-PAGE CHUNKED INVOICE CARDS -->
     <?php 
@@ -1654,28 +1912,28 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                         <div class="inv-row-kv">
                             <span class="lbl">Order No</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($displayOrderNo) ?></span>
+                            <span class="val" data-inv-field="order_number"><?= e($displayOrderNo) ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Order Date</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($invoiceDateStr) ?></span>
+                            <span class="val" data-inv-field="order_date"><?= e($invoiceDateStr) ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Invoice No</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($displayInvoiceNo) ?></span>
+                            <span class="val" data-inv-field="invoice_number"><?= e($displayInvoiceNo) ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Payment Mode</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($paymentModeStr) ?></span>
+                            <span class="val" data-inv-field="payment_mode"><?= e($paymentModeStr) ?></span>
                         </div>
                         <?php if ($sellerGstin !== ''): ?>
                         <div class="inv-row-kv">
                             <span class="lbl">GSTIN</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($sellerGstin) ?></span>
+                            <span class="val" data-inv-field="seller_gstin"><?= e($sellerGstin) ?></span>
                         </div>
                         <?php endif; ?>
                     </div>
@@ -1688,22 +1946,22 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                         <div class="inv-row-kv">
                             <span class="lbl">Name</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($custName) ?></span>
+                            <span class="val" data-inv-field="customer_name"><?= e($custName) ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Phone</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($custPhone ?: 'N/A') ?></span>
+                            <span class="val" data-inv-field="customer_phone"><?= e($custPhone ?: 'N/A') ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Address</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($custAddress) ?></span>
+                            <span class="val" data-inv-field="customer_address"><?= e($custAddress) ?></span>
                         </div>
                         <div class="inv-row-kv">
                             <span class="lbl">Pin Code</span>
                             <span class="sep">:</span>
-                            <span class="val"><?= e($custPincode) ?></span>
+                            <span class="val" data-inv-field="customer_pincode"><?= e($custPincode) ?></span>
                         </div>
                     </div>
                 </div>
@@ -1768,16 +2026,16 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                             $lineTaxPct = (float)($it['tax_percent'] ?? 0);
                             $lineTaxDisplay = $lineTaxPct > 0 ? rtrim(rtrim(number_format($lineTaxPct, 2, '.', ''), '0'), '.') . '%' : '-';
                         ?>
-                            <tr>
-                                <td><?= $globalItemIdx++ ?></td>
-                                <td class="col-name"><?= e($it['product_name']) ?></td>
-                                <td class="col-hsn"><?= e($lineHsn) ?></td>
-                                <td><?= e($attrs['size']) ?></td>
-                                <td><?= e($attrs['colour']) ?></td>
-                                <td style="font-weight: 600;"><?= $qty ?></td>
-                                <td class="col-price"><?= format_inv_money($uPrice) ?></td>
-                                <td class="col-gst"><?= e($lineTaxDisplay) ?></td>
-                                <td class="col-total"><?= format_inv_money($lTotal) ?></td>
+                            <tr data-item-id="<?= (int)($it['id'] ?? 0) ?>">
+                                <td data-item-field="no"><?= $globalItemIdx++ ?></td>
+                                <td class="col-name" data-item-field="product_name"><?= e($it['product_name']) ?></td>
+                                <td class="col-hsn" data-item-field="hsn_code"><?= e($lineHsn) ?></td>
+                                <td data-item-field="size"><?= e($attrs['size']) ?></td>
+                                <td data-item-field="colour"><?= e($attrs['colour']) ?></td>
+                                <td style="font-weight: 600;" data-item-field="quantity"><?= $qty ?></td>
+                                <td class="col-price" data-item-field="unit_price"><?= format_inv_money($uPrice) ?></td>
+                                <td class="col-gst" data-item-field="tax_percent"><?= e($lineTaxDisplay) ?></td>
+                                <td class="col-total" data-item-field="line_total"><?= format_inv_money($lTotal) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -1797,57 +2055,57 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
                     <div class="inv-summary-row">
                         <span class="s-label">Total Amount</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($subtotal) ?></span>
+                        <span class="s-val" data-summary-field="subtotal">₹ <?= format_inv_money($subtotal) ?></span>
                     </div>
                     <div class="inv-summary-row">
                         <span class="s-label">Discount</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($discountAmount) ?></span>
+                        <span class="s-val" data-summary-field="discount_amount">₹ <?= format_inv_money($discountAmount) ?></span>
                     </div>
                     <?php if ($showGstBreakup): ?>
                     <div class="inv-summary-row">
                         <span class="s-label">Taxable Value</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($taxableAmount) ?></span>
+                        <span class="s-val" data-summary-field="taxable_amount">₹ <?= format_inv_money($taxableAmount) ?></span>
                     </div>
                     <?php if ($cgstAmount > 0): ?>
                     <div class="inv-summary-row">
                         <span class="s-label">CGST <?= e($cgstRateLabel) ?></span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($cgstAmount) ?></span>
+                        <span class="s-val" data-summary-field="cgst_amount">₹ <?= format_inv_money($cgstAmount) ?></span>
                     </div>
                     <?php endif; ?>
                     <?php if ($sgstAmount > 0): ?>
                     <div class="inv-summary-row">
                         <span class="s-label">SGST <?= e($sgstRateLabel) ?></span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($sgstAmount) ?></span>
+                        <span class="s-val" data-summary-field="sgst_amount">₹ <?= format_inv_money($sgstAmount) ?></span>
                     </div>
                     <?php endif; ?>
                     <?php if ($igstAmount > 0): ?>
                     <div class="inv-summary-row">
                         <span class="s-label">IGST <?= e($igstRateLabel) ?></span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($igstAmount) ?></span>
+                        <span class="s-val" data-summary-field="igst_amount">₹ <?= format_inv_money($igstAmount) ?></span>
                     </div>
                     <?php endif; ?>
                     <?php if ($taxAmount > 0 && $cgstAmount <= 0 && $sgstAmount <= 0 && $igstAmount <= 0): ?>
                     <div class="inv-summary-row">
                         <span class="s-label">Total Tax (GST)</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($taxAmount) ?></span>
+                        <span class="s-val" data-summary-field="tax_amount">₹ <?= format_inv_money($taxAmount) ?></span>
                     </div>
                     <?php endif; ?>
                     <?php endif; ?>
                     <div class="inv-summary-row">
                         <span class="s-label">Shipping</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($shippingFee) ?></span>
+                        <span class="s-val" data-summary-field="shipping_fee">₹ <?= format_inv_money($shippingFee) ?></span>
                     </div>
                     <div class="inv-summary-row grand-total-row">
                         <span class="s-label">Grand Total</span>
                         <span class="s-sep">:</span>
-                        <span class="s-val">₹ <?= format_inv_money($grandTotal) ?></span>
+                        <span class="s-val" data-summary-field="grand_total">₹ <?= format_inv_money($grandTotal) ?></span>
                     </div>
                 </div>
             </div>
@@ -1930,6 +2188,241 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
 <?php endif; ?>
 
 <script>
+    let invoiceEditModeActive = <?= $isEditMode ? 'true' : 'false' ?>;
+
+    function showToastNotice(message, isSuccess = true) {
+        let toast = document.getElementById('invToastNotice');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'invToastNotice';
+            toast.style.position = 'fixed';
+            toast.style.bottom = '24px';
+            toast.style.right = '24px';
+            toast.style.zIndex = '99999';
+            toast.style.padding = '12px 20px';
+            toast.style.borderRadius = '8px';
+            toast.style.fontWeight = '600';
+            toast.style.fontSize = '14px';
+            toast.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+            toast.style.transition = 'all 0.3s ease';
+            document.body.appendChild(toast);
+        }
+        toast.style.background = isSuccess ? '#059669' : '#dc2626';
+        toast.style.color = '#ffffff';
+        toast.textContent = message;
+        toast.style.display = 'block';
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            setTimeout(() => { toast.style.display = 'none'; }, 300);
+        }, 4000);
+    }
+
+    function setInvoiceEditable(editable) {
+        invoiceEditModeActive = editable;
+        const body = document.body;
+        if (editable) {
+            body.classList.add('is-editing-invoice');
+        } else {
+            body.classList.remove('is-editing-invoice');
+        }
+
+        const editBanner = document.getElementById('invoiceEditNoticeBanner');
+        if (editBanner) {
+            editBanner.style.display = editable ? 'block' : 'none';
+        }
+
+        const saveBtn = document.getElementById('saveInvoiceEditsBtn');
+        if (saveBtn) {
+            saveBtn.style.display = editable ? 'inline-flex' : 'none';
+        }
+
+        const toggleBtn = document.getElementById('toggleEditModeBtn');
+        const toggleLabel = document.getElementById('toggleEditBtnLabel');
+        if (toggleBtn && toggleLabel) {
+            if (editable) {
+                toggleBtn.classList.remove('inv-btn-outline');
+                toggleBtn.classList.add('inv-btn-primary');
+                toggleLabel.textContent = 'Editing Mode';
+            } else {
+                toggleBtn.classList.remove('inv-btn-primary');
+                toggleBtn.classList.add('inv-btn-outline');
+                toggleLabel.textContent = 'Edit Invoice';
+            }
+        }
+
+        // Target all text elements across all invoice cards
+        const textNodes = document.querySelectorAll(
+            '.inv-card .val, .inv-card .inv-products-table td, .inv-card .s-val, .inv-card .inv-main-heading, .inv-card .inv-thank-you span:first-child, .inv-card .inv-cust-heading, .inv-card .inv-love-brand, .inv-card .inv-love-script, .inv-card .inv-help-title, .inv-card .inv-help-sub, .inv-card .inv-help-phone, .inv-card .inv-barcode-title, .inv-card .inv-brand-title'
+        );
+
+        textNodes.forEach(el => {
+            if (el.getAttribute('data-item-field') === 'no') return; // Do not edit row index number
+            if (editable) {
+                el.setAttribute('contenteditable', 'true');
+                el.setAttribute('spellcheck', 'false');
+            } else {
+                el.removeAttribute('contenteditable');
+            }
+        });
+
+        // Update URL query parameter without full reload
+        const url = new URL(window.location.href);
+        if (editable) {
+            url.searchParams.set('edit', '1');
+        } else {
+            url.searchParams.delete('edit');
+        }
+        window.history.replaceState({}, '', url.toString());
+    }
+
+    function toggleInvoiceEditMode(forcedState) {
+        const nextState = typeof forcedState === 'boolean' ? forcedState : !invoiceEditModeActive;
+        setInvoiceEditable(nextState);
+    }
+
+    function recalcInvoiceTotals() {
+        let subtotal = 0;
+        document.querySelectorAll('.inv-products-table tbody tr[data-item-id]').forEach(tr => {
+            const totalEl = tr.querySelector('[data-item-field="line_total"]');
+            if (totalEl) {
+                const val = parseFloat(totalEl.innerText.replace(/[^0-9.]/g, '')) || 0;
+                subtotal += val;
+            }
+        });
+        const subtotalEl = document.querySelector('[data-summary-field="subtotal"]');
+        if (subtotalEl) {
+            subtotalEl.innerText = '₹ ' + (subtotal % 1 === 0 ? subtotal.toFixed(0) : subtotal.toFixed(2));
+        }
+
+        const discountEl = document.querySelector('[data-summary-field="discount_amount"]');
+        const discount = discountEl ? (parseFloat(discountEl.innerText.replace(/[^0-9.]/g, '')) || 0) : 0;
+        const shippingEl = document.querySelector('[data-summary-field="shipping_fee"]');
+        const shipping = shippingEl ? (parseFloat(shippingEl.innerText.replace(/[^0-9.]/g, '')) || 0) : 0;
+        const taxEl = document.querySelector('[data-summary-field="tax_amount"]');
+        const tax = taxEl ? (parseFloat(taxEl.innerText.replace(/[^0-9.]/g, '')) || 0) : 0;
+
+        const grand = Math.max(0, subtotal - discount + tax + shipping);
+        const grandEl = document.querySelector('[data-summary-field="grand_total"]');
+        if (grandEl) {
+            grandEl.innerText = '₹ ' + (grand % 1 === 0 ? grand.toFixed(0) : grand.toFixed(2));
+        }
+    }
+
+    // Auto-recalculate line total and summary when editing quantity or rate
+    document.addEventListener('input', function(e) {
+        if (!invoiceEditModeActive) return;
+        const target = e.target;
+        const field = target.getAttribute('data-item-field');
+        if (field === 'quantity' || field === 'unit_price') {
+            const tr = target.closest('tr');
+            if (tr) {
+                const qtyEl = tr.querySelector('[data-item-field="quantity"]');
+                const priceEl = tr.querySelector('[data-item-field="unit_price"]');
+                const totalEl = tr.querySelector('[data-item-field="line_total"]');
+                if (qtyEl && priceEl && totalEl) {
+                    const q = parseFloat(qtyEl.innerText.replace(/[^0-9.]/g, '')) || 0;
+                    const p = parseFloat(priceEl.innerText.replace(/[^0-9.]/g, '')) || 0;
+                    const lt = q * p;
+                    totalEl.innerText = lt % 1 === 0 ? lt.toFixed(0) : lt.toFixed(2);
+                    recalcInvoiceTotals();
+                }
+            }
+        }
+    });
+
+    async function saveInvoiceEdits() {
+        const saveBtn = document.getElementById('saveInvoiceEditsBtn');
+        const origContent = saveBtn ? saveBtn.innerHTML : '';
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span>Saving...</span>';
+        }
+
+        const csrfToken = document.getElementById('invCsrfToken') ? document.getElementById('invCsrfToken').value : '';
+        const invoiceId = document.getElementById('invCurrentId') ? document.getElementById('invCurrentId').value : '<?= (int)$invoice['id'] ?>';
+
+        const getVal = (selector) => {
+            const el = document.querySelector(selector);
+            return el ? el.innerText.trim() : '';
+        };
+
+        const cleanNum = (val) => {
+            if (!val) return 0;
+            const cleaned = val.replace(/[^0-9.-]/g, '');
+            const n = parseFloat(cleaned);
+            return isNaN(n) ? 0 : n;
+        };
+
+        const payload = {
+            action: 'save_invoice_edits',
+            csrf_token: csrfToken,
+            invoice_id: invoiceId,
+            customer_name: getVal('[data-inv-field="customer_name"]'),
+            customer_phone: getVal('[data-inv-field="customer_phone"]'),
+            customer_address: getVal('[data-inv-field="customer_address"]'),
+            customer_pincode: getVal('[data-inv-field="customer_pincode"]'),
+            payment_mode: getVal('[data-inv-field="payment_mode"]'),
+            subtotal: cleanNum(getVal('[data-summary-field="subtotal"]')),
+            discount_amount: cleanNum(getVal('[data-summary-field="discount_amount"]')),
+            tax_amount: cleanNum(getVal('[data-summary-field="tax_amount"]')),
+            shipping_fee: cleanNum(getVal('[data-summary-field="shipping_fee"]')),
+            grand_total: cleanNum(getVal('[data-summary-field="grand_total"]')),
+            items: []
+        };
+
+        const rows = document.querySelectorAll('.inv-products-table tbody tr[data-item-id]');
+        rows.forEach(tr => {
+            const itemId = tr.getAttribute('data-item-id');
+            const getName = tr.querySelector('[data-item-field="product_name"]');
+            const getHsn = tr.querySelector('[data-item-field="hsn_code"]');
+            const getSize = tr.querySelector('[data-item-field="size"]');
+            const getColour = tr.querySelector('[data-item-field="colour"]');
+            const getQty = tr.querySelector('[data-item-field="quantity"]');
+            const getPrice = tr.querySelector('[data-item-field="unit_price"]');
+            const getGst = tr.querySelector('[data-item-field="tax_percent"]');
+            const getTotal = tr.querySelector('[data-item-field="line_total"]');
+
+            payload.items.push({
+                id: itemId,
+                product_name: getName ? getName.innerText.trim() : '',
+                hsn_code: getHsn ? getHsn.innerText.trim() : '',
+                size: getSize ? getSize.innerText.trim() : '',
+                colour: getColour ? getColour.innerText.trim() : '',
+                quantity: getQty ? parseInt(getQty.innerText.replace(/[^0-9]/g, '')) || 1 : 1,
+                unit_price: getPrice ? cleanNum(getPrice.innerText) : 0,
+                tax_percent: getGst ? cleanNum(getGst.innerText) : 0,
+                line_total: getTotal ? cleanNum(getTotal.innerText) : 0
+            });
+        });
+
+        try {
+            const res = await fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(payload)
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToastNotice(result.message || 'Invoice saved successfully!', true);
+            } else {
+                showToastNotice(result.error || 'Failed to save invoice changes.', false);
+            }
+        } catch (err) {
+            showToastNotice('Network or server error while saving changes.', false);
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = origContent || '<span>Save Changes</span>';
+            }
+        }
+    }
+
     function renderQrCode(dim = 68) {
         const qrContainers = document.querySelectorAll('.invQrTarget');
         if (qrContainers && typeof QRCode !== 'undefined') {
@@ -1953,7 +2446,7 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         const params = new URLSearchParams(window.location.search);
         const alreadyStandalone = params.get('standalone') === '1' || params.has('print');
 
-        if (size === '4x3' && !alreadyStandalone) {
+        if (size === '4x3' && !alreadyStandalone && !invoiceEditModeActive) {
             const url = new URL(window.location.href);
             url.searchParams.set('size', '4x3');
             url.searchParams.set('standalone', '1');
@@ -2016,6 +2509,10 @@ $invoiceVerifyUrl = APP_URL . '/invoice-view.php?id=' . $invoice['id'] . '&stand
         const initialSize = '<?= $requestedSize ?>';
         updateInvoicePageSizeLabel(initialSize);
         renderQrCode(initialSize === '4x3' ? 44 : 68);
+
+        if (invoiceEditModeActive) {
+            setInvoiceEditable(true);
+        }
 
         <?php if ($autoPrint): ?>
             setTimeout(() => window.print(), <?= $requestedSize === '4x3' ? 500 : 350 ?>);

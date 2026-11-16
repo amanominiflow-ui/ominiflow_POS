@@ -3547,6 +3547,46 @@ body {
     border: 1px solid #fde68a;
 }
 
-
-
-
+/* POS Fullscreen Screen: Sidebar OFF */
+body.pos-page .app-sidebar {
+    display: none !important;
+}
+body.pos-page .app-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+body.pos-page .sidebar-toggle-btn {
+    display: none !important;
+}
+.pos-header-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 38px;
+    padding: 0 14px;
+    background: #ffffff;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    margin-right: 14px;
+}
+.pos-header-back-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: #94a3b8;
+    transform: translateX(-1px);
+}
+.pos-header-back-btn svg {
+    transition: transform 0.15s ease;
+    color: #475569;
+}
+.pos-header-back-btn:hover svg {
+    transform: translateX(-2px);
+    color: #0f172a;
+}

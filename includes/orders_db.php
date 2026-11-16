@@ -180,6 +180,22 @@ function ensure_orders_invoices_schema(): void {
         }
     }
 
+    foreach ([
+        'orders' => 'shipping_fee',
+        'invoices' => 'shipping_fee',
+    ] as $tName => $cName) {
+        try {
+            $stmt = $db->prepare("
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = :col
+            ");
+            $stmt->execute(['db' => DB_NAME, 'tbl' => $tName, 'col' => $cName]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $db->exec("ALTER TABLE `{$tName}` ADD `{$cName}` DECIMAL(12,2) NOT NULL DEFAULT 0.00");
+            }
+        } catch (Throwable $e) {}
+    }
+
     $tablesAndCols = [
         'invoices' => ['invoice_number', 'uk_business_invoice_number'],
         'orders' => ['order_number', 'uk_business_order_number'],
@@ -839,6 +855,7 @@ function process_pos_order(
 
         $subtotal = 0.00;
         $totalTax = 0.00;
+        $totalDeliveryCharge = 0.00;
         $processedItems = [];
 
         // 1. Validate each item against live database records with FOR UPDATE lock
@@ -854,7 +871,7 @@ function process_pos_order(
             }
 
             $stmtProd = $db->prepare('
-                SELECT id, name, sku, barcode, cost_price, selling_price, tax_percent, stock_quantity, status, product_type, hsn_code
+                SELECT id, name, sku, barcode, cost_price, selling_price, delivery_charge, tax_percent, stock_quantity, status, product_type, hsn_code
                 FROM products
                 WHERE id = :id AND business_id = :bid
                 FOR UPDATE
@@ -967,6 +984,9 @@ function process_pos_order(
             $itemTax = $itemSubtotal * ($taxPercent / 100.0);
             $itemTotal = $itemSubtotal + $itemTax;
 
+            $itemDelivery = max(0.0, (float) ($product['delivery_charge'] ?? 0));
+            $totalDeliveryCharge += $itemDelivery * $qty;
+
             $subtotal += $itemSubtotal;
             $totalTax += $itemTax;
 
@@ -981,6 +1001,7 @@ function process_pos_order(
                 'hsn_code' => $product['hsn_code'] ?? '',
                 'product_type' => $product['product_type'],
                 'unit_price' => $unitPrice,
+                'delivery_charge' => $itemDelivery,
                 'quantity' => $qty,
                 'tax_percent' => $taxPercent,
                 'tax_amount' => $itemTax,
@@ -1044,7 +1065,7 @@ function process_pos_order(
         }
 
         $taxableAmount = max(0.00, $subtotal - $discountAmount);
-        $grandTotal = max(0.00, round(($taxableAmount + $totalTax), 2));
+        $grandTotal = max(0.00, round(($taxableAmount + $totalTax + $totalDeliveryCharge), 2));
 
         $paymentSplits = [];
         if ($paymentSplitsJson !== null && trim($paymentSplitsJson) !== '') {
@@ -1112,12 +1133,12 @@ function process_pos_order(
             INSERT INTO orders (
                 business_id, order_number, outlet_id, customer_id, user_id, subtotal, discount_amount, discount_type,
                 price_list_id, coupon_id, coupon_code, loyalty_points_used, loyalty_discount_amount,
-                tax_amount, total_amount, payment_method, payment_status, order_status, fulfillment_status,
+                tax_amount, shipping_fee, total_amount, payment_method, payment_status, order_status, fulfillment_status,
                 client_order_uuid, notes, created_at, updated_at
             ) VALUES (
                 :biz_id, :order_number, :outlet_id, :customer_id, :user_id, :subtotal, :discount_amount, :discount_type,
                 :price_list_id, :coupon_id, :coupon_code, :loyalty_points_used, :loyalty_discount_amount,
-                :tax_amount, :total_amount, :payment_method, :payment_status, :order_status, :fulfillment_status,
+                :tax_amount, :shipping_fee, :total_amount, :payment_method, :payment_status, :order_status, :fulfillment_status,
                 :client_order_uuid, :notes, NOW(), NOW()
             )
         ');
@@ -1146,6 +1167,7 @@ function process_pos_order(
             'loyalty_points_used' => $loyaltyPointsUsed,
             'loyalty_discount_amount' => $loyaltyDiscountAmount,
             'tax_amount' => $totalTax,
+            'shipping_fee' => $totalDeliveryCharge,
             'total_amount' => $grandTotal,
             'payment_method' => $paymentMethod ?: 'cash',
             'payment_status' => $resolvedPaymentStatus,
@@ -1330,12 +1352,12 @@ function process_pos_order(
             INSERT INTO invoices (
                 business_id, invoice_number, order_id, outlet_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
-                tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
+                tax_amount, shipping_fee, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
                 :biz_id, :invoice_number, :order_id, :outlet_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
-                :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
+                :tax_amount, :shipping_fee, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
@@ -1354,6 +1376,7 @@ function process_pos_order(
             'sgst_amount' => $sgstAmount,
             'igst_amount' => $igstAmount,
             'tax_amount' => $totalTax,
+            'shipping_fee' => $totalDeliveryCharge,
             'total_amount' => $grandTotal,
             'amount_paid' => $invoiceAmountPaid,
             'change_amount' => ($resolvedPaymentStatus === 'paid') ? $changeAmount : 0.00,
@@ -1462,6 +1485,8 @@ function process_pos_order(
             'tax_amount' => $totalTax,
             'discount_amount' => $discountAmount,
             'discount_type' => $discountType,
+            'shipping_fee' => $totalDeliveryCharge,
+            'delivery_charge' => $totalDeliveryCharge,
             'total_amount' => $grandTotal,
             'amount_paid' => $tendered,
             'change_amount' => $changeAmount,
@@ -1534,16 +1559,17 @@ function bill_generate_pos(int $orderId, array $options = []): array {
         $invoiceNumber = generate_next_invoice_number($invoiceBizId, $db);
 
         $invoiceOutletId = (int) ($order['outlet_id'] ?? 0);
+        $shippingFee = (float) ($order['shipping_fee'] ?? 0);
         $stmtInsert = $db->prepare('
             INSERT INTO invoices (
                 business_id, invoice_number, order_id, outlet_id, customer_id, user_id, invoice_date, subtotal,
                 discount_amount, discount_type, taxable_amount, cgst_amount, sgst_amount, igst_amount,
-                tax_amount, total_amount, amount_paid, change_amount, payment_method, payment_status,
+                tax_amount, shipping_fee, total_amount, amount_paid, change_amount, payment_method, payment_status,
                 invoice_status, notes, created_at, updated_at
             ) VALUES (
                 :biz_id, :invoice_number, :order_id, :outlet_id, :customer_id, :user_id, NOW(), :subtotal,
                 :discount_amount, :discount_type, :taxable_amount, :cgst_amount, :sgst_amount, :igst_amount,
-                :tax_amount, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
+                :tax_amount, :shipping_fee, :total_amount, :amount_paid, :change_amount, :payment_method, :payment_status,
                 :invoice_status, :notes, NOW(), NOW()
             )
         ');
@@ -1565,6 +1591,7 @@ function bill_generate_pos(int $orderId, array $options = []): array {
             'sgst_amount' => $sgstAmount,
             'igst_amount' => $igstAmount,
             'tax_amount' => $taxAmount,
+            'shipping_fee' => $shippingFee,
             'total_amount' => $totalAmount,
             'amount_paid' => ($orderPayStatus === 'paid') ? $totalAmount : 0.00,
             'change_amount' => 0.00,

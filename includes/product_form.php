@@ -612,6 +612,15 @@ $variantAttrNames = ['Color', 'Size', 'Material', 'Style', 'Title', 'Pattern', '
                     <input class="item-input" type="number" step="0.01" min="0" name="mrp" value="<?= e(product_form_val('mrp')) ?>">
                 </div>
             </div>
+            <div class="item-2" style="margin-top: 12px;">
+                <div class="item-row">
+                    <label class="item-label">Delivery Charge</label>
+                    <div class="item-prefix"><span>INR</span><input class="item-input" type="number" step="0.01" min="0" name="delivery_charge" value="<?= e(product_form_val('delivery_charge', '0.00')) ?>" placeholder="0.00"></div>
+                    <small style="color: #64748b; font-size: 11px; margin-top: 4px; display: block;">Extra delivery charge added to order total in POS & store</small>
+                </div>
+                <div class="item-row">
+                </div>
+            </div>
             <div class="item-2">
                 <div class="item-row">
                     <label class="item-label req">Account*</label>

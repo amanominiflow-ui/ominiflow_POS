@@ -182,7 +182,7 @@ function has_permission(string $permission, ?array $user = null): bool {
 
     [$module, $resource, $action] = $parts;
     if (!array_key_exists($module, $perms)) {
-        return true;
+        return false;
     }
 
     $resourcePerms = $perms[$module][$resource] ?? [];

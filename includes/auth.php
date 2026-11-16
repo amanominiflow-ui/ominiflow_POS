@@ -14,27 +14,68 @@ function is_authenticated(): bool {
     return !empty($_SESSION['user_id']);
 }
 
-function ensure_counter_store_columns(): void {
+function ensure_users_table_schema(?PDO $db = null): void {
     static $done = false;
     if ($done) {
         return;
     }
     $done = true;
     try {
-        $db = get_db();
-        foreach (['users', 'registers'] as $table) {
-            $stmt = $db->prepare('
-                SELECT COUNT(*) FROM information_schema.COLUMNS
-                WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = "outlet_id"
-            ');
-            $stmt->execute(['db' => DB_NAME, 'tbl' => $table]);
-            if ((int) $stmt->fetchColumn() === 0) {
-                $db->exec("ALTER TABLE `{$table}` ADD `outlet_id` INT UNSIGNED NULL");
+        $db = $db ?: get_db();
+
+        // 1. Ensure `role` column is VARCHAR(50) so 'Staff', 'Accountant', 'Manager', etc. do not fail MySQL enum validation
+        try {
+            $db->exec("ALTER TABLE `users` MODIFY COLUMN `role` VARCHAR(50) NOT NULL DEFAULT 'staff'");
+        } catch (Throwable $e) {}
+
+        // 2. Ensure `outlet_id` column exists in users
+        try {
+            $cols = $db->query("SHOW COLUMNS FROM `users` LIKE 'outlet_id'")->fetchAll();
+            if (empty($cols)) {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `outlet_id` INT UNSIGNED NULL");
             }
-        }
+        } catch (Throwable $e) {}
+
+        // 3. Ensure `status` column exists in users
+        try {
+            $cols = $db->query("SHOW COLUMNS FROM `users` LIKE 'status'")->fetchAll();
+            if (empty($cols)) {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'active'");
+            }
+        } catch (Throwable $e) {}
+
+        // 4. Ensure `updated_at` column exists in users
+        try {
+            $cols = $db->query("SHOW COLUMNS FROM `users` LIKE 'updated_at'")->fetchAll();
+            if (empty($cols)) {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+            }
+        } catch (Throwable $e) {}
+
+        // 5. Ensure `phone` column is nullable in users
+        try {
+            $cols = $db->query("SHOW COLUMNS FROM `users` LIKE 'phone'")->fetchAll();
+            if (empty($cols)) {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `phone` VARCHAR(50) NULL");
+            } else {
+                $db->exec("ALTER TABLE `users` MODIFY COLUMN `phone` VARCHAR(50) NULL");
+            }
+        } catch (Throwable $e) {}
+
+        // 6. Ensure `registers` table has `outlet_id`
+        try {
+            $cols = $db->query("SHOW COLUMNS FROM `registers` LIKE 'outlet_id'")->fetchAll();
+            if (empty($cols)) {
+                $db->exec("ALTER TABLE `registers` ADD COLUMN `outlet_id` INT UNSIGNED NULL");
+            }
+        } catch (Throwable $e) {}
     } catch (Throwable $e) {
-        // Older installs keep working if the alter cannot run.
+        // Silently continue if alters cannot run
     }
+}
+
+function ensure_counter_store_columns(): void {
+    ensure_users_table_schema();
 }
 
 /**

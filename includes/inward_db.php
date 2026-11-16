@@ -23,7 +23,13 @@ function inward_entry_can_manage_cost(?array $user = null): bool {
         return true;
     }
     return has_permission('purchases.inward_entry_cost.view', $user)
-        || has_permission('purchases.inward_entry_cost.edit', $user);
+        || has_permission('purchases.inward_entry_cost.edit', $user)
+        || has_permission('inventory.inward_entry_cost.view', $user)
+        || has_permission('inventory.inward_entry_cost.edit', $user);
+}
+
+function inward_entry_can_see_cost(?array $user = null): bool {
+    return inward_entry_can_manage_cost($user);
 }
 
 function inward_entry_permission_for_action(string $action): string {
@@ -37,8 +43,13 @@ function inward_entry_permission_for_action(string $action): string {
 
 function inward_entry_assert_action(string $action, bool $ajax = false): void {
     require_once __DIR__ . '/roles_db.php';
+    $user = current_user();
+    if ($user && user_has_full_access($user)) {
+        return;
+    }
     $perm = inward_entry_permission_for_action($action);
-    if (has_permission($perm)) {
+    $permInv = str_replace('purchases.', 'inventory.', $perm);
+    if (has_permission($perm, $user) || has_permission($permInv, $user)) {
         return;
     }
     if ($ajax) {

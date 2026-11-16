@@ -377,6 +377,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'transfer_orders' => 'Transfer Orders',
                                     'adjustments' => 'Adjustments & Stock Counts',
                                     'price_list' => 'Price List',
+                                    'inward_entry' => 'Inward Entry (Matrix & Stock Count)',
+                                    'inward_entry_cost' => 'Inward Entry — See Cost Price',
                                 ];
                                 foreach ($invRows as $resKey => $resLabel): 
                                     $pRes = $perms['inventory'][$resKey] ?? [];
@@ -461,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'purchase_entry' => 'Purchase Entry (draft & lines)',
                                     'purchase_entry_cost' => 'Purchase Entry — cost & finalize',
                                     'inward_entry' => 'Inward Entry (count & QC)',
-                                    'inward_entry_cost' => 'Inward Entry — cost & confirm',
+                                    'inward_entry_cost' => 'Inward Entry — See Cost Price',
                                     'bills' => 'Bills',
                                     'payment_made' => 'Payment Made',
                                     'purchase_receive' => 'Purchase Receive (GRN)',

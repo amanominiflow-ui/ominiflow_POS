@@ -3716,7 +3716,8 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                                 </div>
                                 <div class="ms-order-summary-row">
                                     <span>Delivery Charge</span>
-                                    <span style="color:#16a34a;font-weight:600;">Free</span>
+                                    <?php $ordDelivery = (float)($order['shipping_fee'] ?? 0); ?>
+                                    <span style="<?= $ordDelivery > 0 ? 'color:#0284c7;font-weight:700;' : 'color:#16a34a;font-weight:600;' ?>"><?= $ordDelivery > 0 ? '+ ' . sf_money($currency, $ordDelivery) : 'Free' ?></span>
                                 </div>
                                 <?php if ($calcTax > 0): ?>
                                     <div class="ms-order-summary-row">
@@ -4174,6 +4175,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $cdQty = (int) ($drawerCart['count'] ?? 0);
     $cdSub = (float) ($drawerCart['subtotal'] ?? 0);
     $cdTax = (float) ($drawerCart['tax'] ?? 0);
+    $cdDelivery = (float) ($drawerCart['delivery_charge'] ?? 0);
     $cdTotal = (float) ($drawerCart['total'] ?? 0);
     $cdSavings = (float) ($drawerCart['total_savings'] ?? 0);
     $cdReturnPage = in_array($page, ['home', 'product', 'cart', 'checkout', 'thanks', 'orders', 'order', 'invoices', 'addresses', 'profile', 'privacy', 'contact', 'about', 'terms', 'refund'], true) ? $page : 'home';
@@ -4195,6 +4197,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
     $osQty = (int) ($osSrc['count'] ?? 0);
     $osSub = (float) ($osSrc['subtotal'] ?? 0);
     $osTax = (float) ($osSrc['tax'] ?? 0);
+    $osDelivery = (float) ($osSrc['delivery_charge'] ?? 0);
     $osTotal = (float) ($osSrc['total'] ?? 0);
     $osSavings = (float) ($osSrc['total_savings'] ?? 0);
     $osPromoDiscount = (float) ($osSrc['promo_discount'] ?? 0);
@@ -4334,7 +4337,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                     <div class="ms-cd-summary" id="msCartSummary">
                         <div class="ms-cd-summary-title">Summary</div>
                         <div class="ms-cd-row"><span>Sub Total (Tax Excluded)</span><span><?= sf_money($currency, $cdSub) ?></span></div>
-                        <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
+                        <div class="ms-cd-row"><span>Delivery Charge</span><span class="<?= $cdDelivery > 0 ? 'ms-cd-delivery' : 'ms-cd-free' ?>" id="msCdDeliveryText"><?= $cdDelivery > 0 ? ('+ ' . sf_money($currency, $cdDelivery)) : 'Free' ?></span></div>
                         <div class="ms-cd-row"><span>Tax</span><span><?= sf_money($currency, $cdTax) ?></span></div>
                         <div class="ms-cd-row ms-cd-pay"><span>To be Paid</span><span><?= sf_money($currency, $cdTotal) ?></span></div>
                     </div>
@@ -4466,7 +4469,7 @@ $cssVersion = (@filemtime(__DIR__ . '/assets/css/storefront.css') ?: 20) . '.' .
                         <span>Coupon savings</span>
                         <span id="msOsCouponText" style="color:#047857;font-weight:700;">− <?= sf_money($currency, $osCouponDiscount) ?></span>
                     </div>
-                    <div class="ms-cd-row"><span>Delivery Charge</span><span class="ms-cd-free">Free</span></div>
+                    <div class="ms-cd-row"><span>Delivery Charge</span><span class="<?= $osDelivery > 0 ? 'ms-cd-delivery' : 'ms-cd-free' ?>" id="msOsDeliveryText"><?= $osDelivery > 0 ? ('+ ' . sf_money($currency, $osDelivery)) : 'Free' ?></span></div>
                     <div class="ms-cd-row"><span>Tax</span><span id="msOsTaxText"><?= sf_money($currency, $osTax) ?></span></div>
                     <div class="ms-cd-row ms-cd-pay">
                         <span>To be Paid</span>
@@ -5846,6 +5849,19 @@ function sfApplyStoreTotalsToUi(totals) {
     if (tax) tax.textContent = sfFormatMoney(totals.tax);
     if (total) total.textContent = sfFormatMoney(totals.total);
     msStoreCheckout.orderAmount = Number(totals.total) || 0;
+
+    var delText = document.getElementById('msOsDeliveryText');
+    if (delText) {
+        var dCharge = Number(totals.delivery_charge || 0);
+        delText.textContent = dCharge > 0 ? ('+ ' + sfFormatMoney(dCharge)) : 'Free';
+        delText.className = dCharge > 0 ? 'ms-cd-delivery' : 'ms-cd-free';
+    }
+    var cdDelText = document.getElementById('msCdDeliveryText');
+    if (cdDelText) {
+        var cdDCharge = Number(totals.delivery_charge || 0);
+        cdDelText.textContent = cdDCharge > 0 ? ('+ ' + sfFormatMoney(cdDCharge)) : 'Free';
+        cdDelText.className = cdDCharge > 0 ? 'ms-cd-delivery' : 'ms-cd-free';
+    }
 
     var promoRow = document.getElementById('msOsPromoRow');
     var promoText = document.getElementById('msOsPromoText');

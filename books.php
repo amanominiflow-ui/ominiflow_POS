@@ -70,6 +70,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(asset("books.php?tab=expense-book&outlet_id={$selectedOutletId}&period={$preset}"));
     }
 
+    if ($action === 'edit_expense' || $action === 'update_expense') {
+        $expId = (int)($_POST['expense_id'] ?? 0);
+        $res = update_expense($expId, $_POST, $bizId);
+        if ($res['success']) {
+            set_flash('success', 'Expense updated successfully.');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not update expense.');
+        }
+        redirect(asset("books.php?tab=expense-book&outlet_id={$selectedOutletId}&period={$preset}"));
+    }
+
+    if ($action === 'delete_expense') {
+        $expId = (int)($_POST['expense_id'] ?? 0);
+        $res = delete_expense($expId, $bizId);
+        if ($res['success']) {
+            set_flash('success', 'Expense deleted successfully.');
+        } else {
+            set_flash('error', $res['error'] ?? 'Could not delete expense.');
+        }
+        redirect(asset("books.php?tab=expense-book&outlet_id={$selectedOutletId}&period={$preset}"));
+    }
+
     if ($action === 'save_cash_closing') {
         $res = save_daily_cash_closing($_POST, $bizId, $userId);
         if ($res['success']) {
@@ -837,11 +859,12 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
                                     <th>Ref #</th>
                                     <th class="num">Amount (₹)</th>
                                     <th>Status</th>
+                                    <th style="width: 90px; text-align: center;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($eb)): ?>
-                                    <tr><td colspan="9" style="text-align:center; padding:40px; color:#94a3b8;">No expenses recorded for this period. Click "+ Add Expense" above to add one.</td></tr>
+                                    <tr><td colspan="10" style="text-align:center; padding:40px; color:#94a3b8;">No expenses recorded for this period. Click "+ Add Expense" above to add one.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($eb as $exp): ?>
                                         <tr>
@@ -854,6 +877,38 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
                                             <td><span style="font-family:monospace; font-size:11px;"><?= e($exp['reference_no']) ?></span></td>
                                             <td class="num" style="font-weight:700; color:#b91c1c;">₹<?= number_format((float)$exp['amount'], 2) ?></td>
                                             <td><span class="books-pill books-pill-green"><?= strtoupper(e($exp['status'])) ?></span></td>
+                                            <td style="text-align: center;">
+                                                <div class="action-group" style="justify-content: center; display: inline-flex; gap: 6px;">
+                                                    <button type="button" 
+                                                            class="btn-action edit" 
+                                                            title="Edit Expense"
+                                                            onclick='editExpense(<?= json_encode([
+                                                                'id' => (int)$exp['id'],
+                                                                'category' => (string)$exp['category'],
+                                                                'amount' => (float)$exp['amount'],
+                                                                'expense_date' => (string)$exp['expense_date'],
+                                                                'payment_method' => (string)$exp['payment_method'],
+                                                                'outlet_id' => $exp['outlet_id'] !== null ? (int)$exp['outlet_id'] : '',
+                                                                'vendor_recipient' => (string)($exp['vendor_recipient'] ?? ''),
+                                                                'description' => (string)($exp['description'] ?? ''),
+                                                                'reference_no' => (string)($exp['reference_no'] ?? ''),
+                                                            ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
+                                                        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                                        </svg>
+                                                    </button>
+                                                    <form method="POST" action="<?= asset('books.php') ?>" style="display:inline; margin:0;" onsubmit="return confirm('Are you sure you want to delete this expense record (₹<?= number_format((float)$exp['amount'], 2) ?> - <?= e(addslashes($exp['category'])) ?>)?');">
+                                                        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                                                        <input type="hidden" name="action" value="delete_expense">
+                                                        <input type="hidden" name="expense_id" value="<?= (int)$exp['id'] ?>">
+                                                        <button type="submit" class="btn-action delete" title="Delete Expense">
+                                                            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                            </svg>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -1263,21 +1318,23 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
         </div>
     </div>
 
-    <!-- MODAL 1: ADD EXPENSE -->
+    <!-- MODAL 1: ADD / EDIT EXPENSE -->
     <div class="books-modal" id="addExpenseModal">
         <div class="books-modal-card">
             <div class="books-modal-head">
-                <span style="font-weight:700; font-size:15px;">Record Store / Warehouse Expense</span>
+                <span style="font-weight:700; font-size:15px;" id="expenseModalTitle">Record Store / Warehouse Expense</span>
                 <button type="button" onclick="closeExpenseModal()" style="background:none; border:none; color:#fff; font-size:20px; cursor:pointer;">&times;</button>
             </div>
-            <form method="POST" action="<?= asset('books.php') ?>">
+            <form method="POST" action="<?= asset('books.php') ?>" id="expenseForm">
                 <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                <input type="hidden" name="action" value="add_expense">
+                <input type="hidden" name="action" id="expenseAction" value="add_expense">
+                <input type="hidden" name="expense_id" id="expenseId" value="">
+                <input type="hidden" name="tab" value="expense-book">
 
                 <div class="books-modal-body">
                     <div style="margin-bottom:14px;">
                         <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Expense Category *</label>
-                        <select name="category" class="form-control" style="width:100%;" required>
+                        <select name="category" id="exp_category" class="form-control" style="width:100%;" required>
                             <option value="Store Rent">Store Rent</option>
                             <option value="Warehouse Rent">Warehouse Rent</option>
                             <option value="Staff Salaries">Staff Salaries</option>
@@ -1290,6 +1347,8 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
                             <option value="Software Subscriptions">Software Subscriptions</option>
                             <option value="Office Expenses">Office Expenses</option>
                             <option value="Bank Charges">Bank Charges</option>
+                            <option value="Drawing">Drawing</option>
+                            <option value="Drawings">Drawings (Owner Withdrawal)</option>
                             <option value="Miscellaneous Expenses">Miscellaneous Expenses</option>
                         </select>
                     </div>
@@ -1297,18 +1356,18 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
                         <div>
                             <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Amount (₹) *</label>
-                            <input type="number" step="0.01" name="amount" class="form-control" style="width:100%;" placeholder="0.00" required>
+                            <input type="number" step="0.01" name="amount" id="exp_amount" class="form-control" style="width:100%;" placeholder="0.00" required>
                         </div>
                         <div>
                             <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Expense Date *</label>
-                            <input type="date" name="expense_date" value="<?= date('Y-m-d') ?>" class="form-control" style="width:100%;" required>
+                            <input type="date" name="expense_date" id="exp_date" value="<?= date('Y-m-d') ?>" class="form-control" style="width:100%;" required>
                         </div>
                     </div>
 
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
                         <div>
                             <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Payment Method</label>
-                            <select name="payment_method" class="form-control" style="width:100%;">
+                            <select name="payment_method" id="exp_method" class="form-control" style="width:100%;">
                                 <option value="cash">Cash (Drawer)</option>
                                 <option value="upi">UPI / GPay / PhonePe</option>
                                 <option value="bank_transfer">Bank Transfer / NEFT</option>
@@ -1317,7 +1376,7 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
                         </div>
                         <div>
                             <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Branch</label>
-                            <select name="outlet_id" class="form-control" style="width:100%;">
+                            <select name="outlet_id" id="exp_outlet" class="form-control" style="width:100%;">
                                 <option value="">Central / All Branches</option>
                                 <?php foreach ($outlets as $ot): ?>
                                     <option value="<?= $ot['id'] ?>"><?= e($ot['name']) ?></option>
@@ -1328,23 +1387,23 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
 
                     <div style="margin-bottom:14px;">
                         <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Vendor / Recipient Name</label>
-                        <input type="text" name="vendor_recipient" class="form-control" style="width:100%;" placeholder="e.g. Landlord, Utility Board, Courier">
+                        <input type="text" name="vendor_recipient" id="exp_vendor" class="form-control" style="width:100%;" placeholder="e.g. Landlord, Utility Board, Courier">
                     </div>
 
                     <div style="margin-bottom:14px;">
                         <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Description / Bill Notes</label>
-                        <textarea name="description" class="form-control" style="width:100%; height:70px;" placeholder="Details about this expense"></textarea>
+                        <textarea name="description" id="exp_description" class="form-control" style="width:100%; height:70px;" placeholder="Details about this expense"></textarea>
                     </div>
 
                     <div style="margin-bottom:14px;">
                         <label style="display:block; font-weight:700; font-size:13px; margin-bottom:4px;">Reference / Bill #</label>
-                        <input type="text" name="reference_no" class="form-control" style="width:100%;" placeholder="Optional voucher or bill number">
+                        <input type="text" name="reference_no" id="exp_reference" class="form-control" style="width:100%;" placeholder="Optional voucher or bill number">
                     </div>
                 </div>
 
                 <div style="padding:14px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px;">
                     <button type="button" onclick="closeExpenseModal()" class="header-btn" style="background:#fff; border:1px solid #cbd5e1;">Cancel</button>
-                    <button type="submit" class="header-btn" style="background:#1e40af; color:#fff;">Save Expense</button>
+                    <button type="submit" class="header-btn" id="expenseSubmitBtn" style="background:#1e40af; color:#fff;">Save Expense</button>
                 </div>
             </form>
         </div>
@@ -1436,12 +1495,63 @@ if (!empty($_GET['export']) && $_GET['export'] === 'csv') {
         }
 
         function openExpenseModal() {
+            var form = document.getElementById('expenseForm');
+            if (form) {
+                form.reset();
+                document.getElementById('expenseAction').value = 'add_expense';
+                document.getElementById('expenseId').value = '';
+                document.getElementById('expenseModalTitle').textContent = 'Record Store / Warehouse Expense';
+                document.getElementById('expenseSubmitBtn').textContent = 'Save Expense';
+                document.getElementById('exp_date').value = new Date().toISOString().split('T')[0];
+            }
             var m = document.getElementById('addExpenseModal');
             if (m) m.style.display = 'flex';
         }
+
         function closeExpenseModal() {
             var m = document.getElementById('addExpenseModal');
             if (m) m.style.display = 'none';
+        }
+
+        function editExpense(data) {
+            var form = document.getElementById('expenseForm');
+            if (form) {
+                form.reset();
+            }
+            document.getElementById('expenseAction').value = 'edit_expense';
+            document.getElementById('expenseId').value = data.id || '';
+            document.getElementById('expenseModalTitle').textContent = 'Edit Expense Record';
+            document.getElementById('expenseSubmitBtn').textContent = 'Update Expense';
+
+            if (document.getElementById('exp_category')) {
+                var catSel = document.getElementById('exp_category');
+                var cVal = data.category || 'Store Rent';
+                var matched = false;
+                for (var i = 0; i < catSel.options.length; i++) {
+                    if (catSel.options[i].value === cVal) {
+                        catSel.selectedIndex = i;
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched && cVal) {
+                    var newOpt = document.createElement('option');
+                    newOpt.value = cVal;
+                    newOpt.textContent = cVal;
+                    catSel.appendChild(newOpt);
+                    catSel.value = cVal;
+                }
+            }
+            if (document.getElementById('exp_amount')) document.getElementById('exp_amount').value = data.amount || '';
+            if (document.getElementById('exp_date')) document.getElementById('exp_date').value = data.expense_date || '';
+            if (document.getElementById('exp_method')) document.getElementById('exp_method').value = data.payment_method || 'cash';
+            if (document.getElementById('exp_outlet')) document.getElementById('exp_outlet').value = data.outlet_id || '';
+            if (document.getElementById('exp_vendor')) document.getElementById('exp_vendor').value = data.vendor_recipient || '';
+            if (document.getElementById('exp_description')) document.getElementById('exp_description').value = data.description || '';
+            if (document.getElementById('exp_reference')) document.getElementById('exp_reference').value = data.reference_no || '';
+
+            var m = document.getElementById('addExpenseModal');
+            if (m) m.style.display = 'flex';
         }
 
         function openClosingModal() {

@@ -610,6 +610,7 @@ function ensure_product_item_schema(): void {
         'video_url' => "VARCHAR(500) NULL",
         'is_trending' => "TINYINT(1) NOT NULL DEFAULT 0",
         'show_on_store' => "TINYINT(1) NOT NULL DEFAULT 1",
+        'delivery_charge' => "DECIMAL(10,2) NOT NULL DEFAULT 0.00",
     ];
     foreach ($columns as $col => $def) {
         try {
@@ -901,6 +902,7 @@ function collect_product_form_data(): array {
         'product_type' => $hasVariants ? 'variable' : 'simple',
         'is_trending' => !empty($_POST['is_trending']) ? 1 : 0,
         'show_on_store' => isset($_POST['show_on_store']) ? (!empty($_POST['show_on_store']) ? 1 : 0) : 0,
+        'delivery_charge' => max(0.0, (float) ($_POST['delivery_charge'] ?? 0.00)),
         'remove_image_ids' => array_map('intval', (array) ($_POST['remove_image_ids'] ?? [])),
         'remove_video' => !empty($_POST['remove_video']),
         'video_url' => trim((string) ($_POST['video_url'] ?? '')),
@@ -1141,6 +1143,7 @@ function save_product(array $data, ?array $file = null, ?int $id = null, ?int $u
         'status' => $status,
         'is_trending' => array_key_exists('is_trending', $data) ? (!empty($data['is_trending']) ? 1 : 0) : (!empty($oldProduct['is_trending']) ? 1 : 0),
         'show_on_store' => array_key_exists('show_on_store', $data) ? (!empty($data['show_on_store']) ? 1 : 0) : (isset($oldProduct['show_on_store']) ? (int)$oldProduct['show_on_store'] : 1),
+        'delivery_charge' => max(0.0, (float) ($data['delivery_charge'] ?? ($oldProduct['delivery_charge'] ?? 0.00))),
     ];
 
     try {

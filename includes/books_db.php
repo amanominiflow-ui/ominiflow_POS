@@ -1225,6 +1225,11 @@ function save_expense(array $data, ?int $businessId = null, ?int $userId = null)
     if ($category === '') return ['success' => false, 'error' => 'Expense category is required.'];
     if ($amount <= 0) return ['success' => false, 'error' => 'Expense amount must be greater than zero.'];
 
+    $expId = !empty($data['expense_id']) ? (int)$data['expense_id'] : (!empty($data['id']) ? (int)$data['id'] : 0);
+    if ($expId > 0) {
+        return update_expense($expId, $data, $bid);
+    }
+
     $stmt = $db->prepare("
         INSERT INTO expenses (business_id, outlet_id, category, amount, payment_method, vendor_recipient, description, reference_no, created_by, status, expense_date)
         VALUES (:bid, :oid, :cat, :amt, :meth, :vend, :desc, :ref, :uid, 'paid', :edate)
@@ -1243,6 +1248,62 @@ function save_expense(array $data, ?int $businessId = null, ?int $userId = null)
     ]);
 
     return ['success' => true, 'id' => (int)$db->lastInsertId()];
+}
+
+function update_expense(int $id, array $data, ?int $businessId = null): array {
+    ensure_books_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $category = trim((string)($data['category'] ?? ''));
+    $amount = (float)($data['amount'] ?? 0);
+    $date = trim((string)($data['expense_date'] ?? date('Y-m-d')));
+    $outletId = !empty($data['outlet_id']) ? (int)$data['outlet_id'] : null;
+    $method = trim((string)($data['payment_method'] ?? 'cash'));
+    $vendor = trim((string)($data['vendor_recipient'] ?? ''));
+    $desc = trim((string)($data['description'] ?? ''));
+    $ref = trim((string)($data['reference_no'] ?? ''));
+
+    if ($category === '') return ['success' => false, 'error' => 'Expense category is required.'];
+    if ($amount <= 0) return ['success' => false, 'error' => 'Expense amount must be greater than zero.'];
+
+    $stmt = $db->prepare("
+        UPDATE expenses 
+        SET outlet_id = :oid,
+            category = :cat,
+            amount = :amt,
+            payment_method = :meth,
+            vendor_recipient = :vend,
+            description = :desc,
+            reference_no = :ref,
+            expense_date = :edate
+        WHERE id = :id AND business_id = :bid
+    ");
+    $stmt->execute([
+        'id' => $id,
+        'bid' => $bid,
+        'oid' => $outletId,
+        'cat' => $category,
+        'amt' => $amount,
+        'meth' => $method,
+        'vend' => $vendor,
+        'desc' => $desc,
+        'ref' => $ref,
+        'edate' => $date,
+    ]);
+
+    return ['success' => true, 'id' => $id];
+}
+
+function delete_expense(int $id, ?int $businessId = null): array {
+    ensure_books_schema();
+    $db = get_db();
+    $bid = $businessId ?: current_business_id();
+
+    $stmt = $db->prepare("DELETE FROM expenses WHERE id = :id AND business_id = :bid");
+    $stmt->execute(['id' => $id, 'bid' => $bid]);
+
+    return ['success' => true];
 }
 
 /**

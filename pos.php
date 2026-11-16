@@ -522,6 +522,51 @@ $flashError = get_flash('error');
     <link rel="shortcut icon" href="<?= asset('assets/images/favicon.ico') ?>">
 
     <link rel="stylesheet" href="<?= asset('assets/css/dashboard.css') ?>?v=<?= (int) @filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
+    <style>
+        /* POS Fullscreen: Sidebar OFF per user request */
+        body.pos-page .app-sidebar {
+            display: none !important;
+        }
+        body.pos-page .app-main {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        body.pos-page .sidebar-toggle-btn {
+            display: none !important;
+        }
+        .pos-header-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            height: 38px;
+            padding: 0 14px;
+            background: #ffffff;
+            color: #1e293b;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            margin-right: 14px;
+        }
+        .pos-header-back-btn:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+            border-color: #94a3b8;
+            transform: translateX(-1px);
+        }
+        .pos-header-back-btn svg {
+            transition: transform 0.15s ease;
+            color: #475569;
+        }
+        .pos-header-back-btn:hover svg {
+            transform: translateX(-2px);
+            color: #0f172a;
+        }
+    </style>
 </head>
 <body class="pos-page">
     <div class="app-layout">
@@ -677,6 +722,7 @@ $flashError = get_flash('error');
                                     data-sku="<?= e($prod['sku']) ?>"
                                     data-barcode="<?= e($prod['barcode'] ?? '') ?>"
                                     data-price="<?= (float)$prod['selling_price'] ?>"
+                                    data-delivery="<?= (float)($prod['delivery_charge'] ?? 0) ?>"
                                     data-tax="<?= (float)$prod['tax_percent'] ?>"
                                     data-stock="<?= $stock ?>"
                                     data-category="<?= $prod['category_id'] ?: 'none' ?>"
@@ -700,6 +746,9 @@ $flashError = get_flash('error');
                                     <div class="pos-card-price-row">
                                         <span class="pos-card-price">₹<?= number_format((float)$prod['selling_price'], 2) ?></span>
                                         <span style="font-size: 11px; color: var(--saas-slate-400);">+<?= (float)$prod['tax_percent'] ?>% Tax</span>
+                                        <?php if (!empty($prod['delivery_charge']) && (float)$prod['delivery_charge'] > 0): ?>
+                                            <span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; font-weight: 600;">+₹<?= number_format((float)$prod['delivery_charge'], 2) ?> Del</span>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -812,6 +861,11 @@ $flashError = get_flash('error');
                             <div class="pos-summary-row">
                                 <span>Tax (GST)</span>
                                 <strong id="cartTaxText">₹0.00</strong>
+                            </div>
+
+                            <div class="pos-summary-row" id="cartDeliveryRow" style="display: none;">
+                                <span>Delivery Charge</span>
+                                <strong id="cartDeliveryText" style="color: #0284c7;">+ ₹0.00</strong>
                             </div>
 
                             <div class="pos-summary-row grand-total-row">
@@ -1044,6 +1098,10 @@ $flashError = get_flash('error');
                         <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
                             <span>Tax (GST):</span>
                             <span id="receiptTax">₹0.00</span>
+                        </div>
+                        <div id="receiptDeliveryRow" style="display: none; justify-content: space-between; margin-bottom: 3px; color: #0284c7;">
+                            <span>Delivery Charge:</span>
+                            <span id="receiptDelivery">+ ₹0.00</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; margin-top: 6px; border-top: 1px solid #111827; padding-top: 6px;">
                             <span>GRAND TOTAL:</span>
@@ -1305,6 +1363,8 @@ $flashError = get_flash('error');
             const discountTypeSelect = document.getElementById('discountTypeSelect');
             const cartSubtotalEl = document.getElementById('cartSubtotalText');
             const cartTaxEl = document.getElementById('cartTaxText');
+            const cartDeliveryRow = document.getElementById('cartDeliveryRow');
+            const cartDeliveryText = document.getElementById('cartDeliveryText');
             const cartGrandTotalEl = document.getElementById('cartGrandTotalText');
             const checkoutBtnTotalEl = document.getElementById('checkoutBtnTotal');
             const checkoutBtn = document.getElementById('proceedToPaymentBtn');
@@ -1420,6 +1480,14 @@ $flashError = get_flash('error');
                 return Math.min(remaining, parseFloat(appliedCoupon.discount_amount) || 0);
             }
 
+            function cartDeliveryTotal() {
+                let delivery = 0;
+                cart.forEach(function (item) {
+                    delivery += (parseFloat(item.delivery_charge) || 0) * (parseInt(item.quantity, 10) || 1);
+                });
+                return delivery;
+            }
+
             function updateCartTotalsDisplay(subtotal, taxTotal) {
                 summarySubtotalCache = subtotal;
                 summaryTaxCache = taxTotal;
@@ -1427,10 +1495,20 @@ $flashError = get_flash('error');
                 const promoDisc = autoPromoDiscount;
                 const couponDisc = effectiveCouponDiscount(subtotal, manualDisc, promoDisc);
                 const totalDiscount = Math.min(subtotal, manualDisc + promoDisc + couponDisc);
-                const grandTotal = Math.max(0, subtotal - totalDiscount + taxTotal);
+                const deliveryTotal = cartDeliveryTotal();
+                const grandTotal = Math.max(0, subtotal - totalDiscount + taxTotal + deliveryTotal);
 
                 cartSubtotalEl.textContent = '₹' + subtotal.toFixed(2);
                 cartTaxEl.textContent = '₹' + taxTotal.toFixed(2);
+
+                if (cartDeliveryRow && cartDeliveryText) {
+                    if (deliveryTotal > 0) {
+                        cartDeliveryRow.style.display = 'flex';
+                        cartDeliveryText.textContent = '+ ₹' + deliveryTotal.toFixed(2);
+                    } else {
+                        cartDeliveryRow.style.display = 'none';
+                    }
+                }
 
                 if (promoDiscountRow && cartPromoDiscountEl) {
                     if (promoDisc > 0) {
@@ -1624,6 +1702,7 @@ $flashError = get_flash('error');
                     sku: card.getAttribute('data-sku'),
                     barcode: card.getAttribute('data-barcode'),
                     price: parseFloat(card.getAttribute('data-price')),
+                    delivery_charge: parseFloat(card.getAttribute('data-delivery')) || 0,
                     tax_percent: parseFloat(card.getAttribute('data-tax')),
                     max_stock: parseInt(card.getAttribute('data-stock'), 10)
                 };
@@ -1636,6 +1715,7 @@ $flashError = get_flash('error');
                     sku: variant.sku || base.sku,
                     barcode: variant.barcode || base.barcode || '',
                     price: (parseFloat(variant.price) > 0) ? parseFloat(variant.price) : base.price,
+                    delivery_charge: (typeof variant.delivery_charge !== 'undefined' && parseFloat(variant.delivery_charge) > 0) ? parseFloat(variant.delivery_charge) : (base.delivery_charge || 0),
                     tax_percent: base.tax_percent,
                     max_stock: parseInt(variant.stock, 10) || 0,
                     variant_id: parseInt(variant.id, 10),
@@ -1671,6 +1751,7 @@ $flashError = get_flash('error');
                         colour: prod.colour || '',
                         variant_name: prod.variant_name || '',
                         price: prod.price,
+                        delivery_charge: prod.delivery_charge || 0,
                         tax_percent: prod.tax_percent,
                         quantity: 1,
                         max_stock: prod.max_stock
@@ -1687,6 +1768,7 @@ $flashError = get_flash('error');
                     emptyCartState.style.display = 'block';
                     cartSubtotalEl.textContent = '₹0.00';
                     cartTaxEl.textContent = '₹0.00';
+                    if (cartDeliveryRow) cartDeliveryRow.style.display = 'none';
                     cartGrandTotalEl.textContent = '₹0.00';
                     checkoutBtnTotalEl.textContent = '₹0.00';
                     checkoutBtn.disabled = true;
@@ -1739,7 +1821,7 @@ $flashError = get_flash('error');
                                 <button type="button" class="pos-stepper-btn btn-qty-inc" data-index="${index}">+</button>
                             </div>
                             <div class="pos-item-price-calc">
-                                <div class="pos-item-unit-price">₹${item.price.toFixed(2)} ea (+${item.tax_percent}%)</div>
+                                <div class="pos-item-unit-price">₹${item.price.toFixed(2)} ea (+${item.tax_percent}%${(parseFloat(item.delivery_charge) > 0) ? ', +₹' + parseFloat(item.delivery_charge).toFixed(2) + ' del' : ''})</div>
                                 <div class="pos-item-line-total">₹${itemLineTotal.toFixed(2)}</div>
                             </div>
                         </div>
@@ -2472,6 +2554,17 @@ $flashError = get_flash('error');
                     discRow.style.display = 'none';
                 }
                 document.getElementById('receiptTax').textContent = '₹' + parseFloat(data.tax_amount).toFixed(2);
+                const recDelRow = document.getElementById('receiptDeliveryRow');
+                const recDelVal = document.getElementById('receiptDelivery');
+                const shippingFee = parseFloat(data.shipping_fee || data.delivery_charge || 0);
+                if (recDelRow && recDelVal) {
+                    if (shippingFee > 0) {
+                        recDelVal.textContent = '+ ₹' + shippingFee.toFixed(2);
+                        recDelRow.style.display = 'flex';
+                    } else {
+                        recDelRow.style.display = 'none';
+                    }
+                }
                 document.getElementById('receiptGrandTotal').textContent = '₹' + parseFloat(data.total_amount).toFixed(2);
 
                 const cashDetails = document.getElementById('receiptCashDetails');
