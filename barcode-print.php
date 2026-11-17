@@ -28,7 +28,7 @@ $defaultPid = !empty($products[0]['id']) ? (int)$products[0]['id'] : 0;
 $selectedPid = isset($_GET['product_id']) && $_GET['product_id'] !== '' ? (int)$_GET['product_id'] : $defaultPid;
 $copies = isset($_GET['copies']) ? max(1, min(100, (int)$_GET['copies'])) : 12;
 $labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : 'standard';
-if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1'], true)) {
+if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1', '4x1'], true)) {
     $labelSize = 'standard';
 }
 $showStore = isset($_GET['show_store']) ? (bool)$_GET['show_store'] : true;
@@ -165,6 +165,35 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             margin-top: 2px;
         }
 
+        /* 4x1 inch preset (2 in one row) */
+        .size-4x1 .print-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            max-width: 880px;
+            gap: 14px !important;
+        }
+        .size-4x1 .barcode-card-item {
+            padding: 8px 12px;
+        }
+        .size-4x1 .barcode-store-name {
+            font-size: 9px;
+            margin-bottom: 2px;
+        }
+        .size-4x1 .barcode-prod-name {
+            font-size: 12px;
+            margin-bottom: 2px;
+        }
+        .size-4x1 .barcode-price-tag {
+            font-size: 14.5px;
+            margin-bottom: 2px;
+        }
+        .size-4x1 .barcode-svg-container {
+            margin: 2px 0;
+        }
+        .size-4x1 .barcode-sku-sub {
+            font-size: 9px;
+            margin-top: 2px;
+        }
+
         @media print {
             @page {
                 size: auto;
@@ -242,6 +271,36 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             }
             .size-2x1 .barcode-sku-sub {
                 font-size: 8px !important;
+                margin-top: 1mm !important;
+            }
+            .size-4x1 .print-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 4mm !important;
+                max-width: 100% !important;
+            }
+            .size-4x1 .barcode-card-item {
+                padding: 2.5mm 3.5mm !important;
+                box-sizing: border-box !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .size-4x1 .barcode-store-name {
+                font-size: 8.5px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-4x1 .barcode-prod-name {
+                font-size: 11px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-4x1 .barcode-price-tag {
+                font-size: 13.5px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-4x1 .barcode-svg-container {
+                margin: 1mm 0 !important;
+            }
+            .size-4x1 .barcode-sku-sub {
+                font-size: 8.5px !important;
                 margin-top: 1mm !important;
             }
             .barcode-card-item {
@@ -366,6 +425,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                                     <option value="compact" <?= $labelSize === 'compact' ? 'selected' : '' ?>>Compact (40 x 20 mm)</option>
                                     <option value="large" <?= $labelSize === 'large' ? 'selected' : '' ?>>Price & Shelf Tag (60 x 40 mm)</option>
                                     <option value="2x1" <?= $labelSize === '2x1' ? 'selected' : '' ?>>2 x 1 inch (2 in 1 Row)</option>
+                                    <option value="4x1" <?= $labelSize === '4x1' ? 'selected' : '' ?>>4 x 1 inch (2 in 1 Row)</option>
                                 </select>
                             </div>
                         </div>
@@ -409,8 +469,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                     $barcodeSvg = $hasBarcode
                         ? generate_code128_svg(
                             $barcodeValue,
-                            $labelSize === 'compact' ? 28 : ($labelSize === '2x1' ? 24 : ($labelSize === 'large' ? 44 : 36)),
-                            $labelSize === 'compact' ? 1.2 : ($labelSize === '2x1' ? 1.15 : 1.5)
+                            $labelSize === 'compact' ? 28 : (in_array($labelSize, ['2x1', '4x1'], true) ? 24 : ($labelSize === 'large' ? 44 : 36)),
+                            $labelSize === 'compact' ? 1.2 : ($labelSize === '2x1' ? 1.15 : ($labelSize === '4x1' ? 1.4 : 1.5))
                         )
                         : '';
                     ?>
@@ -444,7 +504,14 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                         </div>
 
                         <!-- Labels Printable Grid -->
-                        <div class="print-grid" style="display: grid; <?= $labelSize === '2x1' ? 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px;' : 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));' ?> gap: 14px;">
+                        <?php
+                        $gridColsStyle = match ($labelSize) {
+                            '2x1' => 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px;',
+                            '4x1' => 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 880px;',
+                            default => 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));',
+                        };
+                        ?>
+                        <div class="print-grid" style="display: grid; <?= $gridColsStyle ?> gap: 14px;">
                             <?php for ($i = 0; $i < $copies; $i++): ?>
                                 <div class="barcode-card-item">
                                     <?php if ($showStore): ?>

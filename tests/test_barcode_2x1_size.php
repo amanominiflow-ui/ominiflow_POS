@@ -59,7 +59,23 @@ assert_true(str_contains($html, '<div class="size-2x1">'), "Output HTML contains
 assert_true(str_contains($html, 'value="2x1" selected'), "Dropdown option 2x1 is selected");
 assert_true(str_contains($html, 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px;'), "Grid style renders 2 columns inline on screen preview");
 
-// 4. Test backward compatibility for standard preset
+// 4. Test rendering simulated GET request for 4x1 preset
+$_GET['label_size'] = '4x1';
+$_GET['copies'] = '4';
+
+ob_start();
+include __DIR__ . '/../barcode-print.php';
+$html4x1 = ob_get_clean();
+
+assert_true(str_contains($content, '<option value="4x1"'), "Option value '4x1' exists in template size dropdown");
+assert_true(str_contains($content, '4 x 1 inch (2 in 1 Row)'), "Dropdown displays label '4 x 1 inch (2 in 1 Row)'");
+assert_true(str_contains($content, '.size-4x1 .print-grid'), "CSS contains .size-4x1 .print-grid rule");
+assert_true(str_contains($content, "max-width: 880px"), "Screen grid is max-width 880px for 4x1 ratio");
+assert_true(str_contains($html4x1, '<div class="size-4x1">'), "Output HTML contains wrapper class 'size-4x1'");
+assert_true(str_contains($html4x1, 'value="4x1" selected'), "Dropdown option 4x1 is selected");
+assert_true(str_contains($html4x1, 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 880px;'), "Grid style renders 2 columns inline on screen preview for 4x1");
+
+// 5. Test backward compatibility for standard preset
 $_GET['label_size'] = 'standard';
 $_GET['copies'] = '6';
 
