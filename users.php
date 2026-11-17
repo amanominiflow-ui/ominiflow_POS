@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role = trim((string) ($_POST['role'] ?? 'Staff'));
         $editId = (int) ($_POST['user_id'] ?? 0);
         $outletId = (int) ($_POST['outlet_id'] ?? 0);
+        $passwordInput = trim((string) ($_POST['password'] ?? ''));
         $roleKey = strtolower($role);
         $storeRequired = !in_array($roleKey, ['admin', 'administrator', 'owner'], true);
 
@@ -129,6 +130,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'bid' => $bid,
                 ];
 
+                if ($passwordInput !== '') {
+                    if (strlen($passwordInput) < 6) {
+                        set_flash('error', 'Password must be at least 6 characters long.');
+                        redirect(APP_URL . '/users.php');
+                    }
+                    $setParts[] = 'password = :password';
+                    $params['password'] = password_hash($passwordInput, PASSWORD_DEFAULT);
+                }
+
                 if (!empty($userCols['outlet_id'])) {
                     $setParts[] = 'outlet_id = :outlet_id';
                     $params['outlet_id'] = $savedOutlet;
@@ -140,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $db->prepare('UPDATE users SET ' . implode(', ', $setParts) . ' WHERE id = :id AND business_id = :bid');
                 $stmt->execute($params);
 
-                set_flash('success', 'User store and role updated successfully.');
+                set_flash('success', $passwordInput !== '' ? 'User details and password updated successfully.' : 'User store and role updated successfully.');
             } catch (Throwable $e) {
                 error_log('User update error: ' . $e->getMessage());
                 set_flash('error', 'Could not update user: ' . $e->getMessage());
@@ -160,13 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect(APP_URL . '/users.php');
                 }
 
-                $tempPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
+                if ($passwordInput !== '') {
+                    if (strlen($passwordInput) < 6) {
+                        set_flash('error', 'Password must be at least 6 characters long.');
+                        redirect(APP_URL . '/users.php');
+                    }
+                    $finalPassword = password_hash($passwordInput, PASSWORD_DEFAULT);
+                } else {
+                    $finalPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
+                }
+
                 $insertCols = ['name', 'email', 'password', 'role', 'status'];
                 $insertVals = [':name', ':email', ':pass', ':role', ':status'];
                 $params = [
                     'name' => $name,
                     'email' => $email,
-                    'pass' => $tempPassword,
+                    'pass' => $finalPassword,
                     'role' => $storedRole,
                     'status' => 'active',
                 ];
@@ -645,11 +664,16 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                                     <div style="font-size: 12px; color: #64748b; margin-top: 2px;"><?= e($outletNames[(int) ($u['outlet_id'] ?? 0)] ?? 'All stores') ?></div>
                                 </td>
                                 <td>
-                                    <?php if ($u['status'] === 'active'): ?>
-                                        <span class="user-status-active">Active</span>
-                                    <?php else: ?>
-                                        <span class="user-status-inactive">Inactive</span>
-                                    <?php endif; ?>
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                        <?php if ($u['status'] === 'active'): ?>
+                                            <span class="user-status-active">Active</span>
+                                        <?php else: ?>
+                                            <span class="user-status-inactive">Inactive</span>
+                                        <?php endif; ?>
+                                        <button type="button" onclick="openEditUser('<?= e($u['name']) ?>', '<?= e($u['email']) ?>', '<?= e($u['role']) ?>', <?= (int) $u['id'] ?>, <?= (int) ($u['outlet_id'] ?? 0) ?>)" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: #3b82f6; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                            ✏️ Edit / Password
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -692,6 +716,22 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                         </div>
                     </div>
 
+                    <!-- Password Field -->
+                    <div class="modal-field-row">
+                        <label class="modal-field-label">
+                            <span id="modalPasswordLabel">Password</span>
+                        </label>
+                        <div>
+                            <div style="position: relative; display: flex; align-items: center;">
+                                <input type="password" name="password" id="modalUserPassword" class="modal-field-input" placeholder="Set login password (min 6 characters)" style="padding-right: 42px;" autocomplete="new-password">
+                                <button type="button" id="togglePasswordBtn" onclick="togglePasswordVisibility()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: #64748b; font-size: 15px; padding: 4px; display: flex; align-items: center; justify-content: center;" title="Show/Hide Password">
+                                    <svg id="eyeIcon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                            </div>
+                            <div id="modalPasswordHelp" style="font-size: 11.5px; color: #64748b; margin-top: 4px;">Set user login password. If left blank, defaults to: <code>OminiFlow@2026</code></div>
+                        </div>
+                    </div>
+
                     <!-- Role Field -->
                     <div class="modal-field-row">
                         <label class="modal-field-label">
@@ -724,7 +764,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                 </div>
 
                 <div class="modal-invite-footer">
-                    <button type="submit" class="btn-modal-submit" id="btnModalSubmit">Send Invite</button>
+                    <button type="submit" class="btn-modal-submit" id="btnModalSubmit">Add User</button>
                     <button type="button" class="btn-modal-cancel" onclick="closeInviteModal()">Cancel</button>
                 </div>
             </form>
@@ -732,6 +772,23 @@ $usersList = $stmtUsers->fetchAll() ?: [];
     </div>
 
     <script>
+        function togglePasswordVisibility() {
+            var pwdField = document.getElementById('modalUserPassword');
+            var eye = document.getElementById('eyeIcon');
+            if (!pwdField) return;
+            if (pwdField.type === 'password') {
+                pwdField.type = 'text';
+                if (eye) {
+                    eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/>';
+                }
+            } else {
+                pwdField.type = 'password';
+                if (eye) {
+                    eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+                }
+            }
+        }
+
         function openInviteModal() {
             var idField = document.getElementById('modalUserId');
             if (idField) idField.value = '';
@@ -749,10 +806,25 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                     outletField.selectedIndex = 0;
                 }
             }
+            var pwdField = document.getElementById('modalUserPassword');
+            if (pwdField) {
+                pwdField.type = 'password';
+                pwdField.value = '';
+                pwdField.placeholder = 'Set login password (or leave blank for OminiFlow@2026)';
+            }
+            var eye = document.getElementById('eyeIcon');
+            if (eye) {
+                eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+            }
+            var pwdLabel = document.getElementById('modalPasswordLabel');
+            if (pwdLabel) pwdLabel.innerHTML = 'Password';
+            var pwdHelp = document.getElementById('modalPasswordHelp');
+            if (pwdHelp) pwdHelp.innerHTML = 'Set user login password. If left blank, defaults to: <code>OminiFlow@2026</code>';
+
             var titleEl = document.querySelector('.modal-invite-title');
-            if (titleEl) titleEl.textContent = 'Invite User';
+            if (titleEl) titleEl.textContent = 'Invite / Add User';
             var btnEl = document.getElementById('btnModalSubmit');
-            if (btnEl) btnEl.textContent = 'Send Invite';
+            if (btnEl) btnEl.textContent = 'Add User';
 
             var m = document.getElementById('inviteUserModal');
             if (m) {
@@ -786,6 +858,21 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             if (roleField) roleField.value = role;
             var outlet = document.getElementById('modalUserOutlet');
             if (outlet) outlet.value = outletId > 0 ? String(outletId) : '';
+
+            var pwdField = document.getElementById('modalUserPassword');
+            if (pwdField) {
+                pwdField.type = 'password';
+                pwdField.value = '';
+                pwdField.placeholder = 'Leave blank to keep current password';
+            }
+            var eye = document.getElementById('eyeIcon');
+            if (eye) {
+                eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+            }
+            var pwdLabel = document.getElementById('modalPasswordLabel');
+            if (pwdLabel) pwdLabel.innerHTML = 'New Password';
+            var pwdHelp = document.getElementById('modalPasswordHelp');
+            if (pwdHelp) pwdHelp.innerHTML = 'Enter new password to update, or leave blank to keep existing password.';
         }
 
         document.addEventListener('keydown', function(e) {
