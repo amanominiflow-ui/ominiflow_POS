@@ -116,6 +116,138 @@ function is_super_admin(?array $user = null): bool {
     return !empty($user['is_super_admin']) && strtolower(trim((string)($user['email'] ?? ''))) === 'admin@example.com';
 }
 
+function user_role(?array $user = null): string {
+    $user = $user ?? current_user();
+    if (!$user) return '';
+    return strtolower(trim((string) ($user['role'] ?? 'staff')));
+}
+
+function user_can_manage_users(?array $user = null): bool {
+    return user_has_full_access($user);
+}
+
+function user_can_access_settings(?array $user = null): bool {
+    return user_has_full_access($user);
+}
+
+function user_can_access_purchasing(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) return false;
+    if (user_has_full_access($user)) return true;
+    $role = user_role($user);
+    return in_array($role, ['manager', 'store manager', 'accountant'], true);
+}
+
+function user_can_access_books(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) return false;
+    if (user_has_full_access($user)) return true;
+    $role = user_role($user);
+    return in_array($role, ['manager', 'store manager', 'accountant'], true);
+}
+
+function user_can_access_reports(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) return false;
+    if (user_has_full_access($user)) return true;
+    $role = user_role($user);
+    return in_array($role, ['manager', 'store manager', 'accountant'], true);
+}
+
+function user_can_access_inventory(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) return false;
+    if (user_has_full_access($user)) return true;
+    $role = user_role($user);
+    return in_array($role, ['manager', 'store manager', 'cashier', 'staff'], true);
+}
+
+function user_can_manage_inventory(?array $user = null): bool {
+    $user = $user ?? current_user();
+    if (!$user) return false;
+    if (user_has_full_access($user)) return true;
+    $role = user_role($user);
+    return in_array($role, ['manager', 'store manager'], true);
+}
+
+function enforce_user_page_permissions(): void {
+    $user = current_user();
+    if (!$user || user_has_full_access($user)) {
+        return;
+    }
+
+    $script = strtolower(basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')));
+    $role = user_role($user);
+
+    // 1. Administration & Settings Pages - Strictly Admin/Owner
+    $adminSettingsPages = [
+        'users.php',
+        'roles.php',
+        'role-create.php',
+        'settings.php',
+        'payment-integrations.php',
+        'customer-payments.php',
+        'integrations-whatsapp.php',
+        'integrations-shipping.php',
+        'integrations-cart.php',
+        'taxes.php',
+        'business-profile.php',
+        'import-export.php',
+        'pricing.php',
+    ];
+    if (in_array($script, $adminSettingsPages, true)) {
+        if (!empty($_POST['is_ajax']) || (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')) {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Access Denied: Administration settings access is restricted to Administrators.']);
+            exit;
+        }
+        set_flash('error', 'Access Denied: Administration settings and user management are restricted to Administrators.');
+        redirect(APP_URL . '/pos.php');
+    }
+
+    // 2. Purchasing & Inward Pages - Only Admin, Manager, Accountant
+    $purchasingPages = [
+        'purchases.php',
+        'purchase-receives.php',
+        'purchase-entry.php',
+        'inward-entry.php',
+        'bills.php',
+        'payments-made.php',
+        'vendors.php',
+        'purchase-returns.php',
+    ];
+    if (in_array($script, $purchasingPages, true) && !in_array($role, ['manager', 'store manager', 'accountant'], true)) {
+        if (!empty($_POST['is_ajax']) || (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')) {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Access Denied: Purchasing module is restricted.']);
+            exit;
+        }
+        set_flash('error', 'Access Denied: Purchasing and vendor modules are restricted.');
+        redirect(APP_URL . '/pos.php');
+    }
+
+    // 3. Books of Accounts - Only Admin, Manager, Accountant
+    if ($script === 'books.php' && !in_array($role, ['manager', 'store manager', 'accountant'], true)) {
+        set_flash('error', 'Access Denied: Books of Accounts is restricted.');
+        redirect(APP_URL . '/pos.php');
+    }
+
+    // 4. Analytics & Reports - Only Admin, Manager, Accountant
+    if ($script === 'reports.php' && !in_array($role, ['manager', 'store manager', 'accountant'], true)) {
+        set_flash('error', 'Access Denied: Analytics and Reports are restricted.');
+        redirect(APP_URL . '/pos.php');
+    }
+
+    // 5. Store / Outlets Setup - Cashier & Staff cannot configure outlets
+    $storeConfigPages = ['outlets.php'];
+    if (in_array($script, $storeConfigPages, true) && in_array($role, ['cashier', 'staff'], true)) {
+        set_flash('error', 'Access Denied: Store outlet configuration is restricted.');
+        redirect(APP_URL . '/pos.php');
+    }
+}
+
 function current_user(): ?array {
     if (!is_authenticated()) {
         return null;
@@ -226,6 +358,9 @@ function require_auth(): void {
 
     require_once __DIR__ . '/premium_db.php';
     enforce_premium_gate();
+
+    // Enforce role-based module/page access
+    enforce_user_page_permissions();
 }
 
 function require_guest(): void {
