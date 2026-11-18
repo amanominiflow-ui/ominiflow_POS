@@ -62,11 +62,11 @@ function generate_code128_bar_modules(string $text): array {
     return ['text' => $text, 'modules' => $modules, 'total' => $totalModules];
 }
 
-function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6, string $barColor = '#0f172a'): string {
+function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth = 1.6, string $barColor = '#0f172a', bool $showText = true): string {
     $encoded = generate_code128_bar_modules($text);
     $quietZone = 10;
     $svgWidth = ($encoded['total'] + ($quietZone * 2)) * $barWidth;
-    $svgHeight = $barHeight + 16;
+    $svgHeight = $showText ? ($barHeight + 16) : $barHeight;
 
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' . $svgWidth . ' ' . $svgHeight . '" width="' . $svgWidth . '" height="' . $svgHeight . '" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">';
     $svg .= '<rect width="100%" height="100%" fill="transparent"/>';
@@ -80,7 +80,9 @@ function generate_code128_svg(string $text, int $barHeight = 45, float $barWidth
         $currentX += $w;
     }
 
-    $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '" text-anchor="middle">' . htmlspecialchars($encoded['text'], ENT_QUOTES, 'UTF-8') . '</text>';
+    if ($showText) {
+        $svg .= '<text x="' . number_format($svgWidth / 2, 2, '.', '') . '" y="' . ($barHeight + 12) . '" font-family="monospace" font-size="11" font-weight="bold" fill="' . htmlspecialchars($barColor, ENT_QUOTES, 'UTF-8') . '" text-anchor="middle">' . htmlspecialchars($encoded['text'], ENT_QUOTES, 'UTF-8') . '</text>';
+    }
     $svg .= '</svg>';
 
     return $svg;

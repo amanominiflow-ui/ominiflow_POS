@@ -64,6 +64,8 @@ $showName = isset($_GET['show_name']) ? (bool)$_GET['show_name'] : true;
 $showPrice = isset($_GET['show_price']) ? (bool)$_GET['show_price'] : true;
 $showSku = isset($_GET['show_sku']) ? (bool)$_GET['show_sku'] : true;
 $showVar = isset($_GET['show_var']) ? (bool)$_GET['show_var'] : true;
+$customSize = isset($_GET['custom_size']) ? trim((string)$_GET['custom_size']) : null;
+$customColour = isset($_GET['custom_colour']) ? trim((string)$_GET['custom_colour']) : null;
 
 $targetProduct = null;
 if ($selectedPid > 0) {
@@ -131,12 +133,15 @@ if ($targetProduct) {
                 $vVar = get_variant_size_and_colour($v);
                 $vBarcode = trim((string)($v['barcode'] ?: ($targetProduct['barcode'] ?: ($v['sku'] ?: $targetProduct['sku']))));
                 $vSku = trim((string)($v['sku'] ?: $targetProduct['sku']));
+                if ($vSku !== '' && (stripos($vBarcode, 'SKU') === 0 || $vBarcode === '')) {
+                    $vBarcode = $vSku;
+                }
                 $vPrice = (float)($v['selling_price'] ?: $targetProduct['selling_price']);
                 $printItems[] = [
                     'product_name' => (string)$targetProduct['name'],
                     'variant_name' => (string)($v['variant_name'] ?? ''),
-                    'size' => $vVar['size'],
-                    'colour' => $vVar['colour'],
+                    'size' => ($customSize !== null && $customSize !== '') ? $customSize : $vVar['size'],
+                    'colour' => ($customColour !== null && $customColour !== '') ? $customColour : $vVar['colour'],
                     'sku' => $vSku,
                     'barcode' => $vBarcode,
                     'price' => $vPrice,
@@ -155,12 +160,15 @@ if ($targetProduct) {
                 $vVar = get_variant_size_and_colour($matchedVar);
                 $vBarcode = trim((string)($matchedVar['barcode'] ?: ($targetProduct['barcode'] ?: ($matchedVar['sku'] ?: $targetProduct['sku']))));
                 $vSku = trim((string)($matchedVar['sku'] ?: $targetProduct['sku']));
+                if ($vSku !== '' && (stripos($vBarcode, 'SKU') === 0 || $vBarcode === '')) {
+                    $vBarcode = $vSku;
+                }
                 $vPrice = (float)($matchedVar['selling_price'] ?: $targetProduct['selling_price']);
                 $printItems[] = [
                     'product_name' => (string)$targetProduct['name'],
                     'variant_name' => (string)($matchedVar['variant_name'] ?? ''),
-                    'size' => $vVar['size'],
-                    'colour' => $vVar['colour'],
+                    'size' => ($customSize !== null && $customSize !== '') ? $customSize : $vVar['size'],
+                    'colour' => ($customColour !== null && $customColour !== '') ? $customColour : $vVar['colour'],
                     'sku' => $vSku,
                     'barcode' => $vBarcode,
                     'price' => $vPrice,
@@ -173,12 +181,19 @@ if ($targetProduct) {
     if (empty($printItems)) {
         $storedBarcode = trim((string) ($targetProduct['barcode'] ?? ''));
         $productSku = trim((string) ($targetProduct['sku'] ?? ''));
-        $labelCode = $storedBarcode !== '' ? $storedBarcode : $productSku;
+        if ($productSku !== '' && ($storedBarcode === '' || stripos($storedBarcode, 'SKU') === 0)) {
+            $labelCode = $productSku;
+        } else {
+            $labelCode = $storedBarcode !== '' ? $storedBarcode : $productSku;
+        }
+        $itemSize = ($customSize !== null && $customSize !== '') ? $customSize : 'FS';
+        $itemColour = ($customColour !== null && $customColour !== '') ? $customColour : '';
+
         $printItems[] = [
             'product_name' => (string)$targetProduct['name'],
             'variant_name' => '',
-            'size' => '',
-            'colour' => '',
+            'size' => $itemSize,
+            'colour' => $itemColour,
             'sku' => $productSku,
             'barcode' => $labelCode,
             'price' => (float)$targetProduct['selling_price'],
@@ -520,7 +535,7 @@ $hasBarcode = $hasAnyBarcode;
                         <div class="print-grid" style="display: grid; <?= in_array($labelSize, ['2x1', '4x1'], true) ? 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 680px; margin: 0 auto;' : 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));' ?> gap: 14px;">
                             <?php foreach ($inwardPrint['labels'] as $label): ?>
                                 <?php
-                                $labelSvg = generate_code128_svg((string) $label['barcode'], $isPairRoll ? 22 : 36, $isPairRoll ? 1.15 : 1.5);
+                                $labelSvg = generate_code128_svg((string) $label['barcode'], $isPairRoll ? 22 : 36, $isPairRoll ? 1.15 : 1.5, '#0f172a', $showSku);
                                 $varInfo = '';
                                 if (!empty($label['size']) && !empty($label['colour'])) {
                                     $varInfo = 'SIZE: ' . $label['size'] . ' | COLOR: ' . $label['colour'];
@@ -529,6 +544,17 @@ $hasBarcode = $hasAnyBarcode;
                                 } elseif (!empty($label['colour'])) {
                                     $varInfo = 'COLOR: ' . $label['colour'];
                                 }
+
+                                $inwBarcodeIsSku = !empty($label['barcode']) && (
+                                    $label['barcode'] === ($label['sku'] ?? '')
+                                    || (stripos((string)$label['barcode'], 'SKU') !== false)
+                                );
+                                $shouldShowInwSkuSub = $showSku && !empty($label['sku']) && !$inwBarcodeIsSku;
+                                $cleanInwSku = (string) $label['sku'];
+                                if (stripos($cleanInwSku, 'SKU:') === 0) {
+                                    $cleanInwSku = trim(substr($cleanInwSku, 4));
+                                }
+                                $displayInwSkuText = (stripos($cleanInwSku, 'SKU') === 0) ? $cleanInwSku : ('SKU: ' . $cleanInwSku);
                                 ?>
                                 <?php for ($i = 0; $i < (int) $label['copies']; $i++): ?>
                                     <div class="barcode-card-item">
@@ -539,8 +565,8 @@ $hasBarcode = $hasAnyBarcode;
                                             <div class="barcode-prod-name" title="<?= e((string) $label['name']) ?>"><?= e((string) $label['name']) ?></div>
                                         <?php endif; ?>
                                         <div class="barcode-svg-container"><?= $labelSvg ?></div>
-                                        <?php if ($showSku && !empty($label['sku'])): ?>
-                                            <div class="barcode-sku-sub">SKU: <?= e((string) $label['sku']) ?></div>
+                                        <?php if ($shouldShowInwSkuSub): ?>
+                                            <div class="barcode-sku-sub"><?= e($displayInwSkuText) ?></div>
                                         <?php endif; ?>
                                         <?php if ($showVar && $varInfo !== ''): ?>
                                             <div class="barcode-var-sub"><?= e($varInfo) ?></div>
@@ -620,7 +646,17 @@ $hasBarcode = $hasAnyBarcode;
                             <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Company:</span>
-                                    <input type="text" name="company_name" value="<?= e($companyName) ?>" placeholder="Company Name" class="form-control" style="width: 170px; padding: 5px 9px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                    <input type="text" name="company_name" value="<?= e($companyName) ?>" placeholder="Company Name" class="form-control" style="width: 150px; padding: 5px 9px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Size:</span>
+                                    <input type="text" name="custom_size" value="<?= e($customSize ?? ($printItems[0]['size'] ?? 'FS')) ?>" placeholder="e.g. M / FS" class="form-control" style="width: 80px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Colour:</span>
+                                    <input type="text" name="custom_colour" value="<?= e($customColour ?? ($printItems[0]['colour'] ?? '')) ?>" placeholder="e.g. Black" class="form-control" style="width: 90px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
                                 </div>
 
                                 <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
@@ -715,7 +751,9 @@ $hasBarcode = $hasAnyBarcode;
                                     ? generate_code128_svg(
                                         (string)$item['barcode'],
                                         $labelSize === 'compact' ? 28 : ($isPairRoll ? 22 : ($labelSize === 'large' ? 44 : 36)),
-                                        $labelSize === 'compact' ? 1.2 : ($isPairRoll ? 1.15 : 1.5)
+                                        $labelSize === 'compact' ? 1.2 : ($isPairRoll ? 1.15 : 1.5),
+                                        '#0f172a',
+                                        $showSku
                                     )
                                     : '';
                                 $varText = '';
@@ -728,6 +766,20 @@ $hasBarcode = $hasAnyBarcode;
                                 } elseif (!empty($item['variant_name'])) {
                                     $varText = $item['variant_name'];
                                 }
+
+                                // Single SKU check:
+                                // If barcode already encodes/displays the SKU (or has SKU prefix),
+                                // do NOT print the separate .barcode-sku-sub line to avoid duplicate SKU.
+                                $barcodeIsSku = !empty($item['barcode']) && (
+                                    $item['barcode'] === $item['sku']
+                                    || (stripos($item['barcode'], 'SKU') !== false)
+                                );
+                                $shouldShowSkuSub = $showSku && !empty($item['sku']) && !$barcodeIsSku;
+                                $cleanSku = $item['sku'];
+                                if (stripos($cleanSku, 'SKU:') === 0) {
+                                    $cleanSku = trim(substr($cleanSku, 4));
+                                }
+                                $displaySkuText = (stripos($cleanSku, 'SKU') === 0) ? $cleanSku : ('SKU: ' . $cleanSku);
                                 ?>
                                 <?php for ($i = 0; $i < (int)$item['copies']; $i++): ?>
                                     <div class="barcode-card-item">
@@ -745,9 +797,9 @@ $hasBarcode = $hasAnyBarcode;
                                             <?= $itemSvg ?>
                                         </div>
 
-                                        <?php if ($showSku && !empty($item['sku'])): ?>
+                                        <?php if ($shouldShowSkuSub): ?>
                                             <div class="barcode-sku-sub">
-                                                SKU: <?= e($item['sku']) ?>
+                                                <?= e($displaySkuText) ?>
                                             </div>
                                         <?php endif; ?>
 
