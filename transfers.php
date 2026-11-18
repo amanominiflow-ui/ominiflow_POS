@@ -346,11 +346,39 @@ $pageTitle = 'Warehouse Stock Transfers';
 
                 <!-- Transfer Items Section -->
                 <div style="background: #f8fafc; border: 1px solid var(--saas-border-light); border-radius: var(--saas-radius-md); padding: 14px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 13px; font-weight: 700; color: var(--saas-navy-950);">Transfer Items *</span>
-                        <button type="button" id="btnAddTransferItem" class="header-btn" style="padding: 5px 12px; font-size: 12px; background: #2563eb;">
-                            + Add Item
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div>
+                            <span style="font-size: 13px; font-weight: 700; color: var(--saas-navy-950);">Transfer Items *</span>
+                            <span style="font-size: 11.5px; color: #64748b; margin-left: 6px;">(Select multiple items from dropdown or add rows)</span>
+                        </div>
+                        <button type="button" id="btnAddTransferItem" class="header-btn-secondary" style="padding: 4px 10px; font-size: 11.5px; background: #ffffff; border: 1px solid #cbd5e1;">
+                            + Add Row Manually
                         </button>
+                    </div>
+
+                    <!-- Multi-Select Product Dropdown -->
+                    <div style="position: relative; margin-bottom: 12px;" id="trfMultiSelectContainer">
+                        <label style="display: block; font-size: 11.5px; font-weight: 600; color: var(--saas-slate-600); margin-bottom: 4px;">
+                            Quick Multi-Select Products (Click below to check multiple items):
+                        </label>
+                        <div id="trfMultiSelectTrigger" style="min-height: 38px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; transition: border-color 0.15s ease;">
+                            <div id="trfMultiSelectLabels" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: #64748b;">
+                                <span>Choose products to transfer (click to select multiple)...</span>
+                            </div>
+                            <span style="font-size: 11px; color: #94a3b8; margin-left: 8px;">▼</span>
+                        </div>
+
+                        <!-- Dropdown Menu -->
+                        <div id="trfMultiSelectDropdown" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1); z-index: 100; max-height: 280px; flex-direction: column;">
+                            <div style="padding: 8px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 8px; align-items: center; background: #fafafa; border-radius: 8px 8px 0 0;">
+                                <input type="text" id="trfSearchInput" placeholder="Search product by name or SKU..." style="flex: 1; padding: 6px 10px; font-size: 12.5px; border: 1px solid #e2e8f0; border-radius: 6px; outline: none; background: #ffffff;">
+                                <button type="button" id="trfSelectAllBtn" style="padding: 5px 9px; font-size: 11px; font-weight: 600; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; white-space: nowrap;">Select All</button>
+                                <button type="button" id="trfClearAllBtn" style="padding: 5px 9px; font-size: 11px; font-weight: 600; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; white-space: nowrap;">Clear</button>
+                            </div>
+                            <div id="trfOptionsList" style="overflow-y: auto; max-height: 220px; padding: 4px 0;">
+                                <!-- Options populated by JS -->
+                            </div>
+                        </div>
                     </div>
                     <div class="table-wrap" style="background: #ffffff; border: 1px solid var(--saas-border-light); border-radius: 6px; overflow: visible;">
                         <table class="saas-table" style="margin: 0; min-width: 600px;">
@@ -519,6 +547,185 @@ $pageTitle = 'Warehouse Stock Transfers';
                 }
             }
 
+            const multiTrigger = document.getElementById('trfMultiSelectTrigger');
+            const multiDropdown = document.getElementById('trfMultiSelectDropdown');
+            const searchInput = document.getElementById('trfSearchInput');
+            const optionsList = document.getElementById('trfOptionsList');
+            const labelsWrap = document.getElementById('trfMultiSelectLabels');
+            const selectAllBtn = document.getElementById('trfSelectAllBtn');
+            const clearAllBtn = document.getElementById('trfClearAllBtn');
+
+            function getSelectedProductIds() {
+                const ids = new Set();
+                const rows = itemsBody.querySelectorAll('tr');
+                rows.forEach(function (row) {
+                    const pSel = row.querySelector('.trf-item-prod');
+                    if (pSel && pSel.value) {
+                        ids.add(String(pSel.value));
+                    }
+                });
+                return ids;
+            }
+
+            function syncMultiSelectLabels() {
+                if (!labelsWrap) return;
+                const selectedIds = getSelectedProductIds();
+                labelsWrap.innerHTML = '';
+
+                if (selectedIds.size === 0) {
+                    labelsWrap.innerHTML = '<span style="color: #94a3b8;">Choose products to transfer (click to select multiple)...</span>';
+                    return;
+                }
+
+                const selArr = Array.from(selectedIds);
+                const showCount = Math.min(selArr.length, 3);
+                for (let i = 0; i < showCount; i++) {
+                    const pid = selArr[i];
+                    const prod = TRF_PRODUCTS.find(p => String(p.id) === String(pid));
+                    const name = prod ? prod.name : 'Product #' + pid;
+                    const chip = document.createElement('span');
+                    chip.style.cssText = 'background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;';
+                    chip.innerHTML = `${escapeHtml(name)} <span style="cursor: pointer; font-size: 13px; font-weight: 700; color: #4f46e5;" title="Remove">&times;</span>`;
+                    chip.querySelector('span').addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        removeProductRows(pid);
+                    });
+                    labelsWrap.appendChild(chip);
+                }
+
+                if (selArr.length > 3) {
+                    const more = document.createElement('span');
+                    more.style.cssText = 'background: #f1f5f9; color: #475569; padding: 2px 7px; border-radius: 4px; font-size: 11.5px; font-weight: 700;';
+                    more.textContent = `+${selArr.length - 3} more`;
+                    labelsWrap.appendChild(more);
+                }
+            }
+
+            function renderMultiSelectOptions(filter) {
+                if (!optionsList) return;
+                const selectedIds = getSelectedProductIds();
+                const term = (filter || '').toLowerCase().trim();
+                optionsList.innerHTML = '';
+
+                const filtered = TRF_PRODUCTS.filter(function (p) {
+                    if (!term) return true;
+                    return p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term);
+                });
+
+                if (filtered.length === 0) {
+                    optionsList.innerHTML = '<div style="padding: 12px; text-align: center; color: #94a3b8; font-size: 12px;">No matching products found</div>';
+                    return;
+                }
+
+                filtered.forEach(function (p) {
+                    const isChecked = selectedIds.has(String(p.id));
+                    const row = document.createElement('label');
+                    row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; cursor: pointer; border-bottom: 1px solid #f8fafc; transition: background 0.1s;';
+                    row.onmouseover = function () { this.style.background = '#f1f5f9'; };
+                    row.onmouseout = function () { this.style.background = 'transparent'; };
+                    row.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;">
+                            <input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 16px; height: 16px; flex-shrink: 0;">
+                            <span style="font-size: 12.5px; font-weight: 600; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(p.name)}</span>
+                            <span style="font-size: 11px; color: #64748b; font-family: monospace; flex-shrink: 0;">(${escapeHtml(p.sku)})</span>
+                        </div>
+                        <span style="font-size: 11px; color: ${p.stock > 0 ? '#059669' : '#94a3b8'}; background: ${p.stock > 0 ? '#ecfdf5' : '#f1f5f9'}; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex-shrink: 0; margin-left: 8px;">Stock: ${p.stock}</span>
+                    `;
+
+                    const chk = row.querySelector('input[type="checkbox"]');
+                    chk.addEventListener('change', function () {
+                        if (chk.checked) {
+                            addProductRowIfNotExists(p.id);
+                        } else {
+                            removeProductRows(p.id);
+                        }
+                    });
+
+                    optionsList.appendChild(row);
+                });
+            }
+
+            function addProductRowIfNotExists(pid) {
+                const selectedIds = getSelectedProductIds();
+                if (!selectedIds.has(String(pid))) {
+                    const rows = itemsBody.querySelectorAll('tr');
+                    if (rows.length === 1 && !rows[0].querySelector('.trf-item-prod').value) {
+                        const soleSel = rows[0].querySelector('.trf-item-prod');
+                        soleSel.value = pid;
+                        updateVariantOptions(rows[0], pid, null);
+                    } else {
+                        addTransferRow(pid);
+                    }
+                    syncMultiSelectLabels();
+                    renderMultiSelectOptions(searchInput ? searchInput.value : '');
+                    recalculateTotals();
+                }
+            }
+
+            function removeProductRows(pid) {
+                const rows = itemsBody.querySelectorAll('tr');
+                rows.forEach(function (row) {
+                    const pSel = row.querySelector('.trf-item-prod');
+                    if (pSel && String(pSel.value) === String(pid)) {
+                        row.remove();
+                    }
+                });
+                if (itemsBody.querySelectorAll('tr').length === 0) {
+                    addTransferRow('', null, 1);
+                }
+                syncMultiSelectLabels();
+                renderMultiSelectOptions(searchInput ? searchInput.value : '');
+                recalculateTotals();
+            }
+
+            if (multiTrigger) {
+                multiTrigger.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    const isOpen = multiDropdown.style.display === 'flex';
+                    multiDropdown.style.display = isOpen ? 'none' : 'flex';
+                    if (!isOpen) {
+                        if (searchInput) searchInput.value = '';
+                        renderMultiSelectOptions('');
+                        setTimeout(() => searchInput && searchInput.focus(), 60);
+                    }
+                });
+            }
+
+            if (multiDropdown) {
+                multiDropdown.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                });
+            }
+
+            document.addEventListener('click', function () {
+                if (multiDropdown) multiDropdown.style.display = 'none';
+            });
+
+            if (searchInput) {
+                searchInput.addEventListener('input', function () {
+                    renderMultiSelectOptions(this.value);
+                });
+            }
+
+            if (selectAllBtn) {
+                selectAllBtn.addEventListener('click', function () {
+                    TRF_PRODUCTS.forEach(function (p) {
+                        addProductRowIfNotExists(p.id);
+                    });
+                    renderMultiSelectOptions(searchInput ? searchInput.value : '');
+                });
+            }
+
+            if (clearAllBtn) {
+                clearAllBtn.addEventListener('click', function () {
+                    itemsBody.innerHTML = '';
+                    addTransferRow('', null, 1);
+                    syncMultiSelectLabels();
+                    renderMultiSelectOptions(searchInput ? searchInput.value : '');
+                    recalculateTotals();
+                });
+            }
+
             function addTransferRow(defaultPid, defaultVid, defaultQty) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -552,6 +759,8 @@ $pageTitle = 'Warehouse Stock Transfers';
 
                 pSel.addEventListener('change', function () {
                     updateVariantOptions(tr, pSel.value, null);
+                    syncMultiSelectLabels();
+                    renderMultiSelectOptions(searchInput ? searchInput.value : '');
                     recalculateTotals();
                 });
 
@@ -559,13 +768,14 @@ $pageTitle = 'Warehouse Stock Transfers';
 
                 delBtn.addEventListener('click', function () {
                     if (itemsBody.querySelectorAll('tr').length <= 1) {
-                        // Reset line instead of removing sole row
                         pSel.value = '';
                         updateVariantOptions(tr, '', null);
                         qtyInp.value = 1;
                     } else {
                         tr.remove();
                     }
+                    syncMultiSelectLabels();
+                    renderMultiSelectOptions(searchInput ? searchInput.value : '');
                     recalculateTotals();
                 });
 
@@ -576,12 +786,13 @@ $pageTitle = 'Warehouse Stock Transfers';
                     updateVariantOptions(tr, TRF_PRODUCTS[0].id, null);
                 }
 
+                syncMultiSelectLabels();
                 recalculateTotals();
             }
 
             if (btnAdd) {
                 btnAdd.addEventListener('click', function () {
-                    addTransferRow();
+                    addTransferRow('', null, 1);
                 });
             }
 
