@@ -27,7 +27,19 @@ $products = get_products();
 $defaultPid = !empty($products[0]['id']) ? (int)$products[0]['id'] : 0;
 $selectedPid = isset($_GET['product_id']) && $_GET['product_id'] !== '' ? (int)$_GET['product_id'] : $defaultPid;
 $copies = isset($_GET['copies']) ? max(1, min(100, (int)$_GET['copies'])) : 12;
-$labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : 'standard';
+$u = function_exists('current_user') ? current_user() : null;
+$b = function_exists('current_business') ? current_business() : null;
+$uEmail = strtolower((string)($u['email'] ?? '')) . ' ' . strtolower((string)($_SESSION['user_email'] ?? ''));
+$uName = strtolower((string)($u['name'] ?? '')) . ' ' . strtolower((string)($_SESSION['user_name'] ?? ''));
+$bName = strtolower((string)($b['name'] ?? '')) . ' ' . strtolower((string)($_SESSION['business_name'] ?? ''));
+$isAshCollective = str_contains($uEmail, 'ashcollective')
+    || str_contains($bName, 'ash collective')
+    || str_contains($uName, 'ash collective')
+    || (int)($u['id'] ?? 0) === 7
+    || (int)($_SESSION['user_id'] ?? 0) === 7;
+
+$defaultLabelSize = $isAshCollective ? '2x1' : 'standard';
+$labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : $defaultLabelSize;
 if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1', '4x1'], true)) {
     $labelSize = 'standard';
 }
@@ -181,11 +193,18 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
         }
 
         @media print {
+            <?php if ($isPairRoll): ?>
+            @page {
+                size: 4in 1in;
+                margin: 0;
+            }
+            <?php else: ?>
             @page {
                 size: auto;
                 margin: 5mm;
             }
-            .app-sidebar, .app-header, .page-top-header, .filter-card, .spotlight-overlay, .no-print, .header-left, .header-right, button {
+            <?php endif; ?>
+            .app-sidebar, .app-header, .page-top-header, .filter-card, .spotlight-overlay, .no-print, .header-left, .header-right, button, #omniflow-impersonation-bar, .impersonate-banner {
                 display: none !important;
                 visibility: hidden !important;
             }
@@ -232,40 +251,77 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             .size-2x1 .print-grid,
             .size-4x1 .print-grid {
                 grid-template-columns: repeat(2, 1fr) !important;
-                gap: 4mm !important;
-                max-width: 100% !important;
+                gap: 0 2mm !important;
+                width: 4in !important;
+                max-width: 4in !important;
+                margin: 0 auto !important;
+                padding: 0 1mm !important;
+                box-sizing: border-box !important;
             }
             .size-2x1 .barcode-card-item,
             .size-4x1 .barcode-card-item {
-                padding: 2.5mm 3.5mm !important;
+                padding: 1.2mm 2mm !important;
                 box-sizing: border-box !important;
                 break-inside: avoid !important;
                 page-break-inside: avoid !important;
+                height: 25mm !important;
+                max-height: 25.4mm !important;
                 min-height: 24mm !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                overflow: hidden !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+            }
+            .size-2x1 .barcode-card-item:nth-child(2n),
+            .size-4x1 .barcode-card-item:nth-child(2n) {
+                break-after: page !important;
+                page-break-after: always !important;
+            }
+            .size-2x1 .barcode-card-item:last-child,
+            .size-4x1 .barcode-card-item:last-child {
+                break-after: auto !important;
+                page-break-after: auto !important;
             }
             .size-2x1 .barcode-store-name,
             .size-4x1 .barcode-store-name {
-                font-size: 8px !important;
-                margin-bottom: 1mm !important;
+                font-size: 7.5px !important;
+                line-height: 1 !important;
+                margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-prod-name,
             .size-4x1 .barcode-prod-name {
-                font-size: 10.5px !important;
-                margin-bottom: 1mm !important;
+                font-size: 9.5px !important;
+                line-height: 1.1 !important;
+                margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-price-tag,
             .size-4x1 .barcode-price-tag {
-                font-size: 13px !important;
-                margin-bottom: 1mm !important;
+                font-size: 11.5px !important;
+                line-height: 1 !important;
+                margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-svg-container,
             .size-4x1 .barcode-svg-container {
-                margin: 1mm 0 !important;
+                margin: 0.5mm 0 !important;
+                height: 22px !important;
+                max-height: 22px !important;
+            }
+            .size-2x1 .barcode-svg-container svg,
+            .size-4x1 .barcode-svg-container svg {
+                max-height: 22px !important;
+                height: 22px !important;
+                width: auto !important;
+                max-width: 95% !important;
             }
             .size-2x1 .barcode-sku-sub,
             .size-4x1 .barcode-sku-sub {
-                font-size: 8px !important;
-                margin-top: 1mm !important;
+                font-size: 7px !important;
+                line-height: 1 !important;
+                margin-top: 0.5mm !important;
             }
             .barcode-card-item {
                 border: 1px dashed #94a3b8 !important;
