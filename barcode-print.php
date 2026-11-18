@@ -736,7 +736,7 @@ $hasBarcode = $hasAnyBarcode;
                                         <?php endif; ?>
                                     </div>
                                     <div style="font-size: 12px; color: var(--saas-slate-500); font-family: monospace;">
-                                        Company: <?= e($companyName) ?> &bull; SKU: <?= e($printItems[0]['sku']) ?> &bull; Barcode: <?= e($printItems[0]['barcode']) ?>
+                                        Company: <?= e($companyName) ?> &bull; <?= stripos((string)$printItems[0]['sku'], 'SKU') === 0 ? '' : 'SKU: ' ?><?= e($printItems[0]['sku']) ?> &bull; Barcode: <?= e($printItems[0]['barcode']) ?>
                                     </div>
                                 </div>
                             </div>
