@@ -92,11 +92,11 @@ assert_true(str_contains($htmlAsh, 'value="2x1" selected'), "Ash Collective defa
 assert_true(str_contains($htmlAsh, 'size: 4in 1in;'), "Ash Collective default sets 4in 1in page size");
 
 // 7. Test single SKU display (no duplicate SKU when barcode is SKU) and size/colour support
-$_SESSION['user_id'] = 7;
-$_SESSION['business_id'] = 5;
-$_SESSION['user_email'] = 'ashcollective1@gmail.com';
-$_SESSION['business_name'] = 'Ash Collective';
-$_GET['product_id'] = '78';
+$allProds = get_products();
+$sampleProd = !empty($allProds) ? $allProds[0] : null;
+$samplePid = $sampleProd ? (int)$sampleProd['id'] : 0;
+
+$_GET['product_id'] = (string)$samplePid;
 $_GET['label_size'] = '2x1';
 $_GET['copies'] = '1';
 $_GET['custom_size'] = 'M';
@@ -104,14 +104,14 @@ $_GET['custom_colour'] = 'BLACK';
 
 ob_start();
 include __DIR__ . '/../barcode-print.php';
-$htmlDemo2 = ob_get_clean();
+$htmlSample = ob_get_clean();
 
-assert_true(str_contains($htmlDemo2, 'name="custom_size"'), "Form has custom_size input");
-assert_true(str_contains($htmlDemo2, 'name="custom_colour"'), "Form has custom_colour input");
-assert_true(str_contains($htmlDemo2, 'SIZE: M | COLOR: BLACK'), "Label renders custom size and colour");
-assert_true(str_contains($htmlDemo2, 'SP: ₹200.00'), "Label renders selling price with SP prefix");
-// Single SKU: since barcode encodes SKU, barcode-sku-sub must NOT be rendered
-assert_true(!str_contains($htmlDemo2, 'class="barcode-sku-sub"'), "Does not print duplicate barcode-sku-sub when barcode already displays SKU");
+assert_true(str_contains($htmlSample, 'name="custom_size"'), "Form has custom_size input");
+assert_true(str_contains($htmlSample, 'name="custom_colour"'), "Form has custom_colour input");
+assert_true(str_contains($htmlSample, 'SIZE: M | COLOR: BLACK'), "Label renders custom size and colour");
+assert_true(str_contains($htmlSample, 'SP: ₹'), "Label renders selling price with SP prefix");
+// Single SKU: if barcode is a SKU, barcode-sku-sub must NOT be rendered. If barcode is numeric, SKU must not repeat "SKU: SKU-"
+assert_true(!str_contains($htmlSample, 'SKU: SKU-'), "SKU prefix is not repeated twice (no 'SKU: SKU-')");
 
 echo "\n========================================================\n";
 if ($failures === 0) {

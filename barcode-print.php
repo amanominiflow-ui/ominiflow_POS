@@ -594,8 +594,9 @@ $hasBarcode = $hasAnyBarcode;
                                         <option value="">-- No products available --</option>
                                     <?php else: ?>
                                         <?php foreach ($products as $p): ?>
+                                            <?php $pOptSku = stripos((string)$p['sku'], 'SKU') === 0 ? (string)$p['sku'] : ('SKU: ' . $p['sku']); ?>
                                             <option value="<?= $p['id'] ?>" <?= $selectedPid === (int)$p['id'] ? 'selected' : '' ?>>
-                                                <?= e($p['name']) ?> — [SKU: <?= e($p['sku']) ?>] — ₹<?= number_format((float)$p['selling_price'], 2) ?> (Stock: <?= (int)$p['stock_quantity'] ?>)
+                                                <?= e($p['name']) ?> — [<?= e($pOptSku) ?>] — ₹<?= number_format((float)$p['selling_price'], 2) ?> (Stock: <?= (int)$p['stock_quantity'] ?>)
                                             </option>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
@@ -611,8 +612,9 @@ $hasBarcode = $hasAnyBarcode;
                                 <select name="variant_id" class="form-control" onchange="document.getElementById('barcodeConfigForm').submit()" style="width: 100%; cursor: pointer;">
                                     <option value="all" <?= $selectedVarId === 'all' ? 'selected' : '' ?>>-- All Variants --</option>
                                     <?php foreach ($variants as $v): ?>
+                                        <?php $vOptSku = stripos((string)$v['sku'], 'SKU') === 0 ? (string)$v['sku'] : ('SKU: ' . $v['sku']); ?>
                                         <option value="<?= (int)$v['id'] ?>" <?= (string)$selectedVarId === (string)$v['id'] ? 'selected' : '' ?>>
-                                            <?= e($v['variant_name']) ?> — [SKU: <?= e($v['sku']) ?>] — ₹<?= number_format((float)$v['selling_price'], 2) ?>
+                                            <?= e($v['variant_name']) ?> — [<?= e($vOptSku) ?>] — ₹<?= number_format((float)$v['selling_price'], 2) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
