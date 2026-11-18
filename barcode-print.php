@@ -195,7 +195,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
         @media print {
             <?php if ($isPairRoll): ?>
             @page {
-                size: 4in 1in;
+                size: 4in 2in;
                 margin: 0;
             }
             <?php else: ?>
@@ -251,7 +251,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             .size-2x1 .print-grid,
             .size-4x1 .print-grid {
                 grid-template-columns: repeat(2, 1fr) !important;
-                gap: 0 2mm !important;
+                gap: 0.5mm 2mm !important;
                 width: 4in !important;
                 max-width: 4in !important;
                 margin: 0 auto !important;
@@ -276,8 +276,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 justify-content: space-between !important;
                 align-items: center !important;
             }
-            .size-2x1 .barcode-card-item:nth-child(2n),
-            .size-4x1 .barcode-card-item:nth-child(2n) {
+            .size-2x1 .barcode-card-item:nth-child(4n),
+            .size-4x1 .barcode-card-item:nth-child(4n) {
                 break-after: page !important;
                 page-break-after: always !important;
             }

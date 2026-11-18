@@ -86,10 +86,11 @@ assert_true(str_contains($htmlStd, '<div class="size-standard">'), "Standard pre
 assert_true(str_contains($htmlStd, 'value="standard" selected'), "Standard preset option remains selected");
 assert_true(str_contains($htmlStd, 'repeat(auto-fill, minmax(210px, 1fr))'), "Standard preset retains its default auto-fill responsive grid");
 assert_true(str_contains($htmlStd, 'size: auto;'), "Standard preset preserves standard sheet '@page { size: auto; margin: 5mm; }'");
-assert_true(!str_contains($htmlStd, 'size: 4in 1in;'), "Standard preset does not set 4-inch roll size");
+assert_true(!str_contains($htmlStd, 'size: 4in 2in;'), "Standard preset does not set 4-inch roll size");
 
-// 6. Test 4-inch page size for 2x1 preset
-assert_true(str_contains($html, 'size: 4in 1in;'), "2x1 preset generates '@page { size: 4in 1in; margin: 0; }'");
+// 6. Test 4-inch page size for 2x1 preset (4 labels per page: 4x2 inch)
+assert_true(str_contains($html, 'size: 4in 2in;'), "2x1 preset generates '@page { size: 4in 2in; margin: 0; }'");
+assert_true(str_contains($html, 'nth-child(4n)'), "2x1 preset breaks after every 4th label (4 labels per page)");
 assert_true(str_contains($html, '#omniflow-impersonation-bar'), "Impersonation bar is hidden in print mode");
 
 // 7. Test Ash Collective auto-defaults to 2x1 template
@@ -101,7 +102,7 @@ include __DIR__ . '/../barcode-print.php';
 $htmlAsh = ob_get_clean();
 
 assert_true(str_contains($htmlAsh, 'value="2x1" selected'), "Ash Collective defaults to 2x1 template");
-assert_true(str_contains($htmlAsh, 'size: 4in 1in;'), "Ash Collective default sets 4in 1in page size");
+assert_true(str_contains($htmlAsh, 'size: 4in 2in;'), "Ash Collective default sets 4in 2in page size");
 
 echo "\n========================================================\n";
 if ($failures === 0) {
