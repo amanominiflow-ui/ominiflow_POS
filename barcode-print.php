@@ -40,10 +40,10 @@ $isAshCollective = str_contains($uEmail, 'ashcollective')
 
 $defaultLabelSize = $isAshCollective ? '2x1' : 'standard';
 $labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : $defaultLabelSize;
-if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1', '4x1'], true)) {
+if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1', '4x1', '4x2'], true)) {
     $labelSize = 'standard';
 }
-$isPairRoll = in_array($labelSize, ['2x1', '4x1'], true);
+$isPairRoll = in_array($labelSize, ['2x1', '4x1', '4x2'], true);
 $showStore = isset($_GET['show_store']) ? (bool)$_GET['show_store'] : true;
 $showPrice = isset($_GET['show_price']) ? (bool)$_GET['show_price'] : true;
 $showSku = isset($_GET['show_sku']) ? (bool)$_GET['show_sku'] : true;
@@ -149,53 +149,66 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             font-size: 19px;
         }
 
-        /* 2x1 and 4x1 inch presets (2 in one row) */
+        /* 2x1, 4x1, and 4x2 presets (2 in one row) */
         .size-2x1 .print-grid,
-        .size-4x1 .print-grid {
+        .size-4x1 .print-grid,
+        .size-4x2 .print-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
             max-width: 680px;
             margin: 0 auto;
             gap: 14px !important;
         }
         .size-2x1 .barcode-card-item,
-        .size-4x1 .barcode-card-item {
+        .size-4x1 .barcode-card-item,
+        .size-4x2 .barcode-card-item {
             padding: 8px 12px;
             min-height: 96px;
         }
         .size-2x1 .barcode-store-name,
-        .size-4x1 .barcode-store-name {
+        .size-4x1 .barcode-store-name,
+        .size-4x2 .barcode-store-name {
             font-size: 8.5px;
             margin-bottom: 2px;
         }
         .size-2x1 .barcode-prod-name,
-        .size-4x1 .barcode-prod-name {
+        .size-4x1 .barcode-prod-name,
+        .size-4x2 .barcode-prod-name {
             font-size: 11.5px;
             margin-bottom: 2px;
         }
         .size-2x1 .barcode-price-tag,
-        .size-4x1 .barcode-price-tag {
+        .size-4x1 .barcode-price-tag,
+        .size-4x2 .barcode-price-tag {
             font-size: 14px;
             margin-bottom: 2px;
         }
         .size-2x1 .barcode-svg-container,
-        .size-4x1 .barcode-svg-container {
+        .size-4x1 .barcode-svg-container,
+        .size-4x2 .barcode-svg-container {
             margin: 2px 0;
         }
         .size-2x1 .barcode-svg-container svg,
-        .size-4x1 .barcode-svg-container svg {
+        .size-4x1 .barcode-svg-container svg,
+        .size-4x2 .barcode-svg-container svg {
             max-height: 38px;
             width: auto;
         }
         .size-2x1 .barcode-sku-sub,
-        .size-4x1 .barcode-sku-sub {
+        .size-4x1 .barcode-sku-sub,
+        .size-4x2 .barcode-sku-sub {
             font-size: 8.5px;
             margin-top: 2px;
         }
 
         @media print {
-            <?php if ($isPairRoll): ?>
+            <?php if ($labelSize === '4x2'): ?>
             @page {
                 size: 4in 2in;
+                margin: 0;
+            }
+            <?php elseif ($isPairRoll): ?>
+            @page {
+                size: 4in 1in;
                 margin: 0;
             }
             <?php else: ?>
@@ -249,7 +262,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 gap: 6mm !important;
             }
             .size-2x1 .print-grid,
-            .size-4x1 .print-grid {
+            .size-4x1 .print-grid,
+            .size-4x2 .print-grid {
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 0.5mm 2mm !important;
                 width: 4in !important;
@@ -259,7 +273,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 box-sizing: border-box !important;
             }
             .size-2x1 .barcode-card-item,
-            .size-4x1 .barcode-card-item {
+            .size-4x1 .barcode-card-item,
+            .size-4x2 .barcode-card-item {
                 padding: 1.2mm 2mm !important;
                 box-sizing: border-box !important;
                 break-inside: avoid !important;
@@ -276,8 +291,18 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 justify-content: space-between !important;
                 align-items: center !important;
             }
-            .size-2x1 .barcode-card-item:nth-child(4n),
-            .size-4x1 .barcode-card-item:nth-child(4n) {
+            <?php if ($labelSize === '4x2'): ?>
+            .size-4x2 .barcode-card-item:nth-child(4n) {
+                break-after: page !important;
+                page-break-after: always !important;
+            }
+            .size-4x2 .barcode-card-item:last-child {
+                break-after: auto !important;
+                page-break-after: auto !important;
+            }
+            <?php else: ?>
+            .size-2x1 .barcode-card-item:nth-child(2n),
+            .size-4x1 .barcode-card-item:nth-child(2n) {
                 break-after: page !important;
                 page-break-after: always !important;
             }
@@ -286,39 +311,46 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 break-after: auto !important;
                 page-break-after: auto !important;
             }
+            <?php endif; ?>
             .size-2x1 .barcode-store-name,
-            .size-4x1 .barcode-store-name {
+            .size-4x1 .barcode-store-name,
+            .size-4x2 .barcode-store-name {
                 font-size: 7.5px !important;
                 line-height: 1 !important;
                 margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-prod-name,
-            .size-4x1 .barcode-prod-name {
+            .size-4x1 .barcode-prod-name,
+            .size-4x2 .barcode-prod-name {
                 font-size: 9.5px !important;
                 line-height: 1.1 !important;
                 margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-price-tag,
-            .size-4x1 .barcode-price-tag {
+            .size-4x1 .barcode-price-tag,
+            .size-4x2 .barcode-price-tag {
                 font-size: 11.5px !important;
                 line-height: 1 !important;
                 margin-bottom: 0.5mm !important;
             }
             .size-2x1 .barcode-svg-container,
-            .size-4x1 .barcode-svg-container {
+            .size-4x1 .barcode-svg-container,
+            .size-4x2 .barcode-svg-container {
                 margin: 0.5mm 0 !important;
                 height: 22px !important;
                 max-height: 22px !important;
             }
             .size-2x1 .barcode-svg-container svg,
-            .size-4x1 .barcode-svg-container svg {
+            .size-4x1 .barcode-svg-container svg,
+            .size-4x2 .barcode-svg-container svg {
                 max-height: 22px !important;
                 height: 22px !important;
                 width: auto !important;
                 max-width: 95% !important;
             }
             .size-2x1 .barcode-sku-sub,
-            .size-4x1 .barcode-sku-sub {
+            .size-4x1 .barcode-sku-sub,
+            .size-4x2 .barcode-sku-sub {
                 font-size: 7px !important;
                 line-height: 1 !important;
                 margin-top: 0.5mm !important;
@@ -445,6 +477,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                                     <option value="compact" <?= $labelSize === 'compact' ? 'selected' : '' ?>>Compact (40 x 20 mm)</option>
                                     <option value="large" <?= $labelSize === 'large' ? 'selected' : '' ?>>Price & Shelf Tag (60 x 40 mm)</option>
                                     <option value="2x1" <?= $labelSize === '2x1' ? 'selected' : '' ?>>2 x 1 inch (2 in 1 Row — 4 x 1" Roll)</option>
+                                    <option value="4x2" <?= $labelSize === '4x2' ? 'selected' : '' ?>>4 x 2 inch (4 Labels per Page — 2x2 Sheet/Roll)</option>
                                     <option value="4x1" <?= $labelSize === '4x1' ? 'selected' : '' ?>>4 x 1 inch Roll (Two 2 x 1" Labels)</option>
                                 </select>
                             </div>
