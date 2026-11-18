@@ -200,23 +200,24 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             margin-top: 2px;
         }
 
+        <?php if ($labelSize === '4x2'): ?>
+        @page {
+            size: 4in 2in;
+            margin: 0;
+        }
+        <?php elseif ($isPairRoll): ?>
+        @page {
+            size: 4in 1in;
+            margin: 0;
+        }
+        <?php else: ?>
+        @page {
+            size: auto;
+            margin: 5mm;
+        }
+        <?php endif; ?>
+
         @media print {
-            <?php if ($labelSize === '4x2'): ?>
-            @page {
-                size: 4in 2in;
-                margin: 0;
-            }
-            <?php elseif ($isPairRoll): ?>
-            @page {
-                size: 4in 1in;
-                margin: 0;
-            }
-            <?php else: ?>
-            @page {
-                size: auto;
-                margin: 5mm;
-            }
-            <?php endif; ?>
             .app-sidebar, .app-header, .page-top-header, .filter-card, .spotlight-overlay, .no-print, .header-left, .header-right, button, #omniflow-impersonation-bar, .impersonate-banner {
                 display: none !important;
                 visibility: hidden !important;
