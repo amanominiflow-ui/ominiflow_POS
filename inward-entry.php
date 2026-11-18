@@ -2284,7 +2284,15 @@ $flashError = get_flash('error');
                             method: 'POST',
                             body: fd
                         })
-                        .then(function(res) { return res.json(); })
+                        .then(function(res) {
+                            return res.text().then(function(text) {
+                                try {
+                                    return JSON.parse(text);
+                                } catch (e) {
+                                    throw new Error('Server returned invalid response: ' + (text.slice(0, 120) || ('HTTP ' + res.status)));
+                                }
+                            });
+                        })
                         .then(function(data) {
                             previewBox.style.opacity = '1';
                             if (data.success && data.image_path) {
@@ -2316,7 +2324,7 @@ $flashError = get_flash('error');
                         })
                         .catch(function(err) {
                             previewBox.style.opacity = '1';
-                            alert('Network error while uploading image.');
+                            alert(err && err.message ? err.message : 'Network error while uploading image.');
                         });
                     });
                 }

@@ -499,23 +499,35 @@ function handle_product_video_upload(?array $file, ?string $oldPath = null): ?st
     return $oldPath;
 }
 
-function handle_variant_image_upload(int $index, ?string $oldPath = null): ?string {
-    if (empty($_FILES['variant_image']['name'][$index])) {
-        return $oldPath;
-    }
+function handle_variant_image_upload(int|array $indexOrFile, ?string $oldPath = null): ?string {
+    if (is_array($indexOrFile)) {
+        $file = $indexOrFile;
+        if (empty($file['name'])) {
+            return $oldPath;
+        }
+        $err = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+        if ($err !== UPLOAD_ERR_OK) {
+            return $oldPath;
+        }
+    } else {
+        $index = $indexOrFile;
+        if (empty($_FILES['variant_image']['name'][$index])) {
+            return $oldPath;
+        }
 
-    $err = $_FILES['variant_image']['error'][$index] ?? UPLOAD_ERR_NO_FILE;
-    if ($err !== UPLOAD_ERR_OK) {
-        return $oldPath;
-    }
+        $err = $_FILES['variant_image']['error'][$index] ?? UPLOAD_ERR_NO_FILE;
+        if ($err !== UPLOAD_ERR_OK) {
+            return $oldPath;
+        }
 
-    $file = [
-        'name' => $_FILES['variant_image']['name'][$index],
-        'type' => $_FILES['variant_image']['type'][$index] ?? '',
-        'tmp_name' => $_FILES['variant_image']['tmp_name'][$index] ?? '',
-        'error' => $err,
-        'size' => $_FILES['variant_image']['size'][$index] ?? 0,
-    ];
+        $file = [
+            'name' => $_FILES['variant_image']['name'][$index],
+            'type' => $_FILES['variant_image']['type'][$index] ?? '',
+            'tmp_name' => $_FILES['variant_image']['tmp_name'][$index] ?? '',
+            'error' => $err,
+            'size' => $_FILES['variant_image']['size'][$index] ?? 0,
+        ];
+    }
 
     $allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];

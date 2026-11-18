@@ -28,9 +28,10 @@ $defaultPid = !empty($products[0]['id']) ? (int)$products[0]['id'] : 0;
 $selectedPid = isset($_GET['product_id']) && $_GET['product_id'] !== '' ? (int)$_GET['product_id'] : $defaultPid;
 $copies = isset($_GET['copies']) ? max(1, min(100, (int)$_GET['copies'])) : 12;
 $labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : 'standard';
-if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1'], true)) {
+if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1', '4x1'], true)) {
     $labelSize = 'standard';
 }
+$isPairRoll = in_array($labelSize, ['2x1', '4x1'], true);
 $showStore = isset($_GET['show_store']) ? (bool)$_GET['show_store'] : true;
 $showPrice = isset($_GET['show_price']) ? (bool)$_GET['show_price'] : true;
 $showSku = isset($_GET['show_sku']) ? (bool)$_GET['show_sku'] : true;
@@ -136,14 +137,25 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             font-size: 19px;
         }
 
-        /* 2x1 inch preset (2 in one row) */
-        .size-2x1 .print-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            max-width: 620px;
-            gap: 12px !important;
+        /* 2x1 and 4x1 inch presets (2 in one row) */
+        .pair-roll-container {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-width: 680px;
+            margin: 0 auto;
         }
-        .size-2x1 .barcode-card-item {
-            padding: 8px 10px;
+        .barcode-pair-row {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            gap: 14px;
+            width: 100%;
+        }
+        .barcode-pair-row .barcode-card-item {
+            flex: 1;
+            padding: 8px 12px;
+            min-height: 96px;
         }
         .size-2x1 .barcode-store-name {
             font-size: 8.5px;
@@ -166,10 +178,17 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
         }
 
         @media print {
+            <?php if ($isPairRoll): ?>
+            @page {
+                size: 4in 1in;
+                margin: 0;
+            }
+            <?php else: ?>
             @page {
                 size: auto;
                 margin: 5mm;
             }
+            <?php endif; ?>
             .app-sidebar, .app-header, .page-top-header, .filter-card, .spotlight-overlay, .no-print, .header-left, .header-right, button {
                 display: none !important;
                 visibility: hidden !important;
@@ -201,6 +220,90 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 overflow: visible !important;
                 background: transparent !important;
             }
+            <?php if ($isPairRoll): ?>
+            .pair-roll-container {
+                width: 4in !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                display: block !important;
+            }
+            .barcode-pair-row {
+                width: 4in !important;
+                height: 1in !important;
+                max-height: 1in !important;
+                box-sizing: border-box !important;
+                display: flex !important;
+                flex-direction: row !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                padding: 0.03in 0.05in !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                overflow: hidden !important;
+            }
+            .barcode-pair-row:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+            }
+            .barcode-pair-row .barcode-card-item {
+                width: 1.92in !important;
+                max-width: 1.92in !important;
+                height: 0.94in !important;
+                max-height: 0.94in !important;
+                box-sizing: border-box !important;
+                margin: 0 !important;
+                padding: 1.2mm 2mm !important;
+                border: 1px dashed #94a3b8 !important;
+                border-radius: 3px !important;
+                box-shadow: none !important;
+                background: #ffffff !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                overflow: hidden !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .barcode-pair-row .barcode-store-name {
+                font-size: 7.5px !important;
+                line-height: 1 !important;
+                margin-bottom: 0.3mm !important;
+            }
+            .barcode-pair-row .barcode-prod-name {
+                font-size: 9.5px !important;
+                line-height: 1.1 !important;
+                margin-bottom: 0.3mm !important;
+                max-width: 100% !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+            }
+            .barcode-pair-row .barcode-price-tag {
+                font-size: 11px !important;
+                line-height: 1 !important;
+                margin-bottom: 0.3mm !important;
+            }
+            .barcode-pair-row .barcode-svg-container {
+                margin: 0.3mm 0 !important;
+                max-height: 26px !important;
+                overflow: hidden !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            .barcode-pair-row .barcode-svg-container svg {
+                max-height: 24px !important;
+                width: auto !important;
+            }
+            .barcode-pair-row .barcode-sku-sub {
+                font-size: 7.5px !important;
+                line-height: 1 !important;
+                margin-top: 0.3mm !important;
+            }
+            <?php else: ?>
             .print-grid {
                 display: grid !important;
                 grid-template-columns: repeat(3, 1fr) !important;
@@ -214,36 +317,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 6mm !important;
             }
-            .size-2x1 .print-grid {
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 4mm !important;
-                max-width: 100% !important;
-            }
-            .size-2x1 .barcode-card-item {
-                padding: 2.5mm 3mm !important;
-                box-sizing: border-box !important;
-                break-inside: avoid !important;
-                page-break-inside: avoid !important;
-            }
-            .size-2x1 .barcode-store-name {
-                font-size: 8px !important;
-                margin-bottom: 1mm !important;
-            }
-            .size-2x1 .barcode-prod-name {
-                font-size: 10.5px !important;
-                margin-bottom: 1mm !important;
-            }
-            .size-2x1 .barcode-price-tag {
-                font-size: 13px !important;
-                margin-bottom: 1mm !important;
-            }
-            .size-2x1 .barcode-svg-container {
-                margin: 1mm 0 !important;
-            }
-            .size-2x1 .barcode-sku-sub {
-                font-size: 8px !important;
-                margin-top: 1mm !important;
-            }
+
             .barcode-card-item {
                 border: 1px dashed #94a3b8 !important;
                 box-shadow: none !important;
@@ -251,6 +325,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 page-break-inside: avoid !important;
                 background: #ffffff !important;
             }
+            <?php endif; ?>
         }
     </style>
 </head>
@@ -365,7 +440,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                                     <option value="standard" <?= $labelSize === 'standard' ? 'selected' : '' ?>>Standard (50 x 30 mm)</option>
                                     <option value="compact" <?= $labelSize === 'compact' ? 'selected' : '' ?>>Compact (40 x 20 mm)</option>
                                     <option value="large" <?= $labelSize === 'large' ? 'selected' : '' ?>>Price & Shelf Tag (60 x 40 mm)</option>
-                                    <option value="2x1" <?= $labelSize === '2x1' ? 'selected' : '' ?>>2 x 1 inch (2 in 1 Row)</option>
+                                    <option value="2x1" <?= $labelSize === '2x1' ? 'selected' : '' ?>>2 x 1 inch (2 in 1 Row — 4 x 1" Roll)</option>
+                                    <option value="4x1" <?= $labelSize === '4x1' ? 'selected' : '' ?>>4 x 1 inch Roll (Two 2 x 1" Labels)</option>
                                 </select>
                             </div>
                         </div>
@@ -443,36 +519,103 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                             </div>
                         </div>
 
-                        <!-- Labels Printable Grid -->
-                        <div class="print-grid" style="display: grid; <?= $labelSize === '2x1' ? 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px;' : 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));' ?> gap: 14px;">
-                            <?php for ($i = 0; $i < $copies; $i++): ?>
-                                <div class="barcode-card-item">
-                                    <?php if ($showStore): ?>
-                                        <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
-                                    <?php endif; ?>
+                        <!-- Labels Printable Layout -->
+                        <?php if ($isPairRoll): ?>
+                            <div class="pair-roll-container">
+                                <?php for ($i = 0; $i < $copies; $i += 2): ?>
+                                    <div class="barcode-pair-row">
+                                        <!-- Label 1 -->
+                                        <div class="barcode-card-item">
+                                            <?php if ($showStore): ?>
+                                                <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
+                                            <?php endif; ?>
 
-                                    <div class="barcode-prod-name" title="<?= e($targetProduct['name']) ?>">
-                                        <?= e($targetProduct['name']) ?>
-                                    </div>
+                                            <div class="barcode-prod-name" title="<?= e($targetProduct['name']) ?>">
+                                                <?= e($targetProduct['name']) ?>
+                                            </div>
 
-                                    <?php if ($showPrice): ?>
-                                        <div class="barcode-price-tag">
-                                            ₹<?= number_format((float)$targetProduct['selling_price'], 2) ?>
+                                            <?php if ($showPrice): ?>
+                                                <div class="barcode-price-tag">
+                                                    ₹<?= number_format((float)$targetProduct['selling_price'], 2) ?>
+                                                </div>
+                                            <?php endif; ?>
+
+                                            <div class="barcode-svg-container">
+                                                <?= $barcodeSvg ?>
+                                            </div>
+
+                                            <?php if ($showSku): ?>
+                                                <div class="barcode-sku-sub">
+                                                    SKU: <?= e($targetProduct['sku']) ?>
+                                                </div>
+                                            <?php endif; ?>
                                         </div>
-                                    <?php endif; ?>
 
-                                    <div class="barcode-svg-container">
-                                        <?= $barcodeSvg ?>
+                                        <!-- Label 2 -->
+                                        <?php if ($i + 1 < $copies): ?>
+                                            <div class="barcode-card-item">
+                                                <?php if ($showStore): ?>
+                                                    <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
+                                                <?php endif; ?>
+
+                                                <div class="barcode-prod-name" title="<?= e($targetProduct['name']) ?>">
+                                                    <?= e($targetProduct['name']) ?>
+                                                </div>
+
+                                                <?php if ($showPrice): ?>
+                                                    <div class="barcode-price-tag">
+                                                        ₹<?= number_format((float)$targetProduct['selling_price'], 2) ?>
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <div class="barcode-svg-container">
+                                                    <?= $barcodeSvg ?>
+                                                </div>
+
+                                                <?php if ($showSku): ?>
+                                                    <div class="barcode-sku-sub">
+                                                        SKU: <?= e($targetProduct['sku']) ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="barcode-card-item barcode-card-placeholder" style="visibility: hidden; border: none !important; box-shadow: none !important; background: transparent !important;"></div>
+                                        <?php endif; ?>
                                     </div>
+                                <?php endfor; ?>
+                            </div>
+                        <?php else: ?>
+                            <!-- Labels Printable Grid -->
+                            <div class="print-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px;">
+                                <?php for ($i = 0; $i < $copies; $i++): ?>
+                                    <div class="barcode-card-item">
+                                        <?php if ($showStore): ?>
+                                            <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
+                                        <?php endif; ?>
 
-                                    <?php if ($showSku): ?>
-                                        <div class="barcode-sku-sub">
-                                            SKU: <?= e($targetProduct['sku']) ?>
+                                        <div class="barcode-prod-name" title="<?= e($targetProduct['name']) ?>">
+                                            <?= e($targetProduct['name']) ?>
                                         </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endfor; ?>
-                        </div>
+
+                                        <?php if ($showPrice): ?>
+                                            <div class="barcode-price-tag">
+                                                ₹<?= number_format((float)$targetProduct['selling_price'], 2) ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <div class="barcode-svg-container">
+                                            <?= $barcodeSvg ?>
+                                        </div>
+
+                                        <?php if ($showSku): ?>
+                                            <div class="barcode-sku-sub">
+                                                SKU: <?= e($targetProduct['sku']) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endfor; ?>
+                            </div>
+                        <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 <?php else: ?>

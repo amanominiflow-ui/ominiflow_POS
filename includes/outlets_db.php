@@ -378,6 +378,16 @@ function ensure_stock_transfer_schema(): void {
     } catch (Exception $e) {
         // Table or column may differ on older installs; ignore.
     }
+
+    try {
+        $cols = $db->query("SHOW COLUMNS FROM stock_transfer_items LIKE 'variant_id'")->fetchAll();
+        if (empty($cols)) {
+            $db->exec("ALTER TABLE stock_transfer_items ADD COLUMN variant_id INT UNSIGNED NULL AFTER product_id");
+            $db->exec("ALTER TABLE stock_transfer_items ADD INDEX idx_sti_variant (variant_id)");
+        }
+    } catch (Exception $e) {
+        // Table or column may already exist; ignore.
+    }
 }
 
 /**
@@ -566,18 +576,20 @@ function create_stock_transfer(int $sourceWarehouseId, int $destWarehouseId, arr
         $transferId = (int)$db->lastInsertId();
 
         $stmtItem = $db->prepare('
-            INSERT INTO stock_transfer_items (stock_transfer_id, product_id, quantity_requested, quantity_transferred, quantity_received, created_at)
-            VALUES (:tid, :pid, :qty_req, :qty_trf, 0, NOW())
+            INSERT INTO stock_transfer_items (stock_transfer_id, product_id, variant_id, quantity_requested, quantity_transferred, quantity_received, created_at)
+            VALUES (:tid, :pid, :vid, :qty_req, :qty_trf, 0, NOW())
         ');
 
         foreach ($items as $item) {
             $pid = (int)($item['product_id'] ?? 0);
+            $vid = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
             $qty = max(1, (int)($item['quantity'] ?? 1));
             if ($pid <= 0) continue;
 
             $stmtItem->execute([
                 'tid' => $transferId,
                 'pid' => $pid,
+                'vid' => $vid,
                 'qty_req' => $qty,
                 'qty_trf' => $qty,
             ]);
@@ -771,8 +783,8 @@ function receive_stock_transfer(int $transferId, ?int $userId = null): array {
             $newDestStock = $currDestStock + $qty;
             set_product_warehouse_stock($pid, $destWhId, $newDestStock);
 
-            $stmtItemUp = $db->prepare('UPDATE stock_transfer_items SET quantity_received = :qty WHERE stock_transfer_id = :tid AND product_id = :pid');
-            $stmtItemUp->execute(['qty' => $qty, 'tid' => $transferId, 'pid' => $pid]);
+            $stmtItemUp = $db->prepare('UPDATE stock_transfer_items SET quantity_received = :qty WHERE id = :item_id');
+            $stmtItemUp->execute(['qty' => $qty, 'item_id' => $item['id']]);
 
             // Destination warehouse +qty only; products.stock_quantity (company total) stays unchanged.
             log_stock_transfer_movement(
@@ -843,10 +855,13 @@ function get_stock_transfer_by_id(int $id, ?int $businessId = null): ?array {
     if (!$trf) return null;
 
     $stmtItems = $db->prepare('
-        SELECT sti.*, p.name AS product_name, p.sku AS product_sku, p.selling_price
+        SELECT sti.*, p.name AS product_name, p.sku AS product_sku, p.selling_price,
+               pv.variant_name, pv.sku AS variant_sku, pv.attribute_values AS variant_attribute_values
         FROM stock_transfer_items sti
         JOIN products p ON p.id = sti.product_id AND p.business_id = :bid
+        LEFT JOIN product_variants pv ON pv.id = sti.variant_id
         WHERE sti.stock_transfer_id = :id
+        ORDER BY sti.id ASC
     ');
     $stmtItems->execute(['id' => $id, 'bid' => $bid]);
     $trf['items'] = $stmtItems->fetchAll();
