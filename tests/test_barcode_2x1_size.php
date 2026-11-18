@@ -37,9 +37,9 @@ assert_true(str_contains($svg2x1, 'TESTSKU123'), "SVG embeds barcode text");
 $content = file_get_contents(__DIR__ . '/../barcode-print.php');
 
 assert_true(str_contains($content, '<option value="2x1"'), "Option value '2x1' exists in template size dropdown");
-assert_true(str_contains($content, '<option value="4x1"'), "Option value '4x1' exists in template size dropdown");
+assert_true(!str_contains($content, '<option value="4x1"'), "Option value '4x1' removed from template size dropdown");
+assert_true(!str_contains($content, '<option value="4x2"'), "Option value '4x2' removed from template size dropdown");
 assert_true(str_contains($content, '.size-2x1 .print-grid'), "CSS defines grid layout for .size-2x1");
-assert_true(str_contains($content, '.size-4x1 .print-grid'), "CSS defines grid layout for .size-4x1");
 assert_true(str_contains($content, 'grid-template-columns: repeat(2, minmax(0, 1fr)) !important;'), "Screen CSS configures 2 columns per row");
 assert_true(str_contains($content, 'grid-template-columns: repeat(2, 1fr) !important;'), "Print CSS configures 2 columns per row");
 
@@ -61,18 +61,10 @@ assert_true(str_contains($html, 'class="print-grid"'), "Renders continuous print
 assert_true(str_contains($html, 'grid-template-columns: repeat(2, minmax(0, 1fr));'), "Applies 2-in-one-row grid inline style");
 assert_true(substr_count($html, 'class="barcode-card-item"') === 6, "6 copies render all 6 label cards in continuous grid");
 
-// 4. Test rendering simulated GET request for 4x1 preset
-$_GET['label_size'] = '4x1';
-$_GET['copies'] = '4';
-
-ob_start();
-include __DIR__ . '/../barcode-print.php';
-$html4x1 = ob_get_clean();
-
-assert_true(str_contains($html4x1, '<div class="size-4x1">'), "Output HTML contains wrapper class 'size-4x1'");
-assert_true(str_contains($html4x1, 'value="4x1" selected'), "Dropdown option 4x1 is selected");
-assert_true(str_contains($html4x1, 'class="print-grid"'), "Renders continuous print-grid for 4x1");
-assert_true(substr_count($html4x1, 'class="barcode-card-item"') === 4, "4 copies render all 4 label cards in continuous grid");
+// 4. Test 4-inch roll size for 2x1 preset
+assert_true(str_contains($html, 'size: 4in 1in;'), "2x1 preset generates '@page { size: 4in 1in; margin: 0; }'");
+assert_true(str_contains($html, 'nth-child(2n)'), "2x1 preset breaks after every 2nd label (2 in 1 row)");
+assert_true(str_contains($html, '#omniflow-impersonation-bar'), "Impersonation bar is hidden in print mode");
 
 // 5. Test backward compatibility for standard preset
 $_GET['label_size'] = 'standard';
@@ -88,21 +80,7 @@ assert_true(str_contains($htmlStd, 'repeat(auto-fill, minmax(210px, 1fr))'), "St
 assert_true(str_contains($htmlStd, 'size: auto;'), "Standard preset preserves standard sheet '@page { size: auto; margin: 5mm; }'");
 assert_true(!str_contains($htmlStd, 'size: 4in 1in;'), "Standard preset does not set 4-inch roll size");
 
-// 6. Test 4-inch page size for 2x1 preset (4x1 inch roll)
-assert_true(str_contains($html, 'size: 4in 1in;'), "2x1 preset generates '@page { size: 4in 1in; margin: 0; }'");
-assert_true(str_contains($html, 'nth-child(2n)'), "2x1 preset breaks after every 2nd label (2 in 1 row)");
-assert_true(str_contains($html, '#omniflow-impersonation-bar'), "Impersonation bar is hidden in print mode");
-
-// 7. Test 4x2 preset (4 labels per page)
-$_GET['label_size'] = '4x2';
-ob_start();
-include __DIR__ . '/../barcode-print.php';
-$html4x2 = ob_get_clean();
-
-assert_true(str_contains($html4x2, 'size: 4in 2in;'), "4x2 preset generates '@page { size: 4in 2in; margin: 0; }'");
-assert_true(str_contains($html4x2, 'nth-child(4n)'), "4x2 preset breaks after every 4th label (4 labels per page)");
-
-// 8. Test Ash Collective auto-defaults to 2x1 template
+// 6. Test Ash Collective auto-defaults to 2x1 template
 unset($_GET['label_size']);
 $_SESSION['user_email'] = 'ashcollective1@gmail.com';
 
