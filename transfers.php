@@ -473,6 +473,7 @@ $pageTitle = 'Warehouse Stock Transfers';
 
     <script>
         const TRF_ITEMS = <?= json_encode($transferableItems) ?>;
+        const VARIANTS_BY_PRODUCT = <?= json_encode($variantsByProduct) ?>;
 
         (function () {
             const srcSel = document.getElementById('transferSourceWh');
@@ -622,19 +623,49 @@ $pageTitle = 'Warehouse Stock Transfers';
                     if (!it) return;
 
                     const qty = itemQuantities.get(key) || 1;
+                    const vars = (VARIANTS_BY_PRODUCT && VARIANTS_BY_PRODUCT[it.product_id]) || [];
+
+                    let variantHtml = '';
+                    if (vars.length > 0) {
+                        variantHtml = `
+                            <select class="form-control trf-item-var" style="font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; width: 100%; min-width: 140px;">
+                                ${vars.map(v => {
+                                    let lbl = '';
+                                    if (v.size && v.colour) {
+                                        lbl = v.colour + ' / ' + v.size;
+                                    } else if (v.size) {
+                                        lbl = 'Size: ' + v.size;
+                                    } else if (v.colour) {
+                                        lbl = 'Color: ' + v.colour;
+                                    } else if (v.name) {
+                                        lbl = v.name;
+                                    } else {
+                                        lbl = 'Variant #' + v.id;
+                                    }
+                                    const isSel = String(v.id) === String(it.variant_id);
+                                    return `<option value="${v.id}" data-sku="${escapeHtml(v.sku)}" data-stock="${v.stock}" ${isSel ? 'selected' : ''}>${escapeHtml(lbl)} (Stock: ${v.stock})</option>`;
+                                }).join('')}
+                            </select>
+                        `;
+                    } else {
+                        variantHtml = `
+                            <input type="hidden" class="trf-item-var" value="">
+                            <span class="badge badge-secondary" style="font-size: 11px; padding: 4px 8px; border-radius: 4px;">
+                                Standard
+                            </span>
+                        `;
+                    }
+
                     const tr = document.createElement('tr');
                     tr.dataset.key = key;
                     tr.innerHTML = `
                         <td style="padding: 8px 10px;">
                             <input type="hidden" class="trf-item-prod" value="${it.product_id}">
-                            <input type="hidden" class="trf-item-var" value="${it.variant_id || ''}">
                             <div style="font-weight: 600; font-size: 12.5px; color: var(--saas-navy-950);">${escapeHtml(it.product_name)}</div>
-                            <div style="font-size: 11px; color: #64748b; font-family: monospace;">SKU: ${escapeHtml(it.sku)} &bull; Available: ${it.stock}</div>
+                            <div class="trf-item-sku-sub" style="font-size: 11px; color: #64748b; font-family: monospace;">SKU: ${escapeHtml(it.sku)} &bull; Available: ${it.stock}</div>
                         </td>
                         <td style="padding: 8px 10px;">
-                            <span class="badge ${it.variant_id ? 'badge-info' : 'badge-secondary'}" style="font-size: 11px;">
-                                ${escapeHtml(it.variant_name || 'Standard')}
-                            </span>
+                            ${variantHtml}
                         </td>
                         <td style="padding: 8px 10px; text-align: center;">
                             <input type="number" min="1" step="1" value="${qty}" required class="form-control trf-item-qty" style="width: 75px; text-align: center; padding: 4px 6px; font-size: 12.5px; margin: 0 auto;">
@@ -643,6 +674,21 @@ $pageTitle = 'Warehouse Stock Transfers';
                             <button type="button" class="btn-del-trf-row" style="background: none; border: none; font-size: 18px; color: #ef4444; cursor: pointer; line-height: 1;" title="Remove item">&times;</button>
                         </td>
                     `;
+
+                    const varSelect = tr.querySelector('select.trf-item-var');
+                    if (varSelect) {
+                        varSelect.addEventListener('change', function () {
+                            const opt = varSelect.options[varSelect.selectedIndex];
+                            if (opt) {
+                                const newSku = opt.getAttribute('data-sku') || it.sku;
+                                const newStock = opt.getAttribute('data-stock') || it.stock;
+                                const skuSub = tr.querySelector('.trf-item-sku-sub');
+                                if (skuSub) {
+                                    skuSub.innerHTML = `SKU: ${escapeHtml(newSku)} &bull; Available: ${newStock}`;
+                                }
+                            }
+                        });
+                    }
 
                     const qtyInp = tr.querySelector('.trf-item-qty');
                     qtyInp.addEventListener('input', function () {
