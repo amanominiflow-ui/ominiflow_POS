@@ -560,11 +560,30 @@ function handle_variant_image_upload(int|array $indexOrFile, ?string $oldPath = 
         return $oldPath;
     }
 
-    $uploadDir = __DIR__ . '/../assets/uploads/products/variants/';
+    $relDir = 'assets/uploads/products/variants/';
+    $uploadDir = __DIR__ . '/../' . $relDir;
     if (!is_dir($uploadDir)) {
-        @mkdir($uploadDir, 0755, true);
+        @mkdir($uploadDir, 0777, true);
+        @chmod($uploadDir, 0777);
     }
     if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        $relDir = 'assets/uploads/products/';
+        $uploadDir = __DIR__ . '/../' . $relDir;
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0777, true);
+            @chmod($uploadDir, 0777);
+        }
+    }
+    if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        $relDir = 'assets/uploads/';
+        $uploadDir = __DIR__ . '/../' . $relDir;
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0777, true);
+            @chmod($uploadDir, 0777);
+        }
+    }
+    if (!is_dir($uploadDir) || !is_writable($uploadDir)) {
+        error_log('handle_variant_image_upload: No writable upload dir found');
         return $oldPath;
     }
 
@@ -575,7 +594,7 @@ function handle_variant_image_upload(int|array $indexOrFile, ?string $oldPath = 
         if ($oldPath && file_exists(__DIR__ . '/../' . ltrim($oldPath, '/'))) {
             @unlink(__DIR__ . '/../' . ltrim($oldPath, '/'));
         }
-        return 'assets/uploads/products/variants/' . $newFileName;
+        return $relDir . $newFileName;
     }
 
     return $oldPath;
