@@ -64,8 +64,11 @@ $showName = isset($_GET['show_name']) ? (bool)$_GET['show_name'] : true;
 $showPrice = isset($_GET['show_price']) ? (bool)$_GET['show_price'] : true;
 $showSku = isset($_GET['show_sku']) ? (bool)$_GET['show_sku'] : true;
 $showVar = isset($_GET['show_var']) ? (bool)$_GET['show_var'] : true;
-$customSize = isset($_GET['custom_size']) ? trim((string)$_GET['custom_size']) : null;
-$customColour = isset($_GET['custom_colour']) ? trim((string)$_GET['custom_colour']) : null;
+$loadedPid = isset($_GET['loaded_pid']) ? (int)$_GET['loaded_pid'] : 0;
+$loadedVid = isset($_GET['loaded_vid']) ? (string)$_GET['loaded_vid'] : '';
+
+$customSize = (isset($_GET['custom_size']) && trim((string)$_GET['custom_size']) !== '') ? trim((string)$_GET['custom_size']) : null;
+$customColour = (isset($_GET['custom_colour']) && trim((string)$_GET['custom_colour']) !== '') ? trim((string)$_GET['custom_colour']) : null;
 
 $targetProduct = null;
 if ($selectedPid > 0) {
@@ -82,6 +85,17 @@ $variants = ($targetProduct && function_exists('get_product_variants'))
     : [];
 
 $selectedVarId = isset($_GET['variant_id']) ? (string)$_GET['variant_id'] : '';
+
+// If product or variant changed from the previous form submission, discard any stale size/colour
+if ($loadedPid > 0 && $loadedPid !== $selectedPid) {
+    $customSize = null;
+    $customColour = null;
+    $selectedVarId = '';
+} elseif ($loadedVid !== '' && isset($_GET['variant_id']) && $loadedVid !== (string)$_GET['variant_id']) {
+    $customSize = null;
+    $customColour = null;
+}
+
 if ($selectedVarId === '' && !empty($variants)) {
     // Default to first variant so 1 item is selected by default
     $selectedVarId = (string)$variants[0]['id'];
@@ -140,8 +154,8 @@ if ($targetProduct) {
                 $printItems[] = [
                     'product_name' => (string)$targetProduct['name'],
                     'variant_name' => (string)($v['variant_name'] ?? ''),
-                    'size' => ($customSize !== null && $customSize !== '') ? $customSize : $vVar['size'],
-                    'colour' => ($customColour !== null && $customColour !== '') ? $customColour : $vVar['colour'],
+                    'size' => $vVar['size'] ?: 'FS',
+                    'colour' => $vVar['colour'],
                     'sku' => $vSku,
                     'barcode' => $vBarcode,
                     'price' => $vPrice,
@@ -167,7 +181,7 @@ if ($targetProduct) {
                 $printItems[] = [
                     'product_name' => (string)$targetProduct['name'],
                     'variant_name' => (string)($matchedVar['variant_name'] ?? ''),
-                    'size' => ($customSize !== null && $customSize !== '') ? $customSize : $vVar['size'],
+                    'size' => ($customSize !== null && $customSize !== '') ? $customSize : ($vVar['size'] ?: 'FS'),
                     'colour' => ($customColour !== null && $customColour !== '') ? $customColour : $vVar['colour'],
                     'sku' => $vSku,
                     'barcode' => $vBarcode,
@@ -583,13 +597,15 @@ $hasBarcode = $hasAnyBarcode;
                 <!-- Product Selector & Print Configuration Card -->
                 <div class="filter-card no-print" style="padding: 24px; margin-bottom: 24px;">
                     <form method="GET" action="<?= asset('barcode-print.php') ?>" id="barcodeConfigForm" style="display: flex; flex-direction: column; gap: 18px;">
+                        <input type="hidden" name="loaded_pid" value="<?= (int)$selectedPid ?>">
+                        <input type="hidden" name="loaded_vid" value="<?= e($selectedVarId) ?>">
                         <div style="display: grid; grid-template-columns: 2fr <?= !empty($variants) ? '1.5fr ' : '' ?>1fr 1fr; gap: 16px; align-items: flex-end;">
                             <!-- Product Dropdown -->
                             <div>
                                 <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 6px;">
                                     Select Product to Print *
                                 </label>
-                                <select name="product_id" required class="form-control" onchange="document.getElementById('barcodeConfigForm').submit()" style="width: 100%; cursor: pointer;">
+                                <select name="product_id" required class="form-control" onchange="handleProductSelectChange(this)" style="width: 100%; cursor: pointer;">
                                     <?php if (empty($products)): ?>
                                         <option value="">-- No products available --</option>
                                     <?php else: ?>
@@ -609,7 +625,7 @@ $hasBarcode = $hasAnyBarcode;
                                 <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 6px;">
                                     Variant (Size & Colour)
                                 </label>
-                                <select name="variant_id" class="form-control" onchange="document.getElementById('barcodeConfigForm').submit()" style="width: 100%; cursor: pointer;">
+                                <select name="variant_id" class="form-control" onchange="handleVariantSelectChange(this)" style="width: 100%; cursor: pointer;">
                                     <option value="all" <?= $selectedVarId === 'all' ? 'selected' : '' ?>>-- All Variants --</option>
                                     <?php foreach ($variants as $v): ?>
                                         <?php $vOptSku = stripos((string)$v['sku'], 'SKU') === 0 ? (string)$v['sku'] : ('SKU: ' . $v['sku']); ?>
@@ -653,12 +669,12 @@ $hasBarcode = $hasAnyBarcode;
 
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Size:</span>
-                                    <input type="text" name="custom_size" value="<?= e($customSize ?? ($printItems[0]['size'] ?? 'FS')) ?>" placeholder="e.g. M / FS" class="form-control" style="width: 80px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                    <input type="text" name="custom_size" value="<?= e($selectedVarId === 'all' ? '' : ($customSize ?? ($printItems[0]['size'] ?? 'FS'))) ?>" placeholder="<?= $selectedVarId === 'all' ? 'Dynamic' : 'e.g. M / FS' ?>" class="form-control" style="width: 80px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
                                 </div>
 
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Colour:</span>
-                                    <input type="text" name="custom_colour" value="<?= e($customColour ?? ($printItems[0]['colour'] ?? '')) ?>" placeholder="e.g. Black" class="form-control" style="width: 90px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                    <input type="text" name="custom_colour" value="<?= e($selectedVarId === 'all' ? '' : ($customColour ?? ($printItems[0]['colour'] ?? ''))) ?>" placeholder="<?= $selectedVarId === 'all' ? 'Dynamic' : 'e.g. Black' ?>" class="form-control" style="width: 90px; padding: 5px 8px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
                                 </div>
 
                                 <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
@@ -833,5 +849,29 @@ $hasBarcode = $hasAnyBarcode;
             </main>
         </div>
     </div>
+    <script>
+    function handleProductSelectChange(sel) {
+        var form = document.getElementById('barcodeConfigForm');
+        if (form) {
+            var s = form.querySelector('input[name="custom_size"]');
+            var c = form.querySelector('input[name="custom_colour"]');
+            var v = form.querySelector('select[name="variant_id"]');
+            if (s) s.value = '';
+            if (c) c.value = '';
+            if (v) v.value = '';
+            form.submit();
+        }
+    }
+    function handleVariantSelectChange(sel) {
+        var form = document.getElementById('barcodeConfigForm');
+        if (form) {
+            var s = form.querySelector('input[name="custom_size"]');
+            var c = form.querySelector('input[name="custom_colour"]');
+            if (s) s.value = '';
+            if (c) c.value = '';
+            form.submit();
+        }
+    }
+    </script>
 </body>
 </html>
