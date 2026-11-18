@@ -38,12 +38,10 @@ $content = file_get_contents(__DIR__ . '/../barcode-print.php');
 
 assert_true(str_contains($content, '<option value="2x1"'), "Option value '2x1' exists in template size dropdown");
 assert_true(str_contains($content, '<option value="4x1"'), "Option value '4x1' exists in template size dropdown");
-assert_true(str_contains($content, 'size: 4in 1in;'), "Print CSS defines exact thermal page size 4in 1in");
-assert_true(str_contains($content, 'margin: 0;'), "Print CSS removes page margins for thermal roll edge-to-edge");
-assert_true(str_contains($content, '.barcode-pair-row'), "CSS defines .barcode-pair-row rule");
-assert_true(str_contains($content, 'width: 4in !important;'), "Pair row is sized to 4in width");
-assert_true(str_contains($content, 'height: 1in !important;'), "Pair row is sized to 1in height");
-assert_true(str_contains($content, 'page-break-after: always !important;'), "Pair row enforces page-break-after for 1-inch feed rows");
+assert_true(str_contains($content, '.size-2x1 .print-grid'), "CSS defines grid layout for .size-2x1");
+assert_true(str_contains($content, '.size-4x1 .print-grid'), "CSS defines grid layout for .size-4x1");
+assert_true(str_contains($content, 'grid-template-columns: repeat(2, minmax(0, 1fr)) !important;'), "Screen CSS configures 2 columns per row");
+assert_true(str_contains($content, 'grid-template-columns: repeat(2, 1fr) !important;'), "Print CSS configures 2 columns per row");
 
 // 3. Test rendering simulated GET request for 2x1 preset
 $_SESSION['user_id'] = 1;
@@ -59,9 +57,9 @@ $html = ob_get_clean();
 
 assert_true(str_contains($html, '<div class="size-2x1">'), "Output HTML contains wrapper class 'size-2x1'");
 assert_true(str_contains($html, 'value="2x1" selected'), "Dropdown option 2x1 is selected");
-assert_true(str_contains($html, 'class="pair-roll-container"'), "Renders pair-roll-container for 2x1");
-assert_true(str_contains($html, 'class="barcode-pair-row"'), "Renders barcode-pair-row elements for 2-per-row layout");
-assert_true(substr_count($html, 'class="barcode-pair-row"') === 3, "6 copies render exactly 3 pair rows (2 labels per 4x1 feed)");
+assert_true(str_contains($html, 'class="print-grid"'), "Renders continuous print-grid for 2x1");
+assert_true(str_contains($html, 'grid-template-columns: repeat(2, minmax(0, 1fr));'), "Applies 2-in-one-row grid inline style");
+assert_true(substr_count($html, 'class="barcode-card-item"') === 6, "6 copies render all 6 label cards in continuous grid");
 
 // 4. Test rendering simulated GET request for 4x1 preset
 $_GET['label_size'] = '4x1';
@@ -73,8 +71,8 @@ $html4x1 = ob_get_clean();
 
 assert_true(str_contains($html4x1, '<div class="size-4x1">'), "Output HTML contains wrapper class 'size-4x1'");
 assert_true(str_contains($html4x1, 'value="4x1" selected'), "Dropdown option 4x1 is selected");
-assert_true(str_contains($html4x1, 'class="pair-roll-container"'), "Renders pair-roll-container for 4x1");
-assert_true(substr_count($html4x1, 'class="barcode-pair-row"') === 2, "4 copies render exactly 2 pair rows");
+assert_true(str_contains($html4x1, 'class="print-grid"'), "Renders continuous print-grid for 4x1");
+assert_true(substr_count($html4x1, 'class="barcode-card-item"') === 4, "4 copies render all 4 label cards in continuous grid");
 
 // 5. Test backward compatibility for standard preset
 $_GET['label_size'] = 'standard';
