@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role = trim((string) ($_POST['role'] ?? 'Staff'));
         $editId = (int) ($_POST['user_id'] ?? 0);
         $outletId = (int) ($_POST['outlet_id'] ?? 0);
+        $passwordInput = trim((string) ($_POST['password'] ?? ''));
         $roleKey = strtolower($role);
         $storeRequired = !in_array($roleKey, ['admin', 'administrator', 'owner'], true);
 
@@ -129,9 +130,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'bid' => $bid,
                 ];
 
+                if ($passwordInput !== '') {
+                    if (strlen($passwordInput) < 6) {
+                        set_flash('error', 'Password must be at least 6 characters long.');
+                        redirect(APP_URL . '/users.php');
+                    }
+                    $setParts[] = 'password = :password';
+                    $params['password'] = password_hash($passwordInput, PASSWORD_DEFAULT);
+                }
+
                 if (!empty($userCols['outlet_id'])) {
                     $setParts[] = 'outlet_id = :outlet_id';
                     $params['outlet_id'] = $savedOutlet;
+                }
+                if (!empty($userCols['status']) && isset($_POST['status']) && in_array($_POST['status'], ['active', 'inactive'], true)) {
+                    if ($editId === (int) $user['id'] && $_POST['status'] === 'inactive') {
+                        // Prevent self-deactivation from edit modal
+                    } else {
+                        $setParts[] = 'status = :status';
+                        $params['status'] = $_POST['status'];
+                    }
                 }
                 if (!empty($userCols['updated_at'])) {
                     $setParts[] = 'updated_at = NOW()';
@@ -140,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $db->prepare('UPDATE users SET ' . implode(', ', $setParts) . ' WHERE id = :id AND business_id = :bid');
                 $stmt->execute($params);
 
-                set_flash('success', 'User store and role updated successfully.');
+                set_flash('success', $passwordInput !== '' ? 'User details and password updated successfully.' : 'User details updated successfully.');
             } catch (Throwable $e) {
                 error_log('User update error: ' . $e->getMessage());
                 set_flash('error', 'Could not update user: ' . $e->getMessage());
@@ -160,13 +178,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect(APP_URL . '/users.php');
                 }
 
-                $tempPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
+                if ($passwordInput !== '') {
+                    if (strlen($passwordInput) < 6) {
+                        set_flash('error', 'Password must be at least 6 characters long.');
+                        redirect(APP_URL . '/users.php');
+                    }
+                    $finalPassword = password_hash($passwordInput, PASSWORD_DEFAULT);
+                } else {
+                    $finalPassword = password_hash('OminiFlow@2026', PASSWORD_DEFAULT);
+                }
+
                 $insertCols = ['name', 'email', 'password', 'role', 'status'];
                 $insertVals = [':name', ':email', ':pass', ':role', ':status'];
                 $params = [
                     'name' => $name,
                     'email' => $email,
-                    'pass' => $tempPassword,
+                    'pass' => $finalPassword,
                     'role' => $storedRole,
                     'status' => 'active',
                 ];
@@ -237,6 +264,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Throwable $e2) {
                     set_flash('error', 'Could not remove user: ' . $e->getMessage());
                 }
+            }
+        }
+        redirect(APP_URL . '/users.php');
+    }
+
+    if ($action === 'toggle_status') {
+        $targetId = (int) ($_POST['user_id'] ?? 0);
+        $newStatus = (($_POST['status'] ?? '') === 'active') ? 'active' : 'inactive';
+        if ($targetId === (int) $user['id'] && $newStatus === 'inactive') {
+            set_flash('error', 'You cannot deactivate your own logged-in account.');
+        } elseif ($targetId > 0) {
+            try {
+                $stmt = $db->prepare('UPDATE users SET status = :status WHERE id = :id AND business_id = :bid');
+                $stmt->execute(['status' => $newStatus, 'id' => $targetId, 'bid' => $bid]);
+                set_flash('success', 'User account ' . ($newStatus === 'active' ? 'activated' : 'deactivated') . ' successfully.');
+            } catch (Throwable $e) {
+                set_flash('error', 'Could not update user status: ' . $e->getMessage());
             }
         }
         redirect(APP_URL . '/users.php');
@@ -563,6 +607,87 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             background: #e2e8f0;
             color: #0f172a;
         }
+
+        .btn-action-edit {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 5px 11px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #2563eb;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+        .btn-action-edit:hover {
+            background: #eff6ff;
+            border-color: #93c5fd;
+            color: #1d4ed8;
+        }
+
+        .btn-action-deactivate {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 6px;
+            padding: 5px 11px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #b45309;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+        .btn-action-deactivate:hover {
+            background: #fef3c7;
+            border-color: #fcd34d;
+            color: #92400e;
+        }
+
+        .btn-action-activate {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 6px;
+            padding: 5px 11px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #15803d;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+        .btn-action-activate:hover {
+            background: #dcfce7;
+            border-color: #86efac;
+            color: #166534;
+        }
+
+        .btn-action-delete {
+            background: #fff1f2;
+            border: 1px solid #fecdd3;
+            border-radius: 6px;
+            padding: 5px 11px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #be123c;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+        .btn-action-delete:hover {
+            background: #ffe4e6;
+            border-color: #fda4af;
+            color: #9f1239;
+        }
     </style>
 </head>
 <body class="app-body">
@@ -612,18 +737,20 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             <table class="users-table">
                 <thead>
                     <tr>
-                        <th style="width: 50%;">USERS</th>
-                        <th style="width: 25%;">ROLE</th>
-                        <th style="width: 25%;">STATUS</th>
+                        <th style="width: 36%;">USERS</th>
+                        <th style="width: 20%;">ROLE</th>
+                        <th style="width: 14%;">STATUS</th>
+                        <th style="width: 30%; text-align: right;">ACTIONS</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($usersList)): ?>
                         <tr>
-                            <td colspan="3" style="text-align: center; color: #64748b; padding: 36px;">No users found for this filter.</td>
+                            <td colspan="4" style="text-align: center; color: #64748b; padding: 36px;">No users found for this filter.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usersList as $u): ?>
+                            <?php $isCurrentUser = ((int) $u['id'] === (int) $user['id']); ?>
                             <tr>
                                 <td>
                                     <div class="user-identity-wrap">
@@ -633,7 +760,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                                             </svg>
                                         </div>
                                         <div>
-                                            <a href="javascript:void(0)" class="user-name-link" onclick="openEditUser('<?= e($u['name']) ?>', '<?= e($u['email']) ?>', '<?= e($u['role']) ?>', <?= (int) $u['id'] ?>, <?= (int) ($u['outlet_id'] ?? 0) ?>)">
+                                            <a href="javascript:void(0)" class="user-name-link" onclick="openEditUser('<?= e(addslashes($u['name'])) ?>', '<?= e(addslashes($u['email'])) ?>', '<?= e(addslashes($u['role'])) ?>', <?= (int) $u['id'] ?>, <?= (int) ($u['outlet_id'] ?? 0) ?>, '<?= e($u['status']) ?>')">
                                                 <?= e($u['name']) ?>
                                             </a>
                                             <div class="user-email-text"><?= e($u['email']) ?></div>
@@ -650,6 +777,46 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                                     <?php else: ?>
                                         <span class="user-status-inactive">Inactive</span>
                                     <?php endif; ?>
+                                </td>
+                                <td style="text-align: right;">
+                                    <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                                        <button type="button" class="btn-action-edit" onclick="openEditUser('<?= e(addslashes($u['name'])) ?>', '<?= e(addslashes($u['email'])) ?>', '<?= e(addslashes($u['role'])) ?>', <?= (int) $u['id'] ?>, <?= (int) ($u['outlet_id'] ?? 0) ?>, '<?= e($u['status']) ?>')" title="Edit User & Password">
+                                            ✏️ Edit
+                                        </button>
+                                        <?php if (!$isCurrentUser): ?>
+                                            <?php if ($u['status'] === 'active'): ?>
+                                                <form method="POST" action="<?= asset('users.php') ?>" style="display: inline; margin: 0;" onsubmit="return confirm('Deactivate <?= e(addslashes($u['name'])) ?>? They will not be able to log in.');">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="toggle_status">
+                                                    <input type="hidden" name="user_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="status" value="inactive">
+                                                    <button type="submit" class="btn-action-deactivate" title="Deactivate account">
+                                                        ⏸ Deactivate
+                                                    </button>
+                                                </form>
+                                            <?php else: ?>
+                                                <form method="POST" action="<?= asset('users.php') ?>" style="display: inline; margin: 0;" onsubmit="return confirm('Activate <?= e(addslashes($u['name'])) ?>? They will be able to log in.');">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="action" value="toggle_status">
+                                                    <input type="hidden" name="user_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="status" value="active">
+                                                    <button type="submit" class="btn-action-activate" title="Activate account">
+                                                        ▶ Activate
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <form method="POST" action="<?= asset('users.php') ?>" style="display: inline; margin: 0;" onsubmit="return confirm('Are you sure you want to permanently delete user \'<?= e(addslashes($u['name'])) ?>\'? This action cannot be undone.');">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_user">
+                                                <input type="hidden" name="user_id" value="<?= (int) $u['id'] ?>">
+                                                <button type="submit" class="btn-action-delete" title="Delete user">
+                                                    🗑 Delete
+                                                </button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span style="font-size: 11.5px; color: #94a3b8; font-weight: 600; padding: 4px 6px;">(You)</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -692,6 +859,22 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                         </div>
                     </div>
 
+                    <!-- Password Field -->
+                    <div class="modal-field-row">
+                        <label class="modal-field-label">
+                            <span id="modalPasswordLabel">Password</span>
+                        </label>
+                        <div>
+                            <div style="position: relative; display: flex; align-items: center;">
+                                <input type="password" name="password" id="modalUserPassword" class="modal-field-input" placeholder="Set login password (min 6 characters)" style="padding-right: 42px;" autocomplete="new-password">
+                                <button type="button" id="togglePasswordBtn" onclick="togglePasswordVisibility()" style="position: absolute; right: 8px; background: none; border: none; cursor: pointer; color: #64748b; font-size: 15px; padding: 4px; display: flex; align-items: center; justify-content: center;" title="Show/Hide Password">
+                                    <svg id="eyeIcon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </button>
+                            </div>
+                            <div id="modalPasswordHelp" style="font-size: 11.5px; color: #64748b; margin-top: 4px;">Set user login password. If left blank, defaults to: <code>OminiFlow@2026</code></div>
+                        </div>
+                    </div>
+
                     <!-- Role Field -->
                     <div class="modal-field-row">
                         <label class="modal-field-label">
@@ -721,17 +904,73 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                             </select>
                         </div>
                     </div>
+                    <!-- Status Field (Only visible when editing existing user) -->
+                    <div class="modal-field-row" id="modalStatusRow" style="display: none;">
+                        <label class="modal-field-label">
+                            <span>Status</span>
+                        </label>
+                        <div>
+                            <select name="status" id="modalUserStatus" class="modal-field-input">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                            <div style="font-size: 11.5px; color: #64748b; margin-top: 4px;">Inactive users cannot log into the POS system.</div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="modal-invite-footer">
-                    <button type="submit" class="btn-modal-submit" id="btnModalSubmit">Send Invite</button>
-                    <button type="button" class="btn-modal-cancel" onclick="closeInviteModal()">Cancel</button>
+                <div class="modal-invite-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <button type="button" id="btnModalDelete" class="btn-action-delete" style="display: none; padding: 7px 14px; font-size: 13px;" onclick="confirmDeleteUserFromModal()">
+                            🗑️ Delete User
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn-modal-cancel" onclick="closeInviteModal()">Cancel</button>
+                        <button type="submit" class="btn-modal-submit" id="btnModalSubmit">Add User</button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
 
+    <!-- Hidden form for deleting user from modal -->
+    <form id="modalDeleteForm" method="POST" action="<?= asset('users.php') ?>" style="display: none;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="delete_user">
+        <input type="hidden" name="user_id" id="modalDeleteUserId" value="">
+    </form>
+
     <script>
+        var currentUserId = <?= (int) $user['id'] ?>;
+
+        function togglePasswordVisibility() {
+            var pwdField = document.getElementById('modalUserPassword');
+            var eye = document.getElementById('eyeIcon');
+            if (!pwdField) return;
+            if (pwdField.type === 'password') {
+                pwdField.type = 'text';
+                if (eye) {
+                    eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/>';
+                }
+            } else {
+                pwdField.type = 'password';
+                if (eye) {
+                    eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+                }
+            }
+        }
+
+        function confirmDeleteUserFromModal() {
+            var uid = document.getElementById('modalUserId').value;
+            var name = document.getElementById('modalUserName').value || 'this user';
+            if (!uid || Number(uid) === currentUserId) return;
+            if (confirm('Are you sure you want to permanently delete user "' + name + '"? This action cannot be undone.')) {
+                document.getElementById('modalDeleteUserId').value = uid;
+                document.getElementById('modalDeleteForm').submit();
+            }
+        }
+
         function openInviteModal() {
             var idField = document.getElementById('modalUserId');
             if (idField) idField.value = '';
@@ -749,10 +988,32 @@ $usersList = $stmtUsers->fetchAll() ?: [];
                     outletField.selectedIndex = 0;
                 }
             }
+            var statusRow = document.getElementById('modalStatusRow');
+            if (statusRow) statusRow.style.display = 'none';
+            var statusField = document.getElementById('modalUserStatus');
+            if (statusField) statusField.value = 'active';
+            var delBtn = document.getElementById('btnModalDelete');
+            if (delBtn) delBtn.style.display = 'none';
+
+            var pwdField = document.getElementById('modalUserPassword');
+            if (pwdField) {
+                pwdField.type = 'password';
+                pwdField.value = '';
+                pwdField.placeholder = 'Set login password (or leave blank for OminiFlow@2026)';
+            }
+            var eye = document.getElementById('eyeIcon');
+            if (eye) {
+                eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+            }
+            var pwdLabel = document.getElementById('modalPasswordLabel');
+            if (pwdLabel) pwdLabel.innerHTML = 'Password';
+            var pwdHelp = document.getElementById('modalPasswordHelp');
+            if (pwdHelp) pwdHelp.innerHTML = 'Set user login password. If left blank, defaults to: <code>OminiFlow@2026</code>';
+
             var titleEl = document.querySelector('.modal-invite-title');
-            if (titleEl) titleEl.textContent = 'Invite User';
+            if (titleEl) titleEl.textContent = 'Invite / Add User';
             var btnEl = document.getElementById('btnModalSubmit');
-            if (btnEl) btnEl.textContent = 'Send Invite';
+            if (btnEl) btnEl.textContent = 'Add User';
 
             var m = document.getElementById('inviteUserModal');
             if (m) {
@@ -769,7 +1030,7 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             if (m) m.classList.remove('show');
         }
 
-        function openEditUser(name, email, role, userId, outletId) {
+        function openEditUser(name, email, role, userId, outletId, status) {
             openInviteModal();
             var titleEl = document.querySelector('.modal-invite-title');
             if (titleEl) titleEl.textContent = 'Edit User';
@@ -786,6 +1047,34 @@ $usersList = $stmtUsers->fetchAll() ?: [];
             if (roleField) roleField.value = role;
             var outlet = document.getElementById('modalUserOutlet');
             if (outlet) outlet.value = outletId > 0 ? String(outletId) : '';
+
+            var statusRow = document.getElementById('modalStatusRow');
+            var statusField = document.getElementById('modalUserStatus');
+            var delBtn = document.getElementById('btnModalDelete');
+
+            if (userId && Number(userId) !== currentUserId) {
+                if (statusRow) statusRow.style.display = 'grid';
+                if (statusField) statusField.value = status || 'active';
+                if (delBtn) delBtn.style.display = 'inline-flex';
+            } else {
+                if (statusRow) statusRow.style.display = 'none';
+                if (delBtn) delBtn.style.display = 'none';
+            }
+
+            var pwdField = document.getElementById('modalUserPassword');
+            if (pwdField) {
+                pwdField.type = 'password';
+                pwdField.value = '';
+                pwdField.placeholder = 'Leave blank to keep current password';
+            }
+            var eye = document.getElementById('eyeIcon');
+            if (eye) {
+                eye.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+            }
+            var pwdLabel = document.getElementById('modalPasswordLabel');
+            if (pwdLabel) pwdLabel.innerHTML = 'New Password';
+            var pwdHelp = document.getElementById('modalPasswordHelp');
+            if (pwdHelp) pwdHelp.innerHTML = 'Enter new password to update, or leave blank to keep existing password.';
         }
 
         document.addEventListener('keydown', function(e) {

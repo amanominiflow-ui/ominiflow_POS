@@ -389,7 +389,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </button>
 
                 <!-- Reports Tab -->
-                <?php if (is_feature_enabled('reports_analytics')): ?>
+                <?php if (is_feature_enabled('reports_analytics') && user_can_access_reports($user)): ?>
                 <button type="button" class="rail-tab-btn <?= $activeRailTab === 'reports' ? 'active' : '' ?>" onclick="handleRailTabClick('reports')" id="rail-btn-reports" title="Analytics & Reports">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
@@ -399,12 +399,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 <?php endif; ?>
 
                 <!-- Books Tab (Books of Accounts) -->
+                <?php if (user_can_access_books($user)): ?>
                 <button type="button" class="rail-tab-btn <?= $activeRailTab === 'books' ? 'active' : '' ?>" onclick="handleRailTabClick('books')" id="rail-btn-books" title="Books of Accounts">
                     <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
                     </svg>
                     <span>Books</span>
                 </button>
+                <?php endif; ?>
 
                 <!-- Quick Spotlight Search Button (Extra gap above) -->
                 <button type="button" class="rail-tab-btn" onclick="openSpotlightSearch()" title="Global Spotlight Search (/)" style="margin-top: 16px;">
@@ -418,12 +420,14 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
 
         <!-- Rail Bottom Utility Icons -->
         <div class="rail-bottom">
+            <?php if (user_can_access_settings($user)): ?>
             <button type="button" class="rail-icon-btn <?= $activeRailTab === 'settings' ? 'active' : '' ?>" onclick="handleRailTabClick('settings')" id="rail-btn-settings" title="Settings">
                 <svg width="25" height="25" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
             </button>
+            <?php endif; ?>
 
             <button type="button" class="rail-avatar" id="sidebarProfileTrigger" onclick="toggleSidebarProfileMenu(event)" title="<?= e($userName) ?>">
                 <?= e($initials) ?>
@@ -563,7 +567,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 <?php endif; ?>
 
                 <!-- Purchases Group -->
-                <?php if (is_feature_enabled('purchases')): ?>
+                <?php if (is_feature_enabled('purchases') && user_can_access_purchasing($user)): ?>
                 <div class="nav-group <?= $isPurchasesOpen ? 'open' : '' ?>" id="grp-purchases">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-purchases')">
                         <div class="nav-group-title">
@@ -615,6 +619,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 <?php endif; ?>
 
                 <!-- Documents & Tools -->
+                <?php if (user_can_access_reports($user) || user_can_access_settings($user)): ?>
                 <div class="nav-group <?= $isDocumentsOpen ? 'open' : '' ?>" id="grp-docs">
                     <div class="nav-group-header" onclick="toggleSidebarGroup('grp-docs')">
                         <div class="nav-group-title">
@@ -630,11 +635,16 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                         </span>
                     </div>
                     <div class="nav-submenu">
-                        <a href="<?= asset('reports.php') ?>" class="submenu-link <?= $currentPage === 'reports.php' ? 'active' : '' ?>">Reports</a>
-                        <a href="<?= asset('import-export.php') ?>" class="submenu-link <?= $currentPage === 'import-export.php' ? 'active' : '' ?>">Import / Export</a>
-                        <a href="<?= asset('settings.php') ?>" class="submenu-link <?= $currentPage === 'settings.php' ? 'active' : '' ?>">Settings</a>
+                        <?php if (user_can_access_reports($user)): ?>
+                            <a href="<?= asset('reports.php') ?>" class="submenu-link <?= $currentPage === 'reports.php' ? 'active' : '' ?>">Reports</a>
+                        <?php endif; ?>
+                        <?php if (user_can_access_settings($user)): ?>
+                            <a href="<?= asset('import-export.php') ?>" class="submenu-link <?= $currentPage === 'import-export.php' ? 'active' : '' ?>">Import / Export</a>
+                            <a href="<?= asset('settings.php') ?>" class="submenu-link <?= $currentPage === 'settings.php' ? 'active' : '' ?>">Settings</a>
+                        <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
             </nav>
         </div>
 
@@ -1119,6 +1129,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
         </div>
 
         <!-- ================= TAB CONTENT 4: SETTINGS (Zoho POS Parity) ================= -->
+        <?php if (user_can_access_settings($user)): ?>
         <div class="drawer-tab-content <?= $activeRailTab === 'settings' ? 'active' : '' ?>" id="drawer-tab-settings">
             <!-- Settings Header with Active Underline -->
             <div class="sidebar-store-bar">
@@ -1413,6 +1424,7 @@ $isDocumentsOpen = !$isInventoryOpen && !$isSalesOpen && !$isPurchasesOpen && !$
                 </div>
             </nav>
         </div>
+        <?php endif; ?>
 
         <!-- Bottom Plan Status Widget -->
         <?php 

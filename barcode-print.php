@@ -152,27 +152,39 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             gap: 14px;
             width: 100%;
         }
-        .barcode-pair-row .barcode-card-item {
+        .barcode-pair-row .barcode-card-item,
+        .size-2x1 .barcode-card-item,
+        .size-4x1 .barcode-card-item {
             flex: 1;
             padding: 8px 12px;
             min-height: 96px;
         }
-        .size-2x1 .barcode-store-name {
+        .size-2x1 .barcode-store-name,
+        .size-4x1 .barcode-store-name {
             font-size: 8.5px;
             margin-bottom: 2px;
         }
-        .size-2x1 .barcode-prod-name {
+        .size-2x1 .barcode-prod-name,
+        .size-4x1 .barcode-prod-name {
             font-size: 11.5px;
             margin-bottom: 2px;
         }
-        .size-2x1 .barcode-price-tag {
+        .size-2x1 .barcode-price-tag,
+        .size-4x1 .barcode-price-tag {
             font-size: 14px;
             margin-bottom: 2px;
         }
-        .size-2x1 .barcode-svg-container {
+        .size-2x1 .barcode-svg-container,
+        .size-4x1 .barcode-svg-container {
             margin: 2px 0;
         }
-        .size-2x1 .barcode-sku-sub {
+        .size-2x1 .barcode-svg-container svg,
+        .size-4x1 .barcode-svg-container svg {
+            max-height: 38px;
+            width: auto;
+        }
+        .size-2x1 .barcode-sku-sub,
+        .size-4x1 .barcode-sku-sub {
             font-size: 8.5px;
             margin-top: 2px;
         }
@@ -317,7 +329,44 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 6mm !important;
             }
-
+            .size-2x1 .print-grid,
+            .size-4x1 .print-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 4mm !important;
+                max-width: 100% !important;
+            }
+            .size-2x1 .barcode-card-item,
+            .size-4x1 .barcode-card-item {
+                padding: 2.5mm 3.5mm !important;
+                box-sizing: border-box !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+                min-height: 24mm !important;
+            }
+            .size-2x1 .barcode-store-name,
+            .size-4x1 .barcode-store-name {
+                font-size: 8px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-2x1 .barcode-prod-name,
+            .size-4x1 .barcode-prod-name {
+                font-size: 10.5px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-2x1 .barcode-price-tag,
+            .size-4x1 .barcode-price-tag {
+                font-size: 13px !important;
+                margin-bottom: 1mm !important;
+            }
+            .size-2x1 .barcode-svg-container,
+            .size-4x1 .barcode-svg-container {
+                margin: 1mm 0 !important;
+            }
+            .size-2x1 .barcode-sku-sub,
+            .size-4x1 .barcode-sku-sub {
+                font-size: 8px !important;
+                margin-top: 1mm !important;
+            }
             .barcode-card-item {
                 border: 1px dashed #94a3b8 !important;
                 box-shadow: none !important;
@@ -485,8 +534,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                     $barcodeSvg = $hasBarcode
                         ? generate_code128_svg(
                             $barcodeValue,
-                            $labelSize === 'compact' ? 28 : ($labelSize === '2x1' ? 24 : ($labelSize === 'large' ? 44 : 36)),
-                            $labelSize === 'compact' ? 1.2 : ($labelSize === '2x1' ? 1.15 : 1.5)
+                            $labelSize === 'compact' ? 28 : ($isPairRoll ? 22 : ($labelSize === 'large' ? 44 : 36)),
+                            $labelSize === 'compact' ? 1.2 : ($isPairRoll ? 1.15 : 1.5)
                         )
                         : '';
                     ?>
