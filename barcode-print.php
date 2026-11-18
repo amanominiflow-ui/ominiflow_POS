@@ -38,6 +38,21 @@ $isAshCollective = str_contains($uEmail, 'ashcollective')
     || (int)($u['id'] ?? 0) === 7
     || (int)($_SESSION['user_id'] ?? 0) === 7;
 
+// Dynamic company name as per business profile
+$bizName = trim((string)($b['name'] ?? ''));
+if (!empty($_SESSION['business_name'])) {
+    $bizName = trim((string)$_SESSION['business_name']);
+}
+if ($isAshCollective && ($bizName === '' || strtolower($bizName) === 'aman' || strtolower($bizName) === 'ominiflow retail')) {
+    $bizName = 'Ash Collective';
+} elseif ($bizName === '' && !empty($b['name'])) {
+    $bizName = trim((string)$b['name']);
+}
+$defaultCompanyName = strtoupper($bizName ?: ($isAshCollective ? 'ASH COLLECTIVE' : 'OMINIFLOW RETAIL'));
+$companyName = isset($_GET['company_name']) && trim((string)$_GET['company_name']) !== ''
+    ? strtoupper(trim((string)$_GET['company_name']))
+    : $defaultCompanyName;
+
 $defaultLabelSize = $isAshCollective ? '2x1' : 'standard';
 $labelSize = isset($_GET['label_size']) ? (string)$_GET['label_size'] : $defaultLabelSize;
 if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1'], true)) {
@@ -45,8 +60,10 @@ if (!in_array($labelSize, ['standard', 'compact', 'large', '2x1'], true)) {
 }
 $isPairRoll = ($labelSize === '2x1');
 $showStore = isset($_GET['show_store']) ? (bool)$_GET['show_store'] : true;
+$showName = isset($_GET['show_name']) ? (bool)$_GET['show_name'] : true;
 $showPrice = isset($_GET['show_price']) ? (bool)$_GET['show_price'] : true;
 $showSku = isset($_GET['show_sku']) ? (bool)$_GET['show_sku'] : true;
+$showVar = isset($_GET['show_var']) ? (bool)$_GET['show_var'] : true;
 
 $targetProduct = null;
 if ($selectedPid > 0) {
@@ -57,13 +74,127 @@ if (!$targetProduct && !empty($products[0])) {
     $selectedPid = (int)$targetProduct['id'];
 }
 
-$storedBarcode = $targetProduct ? trim((string) ($targetProduct['barcode'] ?? '')) : '';
-$productSku = $targetProduct ? trim((string) ($targetProduct['sku'] ?? '')) : '';
-// Products are often created with only a SKU. Code128 can encode that SKU,
-// and the register already matches a scan against SKU or barcode.
-$labelCode = $storedBarcode !== '' ? $storedBarcode : $productSku;
-$hasBarcode = $labelCode !== '';
-$barcodeFromSku = $hasBarcode && $storedBarcode === '';
+// Fetch variants for selected product if variable product
+$variants = ($targetProduct && function_exists('get_product_variants'))
+    ? get_product_variants((int)$targetProduct['id'])
+    : [];
+
+$selectedVarId = isset($_GET['variant_id']) ? (string)$_GET['variant_id'] : '';
+if ($selectedVarId === '' && !empty($variants)) {
+    // Default to first variant so 1 item is selected by default
+    $selectedVarId = (string)$variants[0]['id'];
+}
+
+if (!function_exists('get_variant_size_and_colour')) {
+    function get_variant_size_and_colour(?array $variant): array {
+        if (!$variant) {
+            return ['size' => '', 'colour' => ''];
+        }
+        $size = '';
+        $colour = '';
+        if (!empty($variant['attribute_values'])) {
+            $attrs = is_array($variant['attribute_values']) ? $variant['attribute_values'] : json_decode((string)$variant['attribute_values'], true);
+            if (is_array($attrs)) {
+                $size = trim((string)($attrs['Size'] ?? $attrs['size'] ?? ''));
+                $colour = trim((string)($attrs['Colour'] ?? $attrs['Color'] ?? $attrs['colour'] ?? $attrs['color'] ?? ''));
+            }
+        }
+        if (($size === '' || $colour === '') && !empty($variant['variant_name'])) {
+            $parts = array_map('trim', explode('/', (string)$variant['variant_name']));
+            if (count($parts) >= 2) {
+                $commonSizes = ['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', '3xl', '4xl', 'free', 'fs'];
+                if (in_array(strtolower($parts[0]), $commonSizes, true) || is_numeric($parts[0])) {
+                    if ($size === '') $size = $parts[0];
+                    if ($colour === '') $colour = $parts[1];
+                } else {
+                    if ($colour === '') $colour = $parts[0];
+                    if ($size === '') $size = $parts[1];
+                }
+            } elseif (count($parts) === 1 && $parts[0] !== '') {
+                $commonSizes = ['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', '3xl', 'free'];
+                if (in_array(strtolower($parts[0]), $commonSizes, true) || is_numeric($parts[0])) {
+                    if ($size === '') $size = $parts[0];
+                } else {
+                    if ($colour === '') $colour = $parts[0];
+                }
+            }
+        }
+        return ['size' => $size, 'colour' => $colour];
+    }
+}
+
+$printItems = [];
+if ($targetProduct) {
+    if (!empty($variants) && $selectedVarId !== '0') {
+        if ($selectedVarId === 'all') {
+            foreach ($variants as $v) {
+                $vVar = get_variant_size_and_colour($v);
+                $vBarcode = trim((string)($v['barcode'] ?: ($targetProduct['barcode'] ?: ($v['sku'] ?: $targetProduct['sku']))));
+                $vSku = trim((string)($v['sku'] ?: $targetProduct['sku']));
+                $vPrice = (float)($v['selling_price'] ?: $targetProduct['selling_price']);
+                $printItems[] = [
+                    'product_name' => (string)$targetProduct['name'],
+                    'variant_name' => (string)($v['variant_name'] ?? ''),
+                    'size' => $vVar['size'],
+                    'colour' => $vVar['colour'],
+                    'sku' => $vSku,
+                    'barcode' => $vBarcode,
+                    'price' => $vPrice,
+                    'copies' => $copies,
+                ];
+            }
+        } else {
+            $matchedVar = null;
+            foreach ($variants as $v) {
+                if ((string)$v['id'] === (string)$selectedVarId) {
+                    $matchedVar = $v;
+                    break;
+                }
+            }
+            if ($matchedVar) {
+                $vVar = get_variant_size_and_colour($matchedVar);
+                $vBarcode = trim((string)($matchedVar['barcode'] ?: ($targetProduct['barcode'] ?: ($matchedVar['sku'] ?: $targetProduct['sku']))));
+                $vSku = trim((string)($matchedVar['sku'] ?: $targetProduct['sku']));
+                $vPrice = (float)($matchedVar['selling_price'] ?: $targetProduct['selling_price']);
+                $printItems[] = [
+                    'product_name' => (string)$targetProduct['name'],
+                    'variant_name' => (string)($matchedVar['variant_name'] ?? ''),
+                    'size' => $vVar['size'],
+                    'colour' => $vVar['colour'],
+                    'sku' => $vSku,
+                    'barcode' => $vBarcode,
+                    'price' => $vPrice,
+                    'copies' => $copies,
+                ];
+            }
+        }
+    }
+
+    if (empty($printItems)) {
+        $storedBarcode = trim((string) ($targetProduct['barcode'] ?? ''));
+        $productSku = trim((string) ($targetProduct['sku'] ?? ''));
+        $labelCode = $storedBarcode !== '' ? $storedBarcode : $productSku;
+        $printItems[] = [
+            'product_name' => (string)$targetProduct['name'],
+            'variant_name' => '',
+            'size' => '',
+            'colour' => '',
+            'sku' => $productSku,
+            'barcode' => $labelCode,
+            'price' => (float)$targetProduct['selling_price'],
+            'copies' => $copies,
+        ];
+    }
+}
+
+$hasAnyBarcode = false;
+foreach ($printItems as $it) {
+    if (!empty($it['barcode'])) {
+        $hasAnyBarcode = true;
+        break;
+    }
+}
+$hasBarcode = $hasAnyBarcode;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -126,6 +257,22 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
             color: #64748b;
             font-weight: 600;
             margin-top: 2px;
+        }
+        .barcode-var-sub {
+            font-size: 10px;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 2px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .size-compact .barcode-var-sub {
+            font-size: 8px;
+        }
+        .size-2x1 .barcode-var-sub {
+            font-size: 8px;
+            margin: 1px 0;
+            line-height: 1.1;
         }
 
         /* Size presets */
@@ -306,6 +453,12 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 line-height: 1 !important;
                 margin-top: 0.5mm !important;
             }
+            .size-2x1 .barcode-var-sub {
+                font-size: 7px !important;
+                line-height: 1 !important;
+                margin: 0.3mm 0 !important;
+                font-weight: 700 !important;
+            }
             .barcode-card-item {
                 border: 1px dashed #94a3b8 !important;
                 box-shadow: none !important;
@@ -364,24 +517,37 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                             <div style="font-size: 15px; font-weight: 700;"><?= e((string) $inwardEntry['entry_number']) ?> · <?= e((string) ($inwardEntry['warehouse_name'] ?? 'Warehouse')) ?></div>
                             <div style="font-size: 12.5px; color: #64748b; margin-top: 4px;">Purchase confirmed. One label per counted unit, up to 100 per line.</div>
                         </div>
-                        <div class="print-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px;">
+                        <div class="print-grid" style="display: grid; <?= in_array($labelSize, ['2x1', '4x1'], true) ? 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 680px; margin: 0 auto;' : 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));' ?> gap: 14px;">
                             <?php foreach ($inwardPrint['labels'] as $label): ?>
                                 <?php
-                                $labelSvg = generate_code128_svg((string) $label['barcode'], 36, 1.5);
-                                $labelTitle = trim((string) $label['size'] . ' / ' . (string) $label['colour'], ' /');
+                                $labelSvg = generate_code128_svg((string) $label['barcode'], $isPairRoll ? 22 : 36, $isPairRoll ? 1.15 : 1.5);
+                                $varInfo = '';
+                                if (!empty($label['size']) && !empty($label['colour'])) {
+                                    $varInfo = 'SIZE: ' . $label['size'] . ' | COLOR: ' . $label['colour'];
+                                } elseif (!empty($label['size'])) {
+                                    $varInfo = 'SIZE: ' . $label['size'];
+                                } elseif (!empty($label['colour'])) {
+                                    $varInfo = 'COLOR: ' . $label['colour'];
+                                }
                                 ?>
                                 <?php for ($i = 0; $i < (int) $label['copies']; $i++): ?>
                                     <div class="barcode-card-item">
-                                        <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
-                                        <div class="barcode-prod-name" title="<?= e((string) $label['name']) ?>"><?= e((string) $label['name']) ?></div>
-                                        <?php if ($labelTitle !== ''): ?>
-                                            <div class="barcode-sku-sub"><?= e($labelTitle) ?></div>
+                                        <?php if ($showStore): ?>
+                                            <div class="barcode-store-name"><?= e($companyName) ?></div>
                                         <?php endif; ?>
-                                        <?php if ($label['price'] !== null && $label['price'] !== ''): ?>
-                                            <div class="barcode-price-tag">₹<?= number_format((float) $label['price'], 2) ?></div>
+                                        <?php if ($showName): ?>
+                                            <div class="barcode-prod-name" title="<?= e((string) $label['name']) ?>"><?= e((string) $label['name']) ?></div>
                                         <?php endif; ?>
                                         <div class="barcode-svg-container"><?= $labelSvg ?></div>
-                                        <div class="barcode-sku-sub">SKU: <?= e((string) $label['sku']) ?></div>
+                                        <?php if ($showSku && !empty($label['sku'])): ?>
+                                            <div class="barcode-sku-sub">SKU: <?= e((string) $label['sku']) ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($showVar && $varInfo !== ''): ?>
+                                            <div class="barcode-var-sub"><?= e($varInfo) ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($showPrice && $label['price'] !== null && $label['price'] !== ''): ?>
+                                            <div class="barcode-price-tag">SP: ₹<?= number_format((float) $label['price'], 2) ?></div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endfor; ?>
                             <?php endforeach; ?>
@@ -391,7 +557,7 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                 <!-- Product Selector & Print Configuration Card -->
                 <div class="filter-card no-print" style="padding: 24px; margin-bottom: 24px;">
                     <form method="GET" action="<?= asset('barcode-print.php') ?>" id="barcodeConfigForm" style="display: flex; flex-direction: column; gap: 18px;">
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; align-items: flex-end;">
+                        <div style="display: grid; grid-template-columns: 2fr <?= !empty($variants) ? '1.5fr ' : '' ?>1fr 1fr; gap: 16px; align-items: flex-end;">
                             <!-- Product Dropdown -->
                             <div>
                                 <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 6px;">
@@ -409,6 +575,23 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                                     <?php endif; ?>
                                 </select>
                             </div>
+
+                            <?php if (!empty($variants)): ?>
+                            <!-- Variant Dropdown (Size & Colour) -->
+                            <div>
+                                <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 6px;">
+                                    Variant (Size & Colour)
+                                </label>
+                                <select name="variant_id" class="form-control" onchange="document.getElementById('barcodeConfigForm').submit()" style="width: 100%; cursor: pointer;">
+                                    <option value="all" <?= $selectedVarId === 'all' ? 'selected' : '' ?>>-- All Variants --</option>
+                                    <?php foreach ($variants as $v): ?>
+                                        <option value="<?= (int)$v['id'] ?>" <?= (string)$selectedVarId === (string)$v['id'] ? 'selected' : '' ?>>
+                                            <?= e($v['variant_name']) ?> — [SKU: <?= e($v['sku']) ?>] — ₹<?= number_format((float)$v['selling_price'], 2) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
 
                             <!-- Label Copies -->
                             <div>
@@ -432,29 +615,43 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                             </div>
                         </div>
 
-                        <!-- Display Options & Submit Button -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--saas-border-light); padding-top: 14px; flex-wrap: wrap; gap: 12px;">
-                            <div style="display: flex; gap: 20px; align-items: center;">
-                                <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Label Content:</span>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--saas-navy-950); cursor: pointer;">
-                                    <input type="checkbox" name="show_store" value="1" <?= $showStore ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
-                                    <span>Store Name</span>
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--saas-navy-950); cursor: pointer;">
-                                    <input type="checkbox" name="show_price" value="1" <?= $showPrice ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
-                                    <span>Selling Price</span>
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--saas-navy-950); cursor: pointer;">
-                                    <input type="checkbox" name="show_sku" value="1" <?= $showSku ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
-                                    <span>SKU & Barcode Text</span>
-                                </label>
+                        <!-- Company Header Name Field & Display Checkboxes -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--saas-border-light); padding-top: 14px; flex-wrap: wrap; gap: 14px;">
+                            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 12px; font-weight: 700; color: var(--saas-slate-600);">Company:</span>
+                                    <input type="text" name="company_name" value="<?= e($companyName) ?>" placeholder="Company Name" class="form-control" style="width: 170px; padding: 5px 9px; font-size: 12px; font-weight: 700;" onchange="document.getElementById('barcodeConfigForm').submit()">
+                                </div>
+
+                                <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--saas-navy-950); cursor: pointer;">
+                                        <input type="checkbox" name="show_store" value="1" <?= $showStore ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
+                                        <span>Company Name</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--saas-navy-950); cursor: pointer;">
+                                        <input type="checkbox" name="show_name" value="1" <?= $showName ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
+                                        <span>Product Name</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--saas-navy-950); cursor: pointer;">
+                                        <input type="checkbox" name="show_var" value="1" <?= $showVar ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
+                                        <span>Size & Colour</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--saas-navy-950); cursor: pointer;">
+                                        <input type="checkbox" name="show_price" value="1" <?= $showPrice ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
+                                        <span>Selling Price</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--saas-navy-950); cursor: pointer;">
+                                        <input type="checkbox" name="show_sku" value="1" <?= $showSku ? 'checked' : '' ?> onchange="document.getElementById('barcodeConfigForm').submit()">
+                                        <span>SKU</span>
+                                    </label>
+                                </div>
                             </div>
 
                             <div style="display: flex; gap: 10px;">
                                 <button type="submit" class="header-btn" style="padding: 9px 22px;">
                                     Apply & Generate Preview
                                 </button>
-                                <?php if ($targetProduct && $hasBarcode): ?>
+                                <?php if ($targetProduct && $hasAnyBarcode): ?>
                                     <button type="button" onclick="window.print()" class="header-btn-secondary" style="padding: 9px 18px;">
                                         🖨️ Print Sheet
                                     </button>
@@ -466,18 +663,8 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
 
                 <!-- Barcode Sheet Preview -->
                 <?php if ($targetProduct): ?>
-                    <?php
-                    $barcodeValue = $labelCode;
-                    $barcodeSvg = $hasBarcode
-                        ? generate_code128_svg(
-                            $barcodeValue,
-                            $labelSize === 'compact' ? 28 : ($isPairRoll ? 22 : ($labelSize === 'large' ? 44 : 36)),
-                            $labelSize === 'compact' ? 1.2 : ($isPairRoll ? 1.15 : 1.5)
-                        )
-                        : '';
-                    ?>
                     <div class="size-<?= e($labelSize) ?>">
-                        <?php if (!$hasBarcode): ?>
+                        <?php if (!$hasAnyBarcode): ?>
                             <div class="section-card no-print" style="text-align: center; padding: 40px 24px; margin-bottom: 20px; border: 1px dashed #cbd5e1;">
                                 <div style="font-size: 32px; margin-bottom: 10px;">📦</div>
                                 <h3 style="font-size: 16px; font-weight: 700; color: var(--saas-navy-950); margin-bottom: 8px;">No barcode or SKU on this product</h3>
@@ -490,50 +677,94 @@ $barcodeFromSku = $hasBarcode && $storedBarcode === '';
                             </div>
                         <?php else: ?>
                         <!-- Live Summary Banner -->
+                        <?php
+                        $totalLabels = 0;
+                        foreach ($printItems as $it) {
+                            $totalLabels += (int)$it['copies'];
+                        }
+                        ?>
                         <div class="no-print" style="background: #f8fafc; border: 1px solid var(--saas-border); border-radius: var(--saas-radius-md); padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                             <div style="display: flex; align-items: center; gap: 14px;">
                                 <div style="width: 42px; height: 42px; border-radius: 8px; background: #e0e7ff; color: #4338ca; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px;">
                                     🏷️
                                 </div>
                                 <div>
-                                    <div style="font-size: 15px; font-weight: 700; color: var(--saas-navy-950);"><?= e($targetProduct['name']) ?></div>
-                                    <div style="font-size: 12px; color: var(--saas-slate-500); font-family: monospace;">SKU: <?= e($targetProduct['sku']) ?> &bull; Barcode: <?= e($barcodeValue) ?><?= $barcodeFromSku ? ' (using SKU)' : '' ?> &bull; Current Stock: <?= (int)$targetProduct['stock_quantity'] ?> units</div>
+                                    <div style="font-size: 15px; font-weight: 700; color: var(--saas-navy-950);">
+                                        <?= e($targetProduct['name']) ?>
+                                        <?php if (!empty($variants)): ?>
+                                            <span style="font-size: 12px; font-weight: 600; color: #2563eb; background: #eff6ff; padding: 2px 8px; border-radius: 4px; margin-left: 6px;">
+                                                <?= $selectedVarId === 'all' ? count($variants) . ' Variants' : ($printItems[0]['variant_name'] ?: 'Selected Variant') ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--saas-slate-500); font-family: monospace;">
+                                        Company: <?= e($companyName) ?> &bull; SKU: <?= e($printItems[0]['sku']) ?> &bull; Barcode: <?= e($printItems[0]['barcode']) ?>
+                                    </div>
                                 </div>
                             </div>
                             <div style="font-size: 13px; font-weight: 700; color: var(--saas-navy-950);">
-                                Generating <span style="color: var(--saas-primary);"><?= $copies ?></span> Label<?= $copies > 1 ? 's' : '' ?>
+                                Generating <span style="color: var(--saas-primary);"><?= $totalLabels ?></span> Label<?= $totalLabels > 1 ? 's' : '' ?>
                             </div>
                         </div>
 
                         <!-- Labels Printable Grid -->
                         <div class="print-grid" style="display: grid; <?= in_array($labelSize, ['2x1', '4x1'], true) ? 'grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 680px; margin: 0 auto;' : 'grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));' ?> gap: 14px;">
-                            <?php for ($i = 0; $i < $copies; $i++): ?>
-                                <div class="barcode-card-item">
-                                    <?php if ($showStore): ?>
-                                        <div class="barcode-store-name"><?= APP_NAME ?> RETAIL</div>
-                                    <?php endif; ?>
+                            <?php foreach ($printItems as $item): ?>
+                                <?php
+                                $itemSvg = !empty($item['barcode'])
+                                    ? generate_code128_svg(
+                                        (string)$item['barcode'],
+                                        $labelSize === 'compact' ? 28 : ($isPairRoll ? 22 : ($labelSize === 'large' ? 44 : 36)),
+                                        $labelSize === 'compact' ? 1.2 : ($isPairRoll ? 1.15 : 1.5)
+                                    )
+                                    : '';
+                                $varText = '';
+                                if (!empty($item['size']) && !empty($item['colour'])) {
+                                    $varText = 'SIZE: ' . $item['size'] . ' | COLOR: ' . $item['colour'];
+                                } elseif (!empty($item['size'])) {
+                                    $varText = 'SIZE: ' . $item['size'];
+                                } elseif (!empty($item['colour'])) {
+                                    $varText = 'COLOR: ' . $item['colour'];
+                                } elseif (!empty($item['variant_name'])) {
+                                    $varText = $item['variant_name'];
+                                }
+                                ?>
+                                <?php for ($i = 0; $i < (int)$item['copies']; $i++): ?>
+                                    <div class="barcode-card-item">
+                                        <?php if ($showStore): ?>
+                                            <div class="barcode-store-name"><?= e($companyName) ?></div>
+                                        <?php endif; ?>
 
-                                    <div class="barcode-prod-name" title="<?= e($targetProduct['name']) ?>">
-                                        <?= e($targetProduct['name']) ?>
-                                    </div>
+                                        <?php if ($showName): ?>
+                                            <div class="barcode-prod-name" title="<?= e($item['product_name']) ?>">
+                                                <?= e($item['product_name']) ?>
+                                            </div>
+                                        <?php endif; ?>
 
-                                    <?php if ($showPrice): ?>
-                                        <div class="barcode-price-tag">
-                                            ₹<?= number_format((float)$targetProduct['selling_price'], 2) ?>
+                                        <div class="barcode-svg-container">
+                                            <?= $itemSvg ?>
                                         </div>
-                                    <?php endif; ?>
 
-                                    <div class="barcode-svg-container">
-                                        <?= $barcodeSvg ?>
+                                        <?php if ($showSku && !empty($item['sku'])): ?>
+                                            <div class="barcode-sku-sub">
+                                                SKU: <?= e($item['sku']) ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <?php if ($showVar && $varText !== ''): ?>
+                                            <div class="barcode-var-sub">
+                                                <?= e($varText) ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <?php if ($showPrice): ?>
+                                            <div class="barcode-price-tag">
+                                                SP: ₹<?= number_format((float)$item['price'], 2) ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
-
-                                    <?php if ($showSku): ?>
-                                        <div class="barcode-sku-sub">
-                                            SKU: <?= e($targetProduct['sku']) ?>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endfor; ?>
+                                <?php endfor; ?>
+                            <?php endforeach; ?>
                         </div>
                         <?php endif; ?>
                     </div>
