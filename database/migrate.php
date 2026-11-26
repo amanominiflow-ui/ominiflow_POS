@@ -223,12 +223,88 @@ try {
             `cash_in` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
             `cash_out` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
             `status` ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+            `opening_count_confirmed` TINYINT(1) NOT NULL DEFAULT 0,
+            `closing_count_confirmed` TINYINT(1) NOT NULL DEFAULT 0,
+            `discrepancy_reason` TEXT NULL,
+            `opening_notes` TEXT NULL,
             `closing_notes` TEXT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (`register_id`) REFERENCES `registers` (`id`) ON DELETE CASCADE,
             FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
             INDEX `idx_reg_sessions_user` (`user_id`),
             INDEX `idx_reg_sessions_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // 7b. Cash Denominations Configuration Table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `cash_denominations` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `label` VARCHAR(50) NOT NULL,
+            `value` DECIMAL(10, 2) NOT NULL,
+            `type` ENUM('note', 'coin') NOT NULL DEFAULT 'note',
+            `sort_order` INT NOT NULL DEFAULT 0,
+            `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_cd_biz` (`business_id`, `is_active`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // Seed default Indian currency denominations if not present
+    $checkCd = (int) $pdo->query("SELECT COUNT(*) FROM `cash_denominations` WHERE `business_id` = 0")->fetchColumn();
+    if ($checkCd === 0) {
+        $defaultDenominations = [
+            ['label' => '₹500', 'value' => 500.00, 'type' => 'note', 'sort_order' => 1],
+            ['label' => '₹200', 'value' => 200.00, 'type' => 'note', 'sort_order' => 2],
+            ['label' => '₹100', 'value' => 100.00, 'type' => 'note', 'sort_order' => 3],
+            ['label' => '₹50',  'value' => 50.00,  'type' => 'note', 'sort_order' => 4],
+            ['label' => '₹20',  'value' => 20.00,  'type' => 'note', 'sort_order' => 5],
+            ['label' => '₹10',  'value' => 10.00,  'type' => 'note', 'sort_order' => 6],
+            ['label' => '₹5',   'value' => 5.00,   'type' => 'coin', 'sort_order' => 7],
+            ['label' => '₹2',   'value' => 2.00,   'type' => 'coin', 'sort_order' => 8],
+            ['label' => '₹1',   'value' => 1.00,   'type' => 'coin', 'sort_order' => 9],
+        ];
+        $insCd = $pdo->prepare("INSERT INTO `cash_denominations` (`business_id`, `label`, `value`, `type`, `sort_order`, `is_active`) VALUES (0, :lbl, :val, :type, :sort, 1)");
+        foreach ($defaultDenominations as $d) {
+            $insCd->execute(['lbl' => $d['label'], 'val' => $d['value'], 'type' => $d['type'], 'sort' => $d['sort_order']]);
+        }
+    }
+
+    // 7c. Session Denominations Table (Permanent breakdown of opening and closing cash counts)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `session_cash_denominations` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `session_id` INT UNSIGNED NOT NULL,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `entry_type` ENUM('opening', 'closing') NOT NULL,
+            `denomination_id` INT UNSIGNED NULL,
+            `denomination_value` DECIMAL(10, 2) NOT NULL,
+            `quantity` INT NOT NULL DEFAULT 0,
+            `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_scd_sess` (`session_id`, `entry_type`),
+            INDEX `idx_scd_biz` (`business_id`),
+            FOREIGN KEY (`session_id`) REFERENCES `register_sessions` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    // 7d. Session Denomination Audit Logs (For authorized admin revisions)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `session_denomination_audit_logs` (
+            `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `session_id` INT UNSIGNED NOT NULL,
+            `business_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `entry_type` ENUM('opening', 'closing') NOT NULL,
+            `admin_user_id` INT UNSIGNED NOT NULL,
+            `previous_data` LONGTEXT NOT NULL,
+            `new_data` LONGTEXT NOT NULL,
+            `reason` TEXT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX `idx_sdal_sess` (`session_id`),
+            FOREIGN KEY (`session_id`) REFERENCES `register_sessions` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
@@ -1224,7 +1300,8 @@ try {
         'product_batches', 'channel_sync_logs', 'audit_logs', 'gst_settings',
         'tax_rates', 'business_profile', 'shipping_integrations', 'ecommerce_integrations',
         'payment_options', 'roles', 'payments', 'payment_integrations',
-        'purchase_receives', 'purchase_bills'
+        'purchase_receives', 'purchase_bills',
+        'cash_denominations', 'session_cash_denominations', 'session_denomination_audit_logs'
     ];
 
     foreach ($tenantTables as $tTable) {

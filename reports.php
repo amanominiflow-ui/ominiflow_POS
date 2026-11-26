@@ -630,10 +630,11 @@ if ($view !== '') {
                 <?php elseif ($reportType === 'register-shifts'): 
                     $shifts = get_register_shifts_report($dateFrom, $dateTo);
                 ?>
-                    <!-- 12. REGISTER SHIFTS -->
+                    <!-- 12. REGISTER SHIFTS & DENOMINATION AUDITS -->
                     <div class="section-card">
-                        <div class="section-header">
+                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
                             <h2 class="section-title">Register Sessions & Cashier Drawer Audits</h2>
+                            <span style="font-size: 13px; color: #64748b;">Showing denomination-verified cashier drawer shifts</span>
                         </div>
                         <div class="table-wrap">
                             <table class="saas-table">
@@ -642,25 +643,60 @@ if ($view !== '') {
                                         <th>Session ID</th>
                                         <th>Register</th>
                                         <th>Cashier</th>
-                                        <th>Opened At</th>
+                                        <th>Opened</th>
+                                        <th>Closed</th>
                                         <th>Status</th>
                                         <th style="text-align: right;">Opening Float</th>
-                                        <th style="text-align: right;">Total Sales</th>
+                                        <th style="text-align: right;">Cash Sales</th>
+                                        <th style="text-align: right;">Expected Cash</th>
+                                        <th style="text-align: right;">Actual Counted</th>
+                                        <th>Variance</th>
+                                        <th style="text-align: right;">Denomination Breakdown</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($shifts)): ?>
-                                        <tr><td colspan="7" style="text-align: center; padding: 20px; color: #64748b;">No register shifts recorded.</td></tr>
+                                        <tr><td colspan="12" style="text-align: center; padding: 24px; color: #64748b;">No register shifts recorded for selected dates.</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($shifts as $sh): ?>
+                                            <?php
+                                                $openCash = (float)($sh['opening_cash'] ?? $sh['opening_balance'] ?? 0);
+                                                $expCash = (float)($sh['closing_cash_expected'] ?? 0);
+                                                $actCash = (float)($sh['closing_cash_actual'] ?? 0);
+                                                $diff = (float)($sh['cash_difference'] ?? 0);
+                                            ?>
                                             <tr>
-                                                <td><strong>#SESS-<?= (int)$sh['id'] ?></strong></td>
+                                                <td><strong style="font-family: monospace; color: var(--saas-primary);">#SESS-<?= (int)$sh['id'] ?></strong></td>
                                                 <td><?= e($sh['register_name']) ?></td>
-                                                <td><?= e($sh['cashier_name']) ?></td>
-                                                <td><?= date('d M Y, h:i A', strtotime($sh['opened_at'])) ?></td>
+                                                <td><strong><?= e($sh['cashier_name']) ?></strong></td>
+                                                <td style="font-size: 12px;"><?= date('d M, h:i A', strtotime($sh['opened_at'])) ?></td>
+                                                <td style="font-size: 12px;"><?= !empty($sh['closed_at']) ? date('d M, h:i A', strtotime($sh['closed_at'])) : '<span style="color:#047857; font-weight:700;">Open Now</span>' ?></td>
                                                 <td><span class="badge <?= $sh['status'] === 'open' ? 'badge-success' : 'badge-secondary' ?>"><?= strtoupper(e($sh['status'])) ?></span></td>
-                                                <td style="text-align: right;">₹<?= number_format((float)$sh['opening_balance'], 2) ?></td>
-                                                <td style="text-align: right; font-weight: 700; color: #047857;">₹<?= number_format((float)($sh['total_sales'] ?? 0), 2) ?></td>
+                                                <td style="text-align: right;">₹<?= number_format($openCash, 2) ?></td>
+                                                <td style="text-align: right; font-weight: 700; color: #047857;">₹<?= number_format((float)($sh['total_cash_sales'] ?? $sh['total_sales'] ?? 0), 2) ?></td>
+                                                <td style="text-align: right;">₹<?= number_format($expCash, 2) ?></td>
+                                                <td style="text-align: right;">₹<?= number_format($actCash, 2) ?></td>
+                                                <td>
+                                                    <?php
+                                                        if ($sh['status'] === 'open') {
+                                                            echo '<span style="color:#64748b; font-size:12px;">Active</span>';
+                                                        } elseif ($diff === 0.00) {
+                                                            echo '<span class="badge badge-success">Balanced</span>';
+                                                        } elseif ($diff > 0) {
+                                                            echo '<span class="badge badge-success">+₹'.number_format($diff, 2).'</span>';
+                                                        } else {
+                                                            echo '<span class="badge badge-danger">-₹'.number_format(abs($diff), 2).'</span>';
+                                                        }
+                                                    ?>
+                                                </td>
+                                                <td style="text-align: right; white-space: nowrap;">
+                                                    <button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="viewReportDenominations(<?= (int)$sh['id'] ?>)">
+                                                        🔍 Breakdown
+                                                    </button>
+                                                    <a href="<?= asset('session-cash-print.php?id=' . (int)$sh['id'] . '&type=all') ?>" target="_blank" class="btn-secondary" style="padding: 4px 10px; font-size: 12px; text-decoration: none;">
+                                                        🖨️ Print
+                                                    </a>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
@@ -668,6 +704,151 @@ if ($view !== '') {
                             </table>
                         </div>
                     </div>
+
+                    <!-- Denomination Breakdown Modal for Reports -->
+                    <div class="modal-overlay" id="reportDenomModal">
+                        <div class="modal-box" style="max-width: 580px;">
+                            <div class="modal-header">
+                                <div>
+                                    <h3 class="modal-title" id="reportModalTitle">Session Cash Count Breakdown</h3>
+                                    <p style="color: #64748b; font-size: 13px; margin-top: 3px;" id="reportModalSubtitle">Denomination-wise physical cash counting audit.</p>
+                                </div>
+                                <button type="button" class="modal-close-btn" onclick="closeReportDenomModal()">&times;</button>
+                            </div>
+                            <div class="modal-body" id="reportModalBody" style="max-height: 480px; overflow-y: auto;">
+                                <div style="text-align: center; padding: 24px; color: #64748b;">Loading session breakdown...</div>
+                            </div>
+                            <div class="modal-footer" style="display: flex; justify-content: space-between;">
+                                <a href="#" id="reportModalPrintLink" target="_blank" class="btn-secondary" style="padding: 6px 14px; text-decoration: none; font-size: 13px;">
+                                    🖨️ Print Report
+                                </a>
+                                <button type="button" class="btn-secondary" onclick="closeReportDenomModal()">Close</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        function formatINR(val) {
+                            return '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        }
+                        function escapeHtml(str) {
+                            if (!str) return '';
+                            return String(str).replace(/[&<>"']/g, function(m) {
+                                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+                            });
+                        }
+                        function viewReportDenominations(sessionId) {
+                            const modal = document.getElementById('reportDenomModal');
+                            const body = document.getElementById('reportModalBody');
+                            const title = document.getElementById('reportModalTitle');
+                            const printLink = document.getElementById('reportModalPrintLink');
+
+                            title.textContent = 'Session #' + sessionId + ' Denomination Breakdown';
+                            printLink.href = 'session-cash-print.php?id=' + sessionId + '&type=all';
+                            body.innerHTML = '<div style="text-align: center; padding: 24px; color: #64748b;">Loading session breakdown...</div>';
+                            modal.classList.add('open');
+
+                            fetch('registers.php?ajax_session_details=' + sessionId)
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        body.innerHTML = '<div style="color: #ef4444; padding: 16px;">' + (data.error || 'Failed to load details.') + '</div>';
+                                        return;
+                                    }
+                                    const sess = data.session;
+                                    const denoms = data.denominations;
+                                    const audits = data.audit_logs || [];
+
+                                    let html = `
+                                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px;">
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                                                <div>Register: <strong>${escapeHtml(sess.register_name)}</strong></div>
+                                                <div>Cashier: <strong>${escapeHtml(sess.cashier_name)}</strong></div>
+                                                <div>Opened: <strong>${sess.opened_at}</strong></div>
+                                                <div>Closed: <strong>${sess.closed_at ? sess.closed_at : 'Active'}</strong></div>
+                                            </div>
+                                        </div>
+                                    `;
+
+                                    // Opening Count
+                                    html += `
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0 6px 0;">
+                                            <strong style="font-size: 13.5px; color: #1e293b;">Opening Cash Count (Float)</strong>
+                                            <span style="font-weight: 800; color: #15803d;">${formatINR(sess.opening_cash)}</span>
+                                        </div>
+                                    `;
+                                    if (denoms.opening && denoms.opening.length > 0) {
+                                        html += `
+                                            <table class="saas-table" style="font-size: 12px; margin-bottom: 8px;">
+                                                <thead><tr><th>Denomination</th><th style="text-align: center;">Count</th><th style="text-align: right;">Amount</th></tr></thead>
+                                                <tbody>
+                                        `;
+                                        denoms.opening.forEach(item => {
+                                            if (parseInt(item.quantity) > 0 || denoms.opening.length <= 9) {
+                                                html += `<tr><td><strong>${escapeHtml(item.label)}</strong> (${escapeHtml(item.type)})</td><td style="text-align: center;">${item.quantity}</td><td style="text-align: right;">${formatINR(item.total_amount)}</td></tr>`;
+                                            }
+                                        });
+                                        html += `</tbody></table>`;
+                                    }
+
+                                    // Closing Count
+                                    if (sess.status === 'closed' || (denoms.closing && denoms.closing.length > 0)) {
+                                        html += `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin: 14px 0 6px 0; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
+                                                <strong style="font-size: 13.5px; color: #1e293b;">Closing Cash Count (Actual Physical)</strong>
+                                                <span style="font-weight: 800; color: #1e3a8a;">${formatINR(sess.closing_cash_actual)}</span>
+                                            </div>
+                                        `;
+                                        if (denoms.closing && denoms.closing.length > 0) {
+                                            html += `
+                                                <table class="saas-table" style="font-size: 12px; margin-bottom: 8px;">
+                                                    <thead><tr><th>Denomination</th><th style="text-align: center;">Count</th><th style="text-align: right;">Amount</th></tr></thead>
+                                                    <tbody>
+                                            `;
+                                            denoms.closing.forEach(item => {
+                                                if (parseInt(item.quantity) > 0 || denoms.closing.length <= 9) {
+                                                    html += `<tr><td><strong>${escapeHtml(item.label)}</strong> (${escapeHtml(item.type)})</td><td style="text-align: center;">${item.quantity}</td><td style="text-align: right;">${formatINR(item.total_amount)}</td></tr>`;
+                                                }
+                                            });
+                                            html += `</tbody></table>`;
+                                        }
+
+                                        const diff = parseFloat(sess.cash_difference) || 0;
+                                        if (Math.abs(diff) < 0.01) {
+                                            html += `<div style="background: #dcfce7; color: #166534; padding: 8px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; margin-top: 6px;">✓ Drawer Balanced (₹0.00)</div>`;
+                                        } else if (diff < 0) {
+                                            html += `<div style="background: #fee2e2; color: #991b1b; padding: 8px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; margin-top: 6px;">⚠️ Shortage: -${formatINR(Math.abs(diff))} (Expected: ${formatINR(sess.closing_cash_expected)})</div>`;
+                                        } else {
+                                            html += `<div style="background: #fef3c7; color: #92400e; padding: 8px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; margin-top: 6px;">ℹ️ Excess: +${formatINR(diff)} (Expected: ${formatINR(sess.closing_cash_expected)})</div>`;
+                                        }
+
+                                        if (sess.discrepancy_reason) {
+                                            html += `<div style="background: #fff; border-left: 3px solid #ef4444; padding: 8px 10px; margin-top: 6px; font-size: 12px;"><strong>Discrepancy Explanation:</strong><br>${escapeHtml(sess.discrepancy_reason)}</div>`;
+                                        }
+                                    }
+
+                                    // Audit Logs
+                                    if (audits.length > 0) {
+                                        html += `
+                                            <div style="margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 11.5px; color: #64748b;">
+                                                <strong style="color: #b45309;">Admin Audit Revisions:</strong>
+                                        `;
+                                        audits.forEach(a => {
+                                            html += `<div>• ${a.created_at} by ${escapeHtml(a.admin_name || 'Admin')}: "${escapeHtml(a.reason)}"</div>`;
+                                        });
+                                        html += `</div>`;
+                                    }
+
+                                    body.innerHTML = html;
+                                })
+                                .catch(() => {
+                                    body.innerHTML = '<div style="color: #ef4444; padding: 16px;">Failed to fetch session breakdown.</div>';
+                                });
+                        }
+                        function closeReportDenomModal() {
+                            document.getElementById('reportDenomModal').classList.remove('open');
+                        }
+                    </script>
 
                 <?php elseif ($reportType === 'gst-tax'): 
                     $gstReport = get_gst_tax_report($dateFrom, $dateTo);
